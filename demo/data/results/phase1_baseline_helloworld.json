@@ -1,0 +1,76 @@
+{
+  "experiment_id": "baseline_helloworld_001",
+  "timestamp_utc": "2026-10-05T16:54:00Z",
+  "timestamp_local": "2026-10-05T22:24:00+05:30",
+  "phase": "Phase 1 — Baseline Evidence",
+  "description": "Baseline verification of official A2A HelloWorld sample: server startup, client communication, and Agent Card retrieval.",
+
+  "server": {
+    "status": "PASS",
+    "url": "http://127.0.0.1:9999",
+    "host": "127.0.0.1",
+    "port": 9999,
+    "startup_command": ".venv\\Scripts\\python.exe __main__.py",
+    "working_directory": "demo\\external\\a2a-samples\\samples\\python\\agents\\helloworld",
+    "python_version": "3.12.10",
+    "a2a_sdk_version": "1.1.0"
+  },
+
+  "client": {
+    "status": "PASS",
+    "command": ".venv\\Scripts\\python.exe test_client.py",
+    "request_text": "Say hello.",
+    "response_text": "Hello, World! I have received your request (Say hello.)",
+    "task_id": "932c0033-9f3c-436a-b41f-e8f7c306335f",
+    "context_id": "cfd2fb78-ce8d-4ae1-9ad8-e60110763918",
+    "task_state": "TASK_STATE_COMPLETED",
+    "artifact_media_type": "text/plain"
+  },
+
+  "agent_card": {
+    "status": "PASS",
+    "endpoint": "http://127.0.0.1:9999/.well-known/agent-card.json",
+    "http_status": 200,
+    "saved_to": "demo\\data\\agent_cards\\helloworld_agent_card.json",
+    "agent_name": "Hello World Agent",
+    "agent_version": "0.0.1",
+    "protocol_binding": "JSONRPC",
+    "protocol_version": "1.0",
+    "capabilities": {
+      "streaming": true,
+      "extendedAgentCard": true
+    },
+    "skills": [
+      {
+        "id": "echo_bot",
+        "name": "Echo Bot",
+        "tags": ["a2a", "echo-example"],
+        "input_modes": ["text/plain"],
+        "output_modes": ["text/plain"]
+      }
+    ],
+    "default_input_modes": ["text/plain"],
+    "default_output_modes": ["text/plain"]
+  },
+
+  "a2a_communication": {
+    "status": "PASS",
+    "flow": "Client → A2A Request (JSONRPC POST /) → HelloWorld Server → A2A Response → Client",
+    "agent_card_retrieval": "GET /.well-known/agent-card.json → 200 OK",
+    "message_send": "POST / → 200 OK"
+  },
+
+  "environment": {
+    "os": "Windows",
+    "python": "3.12.10",
+    "a2a_sdk": "1.1.0",
+    "uvicorn": "0.54.0",
+    "starlette": "1.7.0",
+    "git": "2.45.1.windows.1",
+    "node": "v22.18.0"
+  },
+
+  "warnings": [],
+  "errors": [],
+  "existing_project_files_modified": false
+}

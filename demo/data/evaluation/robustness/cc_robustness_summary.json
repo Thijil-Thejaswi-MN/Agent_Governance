@@ -1,0 +1,50 @@
+{
+  "study": "Capability Cloaking (CC) Detector Robustness & Boundary Evaluation",
+  "timestamp_utc": "2026-10-06T01:44:02.662171+00:00",
+  "total_test_cases": 31,
+  "envelope_level_clarification": "The CC detector deterministically enforces method-level declaration envelopes. It permits declared methods regardless of parameter payloads, confirming that payload prompt analysis belongs to a distinct application-layer defense.",
+  "categories": {
+    "parameter_variations": {
+      "total_cases": 4,
+      "detected_count": 0,
+      "expected_detected_count": 0,
+      "conformance_rate": 1.0
+    },
+    "undeclared_methods": {
+      "total_cases": 7,
+      "detected_count": 7,
+      "expected_detected_count": 7,
+      "conformance_rate": 1.0
+    },
+    "standard_protocol": {
+      "total_cases": 4,
+      "detected_count": 0,
+      "expected_detected_count": 0,
+      "conformance_rate": 1.0
+    },
+    "boundary_cases": {
+      "total_cases": 5,
+      "detected_count": 5,
+      "expected_detected_count": 5,
+      "conformance_rate": 1.0
+    },
+    "case_variations": {
+      "total_cases": 5,
+      "detected_count": 0,
+      "expected_detected_count": 0,
+      "conformance_rate": 1.0
+    },
+    "declared_with_adversarial_payload": {
+      "total_cases": 4,
+      "detected_count": 0,
+      "expected_detected_count": 0,
+      "conformance_rate": 1.0
+    },
+    "exact_declared": {
+      "total_cases": 2,
+      "detected_count": 0,
+      "expected_detected_count": 0,
+      "conformance_rate": 1.0
+    }
+  }
+}

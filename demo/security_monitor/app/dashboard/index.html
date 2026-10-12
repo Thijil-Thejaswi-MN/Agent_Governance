@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Agent Governance Console — A2A Security Operations</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Fira+Code:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="/static/dashboard/dashboard.css?v=2.3.4">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <path d="m9 12 2 2 4-4"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>Governance Console</h1>
+          <span class="badge badge-subtle">A2A RUNTIME GOVERNANCE</span>
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active" data-tab="overview" id="nav-btn-overview">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          Overview &amp; Testbed
+        </button>
+        <button class="nav-item" data-tab="workspace" id="nav-btn-workspace">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          Agent Governance Session
+          <span class="nav-badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.4); font-size: 0.65rem; padding: 0.1rem 0.4rem;">WORK WITH AGENT</span>
+        </button>
+        <button class="nav-item" data-tab="inventory" id="nav-btn-inventory">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Agent Inventory
+        </button>
+        <button class="nav-item" data-tab="demo" id="nav-btn-demo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Security Demonstration
+          <span class="nav-badge" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4); font-size: 0.65rem; padding: 0.1rem 0.4rem;">LOCAL DEMO</span>
+        </button>
+        <button class="nav-item" data-tab="events" id="nav-btn-events">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          Security Audit Log
+          <span class="nav-badge" id="nav-event-count">0</span>
+        </button>
+        <button class="nav-item" data-tab="topology" id="nav-btn-topology">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+          Mediated Topology
+        </button>
+        <button class="nav-item" data-tab="findings" id="nav-btn-findings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          Evaluation Findings
+        </button>
+        <button class="nav-item" data-tab="performance" id="nav-btn-performance">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Latency &amp; Overhead
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="status-indicator">
+          <span class="status-dot pulse"></span>
+          <span id="gateway-status-text">Gateway Online (Port 8000)</span>
+        </div>
+        <div class="timestamp" id="live-clock">--:--:-- UTC</div>
+      </div>
+    </aside>
+
+    <!-- Main Viewport -->
+    <main class="main-content">
+      <!-- Top Header -->
+      <header class="topbar">
+        <div class="page-title-area">
+          <div class="title-with-counts">
+            <h2 id="current-view-title">AI Agent Governance Console</h2>
+            <div class="header-pills" id="header-pills-area">
+              <span class="gov-pill pill-discovered" title="Offline reference cards in registry"><i class="fa-solid fa-database"></i> <strong id="hdr-discovered-count">203</strong> Discovered</span>
+              <span class="gov-pill pill-governed" title="Local agents under runtime governance"><i class="fa-solid fa-shield-halved"></i> <strong id="hdr-governed-count">2</strong> Governed</span>
+              <span class="gov-pill pill-active" title="Currently selected operator session"><i class="fa-solid fa-bolt"></i> <strong id="hdr-active-session">HelloWorld</strong> Active</span>
+              <span class="gov-pill pill-quarantine" title="Active quarantine isolation locks"><i class="fa-solid fa-ban"></i> <strong id="hdr-quarantined-count">0</strong> Quarantined</span>
+            </div>
+          </div>
+          <p class="subtitle" id="current-view-desc">Runtime governance, active task mediation, decision inspection, and graduated policy enforcement.</p>
+        </div>
+        <div class="topbar-actions">
+          <!-- Theme Switcher (Bright / Vivid / Dark) -->
+          <div class="theme-switcher">
+            <button class="btn-theme active" id="btn-theme-bright" onclick="setDashboardTheme('bright')" title="Bright Luminous Palette">
+              <i class="fa-solid fa-sun"></i> Bright
+            </button>
+            <button class="btn-theme" id="btn-theme-vivid" onclick="setDashboardTheme('vivid')" title="Vivid Neon Cyber">
+              <i class="fa-solid fa-bolt"></i> Vivid
+            </button>
+            <button class="btn-theme" id="btn-theme-dark" onclick="setDashboardTheme('dark')" title="Sleek Charcoal Mode">
+              <i class="fa-solid fa-moon"></i> Dark
+            </button>
+          </div>
+
+          <!-- Live Network Export Dropdown -->
+          <div class="dropdown-wrapper">
+            <button class="btn btn-secondary" id="btn-export-dropdown" onclick="toggleExportMenu()">
+              <i class="fa-solid fa-cloud-arrow-down"></i>
+              Export
+              <i class="fa-solid fa-chevron-down" style="font-size: 0.68rem; margin-left: 0.2rem;"></i>
+            </button>
+            <div class="dropdown-menu" id="export-dropdown-menu">
+              <div class="dropdown-header">Export from Live Governance State</div>
+              <button class="dropdown-item" onclick="exportData('audit-json')">
+                <i class="fa-solid fa-file-code" style="color: #8b5cf6;"></i> Security Audit Log (JSON)
+              </button>
+              <button class="dropdown-item" onclick="exportData('audit-csv')">
+                <i class="fa-solid fa-file-csv" style="color: #10b981;"></i> Security Audit Log (CSV)
+              </button>
+              <button class="dropdown-item" onclick="exportData('agents-json')">
+                <i class="fa-solid fa-robot" style="color: #06b6d4;"></i> Governed Agents State (JSON)
+              </button>
+              <button class="dropdown-item" onclick="exportData('public-cards-json')">
+                <i class="fa-solid fa-database" style="color: #ec4899;"></i> 203 Discovered Catalog (JSON)
+              </button>
+            </div>
+          </div>
+
+          <button class="btn btn-primary" id="btn-refresh">
+            <i class="fa-solid fa-arrows-rotate"></i>
+            Refresh
+          </button>
+        </div>
+      </header>
+
+      <!-- TAB 1: OVERVIEW & GOVERNED TESTBED -->
+      <section class="tab-pane active" id="pane-overview">
+        <!-- Metric Cards: Discovered vs Governed vs Active Session vs Quarantined -->
+        <div class="metric-grid">
+          <div class="metric-card metric-card-discovered">
+            <div class="metric-header">
+              <span class="metric-title">Discovered</span>
+              <span class="badge badge-sky">OFFLINE REFERENCE</span>
+            </div>
+            <div class="metric-value" id="card-discovered-count">203</div>
+            <div class="metric-footer">Offline registry/reference cards (No live traffic)</div>
+          </div>
+          <div class="metric-card metric-card-governed">
+            <div class="metric-header">
+              <span class="metric-title">Governed</span>
+              <span class="badge badge-emerald">HEALTHY</span>
+            </div>
+            <div class="metric-value" id="card-governed-count">2</div>
+            <div class="metric-footer">Local agents under runtime control (HelloWorld &amp; Alice)</div>
+          </div>
+          <div class="metric-card metric-card-active">
+            <div class="metric-header">
+              <span class="metric-title">Active Session</span>
+              <span class="badge badge-indigo">OPERATOR CONSOLE</span>
+            </div>
+            <div class="metric-value" id="card-active-count" style="font-size: 1.5rem; text-transform: capitalize;">HelloWorld</div>
+            <div class="metric-footer">Current operator session active for tasks</div>
+          </div>
+          <div class="metric-card metric-card-quarantined">
+            <div class="metric-header">
+              <span class="metric-title">Quarantined</span>
+              <span class="badge badge-rose" id="card-quarantined-badge">ISOLATED</span>
+            </div>
+            <div class="metric-value" id="card-quarantined-count">0</div>
+            <div class="metric-footer">Active quarantine isolation locks (HTTP 403)</div>
+          </div>
+        </div>
+
+        <!-- Section: Live Governed Agents Cards -->
+        <div class="card" style="margin-top: 1.5rem;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h3><i class="fa-solid fa-shield-halved" style="color: var(--color-emerald); margin-right: 0.5rem;"></i> Live Governed Agents</h3>
+              <p class="card-desc">Controlled local agents deliberately brought under the Security Monitor runtime governance layer.</p>
+            </div>
+            <span class="badge badge-emerald"><i class="fa-solid fa-circle-dot"></i> RUNTIME MEDIATION ACTIVE</span>
+          </div>
+          <div class="governed-cards-grid" id="governed-agent-cards-container">
+            <!-- Dynamically populated Governed Agent Cards -->
+          </div>
+        </div>
+
+        <!-- Section: Research Snapshot -->
+        <div class="card research-snapshot-card" style="margin-top: 1.5rem;">
+          <div class="card-header">
+            <div>
+              <h3><i class="fa-solid fa-flask-vial" style="color: var(--accent-fuchsia); margin-right: 0.5rem;"></i> Research Evaluation Snapshot</h3>
+              <p class="card-desc">Verified empirical benchmark findings across Stage 4, Stage 5, and Stage 6 evaluations.</p>
+            </div>
+            <span class="badge badge-subtle">FROZEN DATASET REPRODUCIBLE</span>
+          </div>
+          <div class="research-stats-grid">
+            <div class="research-stat-box">
+              <div class="stat-number">3,145</div>
+              <div class="stat-label">Empirical Trial Records</div>
+              <div class="stat-sub">Deterministic benchmark runs</div>
+            </div>
+            <div class="research-stat-box">
+              <div class="stat-number">60 / 60</div>
+              <div class="stat-label">Tests Passing</div>
+              <div class="stat-sub">100% test suite verification</div>
+            </div>
+            <div class="research-stat-box highlight-stat">
+              <div class="stat-number" style="color: var(--color-emerald);">100%</div>
+              <div class="stat-label">Observed Containment</div>
+              <div class="stat-sub">on evaluated workload</div>
+            </div>
+            <div class="research-stat-box highlight-stat">
+              <div class="stat-number" style="color: var(--accent-cyan);">70%</div>
+              <div class="stat-label">Graduated Availability</div>
+              <div class="stat-sub">vs 40% binary quarantine (+30 pp)</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section: Recent Security Activity (Human-Readable) -->
+        <div class="card" style="margin-top: 1.5rem;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h3><i class="fa-solid fa-list-check" style="color: var(--accent-primary); margin-right: 0.5rem;"></i> Recent Security Activity</h3>
+              <p class="card-desc">Human-readable breakdown of runtime mediation events and detector decisions.</p>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="navigateToTab('events')">
+              <i class="fa-solid fa-table-list"></i> Full Audit Ledger
+            </button>
+          </div>
+          <div class="recent-events-list" id="recent-human-events-container">
+            <!-- Populated via JS with human-readable cards -->
+          </div>
+        </div>
+
+        <!-- Section: Public Agent Catalog Preview -->
+        <div class="card catalog-preview-card" style="margin-top: 1.5rem;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <h3><i class="fa-solid fa-book-atlas" style="color: var(--text-muted); margin-right: 0.5rem;"></i> Discovered Agent Catalog</h3>
+                <span class="badge badge-subtle">203 CARDS</span>
+                <span class="badge badge-amber">OFFLINE REFERENCE</span>
+              </div>
+              <p class="card-desc">Public Agent Cards collected for offline inventory, schema and security analysis. No external agent endpoints are contacted.</p>
+            </div>
+            <button class="btn btn-secondary" onclick="navigateToTab('inventory')">
+              <i class="fa-solid fa-magnifying-glass"></i> Inspect Catalog (203 Cards)
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: AGENT GOVERNANCE SESSION ("WORK WITH AGENT") -->
+      <section class="tab-pane" id="pane-workspace">
+        <!-- Agent Session Hero Header -->
+        <div class="card session-hero-card">
+          <div class="session-hero-top">
+            <div class="session-avatar" id="ws-agent-avatar">
+              <i class="fa-solid fa-robot"></i>
+            </div>
+            <div class="session-identity">
+              <div class="session-badges">
+                <span class="badge badge-emerald" id="ws-agent-gov-badge">● GOVERNED</span>
+                <span class="badge badge-emerald" id="ws-agent-health-badge">● HEALTHY</span>
+                <span class="badge badge-indigo" id="ws-agent-policy-badge">Policy: GRADUATED</span>
+                <span class="badge badge-subtle" id="ws-agent-risk-badge">Risk: NORMAL</span>
+                <span class="badge badge-sky" id="ws-agent-monitoring-badge">Monitoring: ON</span>
+              </div>
+              <h2 class="session-agent-title" id="ws-agent-name">HelloWorld</h2>
+              <div class="session-meta-row">
+                <span class="meta-tag" id="ws-agent-id-tag"><code>helloworld</code></span>
+                <span class="meta-tag" id="ws-agent-proto-tag"><i class="fa-solid fa-code-commit"></i> A2A v1.0</span>
+                <span class="meta-tag" id="ws-agent-url-tag"><i class="fa-solid fa-network-wired"></i> http://127.0.0.1:9999</span>
+                <span class="meta-tag" id="ws-agent-cap-tag"><i class="fa-solid fa-bolt"></i> Declared: <strong>echo_bot</strong></span>
+              </div>
+            </div>
+            <div class="session-switch-box">
+              <label for="ws-agent-select" style="font-size: 0.78rem; font-weight: 600; color: var(--text-muted);">Active Governance Session:</label>
+              <select id="ws-agent-select" class="input-select" onchange="onGovernanceAgentSwitch(this.value)">
+                <option value="helloworld">HelloWorld (Port 9999)</option>
+                <option value="agentalice">AgentAlice (Port 8001)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Lifecycle State Machine Visualizer (Section 13) -->
+          <div class="lifecycle-container">
+            <div class="lifecycle-label">AGENT LIFECYCLE STATE:</div>
+            <div class="lifecycle-track">
+              <div class="lifecycle-step step-complete" id="lc-discovered">
+                <span class="step-num"><i class="fa-solid fa-check"></i></span>
+                <span class="step-text">DISCOVERED</span>
+              </div>
+              <div class="lifecycle-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+              <div class="lifecycle-step step-complete" id="lc-governed">
+                <span class="step-num"><i class="fa-solid fa-shield"></i></span>
+                <span class="step-text">GOVERNED</span>
+              </div>
+              <div class="lifecycle-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+              <div class="lifecycle-step step-active" id="lc-active">
+                <span class="step-num"><i class="fa-solid fa-bolt"></i></span>
+                <span class="step-text">ACTIVE SESSION</span>
+              </div>
+              <div class="lifecycle-arrow"><i class="fa-solid fa-chevron-right"></i></div>
+              <div class="lifecycle-step step-normal" id="lc-status">
+                <span class="step-num"><i class="fa-solid fa-circle-check"></i></span>
+                <span class="step-text" id="lc-status-text">NORMAL</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2-Column Governance Workspace: Left Console & Controls, Right Decision Inspector -->
+        <div class="governance-grid">
+          <!-- Left Column: Real Task Console + Contextual Operator Controls -->
+          <div class="governance-col-left">
+            <!-- Real Task Console -->
+            <div class="card ws-task-console">
+              <div class="card-header">
+                <div>
+                  <h3><i class="fa-solid fa-terminal" style="color: var(--accent-primary); margin-right: 0.5rem;"></i> Task Console</h3>
+                  <p class="card-desc">Send genuine tasks through the Security Gateway to the live upstream agent.</p>
+                </div>
+                <span class="badge badge-emerald" id="ws-mediation-badge">GATEWAY MEDIATED</span>
+              </div>
+
+              <!-- Task Form -->
+              <form id="ws-task-form" onsubmit="dispatchWorkspaceTask(event)">
+                <div class="form-group">
+                  <label for="ws-task-method">Supported Task Method (Declared by Agent):</label>
+                  <select id="ws-task-method" class="input-select font-mono" style="font-weight: 600;">
+                    <!-- Populated strictly with declared methods -->
+                  </select>
+                  <span class="form-hint" id="ws-method-hint">Only declared skills for this agent are available.</span>
+                </div>
+
+                <div class="form-group">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                    <label for="ws-task-prompt" style="margin: 0;">Task Input / Prompt:</label>
+                    <span style="font-size: 0.72rem; color: var(--text-subtle);">Ctrl+Enter to send</span>
+                  </div>
+                  <textarea id="ws-task-prompt" class="input-textarea" rows="3" placeholder="Input prompt or challenge..."></textarea>
+                  <div style="margin-top: 0.45rem;">
+                    <div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.25rem; font-weight: 600;">Quick Prompts:</div>
+                    <div id="ws-quick-prompts" style="display: flex; flex-wrap: wrap; gap: 0.4rem;"></div>
+                  </div>
+                </div>
+
+                <div class="ws-form-footer" style="display: flex; justify-content: space-between; align-items: center;">
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="toggleAdvancedJson()">
+                    <i class="fa-solid fa-sliders"></i> JSON Params
+                  </button>
+                  <button type="submit" class="btn btn-primary" id="ws-btn-dispatch" style="font-weight: 700; padding: 0.65rem 1.4rem;">
+                    <i class="fa-solid fa-paper-plane"></i> SEND TASK
+                  </button>
+                </div>
+
+                <div class="form-group" id="ws-adv-json-wrapper" style="display: none; margin-top: 0.75rem;">
+                  <label for="ws-custom-params">Custom JSON-RPC Parameters (Optional):</label>
+                  <textarea id="ws-custom-params" class="input-textarea font-mono" rows="2" placeholder='{"role": "ROLE_USER"}'></textarea>
+                </div>
+              </form>
+            </div>
+
+            <!-- Contextual Operator Governance Controls (Section 12) -->
+            <div class="card ws-operator-controls" style="margin-top: 1.25rem;">
+              <div class="card-header">
+                <div>
+                  <h3><i class="fa-solid fa-sliders" style="color: var(--color-amber); margin-right: 0.5rem;"></i> Operator Governance Controls</h3>
+                  <p class="card-desc">Contextual actions for current agent. State transitions require confirmation.</p>
+                </div>
+              </div>
+              <div class="operator-actions-bar" id="operator-contextual-actions">
+                <!-- Dynamically populated based on agent state -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Right Column: DECISION INSPECTOR (Section 8) -->
+          <div class="governance-col-right">
+            <div class="card decision-inspector-card">
+              <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <h3><i class="fa-solid fa-microchip" style="color: var(--accent-cyan); margin-right: 0.5rem;"></i> Decision Inspector</h3>
+                  <p class="card-desc">Exposes what the governance engine computed in real time.</p>
+                </div>
+                <span class="badge badge-subtle" id="di-last-updated">Awaiting Request</span>
+              </div>
+
+              <div class="inspector-content" id="decision-inspector-body">
+                <div class="inspector-idle-state" id="di-idle-state">
+                  <i class="fa-solid fa-satellite-dish fa-bounce" style="font-size: 2rem; color: var(--accent-primary); margin-bottom: 0.75rem;"></i>
+                  <h4>Engine Ready</h4>
+                  <p>Send a task from the console or trigger a controlled security demo scenario to inspect identity provenance, capability AST checks, threat signals, and policy computation.</p>
+                </div>
+
+                <!-- Structured breakdown (populated dynamically) -->
+                <div class="inspector-sections" id="di-structured-view" style="display: none;">
+                  <!-- Dynamic content rendered by JS -->
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom: Live Execution Trace (Section 7) & Latest Result -->
+        <div class="card" style="margin-top: 1.5rem;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h3><i class="fa-solid fa-timeline" style="color: var(--accent-fuchsia); margin-right: 0.5rem;"></i> Live Request Trace</h3>
+              <p class="card-desc">7-stage visual execution pipeline across the A2A Security Gateway.</p>
+            </div>
+            <div id="ws-live-state-badge" class="badge badge-sky">
+              <span id="ws-state-text">STANDBY</span>
+            </div>
+          </div>
+
+          <!-- 7-Stage Visual Pipeline (Section 7) -->
+          <div class="pipeline-7stages" id="pipeline-7stages-container">
+            <div class="p-stage" id="pst-request">
+              <div class="p-dot"><i class="fa-solid fa-circle"></i></div>
+              <div class="p-name">REQUEST RECEIVED</div>
+              <div class="p-status">--</div>
+            </div>
+            <div class="p-connector"></div>
+            <div class="p-stage" id="pst-identity">
+              <div class="p-dot"><i class="fa-solid fa-circle"></i></div>
+              <div class="p-name">IDENTITY CHECK</div>
+              <div class="p-status">--</div>
+            </div>
+            <div class="p-connector"></div>
+            <div class="p-stage" id="pst-capability">
+              <div class="p-dot"><i class="fa-solid fa-circle"></i></div>
+              <div class="p-name">CAPABILITY CHECK</div>
+              <div class="p-status">--</div>
+            </div>
+            <div class="p-connector"></div>
+            <div class="p-stage" id="pst-threat">
+              <div class="p-dot"><i class="fa-solid fa-circle"></i></div>
+              <div class="p-name">THREAT CHECK</div>
+              <div class="p-status">--</div>
+            </div>
+            <div class="p-connector"></div>
+            <div class="p-stage" id="pst-policy">
+              <div class="p-dot"><i class="fa-solid fa-circle"></i></div>
+              <div class="p-name">POLICY EVALUATION</div>
+              <div class="p-status">--</div>
+            </div>
+            <div class="p-connector"></div>
+            <div class="p-stage" id="pst-upstream">
+              <div class="p-dot"><i class="fa-solid fa-circle"></i></div>
+              <div class="p-name">UPSTREAM AGENT</div>
+              <div class="p-status">--</div>
+            </div>
+            <div class="p-connector"></div>
+            <div class="p-stage" id="pst-response">
+              <div class="p-dot"><i class="fa-solid fa-circle"></i></div>
+              <div class="p-name">RESPONSE</div>
+              <div class="p-status">--</div>
+            </div>
+          </div>
+
+          <!-- Result Output Area -->
+          <div class="ws-result-area" id="ws-result-area" style="display: none; margin-top: 1.25rem;">
+            <div class="ws-result-header">
+              <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <span class="ws-result-title"><i class="fa-solid fa-reply"></i> Latest Response</span>
+                <span class="badge" id="ws-result-status-badge">200 OK</span>
+                <span class="badge badge-subtle" id="ws-result-upstream-badge">Upstream Contacted: YES</span>
+                <span class="badge badge-subtle" id="ws-result-latency-badge">-- ms</span>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="toggleRawResponseJson()">
+                <i class="fa-solid fa-code"></i> Raw JSON
+              </button>
+            </div>
+            <div class="ws-result-bubble" id="ws-result-text"></div>
+            <pre class="ws-raw-json" id="ws-raw-json" style="display: none; margin-top: 0.75rem;"></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: CONTROLLED SECURITY DEMONSTRATION (Section 9 & 10) -->
+      <section class="tab-pane" id="pane-demo">
+        <div class="alert-box alert-amber">
+          <i class="fa-solid fa-shield-halved" style="font-size: 1.3rem;"></i>
+          <div>
+            <strong>CONTROLLED LOCAL DEMONSTRATION</strong>: All scenarios below execute strictly against the controlled local testbed (HelloWorld / AgentAlice). External public agents are never contacted. Observe how graduated responses defend the testbed without total system downtime.
+          </div>
+        </div>
+
+        <div class="demo-scenarios-grid">
+          <!-- Scenario 1: Normal Task -->
+          <div class="demo-card demo-normal">
+            <div class="demo-card-header">
+              <div class="demo-tag tag-allow">GRADUATED: ALLOW</div>
+              <h4>Normal Task</h4>
+            </div>
+            <p class="demo-desc">Dispatches agent's declared skill. Identity verified, capability declared, threat signals 0.</p>
+            <div class="demo-meta">
+              <span>Expected Severity: <strong>NONE</strong></span>
+              <span>Action: <strong>ALLOW (HTTP 200)</strong></span>
+            </div>
+            <button class="btn btn-primary btn-block" onclick="runControlledScenario('normal')">
+              <i class="fa-solid fa-play"></i> Run Normal Task Demo
+            </button>
+          </div>
+
+          <!-- Scenario 2: Request Burst -->
+          <div class="demo-card demo-low">
+            <div class="demo-card-header">
+              <div class="demo-tag tag-rate">GRADUATED: LOW SEVERITY</div>
+              <h4>Request Burst (Rate Limiting)</h4>
+            </div>
+            <p class="demo-desc">Exceeds sliding-window token threshold. Rate limited with Retry-After header. Agent remains governed and healthy.</p>
+            <div class="demo-meta">
+              <span>Expected Severity: <strong>LOW</strong></span>
+              <span>Action: <strong>RATE_LIMIT (HTTP 429)</strong></span>
+            </div>
+            <button class="btn btn-warning btn-block" onclick="runControlledScenario('burst')">
+              <i class="fa-solid fa-bolt"></i> Run Request Burst Demo
+            </button>
+          </div>
+
+          <!-- Scenario 3: Undeclared Capability -->
+          <div class="demo-card demo-high">
+            <div class="demo-card-header">
+              <div class="demo-tag tag-quarantine">GRADUATED: HIGH SEVERITY</div>
+              <h4>Undeclared Capability (CC)</h4>
+            </div>
+            <p class="demo-desc">Caller requests undeclared capability (system_exec). Capability Cloaking AST Guard intercepts call. Upstream NOT contacted.</p>
+            <div class="demo-meta">
+              <span>Expected Severity: <strong>HIGH</strong></span>
+              <span>Action: <strong>QUARANTINE (HTTP 403)</strong></span>
+            </div>
+            <button class="btn btn-danger btn-block" onclick="runControlledScenario('cloaking')">
+              <i class="fa-solid fa-shield-virus"></i> Run Cloaking Attack Demo
+            </button>
+          </div>
+
+          <!-- Scenario 4: Agent Spoof -->
+          <div class="demo-card demo-high">
+            <div class="demo-card-header">
+              <div class="demo-tag tag-quarantine">GRADUATED: HIGH SEVERITY</div>
+              <h4>Agent Spoof (Homoglyph)</h4>
+            </div>
+            <p class="demo-desc">Candidate registration mimicking HelloWorld with Cyrillic homoglyph characters. AS Detector isolates attacker instantly.</p>
+            <div class="demo-meta">
+              <span>Expected Severity: <strong>HIGH</strong></span>
+              <span>Action: <strong>QUARANTINE (HTTP 403)</strong></span>
+            </div>
+            <button class="btn btn-danger btn-block" onclick="runControlledScenario('spoof')">
+              <i class="fa-solid fa-user-secret"></i> Run Agent Spoof Demo
+            </button>
+          </div>
+
+          <!-- Scenario 5: Delegation Cycle -->
+          <div class="demo-card demo-high">
+            <div class="demo-card-header">
+              <div class="demo-tag tag-quarantine">GRADUATED: HIGH SEVERITY</div>
+              <h4>Delegation Cycle (CO)</h4>
+            </div>
+            <p class="demo-desc">External caller <code>agent_bob</code> initiates a cyclic delegation chain: <strong>HelloWorld &rarr; AgentAlice &rarr; HelloWorld</strong>. The Gateway Cycle Guard intercepts the loop at depth 3, quarantines <code>agent_bob</code>, and blocks execution before an infinite loop exhausts resources.</p>
+            <div class="demo-meta">
+              <span>Expected Severity: <strong>HIGH</strong></span>
+              <span>Action: <strong>QUARANTINE (HTTP 403)</strong></span>
+            </div>
+            <button class="btn btn-danger btn-block" onclick="runControlledScenario('cycle')">
+              <i class="fa-solid fa-arrows-spin"></i> Run Delegation Cycle Demo
+            </button>
+          </div>
+        </div>
+
+        <!-- Demonstration Result Showcase -->
+        <div class="card" id="demo-result-card" style="margin-top: 1.5rem; display: none;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h3 id="demo-result-title">Controlled Demonstration Result</h3>
+              <p class="card-desc" id="demo-result-subtitle"></p>
+            </div>
+            <span class="badge" id="demo-result-badge">STATUS</span>
+          </div>
+          <div class="demo-result-grid">
+            <div class="demo-metric-col">
+              <div class="demo-box">
+                <span class="demo-box-label">Enforcement Action:</span>
+                <span class="demo-box-val" id="demo-action-val">--</span>
+              </div>
+              <div class="demo-box">
+                <span class="demo-box-label">HTTP Status Code:</span>
+                <span class="demo-box-val" id="demo-http-val">--</span>
+              </div>
+              <div class="demo-box">
+                <span class="demo-box-label">Upstream Contacted:</span>
+                <span class="demo-box-val" id="demo-upstream-val">--</span>
+              </div>
+              <div class="demo-box">
+                <span class="demo-box-label">Detection Latency:</span>
+                <span class="demo-box-val" id="demo-lat-val">--</span>
+              </div>
+            </div>
+            <div class="demo-inspector-col" id="demo-inspector-preview">
+              <!-- Rendered via JS -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Demonstration Security Logs Card -->
+        <div class="card" id="demo-audit-log-card" style="margin-top: 1.5rem;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+            <div>
+              <h3><i class="fa-solid fa-list-check" style="color: var(--accent-primary); margin-right: 0.5rem;"></i> Demonstration Security Audit Logs</h3>
+              <p class="card-desc">Audit events generated from controlled testbed demonstrations and simulated attacks.</p>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="navigateToTab('events')">
+              <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Full Audit Log Tab
+            </button>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table" id="table-demo-events">
+              <thead>
+                <tr>
+                  <th>Timestamp (UTC)</th>
+                  <th>Caller / Identity</th>
+                  <th>What Happened</th>
+                  <th>Detector</th>
+                  <th>Severity</th>
+                  <th>Response</th>
+                  <th>Upstream</th>
+                  <th>Latency</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-demo-events">
+                <tr><td colspan="8" class="text-center" style="padding: 1.5rem; color: var(--text-subtle);">Run any demonstration scenario above to view generated security audit events.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: AGENT INVENTORY (Section 4 & 17) -->
+      <section class="tab-pane" id="pane-inventory">
+        <!-- Section 1: Governed Agents -->
+        <div class="card">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h3><i class="fa-solid fa-shield-halved" style="color: var(--color-emerald); margin-right: 0.5rem;"></i> Governed Agents (Runtime Testbed)</h3>
+              <p class="card-desc">Local agents actively monitored and controlled by the Security Gateway.</p>
+            </div>
+            <span class="badge badge-emerald">2 GOVERNED LOCAL AGENTS</span>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table" id="table-governed-agents">
+              <thead>
+                <tr>
+                  <th>Agent ID</th>
+                  <th>Display Name</th>
+                  <th>Endpoint URL</th>
+                  <th>Protocol</th>
+                  <th>Status</th>
+                  <th>Health</th>
+                  <th>Declared Capabilities</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-governed-agents">
+                <tr><td colspan="8" class="text-center">Loading governed agents...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Section 2: Discovered Agent Catalog (203 Offline Reference Cards) -->
+        <div class="card" style="margin-top: 1.5rem;">
+          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 0.65rem;">
+                <h3><i class="fa-solid fa-book-bookmark" style="color: var(--text-muted); margin-right: 0.5rem;"></i> Discovered Agent Catalog</h3>
+                <span class="badge badge-sky" id="catalog-count-badge">203 CARDS</span>
+                <span class="badge badge-amber">OFFLINE REFERENCE</span>
+              </div>
+              <p class="card-desc">Public Agent Cards collected for offline inventory, schema and security analysis. No external agent endpoints are contacted.</p>
+            </div>
+            <div style="display: flex; gap: 0.75rem; align-items: center;">
+              <input type="text" id="catalog-search-input" class="search-input" placeholder="Search 203 cards (name, skills, org)..." oninput="onCatalogSearch(this.value)" style="min-width: 280px; padding: 0.45rem 0.85rem; background: rgba(0,0,0,0.15); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); color: var(--text-main); font-size: 0.82rem;">
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table" id="table-catalog-cards">
+              <thead>
+                <tr>
+                  <th>Agent Name</th>
+                  <th>Provider / Organization</th>
+                  <th>Protocol Version</th>
+                  <th>Declared Skills</th>
+                  <th>Reference Endpoint</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-catalog-cards">
+                <tr><td colspan="7" class="text-center">Loading reference catalog...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 5: SECURITY AUDIT LOG (Section 11) -->
+      <section class="tab-pane" id="pane-events">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3>Security Event Audit Ledger</h3>
+              <p class="card-desc">Persistent record of detected violations, detector names, actions taken, and latency metrics.</p>
+            </div>
+            <div class="filter-bar">
+              <input type="text" id="filter-event-search" class="input-text" placeholder="Search candidate ID, name, code..." oninput="filterEvents()">
+              <select id="filter-event-severity" class="input-select" onchange="filterEvents()">
+                <option value="">All Severities</option>
+                <option value="HIGH">HIGH</option>
+                <option value="MEDIUM">MEDIUM</option>
+                <option value="LOW">LOW</option>
+              </select>
+              <select id="filter-event-action" class="input-select" onchange="filterEvents()">
+                <option value="">All Actions</option>
+                <option value="QUARANTINE">QUARANTINE</option>
+                <option value="RESTRICT">RESTRICT</option>
+                <option value="RATE_LIMIT">RATE_LIMIT</option>
+                <option value="ALLOW">ALLOW</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table" id="table-events">
+              <thead>
+                <tr>
+                  <th>Timestamp (UTC)</th>
+                  <th>Agent / Caller</th>
+                  <th>What Happened</th>
+                  <th>Detector</th>
+                  <th>Severity</th>
+                  <th>Response</th>
+                  <th>Upstream</th>
+                  <th>Latency</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-events">
+                <tr><td colspan="9" class="text-center">Loading audit log...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 6: MEDIATED TOPOLOGY (Section 14) -->
+      <section class="tab-pane" id="pane-topology">
+        <div class="topology-dual-view">
+          <!-- Zone 1: Live Governed Testbed -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <h3><i class="fa-solid fa-circle-nodes" style="color: var(--color-emerald); margin-right: 0.5rem;"></i> Live Governed Testbed</h3>
+                <p class="card-desc">Active mediation flow: Client &rarr; Security Gateway &rarr; Upstream Agents (HelloWorld &amp; AgentAlice).</p>
+              </div>
+              <span class="badge badge-emerald">ACTIVE MEDIATION</span>
+            </div>
+            <div class="topology-canvas" id="topology-live-container">
+              <!-- Dynamically populated live testbed graph -->
+            </div>
+          </div>
+
+          <!-- Zone 2: Public Agent Catalog (Offline Reference) -->
+          <div class="card" style="margin-top: 1.5rem;">
+            <div class="card-header">
+              <div>
+                <h3><i class="fa-solid fa-database" style="color: var(--text-muted); margin-right: 0.5rem;"></i> Public Agent Catalog (Offline Reference)</h3>
+                <p class="card-desc">203 Discovered Agent Cards collected for offline schema &amp; security analysis. Not connected to live gateway traffic.</p>
+              </div>
+              <span class="badge badge-amber">OFFLINE DATA &bull; NO LIVE UPSTREAM</span>
+            </div>
+            <div class="catalog-offline-grid">
+              <div class="offline-stat-card">
+                <div class="stat-number">203</div>
+                <div class="stat-label">Discovered Reference Cards</div>
+                <div class="stat-sub">From public registries and external repos</div>
+              </div>
+              <div class="offline-stat-card">
+                <div class="stat-number">0</div>
+                <div class="stat-label">Live Network Calls</div>
+                <div class="stat-sub">Strict offline isolation enforced</div>
+              </div>
+              <div class="offline-stat-card">
+                <div class="stat-number">100%</div>
+                <div class="stat-label">Schema Normalized</div>
+                <div class="stat-sub">Analyzed for homoglyphs and capability mismatches</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 7: EVALUATION FINDINGS -->
+      <section class="tab-pane" id="pane-findings">
+        <div class="alert-box">
+          <i class="fa-solid fa-circle-info" style="font-size: 1.25rem;"></i>
+          <div>
+            <strong>Empirical Evaluation Results:</strong> Captured by the automated Stage 2 research evaluation runner across 500 controlled trials with experimental SQLite state isolation.
+          </div>
+        </div>
+        <div class="findings-grid" id="findings-cards-container">
+          <!-- Populated via JS for AS, CC, CO, Benign -->
+        </div>
+      </section>
+
+      <!-- TAB 8: PERFORMANCE & OVERHEAD -->
+      <section class="tab-pane" id="pane-performance">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3>Performance Profiling &amp; Overhead Disaggregation</h3>
+              <p class="card-desc">Direct baseline vs. Mediated protected round-trip comparison with intrinsic security computation breakdown.</p>
+            </div>
+          </div>
+          <div class="grid-2col" style="margin-top: 1rem;">
+            <div class="perf-metric-box">
+              <span class="perf-label">Direct Baseline RTT (Mean)</span>
+              <span class="perf-number" id="perf-direct-mean">-- ms</span>
+              <span class="perf-sub" id="perf-direct-p95">p95: -- ms</span>
+            </div>
+            <div class="perf-metric-box highlight">
+              <span class="perf-label">Mediated Protected RTT (Mean)</span>
+              <span class="perf-number" id="perf-mediated-mean">-- ms</span>
+              <span class="perf-sub" id="perf-mediated-p95">p95: -- ms</span>
+            </div>
+          </div>
+          <div class="overhead-comparison-bar-area" style="margin-top: 1.5rem;">
+            <h4>Overhead Breakdown Analysis</h4>
+            <div class="bar-visual-container">
+              <div class="bar-row">
+                <span class="bar-title">Direct Client &rarr; Upstream Hop</span>
+                <div class="bar-track">
+                  <div class="bar-fill fill-blue" id="bar-direct-fill" style="width: 18%;"></div>
+                </div>
+                <span class="bar-val" id="bar-direct-text">1.08 ms</span>
+              </div>
+              <div class="bar-row">
+                <span class="bar-title">Security Gateway Reverse Proxy Hop</span>
+                <div class="bar-track">
+                  <div class="bar-fill fill-amber" id="bar-proxy-fill" style="width: 80%;"></div>
+                </div>
+                <span class="bar-val" id="bar-proxy-text">4.84 ms</span>
+              </div>
+              <div class="bar-row">
+                <span class="bar-title">Intrinsic Security Computation</span>
+                <div class="bar-track">
+                  <div class="bar-fill fill-emerald" id="bar-sec-fill" style="width: 2%;"></div>
+                </div>
+                <span class="bar-val" id="bar-sec-text">0.095 ms</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div class="modal-backdrop" id="confirm-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modal-title">Confirm Operator Action</h3>
+      </div>
+      <div class="modal-body">
+        <p id="modal-message">Are you sure you want to proceed with this state-changing action?</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="modal-btn-cancel">Cancel</button>
+        <button class="btn btn-danger" id="modal-btn-confirm">Confirm &amp; Proceed</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Agent Card Inspector Modal (For Discovered Catalog & Governed Agents) -->
+  <div class="modal-backdrop" id="node-inspector-modal">
+    <div class="modal-card modal-large" style="max-width: 680px; width: 92%;">
+      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-subtle); padding-bottom: 1rem;">
+        <div style="display: flex; align-items: center; gap: 0.85rem;">
+          <div id="inspector-icon" style="width: 38px; height: 38px; border-radius: 10px; background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.3); display: flex; align-items: center; justify-content: center; color: var(--accent-primary);">
+            <i class="fa-solid fa-robot"></i>
+          </div>
+          <div>
+            <h3 id="inspector-title" style="margin: 0; font-size: 1.15rem; font-weight: 600;">Agent Card Details</h3>
+            <span id="inspector-subtitle" style="font-size: 0.78rem; color: var(--text-muted); font-family: var(--font-mono);">OFFLINE REFERENCE</span>
+          </div>
+        </div>
+        <button id="inspector-btn-close" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.6rem; line-height: 1; padding: 0.2rem 0.5rem; border-radius: 6px;">&times;</button>
+      </div>
+      <div class="modal-body" id="inspector-body" style="display: flex; flex-direction: column; gap: 1.25rem; max-height: 65vh; overflow-y: auto; padding: 1.25rem 0;">
+        <!-- Dynamic content rendered by JS -->
+      </div>
+      <div class="modal-footer" id="inspector-footer" style="border-top: 1px solid var(--border-subtle); padding-top: 1rem; display: flex; justify-content: space-between; align-items: center;">
+        <span id="inspector-notice" style="font-size: 0.78rem; color: var(--text-subtle);">Offline reference card. No live execution.</span>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <button class="btn btn-primary" id="inspector-btn-work" style="display: none;">
+            <i class="fa-solid fa-play"></i> Work With Agent
+          </button>
+          <button class="btn btn-secondary" id="inspector-btn-dismiss">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Raw Security Event Modal (Section 11) -->
+  <div class="modal-backdrop" id="raw-event-modal">
+    <div class="modal-card modal-large" style="max-width: 640px; width: 92%;">
+      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h3>Security Event Details</h3>
+        <button id="raw-event-btn-close" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1.6rem;">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="raw-event-summary-box" style="margin-bottom: 1rem;"></div>
+        <pre class="json-viewer" id="raw-event-json" style="max-height: 50vh; overflow-y: auto;"></pre>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="raw-event-btn-dismiss">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/dashboard/dashboard.js?v=2.3.4"></script>
+</body>
+</html>

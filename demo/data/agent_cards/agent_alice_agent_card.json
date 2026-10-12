@@ -1,0 +1,39 @@
+{
+  "name": "AgentAlice",
+  "description": "Hosts the number-guessing game by picking a secret number and grading guesses.",
+  "url": "http://localhost:8001/a2a/v1",
+  "preferredTransport": "JSONRPC",
+  "protocolVersion": "0.3.0",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "stateTransitionHistory": false
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain"
+  ],
+  "skills": [
+    {
+      "id": "number_guess_evaluator",
+      "name": "Number Guess Evaluator",
+      "description": "Evaluates numeric guesses (1-100) against a secret number and replies with guidance (higher/lower/correct).",
+      "tags": [
+        "game",
+        "demo"
+      ],
+      "examples": [
+        "50"
+      ],
+      "inputModes": [
+        "text/plain"
+      ],
+      "outputModes": [
+        "text/plain"
+      ]
+    }
+  ]
+}

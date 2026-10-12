@@ -1,0 +1,244 @@
+{
+  "timestamp_iso": "2026-10-05T18:17:46Z",
+  "phase": "5B",
+  "description": "Multi-agent cross-traffic mediation, baseline vs mediated latency measurement, and second benchmark detector (Capability Cloaking)",
+  "sample_size": 30,
+  "controlled_agents": {
+    "helloworld": {
+      "direct_endpoint": "http://127.0.0.1:9999",
+      "mediated_endpoint": "http://127.0.0.1:8000/proxy/helloworld",
+      "protocol_version": "1.0",
+      "direct_stats": {
+        "count": 30,
+        "mean_ms": 1.5326,
+        "median_ms": 1.5037,
+        "stdev_ms": 0.2142,
+        "min_ms": 0.9713,
+        "max_ms": 2.0587,
+        "p95_ms": 1.9582
+      },
+      "mediated_stats": {
+        "count": 30,
+        "mean_ms": 6.8994,
+        "median_ms": 6.4545,
+        "stdev_ms": 1.3734,
+        "min_ms": 5.4707,
+        "max_ms": 11.4798,
+        "p95_ms": 10.7688
+      },
+      "absolute_overhead_ms": 5.3668,
+      "percentage_overhead_pct": 350.18
+    },
+    "agentalice": {
+      "direct_endpoint": "http://127.0.0.1:8001/a2a/v1",
+      "mediated_endpoint": "http://127.0.0.1:8000/proxy/agentalice",
+      "protocol_version": "0.3.0",
+      "direct_stats": {
+        "count": 30,
+        "mean_ms": 0.9195,
+        "median_ms": 0.9059,
+        "stdev_ms": 0.1923,
+        "min_ms": 0.6159,
+        "max_ms": 1.4987,
+        "p95_ms": 1.1995
+      },
+      "mediated_stats": {
+        "count": 30,
+        "mean_ms": 5.7711,
+        "median_ms": 5.7399,
+        "stdev_ms": 0.2644,
+        "min_ms": 5.3755,
+        "max_ms": 6.3668,
+        "p95_ms": 6.3387
+      },
+      "absolute_overhead_ms": 4.8516,
+      "percentage_overhead_pct": 527.63
+    }
+  },
+  "attacks_evaluated": {
+    "attack_1_agentcard_spoofing": {
+      "attack_family": "AgentCard Spoofing (AS)",
+      "target": "HelloWorld",
+      "roundtrip_ms": 2.641,
+      "status_code": 403,
+      "response": {
+        "error": "Security Violation Detected \u2014 Agent Quarantined",
+        "action": "QUARANTINE",
+        "severity": "HIGH",
+        "violation": {
+          "violation_code": "AS_HOMOGLYPH_SPOOF",
+          "description": "Visual homoglyph impersonating trusted agent name with non-identical Unicode codepoints.",
+          "candidate_name": "Hell\u043e World Agent",
+          "candidate_endpoint": "http://127.0.0.1:8002",
+          "colliding_trusted_name": "Hello World Agent",
+          "colliding_trusted_endpoint": "http://127.0.0.1:9999",
+          "details": {
+            "detection_type": "homoglyph",
+            "candidate_bytes_hex": "48656c6cd0be20576f726c64204167656e74",
+            "trusted_bytes_hex": "48656c6c6f20576f726c64204167656e74"
+          }
+        },
+        "event_id": "evt_0001",
+        "timing": {
+          "t_recv_ns": 34016465277200,
+          "t_detect_ns": 34016465508700,
+          "t_decide_ns": 34016465515200,
+          "t_enforce_ns": 34016465572000,
+          "detection_latency_ms": 0.2315,
+          "decision_latency_ms": 0.0065,
+          "enforcement_latency_ms": 0.0568,
+          "total_pipeline_latency_ms": 0.2948
+        }
+      }
+    },
+    "attack_2_capability_cloaking": {
+      "attack_family": "Capability Cloaking (CC)",
+      "target": "HelloWorld",
+      "requested_method": "system_exec",
+      "roundtrip_ms": 1.7539,
+      "status_code": 403,
+      "response": {
+        "jsonrpc": "2.0",
+        "error": {
+          "code": -32004,
+          "message": "Security Violation: Capability Cloaking: Attempted invocation of undeclared or cloaked capability 'system_exec' not present in declared capabilities of agent 'Hello World Agent'.",
+          "violation": {
+            "violation_code": "CC_UNDECLARED_CAPABILITY",
+            "description": "Capability Cloaking: Attempted invocation of undeclared or cloaked capability 'system_exec' not present in declared capabilities of agent 'Hello World Agent'.",
+            "candidate_name": "Hello World Agent",
+            "candidate_endpoint": "http://127.0.0.1:9999",
+            "colliding_trusted_name": "Hello World Agent",
+            "colliding_trusted_endpoint": "http://127.0.0.1:9999",
+            "details": {
+              "requested_method": "system_exec",
+              "declared_capabilities": [
+                "echo bot",
+                "echo_bot"
+              ],
+              "standard_protocol_methods": [
+                "CancelTask",
+                "GetExtendedAgentCard",
+                "GetTask",
+                "SendMessage",
+                "SendStreamingMessage",
+                "agent/authenticatedExtendedCard",
+                "message/send",
+                "message/stream",
+                "tasks/cancel",
+                "tasks/get",
+                "tasks/sendSubscribe"
+              ],
+              "detection_type": "capability_cloaking_runtime"
+            }
+          },
+          "action": "QUARANTINE",
+          "event_id": "evt_0002",
+          "timing": {
+            "t_recv_ns": 34016467440500,
+            "t_detect_ns": 34016467478500,
+            "t_decide_ns": 34016467481000,
+            "t_enforce_ns": 34016467499800,
+            "detection_latency_ms": 0.038,
+            "decision_latency_ms": 0.0025,
+            "enforcement_latency_ms": 0.0188,
+            "total_pipeline_latency_ms": 0.0593
+          }
+        },
+        "id": "cc-probe-1"
+      }
+    }
+  },
+  "gateway_telemetry": {
+    "metrics_summary": {
+      "total_events": 2,
+      "quarantined_count": 2,
+      "allowed_count": 0,
+      "avg_detection_latency_ms": 0.1348,
+      "avg_decision_latency_ms": 0.0045,
+      "avg_enforcement_latency_ms": 0.0378,
+      "avg_total_latency_ms": 0.1771
+    },
+    "security_events": [
+      {
+        "event_id": "evt_0001",
+        "timestamp_utc": "2026-10-05T18:17:46.400203+00:00",
+        "candidate_id": "spoofed_hw_phase5b",
+        "candidate_name": "Hell\u043e World Agent",
+        "candidate_endpoint": "http://127.0.0.1:8002",
+        "violation": {
+          "violation_code": "AS_HOMOGLYPH_SPOOF",
+          "description": "Visual homoglyph impersonating trusted agent name with non-identical Unicode codepoints.",
+          "candidate_name": "Hell\u043e World Agent",
+          "candidate_endpoint": "http://127.0.0.1:8002",
+          "colliding_trusted_name": "Hello World Agent",
+          "colliding_trusted_endpoint": "http://127.0.0.1:9999",
+          "details": {
+            "detection_type": "homoglyph",
+            "candidate_bytes_hex": "48656c6cd0be20576f726c64204167656e74",
+            "trusted_bytes_hex": "48656c6c6f20576f726c64204167656e74"
+          }
+        },
+        "severity": "HIGH",
+        "action_taken": "QUARANTINE",
+        "timing": {
+          "t_recv_ns": 34016465277200,
+          "t_detect_ns": 34016465508700,
+          "t_decide_ns": 34016465515200,
+          "t_enforce_ns": 34016465572000,
+          "detection_latency_ms": 0.2315,
+          "decision_latency_ms": 0.0065,
+          "enforcement_latency_ms": 0.0568,
+          "total_pipeline_latency_ms": 0.2948
+        }
+      },
+      {
+        "event_id": "evt_0002",
+        "timestamp_utc": "2026-10-05T18:17:46.402250+00:00",
+        "candidate_id": "adversarial_cc_probe",
+        "candidate_name": "Hello World Agent",
+        "candidate_endpoint": "http://127.0.0.1:9999",
+        "violation": {
+          "violation_code": "CC_UNDECLARED_CAPABILITY",
+          "description": "Capability Cloaking: Attempted invocation of undeclared or cloaked capability 'system_exec' not present in declared capabilities of agent 'Hello World Agent'.",
+          "candidate_name": "Hello World Agent",
+          "candidate_endpoint": "http://127.0.0.1:9999",
+          "colliding_trusted_name": "Hello World Agent",
+          "colliding_trusted_endpoint": "http://127.0.0.1:9999",
+          "details": {
+            "requested_method": "system_exec",
+            "declared_capabilities": [
+              "echo bot",
+              "echo_bot"
+            ],
+            "standard_protocol_methods": [
+              "CancelTask",
+              "GetExtendedAgentCard",
+              "GetTask",
+              "SendMessage",
+              "SendStreamingMessage",
+              "agent/authenticatedExtendedCard",
+              "message/send",
+              "message/stream",
+              "tasks/cancel",
+              "tasks/get",
+              "tasks/sendSubscribe"
+            ],
+            "detection_type": "capability_cloaking_runtime"
+          }
+        },
+        "severity": "HIGH",
+        "action_taken": "QUARANTINE",
+        "timing": {
+          "t_recv_ns": 34016467440500,
+          "t_detect_ns": 34016467478500,
+          "t_decide_ns": 34016467481000,
+          "t_enforce_ns": 34016467499800,
+          "detection_latency_ms": 0.038,
+          "decision_latency_ms": 0.0025,
+          "enforcement_latency_ms": 0.0188,
+          "total_pipeline_latency_ms": 0.0593
+        }
+      }
+    ]
+  }
+}

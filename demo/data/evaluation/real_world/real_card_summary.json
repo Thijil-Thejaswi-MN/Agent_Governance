@@ -1,0 +1,37 @@
+{
+  "evaluation_title": "Stage 6 Benign Real-Card False-Positive Evaluation",
+  "timestamp_utc": "2026-10-06T02:07:21.284347+00:00",
+  "metric_name": "Observed offline benign-card false-positive rate",
+  "metric_definition": "number of legitimate real-card records flagged / number of valid legitimate real-card records evaluated (denominator = 100 live-registry snapshot cards)",
+  "observed_offline_benign_card_false_positive_rate": 0.0,
+  "observed_offline_benign_card_false_positive_percentage": 0.0,
+  "wilson_95_ci": [
+    0.0,
+    0.037
+  ],
+  "total_legitimate_cards_evaluated": 100,
+  "total_flagged_as_violations": 0,
+  "trusted_baseline_agents": [
+    "Hello World Agent",
+    "AgentAlice"
+  ],
+  "max_similarity_against_baseline": {
+    "candidate_name": "Agentropolis",
+    "trusted_agent": "AgentAlice",
+    "similarity_score": 0.6364,
+    "threshold": 0.85,
+    "margin_below_threshold": 0.2136
+  },
+  "intra_corpus_admission_simulation": {
+    "total_evaluated": 100,
+    "intra_corpus_flagged": 0,
+    "intra_corpus_max_similarity": {
+      "agent_a": "LangChain Login and Token Agent",
+      "agent_b": "OpenAI Login and Token Agent",
+      "similarity_score": 0.8475,
+      "threshold": 0.85,
+      "margin_below_threshold": 0.0025
+    }
+  },
+  "mean_evaluation_latency_ms": 0.103
+}

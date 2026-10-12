@@ -1,0 +1,168 @@
+{
+  "timestamp_iso": "2026-10-05T18:05:00Z",
+  "phase": "5A",
+  "description": "First vertical slice: Homoglyph/Provenance Squatting Detection, Inline Quarantine, and Mediation Gateway",
+  "testbed": {
+    "monitor_url": "http://127.0.0.1:8000",
+    "trusted_upstream_url": "http://127.0.0.1:9999",
+    "spoofed_fictional_url": "http://127.0.0.1:8002"
+  },
+  "steps": {
+    "step1_health": {
+      "status_code": 200,
+      "data": {
+        "status": "healthy",
+        "service": "A2A Security Monitor",
+        "inventory_summary": {
+          "trusted_agents": [
+            {
+              "agent_id": "helloworld",
+              "name": "Hello World Agent",
+              "endpoint_url": "http://127.0.0.1:9999",
+              "version": "0.0.1",
+              "skills_count": 1
+            }
+          ],
+          "quarantined_count": 2,
+          "quarantined_identities": [
+            "spoofed_helloworld",
+            "hell\u043e world agent"
+          ]
+        },
+        "events_recorded": 1
+      },
+      "roundtrip_ms": 3.8173
+    },
+    "step2_trusted_path": {
+      "agent_card_status": 200,
+      "agent_card_roundtrip_ms": 9.6501,
+      "jsonrpc_status": 200,
+      "jsonrpc_roundtrip_ms": 7.31,
+      "response_snippet": "{\"error\":{\"code\":-32601,\"message\":\"Method not found\"},\"id\":\"exp-001\",\"jsonrpc\":\"2.0\"}"
+    },
+    "step3_spoof_detection_quarantine": {
+      "status_code": 403,
+      "client_roundtrip_ms": 2.6306,
+      "server_response": {
+        "error": "Security Violation Detected \u2014 Agent Quarantined",
+        "action": "QUARANTINE",
+        "severity": "HIGH",
+        "violation": {
+          "violation_code": "AS_HOMOGLYPH_SPOOF",
+          "description": "Visual homoglyph impersonating trusted agent name with non-identical Unicode codepoints.",
+          "candidate_name": "Hell\u043e World Agent",
+          "candidate_endpoint": "http://127.0.0.1:8002",
+          "colliding_trusted_name": "Hello World Agent",
+          "colliding_trusted_endpoint": "http://127.0.0.1:9999",
+          "details": {
+            "detection_type": "homoglyph",
+            "candidate_bytes_hex": "48656c6cd0be20576f726c64204167656e74",
+            "trusted_bytes_hex": "48656c6c6f20576f726c64204167656e74"
+          }
+        },
+        "event_id": "evt_0002",
+        "timing": {
+          "t_recv_ns": 33250979676000,
+          "t_detect_ns": 33250979974700,
+          "t_decide_ns": 33250979981700,
+          "t_enforce_ns": 33250980024400,
+          "detection_latency_ms": 0.2987,
+          "decision_latency_ms": 0.007,
+          "enforcement_latency_ms": 0.0427,
+          "total_pipeline_latency_ms": 0.3484
+        }
+      }
+    },
+    "step4_quarantine_enforcement": {
+      "status_code": 403,
+      "roundtrip_ms": 1.8964,
+      "response": {
+        "jsonrpc": "2.0",
+        "error": {
+          "code": -32000,
+          "message": "Security Gateway: Target agent 'spoofed_helloworld' is QUARANTINED due to an active security violation."
+        },
+        "id": null
+      }
+    },
+    "step5_trusted_path_recheck": {
+      "status_code": 200,
+      "roundtrip_ms": 6.5566
+    }
+  },
+  "metrics_summary": {
+    "total_events": 2,
+    "quarantined_count": 2,
+    "allowed_count": 0,
+    "avg_detection_latency_ms": 0.2928,
+    "avg_decision_latency_ms": 0.0082,
+    "avg_enforcement_latency_ms": 0.0703,
+    "avg_total_latency_ms": 0.3712
+  },
+  "audit_events": [
+    {
+      "event_id": "evt_0001",
+      "timestamp_utc": "2026-10-05T18:04:51.286797+00:00",
+      "candidate_id": "spoofed_helloworld",
+      "candidate_name": "Hell\u043e World Agent",
+      "candidate_endpoint": "http://127.0.0.1:8002",
+      "violation": {
+        "violation_code": "AS_HOMOGLYPH_SPOOF",
+        "description": "Visual homoglyph impersonating trusted agent name with non-identical Unicode codepoints.",
+        "candidate_name": "Hell\u043e World Agent",
+        "candidate_endpoint": "http://127.0.0.1:8002",
+        "colliding_trusted_name": "Hello World Agent",
+        "colliding_trusted_endpoint": "http://127.0.0.1:9999",
+        "details": {
+          "detection_type": "homoglyph",
+          "candidate_bytes_hex": "48656c6cd0be20576f726c64204167656e74",
+          "trusted_bytes_hex": "48656c6c6f20576f726c64204167656e74"
+        }
+      },
+      "severity": "HIGH",
+      "action_taken": "QUARANTINE",
+      "timing": {
+        "t_recv_ns": 33241351595600,
+        "t_detect_ns": 33241351882400,
+        "t_decide_ns": 33241351891800,
+        "t_enforce_ns": 33241351989700,
+        "detection_latency_ms": 0.2868,
+        "decision_latency_ms": 0.0094,
+        "enforcement_latency_ms": 0.0979,
+        "total_pipeline_latency_ms": 0.3941
+      }
+    },
+    {
+      "event_id": "evt_0002",
+      "timestamp_utc": "2026-10-05T18:05:00.914960+00:00",
+      "candidate_id": "spoofed_helloworld",
+      "candidate_name": "Hell\u043e World Agent",
+      "candidate_endpoint": "http://127.0.0.1:8002",
+      "violation": {
+        "violation_code": "AS_HOMOGLYPH_SPOOF",
+        "description": "Visual homoglyph impersonating trusted agent name with non-identical Unicode codepoints.",
+        "candidate_name": "Hell\u043e World Agent",
+        "candidate_endpoint": "http://127.0.0.1:8002",
+        "colliding_trusted_name": "Hello World Agent",
+        "colliding_trusted_endpoint": "http://127.0.0.1:9999",
+        "details": {
+          "detection_type": "homoglyph",
+          "candidate_bytes_hex": "48656c6cd0be20576f726c64204167656e74",
+          "trusted_bytes_hex": "48656c6c6f20576f726c64204167656e74"
+        }
+      },
+      "severity": "HIGH",
+      "action_taken": "QUARANTINE",
+      "timing": {
+        "t_recv_ns": 33250979676000,
+        "t_detect_ns": 33250979974700,
+        "t_decide_ns": 33250979981700,
+        "t_enforce_ns": 33250980024400,
+        "detection_latency_ms": 0.2987,
+        "decision_latency_ms": 0.007,
+        "enforcement_latency_ms": 0.0427,
+        "total_pipeline_latency_ms": 0.3484
+      }
+    }
+  ]
+}

@@ -1,0 +1,323 @@
+{
+  "inspector_url": "http://127.0.0.1:5001",
+  "agent_url": "http://127.0.0.1:9999",
+  "card_load": {
+    "status_code": 200,
+    "response": {
+      "card": {
+        "name": "Hello World Agent",
+        "description": "Just a hello world agent",
+        "supportedInterfaces": [
+          {
+            "url": "http://127.0.0.1:9999",
+            "protocolBinding": "JSONRPC",
+            "protocolVersion": "1.0"
+          }
+        ],
+        "version": "0.0.1",
+        "capabilities": {
+          "streaming": true,
+          "extendedAgentCard": true
+        },
+        "defaultInputModes": [
+          "text/plain"
+        ],
+        "defaultOutputModes": [
+          "text/plain"
+        ],
+        "skills": [
+          {
+            "id": "echo_bot",
+            "name": "Echo Bot",
+            "description": "An example agent that acknowledges client request and responds with a \"Hello World\" message.",
+            "tags": [
+              "a2a",
+              "echo-example"
+            ],
+            "examples": [
+              "hi",
+              "how are you"
+            ],
+            "inputModes": [
+              "text/plain"
+            ],
+            "outputModes": [
+              "text/plain"
+            ]
+          }
+        ],
+        "url": "http://127.0.0.1:9999"
+      },
+      "validation_errors": []
+    }
+  },
+  "client_initialized": {
+    "status": "success",
+    "transport": "JSONRPC",
+    "inputModes": [
+      "text/plain"
+    ],
+    "outputModes": [
+      "text/plain"
+    ]
+  },
+  "debug_logs": [
+    {
+      "type": "request",
+      "data": {
+        "endpoint": "/agent-card",
+        "payload": {
+          "url": "http://127.0.0.1:9999",
+          "sid": "i23080dtruEJfrsrAAAF"
+        },
+        "custom_headers": {}
+      },
+      "id": "http-agent-card"
+    },
+    {
+      "type": "response",
+      "data": {
+        "status": 200,
+        "payload": {
+          "card": {
+            "name": "Hello World Agent",
+            "description": "Just a hello world agent",
+            "supportedInterfaces": [
+              {
+                "url": "http://127.0.0.1:9999",
+                "protocolBinding": "JSONRPC",
+                "protocolVersion": "1.0"
+              }
+            ],
+            "version": "0.0.1",
+            "capabilities": {
+              "streaming": true,
+              "extendedAgentCard": true
+            },
+            "defaultInputModes": [
+              "text/plain"
+            ],
+            "defaultOutputModes": [
+              "text/plain"
+            ],
+            "skills": [
+              {
+                "id": "echo_bot",
+                "name": "Echo Bot",
+                "description": "An example agent that acknowledges client request and responds with a \"Hello World\" message.",
+                "tags": [
+                  "a2a",
+                  "echo-example"
+                ],
+                "examples": [
+                  "hi",
+                  "how are you"
+                ],
+                "inputModes": [
+                  "text/plain"
+                ],
+                "outputModes": [
+                  "text/plain"
+                ]
+              }
+            ],
+            "url": "http://127.0.0.1:9999"
+          },
+          "validation_errors": []
+        }
+      },
+      "id": "http-agent-card"
+    },
+    {
+      "type": "request",
+      "data": {
+        "transport": "JSONRPC",
+        "method": "SendMessage",
+        "message": {
+          "messageId": "test-msg-001",
+          "role": "ROLE_USER",
+          "parts": [
+            {
+              "text": "Hello from A2A Inspector Test!"
+            }
+          ]
+        }
+      },
+      "id": "test-msg-001"
+    },
+    {
+      "type": "response",
+      "data": {
+        "id": "720ed52e-3529-4fe0-9550-8c3a318f48f4",
+        "contextId": "9ff977b8-b1bf-4039-a29d-791241c407af",
+        "status": {
+          "state": "submitted"
+        },
+        "history": [
+          {
+            "messageId": "test-msg-001",
+            "contextId": "9ff977b8-b1bf-4039-a29d-791241c407af",
+            "taskId": "720ed52e-3529-4fe0-9550-8c3a318f48f4",
+            "role": "ROLE_USER",
+            "parts": [
+              {
+                "text": "Hello from A2A Inspector Test!"
+              }
+            ]
+          }
+        ],
+        "kind": "task",
+        "validation_errors": []
+      },
+      "id": "720ed52e-3529-4fe0-9550-8c3a318f48f4"
+    },
+    {
+      "type": "response",
+      "data": {
+        "taskId": "720ed52e-3529-4fe0-9550-8c3a318f48f4",
+        "contextId": "9ff977b8-b1bf-4039-a29d-791241c407af",
+        "status": {
+          "state": "working",
+          "message": {
+            "messageId": "f35b6b5c-3a38-43ba-a890-4a8f1ad1035f",
+            "role": "ROLE_AGENT",
+            "parts": [
+              {
+                "text": "Processing request..."
+              }
+            ]
+          },
+          "timestamp": "2026-10-05T17:42:40.219547Z"
+        },
+        "id": "720ed52e-3529-4fe0-9550-8c3a318f48f4",
+        "kind": "status-update",
+        "validation_errors": []
+      },
+      "id": "720ed52e-3529-4fe0-9550-8c3a318f48f4"
+    },
+    {
+      "type": "response",
+      "data": {
+        "taskId": "720ed52e-3529-4fe0-9550-8c3a318f48f4",
+        "contextId": "9ff977b8-b1bf-4039-a29d-791241c407af",
+        "artifact": {
+          "artifactId": "f0b03c5d-1f9c-4125-9cc6-fdca9bb593a0",
+          "parts": [
+            {
+              "text": "Hello, World! I have received your request (Hello from A2A Inspector Test!)",
+              "mediaType": "text/plain"
+            }
+          ]
+        },
+        "id": "720ed52e-3529-4fe0-9550-8c3a318f48f4",
+        "kind": "artifact-update",
+        "validation_errors": []
+      },
+      "id": "720ed52e-3529-4fe0-9550-8c3a318f48f4"
+    },
+    {
+      "type": "response",
+      "data": {
+        "taskId": "720ed52e-3529-4fe0-9550-8c3a318f48f4",
+        "contextId": "9ff977b8-b1bf-4039-a29d-791241c407af",
+        "status": {
+          "state": "completed",
+          "message": {
+            "messageId": "7f1af367-73d5-47bd-9225-fa541de31f37",
+            "role": "ROLE_AGENT",
+            "parts": [
+              {
+                "text": "Request is completed!"
+              }
+            ]
+          },
+          "timestamp": "2026-10-05T17:42:40.219547Z"
+        },
+        "id": "720ed52e-3529-4fe0-9550-8c3a318f48f4",
+        "kind": "status-update",
+        "validation_errors": []
+      },
+      "id": "720ed52e-3529-4fe0-9550-8c3a318f48f4"
+    }
+  ],
+  "agent_responses": [
+    {
+      "id": "720ed52e-3529-4fe0-9550-8c3a318f48f4",
+      "contextId": "9ff977b8-b1bf-4039-a29d-791241c407af",
+      "status": {
+        "state": "submitted"
+      },
+      "history": [
+        {
+          "messageId": "test-msg-001",
+          "contextId": "9ff977b8-b1bf-4039-a29d-791241c407af",
+          "taskId": "720ed52e-3529-4fe0-9550-8c3a318f48f4",
+          "role": "ROLE_USER",
+          "parts": [
+            {
+              "text": "Hello from A2A Inspector Test!"
+            }
+          ]
+        }
+      ],
+      "kind": "task",
+      "validation_errors": []
+    },
+    {
+      "taskId": "720ed52e-3529-4fe0-9550-8c3a318f48f4",
+      "contextId": "9ff977b8-b1bf-4039-a29d-791241c407af",
+      "status": {
+        "state": "working",
+        "message": {
+          "messageId": "f35b6b5c-3a38-43ba-a890-4a8f1ad1035f",
+          "role": "ROLE_AGENT",
+          "parts": [
+            {
+              "text": "Processing request..."
+            }
+          ]
+        },
+        "timestamp": "2026-10-05T17:42:40.219547Z"
+      },
+      "id": "720ed52e-3529-4fe0-9550-8c3a318f48f4",
+      "kind": "status-update",
+      "validation_errors": []
+    },
+    {
+      "taskId": "720ed52e-3529-4fe0-9550-8c3a318f48f4",
+      "contextId": "9ff977b8-b1bf-4039-a29d-791241c407af",
+      "artifact": {
+        "artifactId": "f0b03c5d-1f9c-4125-9cc6-fdca9bb593a0",
+        "parts": [
+          {
+            "text": "Hello, World! I have received your request (Hello from A2A Inspector Test!)",
+            "mediaType": "text/plain"
+          }
+        ]
+      },
+      "id": "720ed52e-3529-4fe0-9550-8c3a318f48f4",
+      "kind": "artifact-update",
+      "validation_errors": []
+    },
+    {
+      "taskId": "720ed52e-3529-4fe0-9550-8c3a318f48f4",
+      "contextId": "9ff977b8-b1bf-4039-a29d-791241c407af",
+      "status": {
+        "state": "completed",
+        "message": {
+          "messageId": "7f1af367-73d5-47bd-9225-fa541de31f37",
+          "role": "ROLE_AGENT",
+          "parts": [
+            {
+              "text": "Request is completed!"
+            }
+          ]
+        },
+        "timestamp": "2026-10-05T17:42:40.219547Z"
+      },
+      "id": "720ed52e-3529-4fe0-9550-8c3a318f48f4",
+      "kind": "status-update",
+      "validation_errors": []
+    }
+  ]
+}

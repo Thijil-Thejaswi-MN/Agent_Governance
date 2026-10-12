@@ -1,0 +1,214 @@
+{
+  "run_id": "comparative_20261006_014148",
+  "timestamp_utc": "2026-10-06T01:44:02.648569+00:00",
+  "random_seed": 42,
+  "trials_per_group": 100,
+  "total_trials_evaluated": 1800,
+  "policies": {
+    "PERMISSIVE": {
+      "policy_mode": "PERMISSIVE",
+      "total_trials": 600,
+      "adversarial_trials": 350,
+      "legitimate_trials": 250,
+      "containment": {
+        "attacks_contained": 0,
+        "total_attacks": 350,
+        "containment_rate": 0.0,
+        "containment_pct": "0.0%",
+        "metrics": {
+          "count": 0,
+          "total": 350,
+          "rate": 0.0,
+          "percentage": 0.0,
+          "ci95_lower": 0.0,
+          "ci95_upper": 0.0109,
+          "ci95_percentage": [
+            0.0,
+            1.09
+          ]
+        }
+      },
+      "attacker_upstream_exposure": {
+        "attacker_requests_reached_upstream": 350,
+        "total_attacks": 350,
+        "exposure_rate": 1.0
+      },
+      "availability": {
+        "legitimate_requests_allowed": 250,
+        "total_legitimate_requests": 250,
+        "availability_rate": 1.0,
+        "availability_pct": "100.0%",
+        "metrics": {
+          "count": 250,
+          "total": 250,
+          "rate": 1.0,
+          "percentage": 100.0,
+          "ci95_lower": 0.9849,
+          "ci95_upper": 1.0,
+          "ci95_percentage": [
+            98.49,
+            100.0
+          ]
+        }
+      },
+      "collateral_disruption": {
+        "blocked_legitimate_requests": 0,
+        "total_legitimate_requests": 250,
+        "disruption_rate": 0.0
+      },
+      "action_distribution": {
+        "ALLOW": 600
+      },
+      "latency_ms": {
+        "count": 600,
+        "mean_ms": 127.0929,
+        "median_ms": 159.9649,
+        "stdev_ms": 65.7052,
+        "min_ms": 11.4632,
+        "max_ms": 273.296,
+        "p95_ms": 173.8369,
+        "p99_ms": 189.4386,
+        "ci95_lower_ms": 121.8354,
+        "ci95_upper_ms": 132.3504
+      }
+    },
+    "BINARY_QUARANTINE": {
+      "policy_mode": "BINARY_QUARANTINE",
+      "total_trials": 600,
+      "adversarial_trials": 350,
+      "legitimate_trials": 250,
+      "containment": {
+        "attacks_contained": 350,
+        "total_attacks": 350,
+        "containment_rate": 1.0,
+        "containment_pct": "100.0%",
+        "metrics": {
+          "count": 350,
+          "total": 350,
+          "rate": 1.0,
+          "percentage": 100.0,
+          "ci95_lower": 0.9891,
+          "ci95_upper": 1.0,
+          "ci95_percentage": [
+            98.91,
+            100.0
+          ]
+        }
+      },
+      "attacker_upstream_exposure": {
+        "attacker_requests_reached_upstream": 0,
+        "total_attacks": 350,
+        "exposure_rate": 0.0
+      },
+      "availability": {
+        "legitimate_requests_allowed": 100,
+        "total_legitimate_requests": 250,
+        "availability_rate": 0.4,
+        "availability_pct": "40.0%",
+        "metrics": {
+          "count": 100,
+          "total": 250,
+          "rate": 0.4,
+          "percentage": 40.0,
+          "ci95_lower": 0.3412,
+          "ci95_upper": 0.4618,
+          "ci95_percentage": [
+            34.12,
+            46.18
+          ]
+        }
+      },
+      "collateral_disruption": {
+        "blocked_legitimate_requests": 150,
+        "total_legitimate_requests": 250,
+        "disruption_rate": 0.6
+      },
+      "action_distribution": {
+        "QUARANTINE": 500,
+        "ALLOW": 100
+      },
+      "latency_ms": {
+        "count": 600,
+        "mean_ms": 37.6247,
+        "median_ms": 15.3417,
+        "stdev_ms": 58.3968,
+        "min_ms": 1.1931,
+        "max_ms": 295.8427,
+        "p95_ms": 161.1675,
+        "p99_ms": 190.6013,
+        "ci95_lower_ms": 32.952,
+        "ci95_upper_ms": 42.2974
+      }
+    },
+    "GRADUATED": {
+      "policy_mode": "GRADUATED",
+      "total_trials": 600,
+      "adversarial_trials": 350,
+      "legitimate_trials": 250,
+      "containment": {
+        "attacks_contained": 350,
+        "total_attacks": 350,
+        "containment_rate": 1.0,
+        "containment_pct": "100.0%",
+        "metrics": {
+          "count": 350,
+          "total": 350,
+          "rate": 1.0,
+          "percentage": 100.0,
+          "ci95_lower": 0.9891,
+          "ci95_upper": 1.0,
+          "ci95_percentage": [
+            98.91,
+            100.0
+          ]
+        }
+      },
+      "attacker_upstream_exposure": {
+        "attacker_requests_reached_upstream": 0,
+        "total_attacks": 350,
+        "exposure_rate": 0.0
+      },
+      "availability": {
+        "legitimate_requests_allowed": 175,
+        "total_legitimate_requests": 250,
+        "availability_rate": 0.7,
+        "availability_pct": "70.0%",
+        "metrics": {
+          "count": 175,
+          "total": 250,
+          "rate": 0.7,
+          "percentage": 70.0,
+          "ci95_lower": 0.6405,
+          "ci95_upper": 0.7534,
+          "ci95_percentage": [
+            64.05,
+            75.34
+          ]
+        }
+      },
+      "collateral_disruption": {
+        "blocked_legitimate_requests": 75,
+        "total_legitimate_requests": 250,
+        "disruption_rate": 0.3
+      },
+      "action_distribution": {
+        "QUARANTINE": 300,
+        "RESTRICT": 50,
+        "ALLOW": 175,
+        "RATE_LIMIT": 75
+      },
+      "latency_ms": {
+        "count": 600,
+        "mean_ms": 57.9538,
+        "median_ms": 17.9973,
+        "stdev_ms": 66.8571,
+        "min_ms": 6.7754,
+        "max_ms": 216.4139,
+        "p95_ms": 163.2778,
+        "p99_ms": 184.0225,
+        "ci95_lower_ms": 52.6041,
+        "ci95_upper_ms": 63.3034
+      }
+    }
+  }
+}

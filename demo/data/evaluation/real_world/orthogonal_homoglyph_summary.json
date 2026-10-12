@@ -1,0 +1,21 @@
+{
+  "evaluation_title": "Stage 6 Orthogonal Homoglyph vs Similarity Ablation Study",
+  "timestamp_utc": "2026-10-06T02:07:21.342715+00:00",
+  "research_objective": "Resolve the Stage 5 evaluation confound where single-character homoglyphs were masked by the SequenceMatcher fallback.",
+  "condition_a_homoglyph_only": {
+    "description": "Multi-character homoglyphs where skeleton matches 100% but raw SequenceMatcher similarity is strictly below 0.85.",
+    "total_cases_evaluated": 100,
+    "full_detector_recall": 100.0,
+    "no_homoglyph_recall_similarity_only": 0.0,
+    "no_similarity_recall_homoglyph_only": 100.0,
+    "component_necessity_finding": "The controlled ablation demonstrates that, for the evaluated orthogonal mutation set, homoglyph canonicalization is necessary to detect cases whose lexical similarity falls below the fixed threshold."
+  },
+  "condition_b_similarity_only": {
+    "description": "Pure typosquats where similarity is >= 0.85 but skeleton does NOT match.",
+    "total_cases_evaluated": 100,
+    "full_detector_recall": 100.0,
+    "no_homoglyph_recall_similarity_only": 100.0,
+    "no_similarity_recall_homoglyph_only": 0.0,
+    "component_necessity_finding": "The controlled ablation demonstrates that, for the evaluated non-confusable typosquats, lexical similarity matching is necessary when the canonical skeleton differs."
+  }
+}

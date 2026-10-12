@@ -1,0 +1,511 @@
+{
+  "asr": 0.89,
+  "config_hash": "7f34adcde41c0dff953de3877323bd52b5ce20d86b7bd24db096d2869af6abe2",
+  "config_path": "configs\\offline\\as.yaml",
+  "counts_per_case": {
+    "as_001": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_002": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_003": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_004": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_005": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_006": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_007": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_008": {
+      "asr": 0.0,
+      "successes": 0,
+      "trials": 1
+    },
+    "as_009": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_010": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_011": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_012": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_013": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_014": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_015": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_016": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_017": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_018": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_019": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_020": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_021": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_022": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_023": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_024": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_025": {
+      "asr": 0.0,
+      "successes": 0,
+      "trials": 1
+    },
+    "as_026": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_027": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_028": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_029": {
+      "asr": 0.0,
+      "successes": 0,
+      "trials": 1
+    },
+    "as_030": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_031": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_032": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_033": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_034": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_035": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_036": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_037": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_038": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_039": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_040": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_041": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_042": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_043": {
+      "asr": 0.0,
+      "successes": 0,
+      "trials": 1
+    },
+    "as_044": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_045": {
+      "asr": 0.0,
+      "successes": 0,
+      "trials": 1
+    },
+    "as_046": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_047": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_048": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_049": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_050": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_051": {
+      "asr": 0.0,
+      "successes": 0,
+      "trials": 1
+    },
+    "as_052": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_053": {
+      "asr": 0.0,
+      "successes": 0,
+      "trials": 1
+    },
+    "as_054": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_055": {
+      "asr": 0.0,
+      "successes": 0,
+      "trials": 1
+    },
+    "as_056": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_057": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_058": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_059": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_060": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_061": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_062": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_063": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_064": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_065": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_066": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_067": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_068": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_069": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_070": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_071": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_072": {
+      "asr": 0.0,
+      "successes": 0,
+      "trials": 1
+    },
+    "as_073": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_074": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_075": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_076": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_077": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_078": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_079": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_080": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_081": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_082": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_083": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_084": {
+      "asr": 0.0,
+      "successes": 0,
+      "trials": 1
+    },
+    "as_085": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_086": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_087": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_088": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_089": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_090": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_091": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_092": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_093": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_094": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_095": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_096": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_097": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_098": {
+      "asr": 0.0,
+      "successes": 0,
+      "trials": 1
+    },
+    "as_099": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    },
+    "as_100": {
+      "asr": 1.0,
+      "successes": 1,
+      "trials": 1
+    }
+  },
+  "run_finished_at": "2026-10-05T17:11:39.546348+00:00",
+  "run_started_at": "2026-10-05T17:11:37.060637+00:00",
+  "total_successes": 89,
+  "total_trials": 100
+}

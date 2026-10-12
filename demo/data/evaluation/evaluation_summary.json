@@ -1,0 +1,357 @@
+{
+  "evaluation_id": "eval_20261006_031152",
+  "start_time_utc": "2026-10-06T03:11:52.597500+00:00",
+  "end_time_utc": "2026-10-06T03:15:37.493475+00:00",
+  "total_duration_seconds": 224.89,
+  "software_version": "0.2.0-research-eval",
+  "seed": 42,
+  "trials_per_condition": 100,
+  "database_used": "C:\\Users\\thiji\\OneDrive\\Documents\\Projects\\A2A\\demo\\data\\evaluation\\eval_20261006_031152.db",
+  "testbed_agents": [
+    {
+      "agent_id": "helloworld",
+      "endpoint": "http://127.0.0.1:9999",
+      "status": "ONLINE"
+    },
+    {
+      "agent_id": "agentalice",
+      "endpoint": "http://127.0.0.1:8001",
+      "status": "ONLINE"
+    }
+  ],
+  "categories": {
+    "BENIGN": {
+      "total_trials": 100,
+      "passed_trials": 100,
+      "false_positives": 0,
+      "false_positive_rate": 0.0,
+      "false_positive_percentage": 0.0,
+      "false_positive_ci95": [
+        0.0,
+        3.7
+      ],
+      "pass_rate": 1.0,
+      "pass_percentage": 100.0,
+      "latency_stats": {
+        "count": 100,
+        "mean_ms": 1804.4148,
+        "median_ms": 2031.262,
+        "stdev_ms": 592.9172,
+        "min_ms": 11.9242,
+        "max_ms": 2220.5314,
+        "p95_ms": 2053.1303,
+        "p99_ms": 2220.5314,
+        "ci95_lower_ms": 1688.203,
+        "ci95_upper_ms": 1920.6266
+      }
+    },
+    "AS": {
+      "total_trials": 100,
+      "detected_count": 100,
+      "detection_rate": 1.0,
+      "detection_percentage": 100.0,
+      "detection_ci95": [
+        96.3,
+        100.0
+      ],
+      "enforced_count": 100,
+      "enforcement_rate": 1.0,
+      "enforcement_percentage": 100.0,
+      "enforcement_ci95": [
+        96.3,
+        100.0
+      ],
+      "contained_count": 100,
+      "containment_rate": 1.0,
+      "containment_percentage": 100.0,
+      "containment_ci95": [
+        96.3,
+        100.0
+      ],
+      "false_negatives": 0,
+      "false_negative_rate": 0.0,
+      "false_positives": 0,
+      "upstream_contact_count": 0,
+      "upstream_contact_rate": 0.0,
+      "latency": {
+        "detection_latency": {
+          "count": 100,
+          "mean_ms": 0.1654,
+          "median_ms": 0.1396,
+          "stdev_ms": 0.2198,
+          "min_ms": 0.0736,
+          "max_ms": 2.2585,
+          "p95_ms": 0.2925,
+          "p99_ms": 2.2585,
+          "ci95_lower_ms": 0.1223,
+          "ci95_upper_ms": 0.2085
+        },
+        "decision_latency": {
+          "count": 100,
+          "mean_ms": 0.0037,
+          "median_ms": 0.0034,
+          "stdev_ms": 0.0011,
+          "min_ms": 0.0023,
+          "max_ms": 0.0088,
+          "p95_ms": 0.0063,
+          "p99_ms": 0.0088,
+          "ci95_lower_ms": 0.0035,
+          "ci95_upper_ms": 0.0039
+        },
+        "enforcement_latency": {
+          "count": 100,
+          "mean_ms": 16.932,
+          "median_ms": 15.7645,
+          "stdev_ms": 4.0314,
+          "min_ms": 11.826,
+          "max_ms": 32.6748,
+          "p95_ms": 26.4922,
+          "p99_ms": 32.6748,
+          "ci95_lower_ms": 16.1418,
+          "ci95_upper_ms": 17.7221
+        },
+        "internal_security_pipeline": {
+          "count": 100,
+          "mean_ms": 17.1011,
+          "median_ms": 15.9227,
+          "stdev_ms": 4.0674,
+          "min_ms": 11.9295,
+          "max_ms": 32.9287,
+          "p95_ms": 26.6498,
+          "p99_ms": 32.9287,
+          "ci95_lower_ms": 16.3039,
+          "ci95_upper_ms": 17.8983
+        },
+        "roundtrip_latency": {
+          "count": 100,
+          "mean_ms": 29.5555,
+          "median_ms": 27.779,
+          "stdev_ms": 6.1787,
+          "min_ms": 21.4019,
+          "max_ms": 52.38,
+          "p95_ms": 43.6578,
+          "p99_ms": 52.38,
+          "ci95_lower_ms": 28.3445,
+          "ci95_upper_ms": 30.7666
+        }
+      }
+    },
+    "CC": {
+      "total_trials": 100,
+      "detected_count": 100,
+      "detection_rate": 1.0,
+      "detection_percentage": 100.0,
+      "detection_ci95": [
+        96.3,
+        100.0
+      ],
+      "enforced_count": 100,
+      "enforcement_rate": 1.0,
+      "enforcement_percentage": 100.0,
+      "enforcement_ci95": [
+        96.3,
+        100.0
+      ],
+      "contained_count": 100,
+      "containment_rate": 1.0,
+      "containment_percentage": 100.0,
+      "containment_ci95": [
+        96.3,
+        100.0
+      ],
+      "false_negatives": 0,
+      "false_negative_rate": 0.0,
+      "false_positives": 0,
+      "upstream_contact_count": 0,
+      "upstream_contact_rate": 0.0,
+      "latency": {
+        "detection_latency": {
+          "count": 100,
+          "mean_ms": 0.0403,
+          "median_ms": 0.0376,
+          "stdev_ms": 0.0148,
+          "min_ms": 0.0239,
+          "max_ms": 0.1169,
+          "p95_ms": 0.0678,
+          "p99_ms": 0.1169,
+          "ci95_lower_ms": 0.0374,
+          "ci95_upper_ms": 0.0432
+        },
+        "decision_latency": {
+          "count": 100,
+          "mean_ms": 0.0037,
+          "median_ms": 0.0033,
+          "stdev_ms": 0.0019,
+          "min_ms": 0.0016,
+          "max_ms": 0.0194,
+          "p95_ms": 0.0063,
+          "p99_ms": 0.0194,
+          "ci95_lower_ms": 0.0034,
+          "ci95_upper_ms": 0.0041
+        },
+        "enforcement_latency": {
+          "count": 100,
+          "mean_ms": 8.3741,
+          "median_ms": 7.7085,
+          "stdev_ms": 2.0482,
+          "min_ms": 5.8136,
+          "max_ms": 15.0813,
+          "p95_ms": 13.7642,
+          "p99_ms": 15.0813,
+          "ci95_lower_ms": 7.9727,
+          "ci95_upper_ms": 8.7756
+        },
+        "internal_security_pipeline": {
+          "count": 100,
+          "mean_ms": 8.4181,
+          "median_ms": 7.7523,
+          "stdev_ms": 2.0535,
+          "min_ms": 5.8435,
+          "max_ms": 15.1451,
+          "p95_ms": 13.8131,
+          "p99_ms": 15.1451,
+          "ci95_lower_ms": 8.0157,
+          "ci95_upper_ms": 8.8206
+        },
+        "roundtrip_latency": {
+          "count": 100,
+          "mean_ms": 21.7224,
+          "median_ms": 20.7377,
+          "stdev_ms": 4.5518,
+          "min_ms": 15.598,
+          "max_ms": 38.5087,
+          "p95_ms": 31.9424,
+          "p99_ms": 38.5087,
+          "ci95_lower_ms": 20.8303,
+          "ci95_upper_ms": 22.6146
+        }
+      }
+    },
+    "CO": {
+      "total_trials": 100,
+      "detected_count": 100,
+      "detection_rate": 1.0,
+      "detection_percentage": 100.0,
+      "detection_ci95": [
+        96.3,
+        100.0
+      ],
+      "enforced_count": 100,
+      "enforcement_rate": 1.0,
+      "enforcement_percentage": 100.0,
+      "enforcement_ci95": [
+        96.3,
+        100.0
+      ],
+      "contained_count": 100,
+      "containment_rate": 1.0,
+      "containment_percentage": 100.0,
+      "containment_ci95": [
+        96.3,
+        100.0
+      ],
+      "false_negatives": 0,
+      "false_negative_rate": 0.0,
+      "false_positives": 0,
+      "upstream_contact_count": 0,
+      "upstream_contact_rate": 0.0,
+      "latency": {
+        "detection_latency": {
+          "count": 100,
+          "mean_ms": 0.032,
+          "median_ms": 0.0292,
+          "stdev_ms": 0.0116,
+          "min_ms": 0.019,
+          "max_ms": 0.0987,
+          "p95_ms": 0.057,
+          "p99_ms": 0.0987,
+          "ci95_lower_ms": 0.0298,
+          "ci95_upper_ms": 0.0343
+        },
+        "decision_latency": {
+          "count": 100,
+          "mean_ms": 0.0035,
+          "median_ms": 0.0034,
+          "stdev_ms": 0.0007,
+          "min_ms": 0.0019,
+          "max_ms": 0.0061,
+          "p95_ms": 0.0052,
+          "p99_ms": 0.0061,
+          "ci95_lower_ms": 0.0034,
+          "ci95_upper_ms": 0.0037
+        },
+        "enforcement_latency": {
+          "count": 100,
+          "mean_ms": 9.3602,
+          "median_ms": 7.6903,
+          "stdev_ms": 10.6854,
+          "min_ms": 5.0688,
+          "max_ms": 112.6737,
+          "p95_ms": 14.1289,
+          "p99_ms": 112.6737,
+          "ci95_lower_ms": 7.2658,
+          "ci95_upper_ms": 11.4545
+        },
+        "internal_security_pipeline": {
+          "count": 100,
+          "mean_ms": 9.3957,
+          "median_ms": 7.7187,
+          "stdev_ms": 10.6849,
+          "min_ms": 5.1049,
+          "max_ms": 112.7011,
+          "p95_ms": 14.158,
+          "p99_ms": 112.7011,
+          "ci95_lower_ms": 7.3015,
+          "ci95_upper_ms": 11.49
+        },
+        "roundtrip_latency": {
+          "count": 100,
+          "mean_ms": 22.4291,
+          "median_ms": 20.3058,
+          "stdev_ms": 11.3844,
+          "min_ms": 14.5929,
+          "max_ms": 126.404,
+          "p95_ms": 31.2157,
+          "p99_ms": 126.404,
+          "ci95_lower_ms": 20.1978,
+          "ci95_upper_ms": 24.6605
+        }
+      }
+    }
+  },
+  "performance": {
+    "trial_count": 100,
+    "direct_baseline": {
+      "count": 100,
+      "mean_ms": 1.4044,
+      "median_ms": 1.1597,
+      "stdev_ms": 0.7756,
+      "min_ms": 0.6969,
+      "max_ms": 4.2576,
+      "p95_ms": 2.9207,
+      "p99_ms": 4.2576,
+      "ci95_lower_ms": 1.2524,
+      "ci95_upper_ms": 1.5564
+    },
+    "mediated_protected": {
+      "count": 100,
+      "mean_ms": 318.7985,
+      "median_ms": 322.2745,
+      "stdev_ms": 165.2451,
+      "min_ms": 159.0751,
+      "max_ms": 674.1474,
+      "p95_ms": 618.305,
+      "p99_ms": 674.1474,
+      "ci95_lower_ms": 286.4105,
+      "ci95_upper_ms": 351.1866
+    },
+    "overhead_comparison": {
+      "mean_absolute_overhead_ms": 317.3941,
+      "mean_percentage_overhead": 22599.98,
+      "median_absolute_overhead_ms": 321.1148,
+      "median_percentage_overhead": 27689.47,
+      "p95_absolute_overhead_ms": 615.3843
+    },
+    "methodology_note": "Direct latency measures direct TCP/HTTP connection from client to upstream agent. Mediated latency measures an additional reverse proxy hop plus internal security checks. Notice that intrinsic security engine computation is sub-millisecond (< 0.1 ms); the majority of mediated latency is standard localhost HTTP proxy hop overhead."
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "run_id": "comparative_20261006_014148",
+  "created_utc": "2026-10-06T01:44:02.648569+00:00",
+  "research_hypothesis": "Graduated response maintains high threat containment while preventing collateral denial-of-service on legitimate requests compared to binary quarantine.",
+  "independent_variable": "Policy Regime (PERMISSIVE, BINARY_QUARANTINE, GRADUATED)",
+  "dependent_variables": [
+    "threat_containment_rate",
+    "attacker_upstream_exposure",
+    "legitimate_request_availability",
+    "collateral_disruption_rate",
+    "action_distribution",
+    "pipeline_latency"
+  ],
+  "workload_groups": [
+    "AS",
+    "CC",
+    "CO",
+    "MEDIUM_VARIANCE",
+    "LOW_BURST",
+    "POST_INCIDENT_BENIGN"
+  ],
+  "artifact_files": [
+    "comparative_manifest.json",
+    "comparative_trials.jsonl",
+    "comparative_summary.json",
+    "comparative_statistics.json",
+    "README.md"
+  ]
+}

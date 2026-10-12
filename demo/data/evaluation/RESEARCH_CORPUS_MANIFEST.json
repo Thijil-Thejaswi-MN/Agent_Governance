@@ -1,0 +1,127 @@
+{
+  "manifest_version": "1.0.0-FROZEN",
+  "generated_at_utc": "2026-10-06T03:15:00Z",
+  "status": "AUTHORITATIVE_RESEARCH_BASELINE_FROZEN",
+  "grand_empirical_total_trials": 3145,
+  "accounting_formula": "Stage 4 (1800) + Stage 5 (645) + Stage 6 (700) = 3145",
+  "detector_configuration_version": {
+    "similarity_threshold": 0.85,
+    "similarity_metric": "difflib.SequenceMatcher.ratio()",
+    "homoglyph_canonicalization": "Unicode NFKD + Cyrillic/Greek confusable skeleton mapping",
+    "provenance_validation": "Authority endpoint comparison",
+    "max_delegation_depth": 5,
+    "rate_limiter_window_seconds": 1.0,
+    "rate_limiter_default_threshold": 25
+  },
+  "modules": {
+    "stage4_comparative_evaluation": {
+      "module_title": "Comparative Security Policy Evaluation (Permissive vs Binary Quarantine vs Graduated Response)",
+      "total_trials": 1800,
+      "random_seed": 42,
+      "independent_variable": "Policy Regime (PERMISSIVE, BINARY_QUARANTINE, GRADUATED)",
+      "dependent_variables": ["Threat Containment Rate", "Attacker Upstream Exposure", "Legitimate Security Availability", "Collateral Disruption Rate", "Latency"],
+      "ledgers": [
+        {
+          "artifact_path": "demo/data/evaluation/comparative/comparative_trials.jsonl",
+          "trial_count": 1800,
+          "is_authoritative": true,
+          "sha256": "verified_authoritative"
+        }
+      ],
+      "summary_artifact": "demo/data/evaluation/comparative/comparative_summary.json",
+      "statistics_artifact": "demo/data/evaluation/comparative/comparative_statistics.json",
+      "documentation": "demo/docs/stage4_comparative_evaluation.md"
+    },
+    "stage5_ablation_and_robustness": {
+      "module_title": "Component Ablation & Invariant Limit Studies (AS, CC, CO)",
+      "total_trials": 645,
+      "sub_studies": {
+        "as_component_ablation": {
+          "total_trials": 600,
+          "random_seed": 42,
+          "independent_variable": "Detector Component Flags (FULL_DETECTOR, NO_HOMOGLYPH, NO_SIMILARITY, NO_PROVENANCE)",
+          "ledgers": [
+            {
+              "artifact_path": "demo/data/evaluation/ablation/as_ablation_trials.jsonl",
+              "trial_count": 600,
+              "is_authoritative": true
+            }
+          ],
+          "summary_artifact": "demo/data/evaluation/ablation/as_ablation_summary.json"
+        },
+        "cc_envelope_robustness": {
+          "total_trials": 31,
+          "design": "Deterministic boundary classes (undeclared methods, declared methods, protocol methods, prompt injections in parameters)",
+          "ledgers": [
+            {
+              "artifact_path": "demo/data/evaluation/robustness/cc_robustness_trials.jsonl",
+              "trial_count": 31,
+              "is_authoritative": true
+            }
+          ],
+          "summary_artifact": "demo/data/evaluation/robustness/cc_robustness_summary.json"
+        },
+        "co_delegation_limits": {
+          "total_trials": 14,
+          "design": "Deterministic depth progression (1..12 hops), budget boundary (K=5), explicit cycles, header stripping",
+          "ledgers": [
+            {
+              "artifact_path": "demo/data/evaluation/robustness/co_robustness_trials.jsonl",
+              "trial_count": 14,
+              "is_authoritative": true
+            }
+          ],
+          "summary_artifact": "demo/data/evaluation/robustness/co_robustness_summary.json"
+        }
+      },
+      "documentation": "demo/docs/stage5_ablation_robustness.md"
+    },
+    "stage6_real_world_generalization": {
+      "module_title": "Real-World Agent Card Generalization & Offline Mutation Validation",
+      "total_trials": 700,
+      "source_corpus": {
+        "combined_cards_inventory": 203,
+        "live_registry_snapshot_cards": 100,
+        "static_registry_corpus_cards": 103,
+        "corpus_partitioning": "100 live snapshot cards used for benign admission FPR evaluation and mutation generation; 103 static corpus cards used for schema, parser regression, and cross-version invariance analysis."
+      },
+      "safety_boundary": "100% offline inspection. Zero remote agent endpoints probed or called. Zero A2A task requests dispatched.",
+      "ledgers": [
+        {
+          "artifact_path": "demo/data/evaluation/real_world/real_card_detector_results.jsonl",
+          "trial_count": 100,
+          "purpose": "Observed offline benign-card false-positive rate evaluation (denominator = 100 live snapshot cards)",
+          "is_authoritative": true
+        },
+        {
+          "artifact_path": "demo/data/evaluation/real_world/real_card_mutations.jsonl",
+          "trial_count": 400,
+          "purpose": "Controlled offline mutations (100 Homoglyph, 100 Typosquat, 100 Provenance Conflict, 100 Combined Attack)",
+          "is_authoritative": true
+        },
+        {
+          "artifact_path": "demo/data/evaluation/real_world/orthogonal_homoglyph_trials.jsonl",
+          "trial_count": 200,
+          "purpose": "Orthogonal component ablation (100 Multi-glyph homoglyphs with sim < 0.85; 100 Non-confusable typosquats with sim >= 0.85)",
+          "is_authoritative": true
+        }
+      ],
+      "baseline_inventory_artifact": "demo/data/evaluation/real_world/real_card_baseline.json",
+      "summary_artifact": "demo/data/evaluation/real_world/real_card_summary.json",
+      "mutations_summary_artifact": "demo/data/evaluation/real_world/real_card_mutations_summary.json",
+      "orthogonal_summary_artifact": "demo/data/evaluation/real_world/orthogonal_homoglyph_summary.json",
+      "documentation": "demo/docs/stage6_real_world_generalization.md"
+    }
+  },
+  "designation_policy": {
+    "authoritative_status": "All ledgers listed under modules are AUTHORITATIVE research baseline ledgers.",
+    "non_authoritative_status": "Any historical or pre-audit trial records located in legacy_pre_audit/ subdirectories are retained strictly for forensic provenance and are NON-AUTHORITATIVE."
+  },
+  "known_experimental_limitations": [
+    "Cooperative header propagation dependence for Cycle Overflow detection in stateless inline gateways",
+    "Workload proportion sensitivity in comparative availability margins",
+    "Local loopback latencies due to host Docker unavailability",
+    "Discovery metadata boundary: offline evaluation cannot assess runtime authorization enforced at upstream reverse proxies",
+    "Evidence of threshold-collision pressure in real registry naming (closest legitimate intra-corpus pair observed at 0.8475 vs 0.85 threshold)"
+  ]
+}

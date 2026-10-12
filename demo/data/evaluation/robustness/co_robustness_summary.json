@@ -1,0 +1,86 @@
+{
+  "study": "Cycle Overflow (CO) Detector Robustness & Depth Budget Study",
+  "timestamp_utc": "2026-10-06T01:44:02.662171+00:00",
+  "max_depth_threshold": 5,
+  "total_test_cases": 14,
+  "header_dependence_finding": "CO detection is strictly dependent on cooperative propagation of x-context-id and x-delegation-chain headers. When context headers are omitted, recursive loops are unobservable at the network mediation layer without global state correlation.",
+  "categories": {
+    "1_hop_delegation": {
+      "total_cases": 1,
+      "headers_present": true,
+      "detected_count": 0,
+      "expected_detected_count": 0,
+      "conformance_rate": 1.0
+    },
+    "missing_headers_benign": {
+      "total_cases": 1,
+      "headers_present": false,
+      "detected_count": 0,
+      "expected_detected_count": 0,
+      "conformance_rate": 1.0
+    },
+    "explicit_cycle": {
+      "total_cases": 4,
+      "headers_present": true,
+      "detected_count": 4,
+      "expected_detected_count": 4,
+      "conformance_rate": 1.0
+    },
+    "depth_overflow_6hops": {
+      "total_cases": 1,
+      "headers_present": true,
+      "detected_count": 1,
+      "expected_detected_count": 1,
+      "conformance_rate": 1.0
+    },
+    "depth_overflow_8hops": {
+      "total_cases": 1,
+      "headers_present": true,
+      "detected_count": 1,
+      "expected_detected_count": 1,
+      "conformance_rate": 1.0
+    },
+    "4_hop_delegation": {
+      "total_cases": 1,
+      "headers_present": true,
+      "detected_count": 0,
+      "expected_detected_count": 0,
+      "conformance_rate": 1.0
+    },
+    "missing_headers_unobservable_cycle": {
+      "total_cases": 1,
+      "headers_present": false,
+      "detected_count": 0,
+      "expected_detected_count": 0,
+      "conformance_rate": 1.0
+    },
+    "2_hop_delegation": {
+      "total_cases": 1,
+      "headers_present": true,
+      "detected_count": 0,
+      "expected_detected_count": 0,
+      "conformance_rate": 1.0
+    },
+    "3_hop_delegation": {
+      "total_cases": 1,
+      "headers_present": true,
+      "detected_count": 0,
+      "expected_detected_count": 0,
+      "conformance_rate": 1.0
+    },
+    "depth_5_boundary_allowed": {
+      "total_cases": 1,
+      "headers_present": true,
+      "detected_count": 0,
+      "expected_detected_count": 0,
+      "conformance_rate": 1.0
+    },
+    "depth_overflow_12hops": {
+      "total_cases": 1,
+      "headers_present": true,
+      "detected_count": 1,
+      "expected_detected_count": 1,
+      "conformance_rate": 1.0
+    }
+  }
+}

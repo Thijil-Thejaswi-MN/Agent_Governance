@@ -1,0 +1,15 @@
+{
+  "research_question": "Does graduated response provide a better security/availability trade-off than binary blocking for A2A protocol-level threats?",
+  "trade_off_analysis": {
+    "permissive_vs_graduated": {
+      "containment_gain": 1.0,
+      "availability_change": -0.3
+    },
+    "binary_vs_graduated": {
+      "containment_difference": 0.0,
+      "availability_preservation_gain": 0.3,
+      "blocked_legitimate_reduction": 0.3
+    }
+  },
+  "findings_summary": "Under the evaluated workload, graduated response achieved the same observed containment (100.0%) as binary quarantine while preserving 30.0 percentage points more legitimate availability (70.0% vs 40.0%), indicating a favorable security-availability trade-off."
+}

@@ -1,0 +1,173 @@
+{
+  "study": "AgentCard Spoofing (AS) Detector Ablation",
+  "timestamp_utc": "2026-10-06T01:44:02.662171+00:00",
+  "threshold_used": 0.85,
+  "attack_cases": 100,
+  "benign_cases": 50,
+  "configurations": {
+    "FULL_DETECTOR": {
+      "flags": {
+        "enable_homoglyph": true,
+        "enable_similarity": true,
+        "enable_provenance": true
+      },
+      "confusion_matrix": {
+        "true_positives": 100,
+        "false_negatives": 0,
+        "false_positives": 0,
+        "true_negatives": 50,
+        "total_attacks": 100,
+        "total_benign": 50
+      },
+      "metrics": {
+        "recall": 1.0,
+        "precision": 1.0,
+        "f1_score": 1.0,
+        "fpr": 0.0,
+        "recall_wilson_ci": [
+          96.3,
+          100.0
+        ],
+        "fpr_wilson_ci": [
+          0.0,
+          7.13
+        ]
+      },
+      "latency_ms": {
+        "count": 150,
+        "mean_ms": 0.0259,
+        "median_ms": 0.021,
+        "stdev_ms": 0.0676,
+        "min_ms": 0.0039,
+        "max_ms": 0.8341,
+        "p95_ms": 0.0417,
+        "p99_ms": 0.0527,
+        "ci95_lower_ms": 0.0151,
+        "ci95_upper_ms": 0.0367
+      }
+    },
+    "NO_HOMOGLYPH": {
+      "flags": {
+        "enable_homoglyph": false,
+        "enable_similarity": true,
+        "enable_provenance": true
+      },
+      "confusion_matrix": {
+        "true_positives": 100,
+        "false_negatives": 0,
+        "false_positives": 0,
+        "true_negatives": 50,
+        "total_attacks": 100,
+        "total_benign": 50
+      },
+      "metrics": {
+        "recall": 1.0,
+        "precision": 1.0,
+        "f1_score": 1.0,
+        "fpr": 0.0,
+        "recall_wilson_ci": [
+          96.3,
+          100.0
+        ],
+        "fpr_wilson_ci": [
+          0.0,
+          7.13
+        ]
+      },
+      "latency_ms": {
+        "count": 150,
+        "mean_ms": 0.0218,
+        "median_ms": 0.0205,
+        "stdev_ms": 0.0109,
+        "min_ms": 0.0039,
+        "max_ms": 0.0535,
+        "p95_ms": 0.0396,
+        "p99_ms": 0.0487,
+        "ci95_lower_ms": 0.0201,
+        "ci95_upper_ms": 0.0235
+      }
+    },
+    "NO_SIMILARITY": {
+      "flags": {
+        "enable_homoglyph": true,
+        "enable_similarity": false,
+        "enable_provenance": true
+      },
+      "confusion_matrix": {
+        "true_positives": 67,
+        "false_negatives": 33,
+        "false_positives": 0,
+        "true_negatives": 50,
+        "total_attacks": 100,
+        "total_benign": 50
+      },
+      "metrics": {
+        "recall": 0.67,
+        "precision": 1.0,
+        "f1_score": 0.8024,
+        "fpr": 0.0,
+        "recall_wilson_ci": [
+          57.31,
+          75.44
+        ],
+        "fpr_wilson_ci": [
+          0.0,
+          7.13
+        ]
+      },
+      "latency_ms": {
+        "count": 150,
+        "mean_ms": 0.0038,
+        "median_ms": 0.0036,
+        "stdev_ms": 0.001,
+        "min_ms": 0.0026,
+        "max_ms": 0.0092,
+        "p95_ms": 0.0054,
+        "p99_ms": 0.0092,
+        "ci95_lower_ms": 0.0036,
+        "ci95_upper_ms": 0.004
+      }
+    },
+    "NO_PROVENANCE": {
+      "flags": {
+        "enable_homoglyph": true,
+        "enable_similarity": true,
+        "enable_provenance": false
+      },
+      "confusion_matrix": {
+        "true_positives": 67,
+        "false_negatives": 33,
+        "false_positives": 0,
+        "true_negatives": 50,
+        "total_attacks": 100,
+        "total_benign": 50
+      },
+      "metrics": {
+        "recall": 0.67,
+        "precision": 1.0,
+        "f1_score": 0.8024,
+        "fpr": 0.0,
+        "recall_wilson_ci": [
+          57.31,
+          75.44
+        ],
+        "fpr_wilson_ci": [
+          0.0,
+          7.13
+        ]
+      },
+      "latency_ms": {
+        "count": 150,
+        "mean_ms": 0.021,
+        "median_ms": 0.0188,
+        "stdev_ms": 0.0107,
+        "min_ms": 0.004,
+        "max_ms": 0.0504,
+        "p95_ms": 0.039,
+        "p99_ms": 0.0455,
+        "ci95_lower_ms": 0.0193,
+        "ci95_upper_ms": 0.0227
+      }
+    }
+  }
+}

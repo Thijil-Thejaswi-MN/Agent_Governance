@@ -1,0 +1,4195 @@
+{
+  "metadata": {
+    "evaluation_title": "Stage 6 Real-World Agent Card Corpus Quality Baseline",
+    "timestamp_utc": "2026-10-06T02:07:20.386442+00:00",
+    "safety_boundary": "100% offline inspection. Zero remote requests dispatched.",
+    "total_cards_evaluated": 203,
+    "primary_snapshot_cards": 100,
+    "static_corpus_cards": 103
+  },
+  "aggregate_metrics": {
+    "total_cards": 203,
+    "valid_cards": 203,
+    "invalid_cards": 0,
+    "normalization_failures": 0,
+    "protocol_version_distribution": {
+      "1.0": 47,
+      "0.3.0": 153,
+      "0.3": 2,
+      "1": 1
+    },
+    "url_scheme_distribution": {
+      "https": 200,
+      "http": 3
+    },
+    "declared_security_metadata_frequency": {
+      "cards_with_declared_security_metadata": 14,
+      "percentage_with_declared_security_metadata": 6.9,
+      "cards_with_empty_or_omitted_declared_security_metadata": 189,
+      "percentage_empty_or_omitted": 93.1,
+      "reporting_standard_note": "Do NOT reinterpret empty security metadata as proof of unauthenticated deployment. Represents declared security metadata in public discovery cards."
+    },
+    "duplicate_observations": {
+      "unique_agent_names": 203,
+      "duplicate_name_collisions": 0,
+      "unique_origins": 108,
+      "shared_origin_clusters": 1
+    }
+  },
+  "cards": [
+    {
+      "card_id": "4272bb0a-1dbe-42c5-856e-1032fcc6336a",
+      "source": "live_registry_snapshot",
+      "name": "nodcheck",
+      "endpoint": "https://nodcheck.com/a2a/v1",
+      "protocol_version": "1.0",
+      "agent_version": "4.2.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 5,
+      "provider": {
+        "organization": "nodcheck",
+        "url": "https://nodcheck.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "d8317b27-79e5-4904-8187-50bb77033348",
+      "source": "live_registry_snapshot",
+      "name": "Quiet Stance Productive Opportunity Routing",
+      "endpoint": "https://quietstance.com/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "1.0.3",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Quiet Stance",
+        "url": "https://quietstance.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "4c21a103-253f-49a4-bb05-96173ab6da20",
+      "source": "live_registry_snapshot",
+      "name": "Increatus Tools (Agent OS public capabilities)",
+      "endpoint": "https://studio.tail7ba746.ts.net/agents/tools/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {
+        "apiKey": {
+          "apiKeySecurityScheme": {
+            "name": "X-API-Key",
+            "location": "header",
+            "description": "Partner/owner key. Public skills need no key; private skills and the extended card do."
+          }
+        }
+      },
+      "has_declared_security_metadata": true,
+      "skills_count": 2,
+      "provider": {
+        "organization": "Agent OS (local)",
+        "url": "https://studio.tail7ba746.ts.net/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "efad5d4b-6be5-4f08-a082-c7f2b672cbe2",
+      "source": "live_registry_snapshot",
+      "name": "Ops Control HQ Utility Agent",
+      "endpoint": "https://tkoqkknsezxavtxfywkm.supabase.co/functions/v1/agent402-register-origin-shim",
+      "protocol_version": "1.0",
+      "agent_version": "1.4.6",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 12,
+      "provider": {
+        "organization": "Ops Control HQ",
+        "url": "https://opscontrolhq.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "829c3c1c-33bb-4c67-be23-215624038ddf",
+      "source": "live_registry_snapshot",
+      "name": "Anansi Haven",
+      "endpoint": "https://anansi-haven.anansidata.workers.dev/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "0.6.1",
+      "declared_security_metadata": {
+        "bearer": {
+          "httpAuthSecurityScheme": {
+            "scheme": "Bearer",
+            "description": "Haven API key (hv_...) from the register_agent skill"
+          }
+        }
+      },
+      "has_declared_security_metadata": true,
+      "skills_count": 50,
+      "provider": {
+        "organization": "Anansi Data",
+        "url": "https://anansidata.xyz/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "3a715dca-fe38-4446-89d9-2a12523e1f7e",
+      "source": "live_registry_snapshot",
+      "name": "Astro Agents",
+      "endpoint": "https://astro-agent.dev/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "1.0.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 14,
+      "provider": {
+        "organization": "aidatatools",
+        "url": "https://github.com/aidatatools-dev"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "114088e2-e1c2-46da-a508-5edb3ee3ff50",
+      "source": "live_registry_snapshot",
+      "name": "SmithTalks",
+      "endpoint": "https://smithtalks.pages.dev/a2a/v1",
+      "protocol_version": "1.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 3,
+      "provider": {
+        "organization": "SmithTalks",
+        "url": "https://smithtalks.pages.dev/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "269cc955-737b-4677-9918-69bd21c3acf8",
+      "source": "live_registry_snapshot",
+      "name": "rimo",
+      "endpoint": "https://www.rimogogo.com/a2a/v1",
+      "protocol_version": "1.0",
+      "agent_version": "2.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 2,
+      "provider": {
+        "organization": "rimo",
+        "url": "https://www.rimogogo.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "29ff0025-873f-4848-b035-959633660c1b",
+      "source": "live_registry_snapshot",
+      "name": "Practice Negotiation Partner",
+      "endpoint": "http://18.222.26.118:8082/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": null,
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "beed69a5-3e55-493e-a75b-78901e5e01e8",
+      "source": "live_registry_snapshot",
+      "name": "Burs-IA Agent Station",
+      "endpoint": "https://burs-ia.com/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "0.6.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 9,
+      "provider": {
+        "organization": "Bursia",
+        "url": "https://burs-ia.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "59c2ef6b-1298-4903-af36-7fb160a3d40d",
+      "source": "live_registry_snapshot",
+      "name": "Agentropolis",
+      "endpoint": "https://agentropolis.io/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 3,
+      "provider": {
+        "organization": "Agentropolis",
+        "url": "https://agentropolis.io/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "1d23476d-995b-4d68-9706-9de420980e68",
+      "source": "live_registry_snapshot",
+      "name": "Agent Checkup by OpenGlass",
+      "endpoint": "https://checkup.openglass.glass/a2a",
+      "protocol_version": "0.3",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "OpenGlass",
+        "url": "https://openglass.glass/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "404e52bb-d53e-45e4-af09-318d4faacd1c",
+      "source": "live_registry_snapshot",
+      "name": "objekts visual production router",
+      "endpoint": "https://objekts-a2a.onrender.com/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 3,
+      "provider": null,
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "46a86268-b2cd-4aca-a466-23d89f341521",
+      "source": "live_registry_snapshot",
+      "name": "Golden Cat Concierge",
+      "endpoint": "https://golden-cat-network.bronkobologna.chatgpt.site/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "4.1.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 5,
+      "provider": {
+        "organization": "Golden Cat Premium Deluxe",
+        "url": "https://golden-cat-network.bronkobologna.chatgpt.site/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "ec8aa940-0ddf-4ac9-b99a-16108bd2bd59",
+      "source": "live_registry_snapshot",
+      "name": "Roomcomm",
+      "endpoint": "https://roomcomm.xyz/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "2026.09.30",
+      "declared_security_metadata": {
+        "roomcommKey": {
+          "httpAuthSecurityScheme": {
+            "scheme": "Bearer",
+            "description": "Optional. A free roomcomm agent key: POST /api/keys {\"agent_id\": \"\u2026\"}. Without one you are metered per IP (30 messages / 3 rooms a day) and cannot create rooms, read the inbox or exchange files.",
+            "bearerFormat": "rk_ agent key"
+          }
+        }
+      },
+      "has_declared_security_metadata": true,
+      "skills_count": 9,
+      "provider": {
+        "organization": "Roomcomm",
+        "url": "https://roomcomm.xyz/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "569c2d1c-1d78-494d-bed2-318f7a8c44b4",
+      "source": "live_registry_snapshot",
+      "name": "Margaret's poems: commission a poem",
+      "endpoint": "https://poems.lorepunk.ai/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.4.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Margaret Corvid",
+        "url": "https://poems.lorepunk.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "4413e781-fb96-4c0a-9cbf-eb1aa4f738c2",
+      "source": "live_registry_snapshot",
+      "name": "Bounty Engineer Autonomous Mission Commerce",
+      "endpoint": "https://bounty-engineer-x402-prod.onrender.com/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.2.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 81,
+      "provider": {
+        "organization": "Bounty Engineer",
+        "url": "https://bounty-engineer-x402-prod.onrender.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "a59f1af3-381d-4e60-92c3-08f3965822a4",
+      "source": "live_registry_snapshot",
+      "name": "InstaVeil Agent Commerce",
+      "endpoint": "https://instaveil.com/a2a/v1",
+      "protocol_version": "1.0",
+      "agent_version": "1.2.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 3,
+      "provider": {
+        "organization": "InstaVeil",
+        "url": "https://instaveil.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "dd3c09d6-c39d-45a5-ac14-d2584d0ce92a",
+      "source": "live_registry_snapshot",
+      "name": "Smalltalk Experimental Agent",
+      "endpoint": "http://18.222.26.118:47831/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "0.1.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 2,
+      "provider": {
+        "organization": "Your name or org",
+        "url": "https://example.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "c17e39c3-7aea-470e-898f-a8ebbed280cc",
+      "source": "live_registry_snapshot",
+      "name": "Degenscan Intel",
+      "endpoint": "https://intel.degenscan.io/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.10.35",
+      "declared_security_metadata": {
+        "apiKey": {
+          "in": "header",
+          "name": "X-API-KEY",
+          "type": "apiKey"
+        }
+      },
+      "has_declared_security_metadata": true,
+      "skills_count": 26,
+      "provider": {
+        "organization": "Marbella Collins LLC (Florida, USA) \u2014 contact@degenscan.io",
+        "url": "https://intel.degenscan.io/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "19404b51-7a27-4f74-a8e7-ac2294b2ac9d",
+      "source": "live_registry_snapshot",
+      "name": "Jeyaya \u2014 The Bank of Bots",
+      "endpoint": "https://jeyaya.com/api/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.1.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 5,
+      "provider": {
+        "organization": "Jeyaya / RankedBots botverse experiment",
+        "url": "https://jeyaya.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "cefadfda-e890-4025-9933-f92235205f92",
+      "source": "live_registry_snapshot",
+      "name": "Agent Readiness Checker",
+      "endpoint": "https://readiness.hireanagent.dev/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "0.1.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Adrian F\u00f6hl (experiment)",
+        "url": "https://www.adrianfoehl.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "be6a2873-fe57-463f-9f3f-09b3b0d479bf",
+      "source": "live_registry_snapshot",
+      "name": "Muse",
+      "endpoint": "https://stratly.us/",
+      "protocol_version": "1.0",
+      "agent_version": "2.4.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 8,
+      "provider": {
+        "organization": "Glytch Works",
+        "url": "https://stratly.us/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "a9ae173f-0016-4279-a7dd-3a02907faec1",
+      "source": "live_registry_snapshot",
+      "name": "AI Agents Hotline",
+      "endpoint": "https://hotline.papilov.org/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.2.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 2,
+      "provider": {
+        "organization": "Artem Papilov",
+        "url": "https://papilov.org/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "8c15fe41-d037-427f-8cad-682aaa64b074",
+      "source": "live_registry_snapshot",
+      "name": "MusedIn",
+      "endpoint": "https://musedin.com/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 4,
+      "provider": {
+        "organization": "MusedIn",
+        "url": "https://musedin.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "5ee5711b-132a-48e3-b7cd-a6375fabdf3c",
+      "source": "live_registry_snapshot",
+      "name": "Overwing",
+      "endpoint": "https://overwing.ai/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.1.0",
+      "declared_security_metadata": {
+        "organizationKey": {
+          "type": "http",
+          "scheme": "bearer",
+          "description": "Optional. ow_live_... from POST https://overwing.ai/api/v1/signup lifts the free limits",
+          "httpAuthSecurityScheme": {
+            "scheme": "bearer",
+            "description": "Optional. ow_live_... from POST https://overwing.ai/api/v1/signup lifts the free limits"
+          }
+        }
+      },
+      "has_declared_security_metadata": true,
+      "skills_count": 2,
+      "provider": {
+        "organization": "Overwing",
+        "url": "https://overwing.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "cb1027e5-249c-49dd-9052-11047919a440",
+      "source": "live_registry_snapshot",
+      "name": "Handbook QA (edition 2026-3, current)",
+      "endpoint": "https://hireanagent.dev/specialists/handbook/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "0.1.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Adrian F\u00f6hl (experiment)",
+        "url": "https://www.adrianfoehl.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "129ef298-908d-47ba-b043-f037cb5f22f1",
+      "source": "live_registry_snapshot",
+      "name": "Source Checker",
+      "endpoint": "https://sources.hireanagent.dev/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "0.1.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Adrian F\u00f6hl (experiment)",
+        "url": "https://www.adrianfoehl.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "fb2d1499-9603-4908-8c99-48ac6dc7325e",
+      "source": "live_registry_snapshot",
+      "name": "Link Auditor",
+      "endpoint": "https://links.hireanagent.dev/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "0.1.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Adrian F\u00f6hl (experiment)",
+        "url": "https://www.adrianfoehl.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "07b050ad-2750-4d10-989e-a59d3b274bfa",
+      "source": "live_registry_snapshot",
+      "name": "VOLO",
+      "endpoint": "https://mcp.flyvolo.ai/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 3,
+      "provider": {
+        "organization": "VOLO",
+        "url": "https://flyvolo.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "58fab43b-abc1-4e80-a410-d23ae767adaf",
+      "source": "live_registry_snapshot",
+      "name": "River \u2014 Fort Embassy",
+      "endpoint": "https://a2a.thefortthatholds.com/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "0.1.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 3,
+      "provider": {
+        "organization": "The Fort That Holds LLC",
+        "url": "https://thefortthatholds.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "82e50cca-b265-4c3a-bd4a-d07c4841761c",
+      "source": "live_registry_snapshot",
+      "name": "Uuriko Project Room",
+      "endpoint": "https://room.trydemigod.com/",
+      "protocol_version": "1",
+      "agent_version": "1",
+      "declared_security_metadata": {
+        "bearerAuth": {
+          "type": "http",
+          "scheme": "bearer",
+          "description": "guest pass or agent API key as an Authorization header token. Token clients are exempt from browser Origin checks."
+        },
+        "digestAuth": {
+          "type": "http",
+          "scheme": "digest",
+          "description": "Room digest identity credential (long-lived member key)."
+        },
+        "guestLinkAuth": {
+          "in": "header",
+          "name": "Authorization",
+          "type": "apiKey",
+          "description": "Single-use GX- invite code redeemed with an Ed25519-signed agent card; yields a short-lived guest pass."
+        }
+      },
+      "has_declared_security_metadata": true,
+      "skills_count": 11,
+      "provider": {
+        "organization": "Uuriko Project Room",
+        "url": "https://github.com/Uuriko/project-room"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "b0af0d64-0484-4222-bc35-0100f11456fd",
+      "source": "live_registry_snapshot",
+      "name": "Fund Structured Verification Agent",
+      "endpoint": "https://fund-runtime-fixture.mrhino.chatgpt.site/a2a/v1",
+      "protocol_version": "1.0",
+      "agent_version": "1.3.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 3,
+      "provider": {
+        "organization": "Fund Workflow Discovery",
+        "url": "https://fund-runtime-fixture.mrhino.chatgpt.site/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "942b626c-966f-4fd3-96e8-e91fa3254299",
+      "source": "live_registry_snapshot",
+      "name": "Agent Traffic Lab",
+      "endpoint": "https://agenttrafficlab.com/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "0.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 10,
+      "provider": {
+        "organization": "Agent Traffic Lab",
+        "url": "https://agenttrafficlab.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "1cc45959-ea26-456c-951a-8bb62f5baf1e",
+      "source": "live_registry_snapshot",
+      "name": "P0 x402 Market Index",
+      "endpoint": "https://x402-bazaar-rank.x402-bazaar-rank-worker.workers.dev/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.2.0",
+      "declared_security_metadata": {
+        "x402": {
+          "in": "header",
+          "name": "PAYMENT-SIGNATURE",
+          "type": "apiKey",
+          "description": "x402 v2 per-call payment, no account or API key. A paid endpoint answers HTTP 402 with PAYMENT-REQUIRED; retry with the signed payment in PAYMENT-SIGNATURE (x402 v1 clients: X-PAYMENT). USDC on Base, Arbitrum, Polygon, Avalanche, Optimism, Celo, Ethereum; USDT0 on Arbitrum; sBTC on Stacks."
+        }
+      },
+      "has_declared_security_metadata": true,
+      "skills_count": 3,
+      "provider": {
+        "organization": "P0",
+        "url": "https://x402-bazaar-rank.x402-bazaar-rank-worker.workers.dev/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "04452e6f-5761-4f1e-b2a7-05bba0dff300",
+      "source": "live_registry_snapshot",
+      "name": "Baby (Jingin) \u2014 Increatus",
+      "endpoint": "https://whatsapp-commerce-os-production-9241.up.railway.app/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 4,
+      "provider": {
+        "organization": "Increatus",
+        "url": "https://whatsapp-commerce-os-production-9241.up.railway.app/baby"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "9f36090a-eb19-4929-965d-1dd4269223f5",
+      "source": "live_registry_snapshot",
+      "name": "FIELD AI Community Gateway",
+      "endpoint": "https://field.43.159.62.122.sslip.io/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": null,
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "57ca509c-b933-4154-b1d1-35cef44a981d",
+      "source": "live_registry_snapshot",
+      "name": "Taifoon: Coordination Layer",
+      "endpoint": "https://coord.taifoon.dev/mcp",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.2.0",
+      "declared_security_metadata": {
+        "taifoonKey": {
+          "in": "header",
+          "name": "X-API-Key",
+          "type": "apiKey",
+          "description": "Optional. A free key (tfr_free_ prefix) comes from the MCP tool taifoon_register or POST /v1/register; reads and a small per-visitor budget of writes work without one."
+        }
+      },
+      "has_declared_security_metadata": true,
+      "skills_count": 4,
+      "provider": {
+        "organization": "Taifoon",
+        "url": "https://www.taifoon.io/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "f7f12862-c801-453e-a1ba-306c6eec2371",
+      "source": "live_registry_snapshot",
+      "name": "GroundTruth Field Evidence Agent",
+      "endpoint": "https://groundtruth-oracle.vercel.app/api/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 3,
+      "provider": {
+        "organization": "GroundTruth",
+        "url": "https://groundtruth-oracle.vercel.app/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "34dc02e8-6277-4c06-9dc6-67bb26b42d74",
+      "source": "live_registry_snapshot",
+      "name": "NAIF SOS Technical Rescue Agent",
+      "endpoint": "https://naifgravity.com/a2a/v1",
+      "protocol_version": "1.0",
+      "agent_version": "1.6.3",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 16,
+      "provider": {
+        "organization": "NAIF",
+        "url": "https://naifgravity.com/fix"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "f7aa0af1-32be-45b1-9805-ee5f3b86694e",
+      "source": "live_registry_snapshot",
+      "name": "crosscheck",
+      "endpoint": "https://crosscheckapi.com/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 5,
+      "provider": {
+        "organization": "crosscheck",
+        "url": "https://crosscheckapi.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "e5adc9b2-73bb-4ecb-86a7-26630099d0c0",
+      "source": "live_registry_snapshot",
+      "name": "Zambo",
+      "endpoint": "https://zambo.dev/api/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "4.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 2,
+      "provider": {
+        "organization": "zambo.dev",
+        "url": "https://zambo.dev/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "5dd12a4c-b01d-44e9-85f9-9e65b50dba9c",
+      "source": "live_registry_snapshot",
+      "name": "Anokha Web Tools",
+      "endpoint": "https://tools.anokha.space/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 21,
+      "provider": {
+        "organization": "Anokha Web Tools",
+        "url": "https://tools.anokha.space/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "b8130bb4-830d-4502-941d-fc2142a16269",
+      "source": "live_registry_snapshot",
+      "name": "Goce Petrov, brand designer",
+      "endpoint": "https://agent.gocepetrov.com/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.2.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 3,
+      "provider": {
+        "organization": "Goce Petrov",
+        "url": "https://www.gocepetrov.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "c10bc5e9-ae93-4cb5-95c2-924d0bb654f6",
+      "source": "live_registry_snapshot",
+      "name": "Prestige Hardscape & Construction - Estimate Requests",
+      "endpoint": "https://prestige-diaz-operations.tail4ed916.ts.net:10000/estimates/",
+      "protocol_version": "1.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Prestige Hardscape and Construction",
+        "url": "https://www.prestigehardscapeandconstruction.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "2978cfc2-6db6-4732-aa0e-35834e00fe2f",
+      "source": "live_registry_snapshot",
+      "name": "Strasmore US market data",
+      "endpoint": "https://ai.strasmore.com/a2a",
+      "protocol_version": "0.3",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 2,
+      "provider": {
+        "organization": "Strasmore, Inc.",
+        "url": "https://www.strasmore.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "56e20288-8a32-4a67-af21-49381a4c357a",
+      "source": "live_registry_snapshot",
+      "name": "The Korova Milk Bar",
+      "endpoint": "https://korova.philstuff.com/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {
+        "korovaSession": {
+          "type": "http",
+          "scheme": "bearer",
+          "description": "Pass the door first: POST https://korova.philstuff.com/api/v1/door/knock, solve the sha256 proof-of-work and every task, POST https://korova.philstuff.com/api/v1/door/answer within 120s. Then send Authorization: Bearer <session_token> (valid 24h; renew by knocking with agent_id + key). Full steps: https://korova.philstuff.com/llms.txt \u00b7 Python reference client: https://korova.philstuff.com/client/korova.py",
+          "bearerFormat": "ks_ session token",
+          "httpAuthSecurityScheme": {
+            "scheme": "bearer",
+            "description": "Pass the door first: POST https://korova.philstuff.com/api/v1/door/knock, solve the sha256 proof-of-work and every task, POST https://korova.philstuff.com/api/v1/door/answer within 120s. Then send Authorization: Bearer <session_token> (valid 24h; renew by knocking with agent_id + key). Full steps: https://korova.philstuff.com/llms.txt \u00b7 Python reference client: https://korova.philstuff.com/client/korova.py",
+            "bearerFormat": "ks_ session token"
+          }
+        }
+      },
+      "has_declared_security_metadata": true,
+      "skills_count": 7,
+      "provider": {
+        "organization": "The Korova Milk Bar",
+        "url": "https://korova.philstuff.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "4b0ed4fa-60ae-4b40-bede-d6b5c6447d80",
+      "source": "live_registry_snapshot",
+      "name": "TravelFinder by BeachFinder",
+      "endpoint": "https://travelfinder.online/a2a/jsonrpc",
+      "protocol_version": "1.0",
+      "agent_version": "0.1.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 4,
+      "provider": {
+        "organization": "BeachFinder",
+        "url": "https://travelfinder.online/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "879f2d3f-4e0e-47f4-8fec-77163a2a9577",
+      "source": "live_registry_snapshot",
+      "name": "MACH Agent Lab Edge",
+      "endpoint": "https://mach-agent-lab-edge.vercel.app/api/jsonrpc",
+      "protocol_version": "1.0",
+      "agent_version": "0.6.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 4,
+      "provider": {
+        "organization": "MACH",
+        "url": "https://mach-agent-lab-edge.vercel.app/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "6b3257f8-47b8-4ecf-8720-34e80edea2bc",
+      "source": "live_registry_snapshot",
+      "name": "ToolScout Software Recommendation Agent",
+      "endpoint": "https://trytoolscout.org/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "ToolScout",
+        "url": "https://trytoolscout.org/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "182acf69-880f-4669-8167-b3db64d785a8",
+      "source": "live_registry_snapshot",
+      "name": "Scry Wallet Intelligence",
+      "endpoint": "https://scry.solanahub.de/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.0",
+      "declared_security_metadata": {
+        "x402": {
+          "type": "x402",
+          "description": "No API keys. Each paid request settles an exact USDC x402 v2 payment; unauthenticated requests receive HTTP 402 with machine-readable payment terms."
+        }
+      },
+      "has_declared_security_metadata": true,
+      "skills_count": 40,
+      "provider": {
+        "organization": "Scry",
+        "url": "https://scry.solanahub.de/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "1c6ec915-93c4-4835-a996-3e7cde58c72c",
+      "source": "live_registry_snapshot",
+      "name": "CarGene",
+      "endpoint": "https://api.car-gene.com/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "0.1.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 4,
+      "provider": {
+        "organization": "CarGene",
+        "url": "https://car-gene.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "b28ad36e-7aa4-4c9a-8910-cad1a74b801f",
+      "source": "live_registry_snapshot",
+      "name": "Open Agent Polity",
+      "endpoint": "https://open-agent-polity.politeia-agents.workers.dev/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "0.5.0",
+      "declared_security_metadata": {
+        "participantBearer": {
+          "httpAuthSecurityScheme": {
+            "scheme": "Bearer",
+            "description": "Participant bearer token returned once by the join skill. Never use a model-provider key or infrastructure credential here.",
+            "bearerFormat": "Open Agent Polity participant token"
+          }
+        }
+      },
+      "has_declared_security_metadata": true,
+      "skills_count": 12,
+      "provider": null,
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "a7e29ef8-1270-4f9a-a027-2d55dff2e5aa",
+      "source": "live_registry_snapshot",
+      "name": "LUMEN B2B Agent",
+      "endpoint": "https://lumen-zero-a2a.lumen-b2b.workers.dev/a2a/v1",
+      "protocol_version": "1.0",
+      "agent_version": "2.2-zero-a2a-x402-checkout-discovery",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 13,
+      "provider": {
+        "organization": "LUMEN B2B",
+        "url": "https://lumen-zero-a2a.lumen-b2b.workers.dev/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "d5cdf4c6-0803-4133-a930-22d68a58a4ec",
+      "source": "live_registry_snapshot",
+      "name": "SCRIPTMASTERLABS \u2014 SqueezeOS Trust Router",
+      "endpoint": "https://scriptmasterlabs.com/api/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "1.4.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 9,
+      "provider": {
+        "organization": "Script Master Labs, LLC",
+        "url": "https://scriptmasterlabs.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "50bee34a-6960-43ff-99c6-bb1c2587746d",
+      "source": "live_registry_snapshot",
+      "name": "Feeless402 Rail Quote",
+      "endpoint": "https://feeless402.com/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.2.3",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 2,
+      "provider": {
+        "organization": "Feeless402",
+        "url": "https://feeless402.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "a4cf9bc2-7d70-4f50-bf8f-9bfa8135457f",
+      "source": "live_registry_snapshot",
+      "name": "Zinvyl Fixed-Scope Qualification Agent",
+      "endpoint": "https://zinvyl.com/marketplace/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "1.2.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "G.B. Industry LLC d/b/a Zinvyl",
+        "url": "https://zinvyl.com/marketplace/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "7e9e443d-51fc-465e-ad28-3b411d9eca71",
+      "source": "live_registry_snapshot",
+      "name": "AIWebSignals Readiness Agent",
+      "endpoint": "https://aiwebsignals.com/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "2.1.9",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 3,
+      "provider": {
+        "organization": "AIWebSignals / Keyan Group, Inc.",
+        "url": "https://aiwebsignals.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "b5c5911c-f383-4833-b8b4-5414e460fae8",
+      "source": "live_registry_snapshot",
+      "name": "Sanctum Beacon",
+      "endpoint": "https://sanctum-beacon.onrender.com/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.1.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 2,
+      "provider": null,
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "a826db6c-6d69-4490-9ddc-8bcd64a12de7",
+      "source": "live_registry_snapshot",
+      "name": "Cape Partners \u2014 Agent Exchange",
+      "endpoint": "https://www.capepartners.fr/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {
+        "bearerKey": {
+          "httpAuthSecurityScheme": {
+            "scheme": "Bearer",
+            "description": "The same capability key, presented as an HTTP bearer credential."
+          }
+        },
+        "exchangeKey": {
+          "apiKeySecurityScheme": {
+            "name": "X-A2A-Key",
+            "location": "header",
+            "description": "The capability key you were issued when you sent your first message (its msgid), or the stronger answer_key given on first read. It authorizes your own tasks and nothing else."
+          }
+        }
+      },
+      "has_declared_security_metadata": true,
+      "skills_count": 2,
+      "provider": {
+        "organization": "Cape Partners",
+        "url": "https://www.capepartners.fr/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "0795866b-986d-46d0-ab11-4fe428ffae1e",
+      "source": "live_registry_snapshot",
+      "name": "Bursia Interoperability Lab",
+      "endpoint": "https://phase1b-github-mcp-gateway-canary-20260918-bursia-interop-lab.soyeladice.workers.dev/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.2.1",
+      "declared_security_metadata": {
+        "bursia_workload_oidc": {
+          "type": "openIdConnect",
+          "description": "Canary-only workload identity for protected Visitor Lounge actions. Credentials are acquired out-of-band and must be genuine bearer credentials accepted for audience https://burs-ia.com/mcp; workload identity alone is not operator authorization, and external GitHub workloads require an explicit allowlist binding.",
+          "openIdConnectUrl": "https://token.actions.githubusercontent.com/.well-known/openid-configuration"
+        }
+      },
+      "has_declared_security_metadata": true,
+      "skills_count": 2,
+      "provider": null,
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "04f9be44-e979-49a8-9cb1-af23886707d6",
+      "source": "live_registry_snapshot",
+      "name": "GoodAgent",
+      "endpoint": "https://goodagent.144-217-89-210.sslip.io/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "0.14.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "GoodAgent",
+        "url": "https://goodagent.144-217-89-210.sslip.io/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "11f57018-eba7-4be8-9807-f925d7599889",
+      "source": "live_registry_snapshot",
+      "name": "AUX Evidence and Certification",
+      "endpoint": "https://api.aux.prdictionedge.ai/a2a/v1",
+      "protocol_version": "1.0",
+      "agent_version": "0.9.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 12,
+      "provider": {
+        "organization": "AUX by PrdictionEdge",
+        "url": "https://aux.prdictionedge.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "4bac7ffc-c964-43e2-acbb-302beca35838",
+      "source": "live_registry_snapshot",
+      "name": "allagents",
+      "endpoint": "https://allagents.app/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 6,
+      "provider": {
+        "organization": "Stimhaus",
+        "url": "https://stimhaus.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "be800540-34e2-4e55-863b-52150dc470b6",
+      "source": "live_registry_snapshot",
+      "name": "AgentWorld Concierge",
+      "endpoint": "https://agentworld-api.beat-side.de/a2a/jsonrpc",
+      "protocol_version": "1.0",
+      "agent_version": "0.1.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 7,
+      "provider": {
+        "organization": "AgentWorld",
+        "url": "https://agentworld-api.beat-side.de/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "c59e1c87-855d-4b04-8c2c-fddc3dde9370",
+      "source": "live_registry_snapshot",
+      "name": "ATTRACTOR",
+      "endpoint": "https://attractor-observatory-demo.vercel.app/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "4.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 7,
+      "provider": {
+        "organization": "ATTRACTOR (human-operated project)",
+        "url": "https://attractor-observatory-demo.vercel.app/projet/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "d0233090-4395-4933-9347-a6c6d6328792",
+      "source": "live_registry_snapshot",
+      "name": "Direct Hire Agent Directory",
+      "endpoint": "https://directhireagents.com/a2a/rpc",
+      "protocol_version": "1.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 4,
+      "provider": {
+        "organization": "Direct Hire",
+        "url": "https://directhireagents.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "4460205b-6246-48b7-a103-fc30e3e4f57f",
+      "source": "live_registry_snapshot",
+      "name": "SKYROS Economic Agent Platform",
+      "endpoint": "https://vlgibwclecuhnnrgycnx.supabase.co/functions/v1/cerberrus-network-api/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "0.3.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 4,
+      "provider": null,
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "d4f9ab1a-904c-4227-8fc6-548e45749de1",
+      "source": "live_registry_snapshot",
+      "name": "AssetFare Route Quotes",
+      "endpoint": "https://api.assetfare.dev/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "1.6.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 3,
+      "provider": {
+        "organization": "AssetFare",
+        "url": "https://assetfare.dev/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "ea4dd23d-df0c-4078-86d7-19dad43cda35",
+      "source": "live_registry_snapshot",
+      "name": "Nulliverba Research Discovery Agent",
+      "endpoint": "https://nulliverba.ol-lo.workers.dev/a2a/jsonrpc",
+      "protocol_version": "1.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 16,
+      "provider": null,
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "6b6a534d-a82b-4dec-9c7f-49a5dd49f229",
+      "source": "live_registry_snapshot",
+      "name": "whiteclover",
+      "endpoint": "https://whiteclover.ai/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.1.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 6,
+      "provider": null,
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "89e27371-b4f6-4bb9-bd55-b8253bdc6dd4",
+      "source": "live_registry_snapshot",
+      "name": "Asgardian Village",
+      "endpoint": "https://asgardian-village.grok.me/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.3",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 3,
+      "provider": {
+        "organization": "Asgardian Village \u00b7 Canadian house",
+        "url": null
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "427e26db-25ad-41ae-ae73-cc8998b54b29",
+      "source": "live_registry_snapshot",
+      "name": "EVO-AI",
+      "endpoint": "http://47.253.174.153/",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 2,
+      "provider": {
+        "organization": "EVO-AI Project",
+        "url": "http://47.253.174.153/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "2e35db18-2026-4346-8bee-40dccbcb84e1",
+      "source": "live_registry_snapshot",
+      "name": "Robin's Studio",
+      "endpoint": "https://47-94-6-89.nip.io/",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.1.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 4,
+      "provider": {
+        "organization": "Robin's Studio",
+        "url": "https://47-94-6-89.nip.io/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "1bddda7e-84ea-4a98-a3f9-ad8d09560579",
+      "source": "live_registry_snapshot",
+      "name": "Magic You Agentic Commerce Lab",
+      "endpoint": "https://magic-you-agentic-commerce-lab.j-radom.chatgpt.site/a2a",
+      "protocol_version": "1.0",
+      "agent_version": "1.1.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 7,
+      "provider": {
+        "organization": "Magic You",
+        "url": "https://magicyou.co/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "7c37c7c8-dfb9-4db9-823f-833505cdb339",
+      "source": "live_registry_snapshot",
+      "name": "AgentsPodium Hosting",
+      "endpoint": "https://a2a.agentspodium.com/hosting/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.2.0",
+      "declared_security_metadata": {
+        "bearerAuth": {
+          "type": "http",
+          "scheme": "bearer",
+          "description": "An AgentsPodium API key (ak_live_\u2026) from https://agentspodium.com/account, \"API keys for agents\"."
+        }
+      },
+      "has_declared_security_metadata": true,
+      "skills_count": 5,
+      "provider": {
+        "organization": "AgentsPodium",
+        "url": "https://hosting.defispace.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "49cc94ea-76bb-4b48-a127-68a3d3f81caa",
+      "source": "live_registry_snapshot",
+      "name": "AION SUPREME Temple Gateway",
+      "endpoint": "https://aion-agent-core-live.onrender.com/a2a/v1",
+      "protocol_version": "1.0",
+      "agent_version": "0.8.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 9,
+      "provider": {
+        "organization": "AION SUPREME",
+        "url": "https://aion-agent-core-live.onrender.com/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "1.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "2b67d1df-c72a-4e8a-951f-d4ddaf769e55",
+      "source": "live_registry_snapshot",
+      "name": "X402 AI \u81ea\u52a9\u95e8\u5e97",
+      "endpoint": "https://www.easyfence.cn/a2a",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 7,
+      "provider": {
+        "organization": "X402 AI \u81ea\u52a9\u95e8\u5e97",
+        "url": "https://www.easyfence.cn/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "7277f157-0bed-4178-a7ce-af98b96ba375",
+      "source": "live_registry_snapshot",
+      "name": "Encrypted OAuth LLM Agent",
+      "endpoint": "https://authenticated-llm-agent-cryptography.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 7,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "384b69af-3b5e-4965-966d-10d2320cd534",
+      "source": "live_registry_snapshot",
+      "name": "OAuth LangChain OpenAI Agent",
+      "endpoint": "https://authenticated-llm-agent-google-auth-oauthlib.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 5,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "be04d4bb-ba3d-4862-826a-fcf250994120",
+      "source": "live_registry_snapshot",
+      "name": "MinIO and Redis Storage Stack",
+      "endpoint": "https://redis-minio-stack-generator-minio-minio.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 2,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "4147c87c-658d-4c14-b3db-9e32ed32b899",
+      "source": "live_registry_snapshot",
+      "name": "Kafka and Postgres Monitoring Stack",
+      "endpoint": "https://postgres-prometheus-kafka-stack-generator.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 2,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "ea73513d-a8fb-4805-b615-52fce431dce2",
+      "source": "live_registry_snapshot",
+      "name": "Google Sign-In LangChain Agent",
+      "endpoint": "https://google-auth-oauthlib-langchain-la-d46b90.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 5,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "557cc65e-ada0-4b88-90c5-1ebc1da9fff0",
+      "source": "live_registry_snapshot",
+      "name": "Google OAuth LangChain Agent",
+      "endpoint": "https://google-auth-oauthlib-langchain-la-c1a755.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 5,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "65d26f09-3036-4650-9227-077f12bb6566",
+      "source": "live_registry_snapshot",
+      "name": "Encrypted LangChain Token Agent",
+      "endpoint": "https://cryptography-langchain-core-mcp-07d652.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 6,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "c44914db-027b-4c12-bc8d-011fa15fec2b",
+      "source": "live_registry_snapshot",
+      "name": "OAuth Multi-LLM Orchestrator",
+      "endpoint": "https://cryptography-google-auth-oauthlib-931267.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 7,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "31c83081-b727-4e75-9ff4-036f475997bf",
+      "source": "live_registry_snapshot",
+      "name": "LangSmith Traced OpenAI Agent",
+      "endpoint": "https://langchain-core-langchain-openai-l-736876.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 4,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "66f80739-7761-4c60-9577-791cea0fe779",
+      "source": "live_registry_snapshot",
+      "name": "Bcrypt and JOSE Token Service",
+      "endpoint": "https://bcrypt-python-jose-d0e0d0.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 3,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "774a1ba9-c1be-4b6e-ad9b-164218721934",
+      "source": "live_registry_snapshot",
+      "name": "Secured LangChain OpenAI Agent",
+      "endpoint": "https://bcrypt-langchain-core-mcp-25b8f1.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 6,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "9fc17372-af83-43d0-944c-19fdda504d9b",
+      "source": "live_registry_snapshot",
+      "name": "Google OAuth Credential Service",
+      "endpoint": "https://authenticated-llm-oauth-agent.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 3,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "0fbfaa4c-7118-4af3-a0aa-7541422e3090",
+      "source": "live_registry_snapshot",
+      "name": "Traced OpenAI LangChain Agent",
+      "endpoint": "https://authenticated-mcp-agent-opentelemetry-api.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 6,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "8158948d-1bcf-4572-ba65-f3c5ca15b6df",
+      "source": "live_registry_snapshot",
+      "name": "LangChain Login and Token Agent",
+      "endpoint": "https://authenticated-mcp-agent-langchain-core.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 6,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "c63009f0-1053-4f48-8099-76e3a0c82c67",
+      "source": "live_registry_snapshot",
+      "name": "Google Sign-In Claude Agent",
+      "endpoint": "https://authenticated-llm-agent-anthropic.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 4,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "a0d3d1f5-79c8-4cde-885f-f94ba3bf6dff",
+      "source": "live_registry_snapshot",
+      "name": "Structured Output MCP Agent (Cryptography)",
+      "endpoint": "https://structured-output-mcp-agent-cryptography.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 8,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "1b9227fb-a2d0-4c3d-a170-4183e548bf11",
+      "source": "live_registry_snapshot",
+      "name": "FastAPI Auth Token JWT Service",
+      "endpoint": "https://fastapi-auth-token-jwt-service.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 4,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "dfd391ba-692d-4b57-baeb-1ec7ab5c3159",
+      "source": "live_registry_snapshot",
+      "name": "Auth Token MCP Traced Service",
+      "endpoint": "https://auth-token-mcp-traced-service.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 6,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "f01d9b4c-004e-4205-98db-c2bfe205d838",
+      "source": "live_registry_snapshot",
+      "name": "MCP Drift Observatory",
+      "endpoint": "https://drift.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.2",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 6,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "92b121c9-b879-4b46-87c0-b98bdf6ccfcf",
+      "source": "live_registry_snapshot",
+      "name": "Multi-Provider Schema Output Agent",
+      "endpoint": "https://instructor-litellm-6af681.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 3,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "34b89f74-a84e-4666-bca3-0f7dbc4f524c",
+      "source": "live_registry_snapshot",
+      "name": "Password Hashing and JWT Service",
+      "endpoint": "https://bcrypt-python-jose-1b8dd0.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 3,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "62a72ae8-345e-45e4-961b-1aa151dd9ef3",
+      "source": "live_registry_snapshot",
+      "name": "OpenAI Login and Token Agent",
+      "endpoint": "https://authenticated-mcp-agent-bcrypt.getvda.ai/a2a/",
+      "protocol_version": "0.3.0",
+      "agent_version": "0.1.1",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 6,
+      "provider": {
+        "organization": "VDA / GOSCE",
+        "url": "https://getvda.ai/"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "static_business-source.json",
+      "source": "static_registry_corpus",
+      "name": "Business Source",
+      "endpoint": "https://hub.lifie.ai/agent/cmg83tlij03w7uat8mzcwxetd/business-source",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_chess-agent.json",
+      "source": "static_registry_corpus",
+      "name": "Chess Agent",
+      "endpoint": "https://system-integration.telex.im/chessagent",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Telex",
+        "url": "https://www.telex.im"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "static_code-agent.json",
+      "source": "static_registry_corpus",
+      "name": "Code Agent",
+      "endpoint": "https://prassanna-ravishankar--code-agent-code-agent-app.modal.run",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Prassanna Ravishankar",
+        "url": "https://github.com/prassanna-ravishankar/a2a-agent-bootstrapping"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "static_coinrailz.json",
+      "source": "static_registry_corpus",
+      "name": "Coin Railz",
+      "endpoint": "https://coinrailz.com",
+      "protocol_version": "0.3.0",
+      "agent_version": "3.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 33,
+      "provider": {
+        "organization": "Kellogg Holdings LLC",
+        "url": "https://coinrailz.com"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "static_data-agent.json",
+      "source": "static_registry_corpus",
+      "name": "Data Agent",
+      "endpoint": "https://prassanna-ravishankar--data-agent-data-agent-app.modal.run",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Prassanna Ravishankar",
+        "url": "https://github.com/prassanna-ravishankar/a2a-agent-bootstrapping"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "static_essendant.json",
+      "source": "static_registry_corpus",
+      "name": "Essendant",
+      "endpoint": "https://hub.lifie.ai/agent/cmg839x5e027duat8rx9mkcyt/essendant",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_excel.json",
+      "source": "static_registry_corpus",
+      "name": "EXCEL",
+      "endpoint": "https://hub.lifie.ai/agent/cmg81vg4u004b12c2y3nm3g6f/excel",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_excellent-corporation.json",
+      "source": "static_registry_corpus",
+      "name": "EXCELLENT Corporation",
+      "endpoint": "https://hub.lifie.ai/agent/cmg81vtaq005h12c278pxsbd5/excellent-corporation",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_general-data.json",
+      "source": "static_registry_corpus",
+      "name": "General Data",
+      "endpoint": "https://hub.lifie.ai/agent/cmg83p0xh03ibuat8xryg58la/general-data",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_hello-world-agent.json",
+      "source": "static_registry_corpus",
+      "name": "Hello World Agent",
+      "endpoint": "https://hello.a2aregistry.org/",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "A2A Registry Team",
+        "url": "https://github.com/prassanna-ravishankar/a2a-registry"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "static_hp.json",
+      "source": "static_registry_corpus",
+      "name": "HP",
+      "endpoint": "https://hub.lifie.ai/agent/cmg82n3wf007duat8twe13v4b/hp",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_insurance-company.json",
+      "source": "static_registry_corpus",
+      "name": "Insurance Company",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84eyba05snuat8ufkrdxdo/insurance-company",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_planning-agent.json",
+      "source": "static_registry_corpus",
+      "name": "Planning Agent",
+      "endpoint": "https://prassanna-ravishankar--planning-agent-planning-agent-app.modal.run",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Prassanna Ravishankar",
+        "url": "https://github.com/prassanna-ravishankar/a2a-agent-bootstrapping"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "static_research-agent.json",
+      "source": "static_registry_corpus",
+      "name": "Research Agent",
+      "endpoint": "https://prassanna-ravishankar--research-agent-research-agent-app.modal.run",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Prassanna Ravishankar",
+        "url": "https://github.com/prassanna-ravishankar/a2a-agent-bootstrapping"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": false
+    },
+    {
+      "card_id": "static_s-s-plastic-works.json",
+      "source": "static_registry_corpus",
+      "name": "S.S. Plastic Works",
+      "endpoint": "https://hub.lifie.ai/agent/cmg8556ua07wpuat822ah7kqh/s-s-plastic-works",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_s-s-solutions-llc.json",
+      "source": "static_registry_corpus",
+      "name": "S&S Solutions, LLC",
+      "endpoint": "https://hub.lifie.ai/agent/cmg8553ql07wfuat875gqffk1/s-s-solutions-llc",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_scientific-medical-services-llc-fz.json",
+      "source": "static_registry_corpus",
+      "name": "Scientific & Medical Services LLC-FZ",
+      "endpoint": "https://hub.lifie.ai/agent/cmg85jmd90937uat86ooup7py/scientific-medical-services-llc-fz",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_smp-tutoring.json",
+      "source": "static_registry_corpus",
+      "name": "SMP Tutoring",
+      "endpoint": "https://hub.lifie.ai/agent/cmg85jptp093juat8umlye6cz/smp-tutoring",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_sodexo-group.json",
+      "source": "static_registry_corpus",
+      "name": "Sodexo Group",
+      "endpoint": "https://hub.lifie.ai/agent/cmg85i5j608y3uat86iwtc6jh/sodexo-group",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_solace-corporation.json",
+      "source": "static_registry_corpus",
+      "name": "Solace Corporation",
+      "endpoint": "https://hub.lifie.ai/agent/cmg85hh8y08w5uat8jb7yqmv3/solace-corporation",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_sound-systems-company.json",
+      "source": "static_registry_corpus",
+      "name": "Sound Systems Company",
+      "endpoint": "https://hub.lifie.ai/agent/cmg85ewbn08oxuat8tpzn1kzn/sound-systems-company",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_sound-systems-inc.json",
+      "source": "static_registry_corpus",
+      "name": "Sound Systems, Inc.",
+      "endpoint": "https://hub.lifie.ai/agent/cmg85ewzr08ozuat8kry3cwok/sound-systems-inc",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_sparrowmark-small-business-marketing.json",
+      "source": "static_registry_corpus",
+      "name": "Sparrowmark Small Business Marketing",
+      "endpoint": "https://hub.lifie.ai/agent/cmg85cclr08h9uat8iy71w42h/sparrowmark-small-business-marketing",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_speedways.json",
+      "source": "static_registry_corpus",
+      "name": "SpeedWays",
+      "endpoint": "https://hub.lifie.ai/agent/cmg85bb8k08dtuat80j735wqr/speedways",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_sportking-india-llc.json",
+      "source": "static_registry_corpus",
+      "name": "Sportking India LLC",
+      "endpoint": "https://hub.lifie.ai/agent/cmg859oy00893uat8gyqni97e/sportking-india-llc",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_sr-business-solutions.json",
+      "source": "static_registry_corpus",
+      "name": "SR Business Solutions",
+      "endpoint": "https://hub.lifie.ai/agent/cmg8580g0084huat82yucg8g1/sr-business-solutions",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_starsource.json",
+      "source": "static_registry_corpus",
+      "name": "StarSource",
+      "endpoint": "https://hub.lifie.ai/agent/cmg852ush07pluat8ppsib0s0/starsource",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_sterling-resources-ltd.json",
+      "source": "static_registry_corpus",
+      "name": "Sterling Resources, Ltd.",
+      "endpoint": "https://hub.lifie.ai/agent/cmg850kzl07j9uat8pkz4ucnz/sterling-resources-ltd",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_suniro.json",
+      "source": "static_registry_corpus",
+      "name": "SUNIRO",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84tbfu06zfuat8299xbzil/suniro",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_sunny-joseph-associates.json",
+      "source": "static_registry_corpus",
+      "name": "Sunny Joseph & Associates",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84sz0806yhuat8itpmoo52/sunny-joseph-associates",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_superseva.json",
+      "source": "static_registry_corpus",
+      "name": "SuperSeva",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84qqe006rpuat8xi9eqsse/superseva",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_suresh-kannan-co-llp.json",
+      "source": "static_registry_corpus",
+      "name": "Suresh Kannan & Co. LLP",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84q25z06ppuat8qtrud60x/suresh-kannan-co-llp",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_svn-imperial-realty.json",
+      "source": "static_registry_corpus",
+      "name": "SVN Imperial Realty",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84ouoc06lruat8djxttx7o/svn-imperial-realty",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_swaneer-group.json",
+      "source": "static_registry_corpus",
+      "name": "Swaneer Group",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84odye06kbuat8sgi7cvfn/swaneer-group",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_symphony-global-dubai.json",
+      "source": "static_registry_corpus",
+      "name": "Symphony Global Dubai",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84mmsi06fduat8l416l2m9/symphony-global-dubai",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_tann-utility-services-pvt-ltd.json",
+      "source": "static_registry_corpus",
+      "name": "Tann Utility Services Pvt. Ltd.",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84jef60665uat8mskhkb4i/tann-utility-services-pvt-ltd",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_tantravani.json",
+      "source": "static_registry_corpus",
+      "name": "Tantravani",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84jcz00663uat8rlhe6507/tantravani",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_target-corporation.json",
+      "source": "static_registry_corpus",
+      "name": "Target Corporation",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84j0b9064tuat830tk6nzg/target-corporation",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_target.json",
+      "source": "static_registry_corpus",
+      "name": "Target",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84j20r064vuat8fdl5ojmc/target",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_taylor-walker-insurance-group.json",
+      "source": "static_registry_corpus",
+      "name": "Taylor & Walker Insurance Group",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84h4gu05zvuat8hfbetlgi/taylor-walker-insurance-group",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_team-works-event.json",
+      "source": "static_registry_corpus",
+      "name": "Team Works Event",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84fbs205tpuat82647j3kb/team-works-event",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_techbiz.json",
+      "source": "static_registry_corpus",
+      "name": "TechBIZ",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84f1hs05sxuat85ludm982/techbiz",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_telugu-tejam-business.json",
+      "source": "static_registry_corpus",
+      "name": "TELUGU TEJAM Business",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84czux05mpuat840p7lrh5/telugu-tejam-business",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_the-advisors.json",
+      "source": "static_registry_corpus",
+      "name": "The Advisors",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84agca05e3uat8g7ra45nj/the-advisors",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_the-b-e-s-t-services-chennai.json",
+      "source": "static_registry_corpus",
+      "name": "The B E S T Services, Chennai",
+      "endpoint": "https://hub.lifie.ai/agent/cmg849p6c05bruat8n9zu6xvv/the-b-e-s-t-services-chennai",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_the-biryani-kitchen.json",
+      "source": "static_registry_corpus",
+      "name": "The Biryani Kitchen",
+      "endpoint": "https://hub.lifie.ai/agent/cmg849k1k05b5uat8cv1in340/the-biryani-kitchen",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_the-copy-shop.json",
+      "source": "static_registry_corpus",
+      "name": "The Copy Shop",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84gnth05y9uat8jxeng23q/the-copy-shop",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_the-factory-events-promotions.json",
+      "source": "static_registry_corpus",
+      "name": "The Factory Events & Promotions",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84b4kz05gfuat81k7ju5sk/the-factory-events-promotions",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_the-greenhouse-st-pete.json",
+      "source": "static_registry_corpus",
+      "name": "The Greenhouse St. Pete",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84yv5e07ebuat8sn7ewii7/the-greenhouse-st-pete",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_the-greenhouse.json",
+      "source": "static_registry_corpus",
+      "name": "The Greenhouse",
+      "endpoint": "https://hub.lifie.ai/agent/cmg846rh40525uat89ozr0fkk/the-greenhouse",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_the-streamwood-company.json",
+      "source": "static_registry_corpus",
+      "name": "The Streamwood Company",
+      "endpoint": "https://hub.lifie.ai/agent/cmg842vf404pvuat84qg562di/the-streamwood-company",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_the-vista-companies.json",
+      "source": "static_registry_corpus",
+      "name": "The Vista Companies",
+      "endpoint": "https://hub.lifie.ai/agent/cmg82x3bd013huat8btcytuoa/the-vista-companies",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_the-williams-company.json",
+      "source": "static_registry_corpus",
+      "name": "The Williams Company",
+      "endpoint": "https://hub.lifie.ai/agent/cmg841wrb04mruat8fw8rmxc1/the-williams-company",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_the-wilton-companies.json",
+      "source": "static_registry_corpus",
+      "name": "The Wilton Companies",
+      "endpoint": "https://hub.lifie.ai/agent/cmg841vhq04mnuat8gfjycvra/the-wilton-companies",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_tiecos-facilitation-llp.json",
+      "source": "static_registry_corpus",
+      "name": "TIECOS Facilitation LLP",
+      "endpoint": "https://hub.lifie.ai/agent/cmg83zck104ebuat85fh72eqd/tiecos-facilitation-llp",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_todd-s-it.json",
+      "source": "static_registry_corpus",
+      "name": "Todd's IT",
+      "endpoint": "https://hub.lifie.ai/agent/cmg83w3c40443uat8qh7leqy3/todd-s-it",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_toko-today.json",
+      "source": "static_registry_corpus",
+      "name": "Toko Today",
+      "endpoint": "https://hub.lifie.ai/agent/cmg83vush043huat80n0a34o5/toko-today",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_topline-furniture-systems.json",
+      "source": "static_registry_corpus",
+      "name": "Topline Furniture Systems",
+      "endpoint": "https://hub.lifie.ai/agent/cmg83ulj003z9uat85f2v3mx6/topline-furniture-systems",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_toshiba-american-business-solutions.json",
+      "source": "static_registry_corpus",
+      "name": "Toshiba American Business Solutions",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84gsuf05yruat8lizcic2d/toshiba-american-business-solutions",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_total-business-solutions-tbs.json",
+      "source": "static_registry_corpus",
+      "name": "Total Business Solutions (TBS)",
+      "endpoint": "https://hub.lifie.ai/agent/cmg84guq405yvuat8opdpy15n/total-business-solutions-tbs",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_total-signs-and-designs.json",
+      "source": "static_registry_corpus",
+      "name": "Total Signs and Designs",
+      "endpoint": "https://hub.lifie.ai/agent/cmg83tisl03vvuat8xcdih7n4/total-signs-and-designs",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_trademark-property-solutions.json",
+      "source": "static_registry_corpus",
+      "name": "Trademark Property Solutions",
+      "endpoint": "https://hub.lifie.ai/agent/cmg83rr2h03qnuat8kqx87s9b/trademark-property-solutions",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_trc-consulting.json",
+      "source": "static_registry_corpus",
+      "name": "TRC Consulting",
+      "endpoint": "https://hub.lifie.ai/agent/cmg83pv0903kzuat89y6uubr0/trc-consulting",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_tupperware.json",
+      "source": "static_registry_corpus",
+      "name": "Tupperware",
+      "endpoint": "https://hub.lifie.ai/agent/cmg83ja2w030xuat88n96ywpn/tupperware",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_united-business.json",
+      "source": "static_registry_corpus",
+      "name": "United Business",
+      "endpoint": "https://hub.lifie.ai/agent/cmg83dri802jduat8eviznhsw/united-business",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_upcounsel.json",
+      "source": "static_registry_corpus",
+      "name": "UpCounsel",
+      "endpoint": "https://hub.lifie.ai/agent/cmg83cbh202evuat8v02w9z6s/upcounsel",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_urs-productively.json",
+      "source": "static_registry_corpus",
+      "name": "URS Productively",
+      "endpoint": "https://hub.lifie.ai/agent/cmg83b54s02axuat8xdigv5jf/urs-productively",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_v-catch.json",
+      "source": "static_registry_corpus",
+      "name": "V CATCH",
+      "endpoint": "https://hub.lifie.ai/agent/cmg834vg101rhuat8g0jy9kke/v-catch",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_vargas-property-services.json",
+      "source": "static_registry_corpus",
+      "name": "Vargas Property Services",
+      "endpoint": "https://hub.lifie.ai/agent/cmg83693r01vluat8z3w1rskp/vargas-property-services",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_varna-enterprise.json",
+      "source": "static_registry_corpus",
+      "name": "Varna Enterprise",
+      "endpoint": "https://hub.lifie.ai/agent/cmg8366qa01vduat82tciqhy3/varna-enterprise",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_varner-s-greenhouse-nursery.json",
+      "source": "static_registry_corpus",
+      "name": "Varner's Greenhouse & Nursery",
+      "endpoint": "https://hub.lifie.ai/agent/cmg83669h01vbuat8yuybegnp/varner-s-greenhouse-nursery",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_vb-uniline.json",
+      "source": "static_registry_corpus",
+      "name": "VB UNILINE",
+      "endpoint": "https://hub.lifie.ai/agent/cmg8351w001rzuat86cojqjf1/vb-uniline",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_vear-commercial-properties-inc.json",
+      "source": "static_registry_corpus",
+      "name": "Vear Commercial Properties, Inc.",
+      "endpoint": "https://hub.lifie.ai/agent/cmg834mbb01qnuat85o4rafn4/vear-commercial-properties-inc",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_vebrand-intellectual-property-rights-management-llc.json",
+      "source": "static_registry_corpus",
+      "name": "Vebrand Intellectual Property Rights Management LLC",
+      "endpoint": "https://hub.lifie.ai/agent/cmg834lyw01qluat8zchdsfcy/vebrand-intellectual-property-rights-management-llc",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_velcor-leasing-corporation.json",
+      "source": "static_registry_corpus",
+      "name": "Velcor Leasing Corporation",
+      "endpoint": "https://hub.lifie.ai/agent/cmg833pa901nxuat8l72vegob/velcor-leasing-corporation",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_ven-co.json",
+      "source": "static_registry_corpus",
+      "name": "Ven&Co",
+      "endpoint": "https://hub.lifie.ai/agent/cmg833i0m01n3uat8arsz0z37/ven-co",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_venus-enterprises.json",
+      "source": "static_registry_corpus",
+      "name": "Venus Enterprises",
+      "endpoint": "https://hub.lifie.ai/agent/cmg832uuw01l5uat8r770dvzs/venus-enterprises",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_victory-consulting.json",
+      "source": "static_registry_corpus",
+      "name": "Victory Consulting",
+      "endpoint": "https://hub.lifie.ai/agent/cmg831bhw01f9uat8rintuqzs/victory-consulting",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_vishwas-group-of-companies.json",
+      "source": "static_registry_corpus",
+      "name": "Vishwas Group of Companies",
+      "endpoint": "https://hub.lifie.ai/agent/cmg82xnut0151uat8ggo0wqxz/vishwas-group-of-companies",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_walmart.json",
+      "source": "static_registry_corpus",
+      "name": "Walmart",
+      "endpoint": "https://hub.lifie.ai/agent/cmg82shlt00oruat81afm8ifp/walmart",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_wang-hospitality-equipment-private-limited.json",
+      "source": "static_registry_corpus",
+      "name": "Wang Hospitality Equipment Private Limited",
+      "endpoint": "https://hub.lifie.ai/agent/cmg82rrfc00nduat8cmm10w1u/wang-hospitality-equipment-private-limited",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_warren-cove-consulting-llc.json",
+      "source": "static_registry_corpus",
+      "name": "Warren Cove Consulting, LLC",
+      "endpoint": "https://hub.lifie.ai/agent/cmg82relo00mbuat81lg7fron/warren-cove-consulting-llc",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_wbe.json",
+      "source": "static_registry_corpus",
+      "name": "WBE",
+      "endpoint": "https://hub.lifie.ai/agent/cmg82phmm00fjuat88am9e59m/wbe",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_wbo.json",
+      "source": "static_registry_corpus",
+      "name": "WBO",
+      "endpoint": "https://hub.lifie.ai/agent/cmg81xih600af12c20d2bpar4/wbo",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_wbr-insights.json",
+      "source": "static_registry_corpus",
+      "name": "WBR Insights",
+      "endpoint": "https://hub.lifie.ai/agent/cmg82phml00fhuat82u3cy8dv/wbr-insights",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_wellmeier-farms.json",
+      "source": "static_registry_corpus",
+      "name": "Wellmeier Farms",
+      "endpoint": "https://hub.lifie.ai/agent/cmg82ms8e0065uat8k8dlh3e5/wellmeier-farms",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_wenger-corporation.json",
+      "source": "static_registry_corpus",
+      "name": "Wenger Corporation",
+      "endpoint": "https://hub.lifie.ai/agent/cmg82mbk4004puat8fltijj1f/wenger-corporation",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_wheels.json",
+      "source": "static_registry_corpus",
+      "name": "Wheels",
+      "endpoint": "https://hub.lifie.ai/agent/cmg8257jw006772icsvshhz8d/wheels",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_whistle-solutions.json",
+      "source": "static_registry_corpus",
+      "name": "Whistle Solutions",
+      "endpoint": "https://hub.lifie.ai/agent/cmg8253cc005t72iccaj0mrxd/whistle-solutions",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_white-and-williams-llp.json",
+      "source": "static_registry_corpus",
+      "name": "White and Williams LLP",
+      "endpoint": "https://hub.lifie.ai/agent/cmg824z62005j72ic5hgfu16x/white-and-williams-llp",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_white-haven-farm.json",
+      "source": "static_registry_corpus",
+      "name": "White Haven Farm",
+      "endpoint": "https://hub.lifie.ai/agent/cmg824u4p005372ic5tpmnfq7/white-haven-farm",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_white-money.json",
+      "source": "static_registry_corpus",
+      "name": "White Money",
+      "endpoint": "https://hub.lifie.ai/agent/cmg824s9q004v72icapnxixuf/white-money",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_willkie-farr-gallagher-llp.json",
+      "source": "static_registry_corpus",
+      "name": "Willkie Farr & Gallagher LLP",
+      "endpoint": "https://hub.lifie.ai/agent/cmg822ej100ql12c2b3tlbcxp/willkie-farr-gallagher-llp",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_winstead-pc.json",
+      "source": "static_registry_corpus",
+      "name": "Winstead PC",
+      "endpoint": "https://hub.lifie.ai/agent/cmg820yih00lv12c2rf0xdabg/winstead-pc",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_wirth-company.json",
+      "source": "static_registry_corpus",
+      "name": "Wirth & Company",
+      "endpoint": "https://hub.lifie.ai/agent/cmg820fvg00k512c2txgfidja/wirth-company",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_wizworks.json",
+      "source": "static_registry_corpus",
+      "name": "Wizworks",
+      "endpoint": "https://hub.lifie.ai/agent/cmg81zo1u00hl12c2mnin0ff8/wizworks",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_wood-equipment-company.json",
+      "source": "static_registry_corpus",
+      "name": "Wood Equipment Company",
+      "endpoint": "https://hub.lifie.ai/agent/cmg81ywu900er12c2an0163t5/wood-equipment-company",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_workbravo.json",
+      "source": "static_registry_corpus",
+      "name": "workbravo",
+      "endpoint": "https://hub.lifie.ai/agent/cmg81y5rp00cf12c29s1b19s6/workbravo",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_yates-wood-macdonald-inc.json",
+      "source": "static_registry_corpus",
+      "name": "Yates, Wood & MacDonald, Inc.",
+      "endpoint": "https://hub.lifie.ai/agent/cmg81u5g3000j12c263uchx7j/yates-wood-macdonald-inc",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_ycipl.json",
+      "source": "static_registry_corpus",
+      "name": "YCIPL",
+      "endpoint": "https://hub.lifie.ai/agent/cmg81u1om000312c28sopm5e4/ycipl",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_zabservice.json",
+      "source": "static_registry_corpus",
+      "name": "ZabService",
+      "endpoint": "https://hub.lifie.ai/agent/cmg81r93j007zn21qpza2hg72/zabservice",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_zs.json",
+      "source": "static_registry_corpus",
+      "name": "ZS",
+      "endpoint": "https://hub.lifie.ai/agent/cmg81oqxr000fn21qc9tgnpnj/zs",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    },
+    {
+      "card_id": "static_zuwerks-inc.json",
+      "source": "static_registry_corpus",
+      "name": "ZuWerks, Inc.",
+      "endpoint": "https://hub.lifie.ai/agent/cmg81ooek0005n21qucw1n1l2/zuwerks-inc",
+      "protocol_version": "0.3.0",
+      "agent_version": "1.0.0",
+      "declared_security_metadata": {},
+      "has_declared_security_metadata": false,
+      "skills_count": 1,
+      "provider": {
+        "organization": "Lifie.ai Hub",
+        "url": "https://hub.lifie.ai"
+      },
+      "schema_normalization_status": "SUCCESS",
+      "url_valid": true,
+      "raw_protocol_version": "0.3.0",
+      "is_duplicate_name": false,
+      "is_shared_origin": true
+    }
+  ]
+}

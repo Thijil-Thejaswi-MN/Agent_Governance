@@ -1,0 +1,27 @@
+{
+  "source_directory": "demo/external/a2a-registry-dhyabi2/agents",
+  "total_json_files": 103,
+  "parseable_json_files": 103,
+  "protocol_version_distribution": {
+    "0.3.0": 103
+  },
+  "top_authors": {
+    "Lifie.ai Hub": 96,
+    "Prassanna Ravishankar": 4,
+    "Telex": 1,
+    "Kellogg Holdings LLC": 1,
+    "A2A Registry Team": 1
+  },
+  "schema_characteristics": {
+    "format": "Static individual Agent Card JSON files",
+    "structure": "Uses flat top-level url, protocolVersion (0.3.0), capabilities, and skills array",
+    "network_requirement": "None (fully offline)",
+    "suitability_for_parser_regression": "High (provides 103 static, deterministic test vectors for pre-1.0 Agent Card parsing without live network requests)"
+  },
+  "comparison_with_live_registry": {
+    "live_registry_total": 516,
+    "live_registry_protocol_versions": "Split between 0.3.0 (50%) and 1.0 (47%), plus 0.3 and 1",
+    "static_registry_protocol_versions": "100% legacy 0.3.0",
+    "operational_metrics": "Static cards do not contain health check timestamps, uptime, or task conformance verification, whereas live registry records include active health monitoring telemetry"
+  }
+}

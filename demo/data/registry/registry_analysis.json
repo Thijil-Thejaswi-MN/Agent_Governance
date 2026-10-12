@@ -1,0 +1,82 @@
+{
+  "sample_metadata": {
+    "total_records": 100,
+    "source": "https://a2aregistry.org/api/agents?limit=100",
+    "collected_at_utc": "2026-10-05T17:15:38Z"
+  },
+  "protocol_version_distribution": {
+    "1.0": 47,
+    "0.3.0": 50,
+    "0.3": 2,
+    "1": 1
+  },
+  "agent_version_distribution_top10": {
+    "0.1.1": 21,
+    "1.0.0": 19,
+    "0.1.0": 13,
+    "1.1.0": 6,
+    "1.2.1": 3,
+    "1.2.0": 3,
+    "0.6.0": 2,
+    "0.2.0": 2,
+    "4.0.0": 2,
+    "4.2.0": 1
+  },
+  "unique_agent_versions_count": 38,
+  "conformance_distribution": {
+    "True": 100
+  },
+  "health_distribution": {
+    "True": 100
+  },
+  "task_conformance_distribution": {
+    "WORKING (passed=True)": 100
+  },
+  "security_analysis": {
+    "agents_with_security_declared": 5,
+    "agents_with_empty_or_null_security": 95,
+    "agents_with_security_schemes": 14,
+    "security_scheme_types": {
+      "unknown": 6,
+      "apiKey": 4,
+      "http": 5,
+      "x402": 1,
+      "openIdConnect": 1
+    }
+  },
+  "skills_analysis": {
+    "agents_with_skills": 100,
+    "total_skills_declared": 669,
+    "avg_skills_per_agent": 6.69,
+    "min_skills_per_agent": 1,
+    "max_skills_per_agent": 81
+  },
+  "url_schemes": {
+    "https": 97,
+    "http": 3
+  },
+  "provider_field_types": {
+    "dict": 91,
+    "null": 9
+  },
+  "missing_or_empty_fields_count": {
+    "security": 95,
+    "securitySchemes": 86,
+    "iconUrl": 75,
+    "homepage": 100,
+    "repository": 100,
+    "license": 100,
+    "pricing": 100,
+    "contact": 100,
+    "provider": 9,
+    "documentationUrl": 5
+  },
+  "normalization_rules": {
+    "rule_1": "Direct mapping of core identity fields: registry_id <- id, name <- name, description <- description.",
+    "rule_2": "Separation of endpoints: url <- url, well_known_uri <- wellKnownURI.",
+    "rule_3": "Protocol standardization: protocol_version <- protocolVersion, version <- version.",
+    "rule_4": "Grouping of quality/operational signals: health <- {is_healthy, uptime_percentage, avg_response_time_ms, last_health_check}, conformance <- {conformance, conformance_errors}.",
+    "rule_5": "No invented fields: supported_interfaces populated as null because API uses top-level 'url' rather than nested 'supportedInterfaces' array.",
+    "rule_6": "Zero truncation of nested objects: capabilities, skills, security, and securitySchemes preserved intact."
+  }
+}

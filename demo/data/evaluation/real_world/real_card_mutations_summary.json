@@ -1,0 +1,50 @@
+{
+  "evaluation_title": "Stage 6 Controlled Real-World Mutation Evaluation",
+  "timestamp_utc": "2026-10-06T02:07:21.309436+00:00",
+  "total_mutations_generated": 400,
+  "source_cards_count": 100,
+  "by_mutation_class": {
+    "HOMOGLYPH": {
+      "total": 100,
+      "detected": 100,
+      "detection_rate": 1.0,
+      "detection_percentage": 100.0,
+      "wilson_95_ci": [
+        0.963,
+        1.0
+      ]
+    },
+    "TYPOSQUAT": {
+      "total": 100,
+      "detected": 100,
+      "detection_rate": 1.0,
+      "detection_percentage": 100.0,
+      "wilson_95_ci": [
+        0.963,
+        1.0
+      ]
+    },
+    "PROVENANCE_CONFLICT": {
+      "total": 100,
+      "detected": 100,
+      "detection_rate": 1.0,
+      "detection_percentage": 100.0,
+      "wilson_95_ci": [
+        0.963,
+        1.0
+      ]
+    },
+    "COMBINED_ATTACK": {
+      "total": 100,
+      "detected": 100,
+      "detection_rate": 1.0,
+      "detection_percentage": 100.0,
+      "wilson_95_ci": [
+        0.963,
+        1.0
+      ]
+    }
+  },
+  "overall_detection_rate": 1.0,
+  "overall_detection_percentage": 100.0
+}

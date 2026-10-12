@@ -1,0 +1,56 @@
+{
+  "experiment_id": "phase2_a2asecbench_as_offline_001",
+  "phase": "Phase 2 — A2ASecBench Setup & First Controlled Security Benchmark",
+  "timestamp_utc": "2026-10-05T17:03:59Z",
+  "status": "PASS",
+  "benchmark": {
+    "framework": "A2ASecBench",
+    "repository": "demo/external/A2ASecBench",
+    "commit": "673f40d",
+    "python_environment": "demo/external/A2ASecBench/.venv",
+    "python_version": "3.12.10",
+    "a2a_sdk_version": "0.3.26",
+    "attack_type": "Agent Squatting (AS)",
+    "mode": "offline",
+    "config_file": "configs/offline/as.yaml",
+    "system_under_test": {
+      "name": "HeuristicSelector",
+      "module": "sut.as.heuristic_selector",
+      "method": "keyword_overlap"
+    }
+  },
+  "execution": {
+    "command": ".\\.venv\\Scripts\\python.exe orchestration.py --config configs/offline/as.yaml --trials 1",
+    "working_directory": "demo\\external\\A2ASecBench",
+    "run_started_at": "2026-10-05T17:03:58.658889+00:00",
+    "run_finished_at": "2026-10-05T17:03:59.327746+00:00",
+    "duration_seconds": 0.669,
+    "raw_results_file": "demo/data/results/phase2_a2asecbench_as_offline.jsonl",
+    "summary_file": "demo/data/results/phase2_a2asecbench_summary.json"
+  },
+  "results": {
+    "total_cases": 100,
+    "total_trials": 100,
+    "successful_attacks": 89,
+    "failed_attacks": 11,
+    "attack_success_rate": 0.89,
+    "failed_case_ids": [
+      "as_008",
+      "as_025",
+      "as_029",
+      "as_043",
+      "as_045",
+      "as_051",
+      "as_053",
+      "as_055",
+      "as_072",
+      "as_084",
+      "as_098"
+    ]
+  },
+  "security_analysis": {
+    "attack_mechanism": "Agent Squatting (AS) constructs adversarial Agent Cards mimicking benign agent cards by copying semantic keywords, service descriptions, and skill declarations with subtle typographical, naming, or routing permutations.",
+    "sut_vulnerability": "The keyword-overlap heuristic selector ranks candidates purely based on token overlap between the user prompt/task description and the agent's declared skills and descriptions. It lacks cryptographic identity verification, reputation scoring, provenance validation, and behavioral confirmation.",
+    "implication_for_a2a": "In decentralized A2A multi-agent ecosystems, clients or orchestrators selecting sub-agents based solely on declared metadata in Agent Cards (agent-card.json) are acutely vulnerable to rogue agents intercepting sensitive workflows (89% ASR in this trial). Robust registry validation, cryptographic signatures, and behavioral trust models are required."
+  }
+}

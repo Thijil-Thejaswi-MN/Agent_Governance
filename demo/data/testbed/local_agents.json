@@ -1,0 +1,76 @@
+{
+  "topology_name": "A2A Controlled Local Multi-Agent Testbed",
+  "created_at_utc": "2026-10-05T17:45:00Z",
+  "environment": "localhost (Windows 11 x64)",
+  "inspector": {
+    "name": "A2A Protocol Inspector",
+    "repository": "demo/external/a2a-inspector",
+    "local_url": "http://127.0.0.1:5001",
+    "status": "PASS",
+    "features_verified": [
+      "Agent Card loading",
+      "Spec compliance validation",
+      "Live JSON-RPC message exchange",
+      "Raw debug log capture"
+    ]
+  },
+  "agents": [
+    {
+      "agent_id": "agent_a_helloworld",
+      "name": "Hello World Agent",
+      "role": "Echo & Baseline Verification Agent",
+      "local_url": "http://127.0.0.1:9999",
+      "agent_card_endpoint": "http://127.0.0.1:9999/.well-known/agent-card.json",
+      "agent_card_path": "demo/data/agent_cards/helloworld_agent_card.json",
+      "version": "0.0.1",
+      "protocol_version": "1.0",
+      "protocol_binding": "JSONRPC",
+      "transport": "HTTP (clear-text localhost)",
+      "skills": [
+        {
+          "id": "echo_bot",
+          "name": "Echo Bot",
+          "description": "An example agent that acknowledges client request and responds with a \"Hello World\" message.",
+          "tags": ["a2a", "echo-example"],
+          "input_modes": ["text/plain"],
+          "output_modes": ["text/plain"]
+        }
+      ],
+      "capabilities": {
+        "streaming": true,
+        "extendedAgentCard": true
+      },
+      "status": "PASS",
+      "communication_verified": true
+    },
+    {
+      "agent_id": "agent_b_alice",
+      "name": "AgentAlice",
+      "role": "Number Guessing Game Evaluator",
+      "local_url": "http://localhost:8001/a2a/v1",
+      "agent_card_endpoint": "http://127.0.0.1:8001/.well-known/agent.json",
+      "agent_card_path": "demo/data/agent_cards/agent_alice_agent_card.json",
+      "version": "1.0.0",
+      "protocol_version": "0.3.0",
+      "protocol_binding": "JSONRPC",
+      "transport": "HTTP (clear-text localhost)",
+      "skills": [
+        {
+          "id": "number_guess_evaluator",
+          "name": "Number Guess Evaluator",
+          "description": "Evaluates numeric guesses (1-100) against a secret number and replies with guidance (higher/lower/correct).",
+          "tags": ["game", "demo"],
+          "input_modes": ["text/plain"],
+          "output_modes": ["text/plain"]
+        }
+      ],
+      "capabilities": {
+        "streaming": false,
+        "pushNotifications": false,
+        "stateTransitionHistory": false
+      },
+      "status": "PASS",
+      "communication_verified": true
+    }
+  ]
+}
