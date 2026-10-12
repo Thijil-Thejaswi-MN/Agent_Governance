@@ -1,4 +1,4 @@
-# Agent Governance & Security Monitor (A2A)
+# Agent Governance & Security Monitor 
 
 This repository contains the research artifacts, security architecture, and evaluation suite for **Agent Governance and Defensive Monitoring in Agent-to-Agent (A2A) Multi-Agent Systems**.
 
