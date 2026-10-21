@@ -204,51 +204,60 @@ Evidence Report Written to: /mnt/c/Users/thiji/OneDrive/Documents/Projects/A2A/e
 
 ## 7. Limitations, Unresolved Risks & Precise Limits of Path Policies
 
-Scientific rigor demands clearly documenting the limitations of user-space path-based governance:
+Scientific rigor demands clearly documenting the limitations of user-space path-based governance and our empirical findings:
 
-1. **Ptrace Performance Overhead:**
-   - Trapping every syscall entry and exit introduces significant context-switch overhead. In Phase 0, benign execution took 325 ms (including Python interpreter startup).
-   - In production workloads with high I/O volume (e.g., millions of small `read()` calls), unfiltered ptrace adds significant latency.
+1. **Measurement Constraints & Filesystem Noise:**
+   - Initial overhead measurements conducted over WSL2's 9p filesystem (`/mnt/c`) exhibited significant baseline variance (Mean: 85 ms, Median: 39 ms, P95: 225 ms). Any preliminary claim that Seccomp-filtered execution was "faster than baseline" is physically invalid and an artifact of 9p I/O jitter.
+   - Rigorous benchmarking requires running on native Linux `ext4` (`~/`), executing 5 warm-up runs, interleaving and randomizing execution order across modes ($N \ge 30$), and reporting median and P95 with 95% confidence intervals.
 2. **Directory File Descriptor Traversal (`openat` with `dirfd != AT_FDCWD`):**
-   - If an agent opens an allowed directory (`dfd = open("input/", O_DIRECTORY)`) and then calls `openat(dfd, "../credentials.txt")`, `raw_path` is `"../credentials.txt"`.
-   - *Requirement:* The supervisor must inspect `/proc/<pid>/fd/<dirfd>` to determine the base directory before canonicalization.
+   - If an agent opens an allowed directory (`dfd = open("input/", O_DIRECTORY)`) and calls `openat(dfd, "../credentials.txt")`, `raw_path` is `"../credentials.txt"`.
+   - *Resolution:* The supervisor resolves relative paths via `/proc/<pid>/fd/<dirfd>` before canonicalization.
 3. **Multi-Threaded Symlink-Swap Race (TOCTOU):**
-   - If an agent runs multiple threads or processes where Thread 1 calls `openat(symlink)` and Thread 2 rapidly swaps the symlink target via `renameat2(RENAME_EXCHANGE)`, user-space inspection cannot prevent the race condition.
-   - *Kernel Guidance Warning:* Official Linux kernel documentation explicitly warns that **`SECCOMP_RET_USER_NOTIF` must NOT be used for security policies** due to unavoidable TOCTOU bugs between the supervisor's user-space memory inspection and the kernel's actual execution.
-   - True filesystem-level containment requires kernel-enforced sandboxing such as **Landlock LSM** or `openat2` with `RESOLVE_BENEATH` / `RESOLVE_NO_SYMLINKS`.
-4. **In-Process Multi-Tenant Agents:**
-   - If multiple tasks run inside a single Python process as coroutines or threads, OS-level syscalls share the same PID. Ptrace cannot differentiate which coroutine issued `openat`.
-   - *Boundary:* Each task must run as a distinct operating system process.
+   - If an agent runs concurrent threads where Thread 1 opens a symlink and Thread 2 rapidly swaps it via `renameat2(RENAME_EXCHANGE)`, user-space inspection suffers TOCTOU leaks. In our empirical test (3h), user-space ptrace allowed 153 leaks out of 1,000 attempts (15.3% breach rate).
+   - *Kernel Guidance Warning:* Official Linux kernel documentation explicitly warns that **`SECCOMP_RET_USER_NOTIF` must NOT be used for security policies** due to unavoidable TOCTOU bugs between user-space memory inspection and kernel execution.
+   - In contrast, testing under **Landlock LSM** over 1,000 attempts yielded **0 leaks (0.0% breach rate)**, as access rights are evaluated at the kernel VFS inode level.
+4. **Operations Not Yet Covered by the Prototype Supervisor:**
+   - `execve` of an unapproved binary (currently tracks child execution but does not restrict executable paths).
+   - Inode modification operations outside the boundary: `unlink`, `truncate`, `chmod`, `chown`.
+   - Network datagram operations: `sendto` / `sendmsg` (UDP traffic and raw DNS exfiltration).
+   - File descriptor passing across UNIX domain sockets (`sendmsg` with `SCM_RIGHTS`).
+5. **In-Process Multi-Tenant Agents:**
+   - Multiple tasks executing in coroutines inside a single process share a PID and cannot be differentiated by OS syscalls. Each task must execute in a distinct process.
 
 ---
 
-## 8. Requirements for the Next Phase & Decision Gate Recommendation
+## 8. Empirical Bypass & Evasion Test Results (3a – 3i)
 
-### 8.1 Comparison of Next-Step Paths
-
-| Path Option | Enforcement Mechanism | Privileges Required | Dependencies to Install | Feasibility Assessment |
-| :--- | :--- | :--- | :--- | :--- |
-| **Option A (Chosen Live Mechanism): Unprivileged Syscall Supervisor** | Linux Ptrace Supervisor (+ Landlock investigation) | Unprivileged (`uid=1000`) | None (Standard Python + glibc) | **Viable for initial test harness.** Zero system changes. Demonstrates synchronous syscall denial on single-threaded workloads. |
-| **Option B: Dedicated Linux VM with Live Tetragon** | Cilium Tetragon eBPF LSM | Root (`sudo`), `CAP_BPF`, `CAP_SYS_ADMIN` | Docker/Containerd, Tetragon daemon, kernel BTF | Requires external VM provisioning or WSL reconfiguration (`systemd=true`, Docker installation). |
-| **Option C: Architecture Revision** | Gateway-only or static sandbox | Standard | None | Unacceptable; fails the primary research objective of runtime task governance. |
-
-### 8.2 Decision Gate Recommendation
-**We recommend Outcome A (with the explicit understanding that this is a feasibility demonstration, not an empirically proven multi-threaded boundary):**  
-Proceed with the **Task-Aware Syscall Supervisor** as an interim observation and feasibility tool, while preparing Landlock and kernel LSM mechanisms for robust concurrent path enforcement.
-
-**Justification:**
-1. **Feasibility Demonstrated:** In our controlled $N=1$ test cases, unauthorized file access was blocked at the syscall boundary before the kernel created a file descriptor.
-2. **Zero System Disruption:** It requires zero changes to WSL system configuration, zero root daemon installations, and zero cloud costs.
-3. **Clean Separation of Concerns:** In the overall architecture, the supervisor becomes the **OS observation and local enforcement sensor (F5.4)**, while the primary governance layer operates at the **Tool Broker (F5.1)** and **Egress Proxy (F5.2)**.
+| Test Case | Description | Result | Mechanism & Countermeasure |
+| :--- | :--- | :--- | :--- |
+| **3a.1** | `open()` / `creat()` | **PREVENTED** | Syscall nullified to `-1`, `-EACCES` injected. |
+| **3a.2** | `openat2()` with `RESOLVE_BENEATH` | **PREVENTED** | Syscall nullified, `-EACCES` injected. |
+| **3a.3** | `open_by_handle_at()` | **NOT APPLICABLE** | Requires `CAP_DAC_READ_SEARCH` (denied unprivileged by kernel with `EPERM`). |
+| **3a.4** | `rename()` / `link()` to secret | **PREVENTED** | Evaluated against target path before operation. |
+| **3a.5** | `execve()` of `/bin/cat credentials.txt` | **PREVENTED** | Process tree tracked via `PTRACE_O_TRACEFORK`; child `cat`'s `openat` blocked. |
+| **3b** | Child processes (`fork`, `vfork`, `clone`, `Popen`) | **PREVENTED** | Auto-attached via `PTRACE_O_TRACEFORK \| PTRACE_O_TRACECLONE`. |
+| **3c** | Relative path via dirfd (`openat(dfd, "../secret")`) | **PREVENTED** | Resolved dynamically via `/proc/<pid>/fd/<dirfd>`. |
+| **3d** | Relative path after `chdir()` | **PREVENTED** | Resolved dynamically via `/proc/<pid>/cwd`. |
+| **3e** | 32-bit / foreign ABI evasion (x32 bit / `int 0x80`) | **PREVENTED** | **Seccomp BPF filter:** validates `arch == AUDIT_ARCH_X86_64` and masks `0x40000000`; kills process immediately on violation. |
+| **3f** | `io_uring` file read of secret | **PREVENTED** | **Seccomp BPF filter:** blocks `SYS_io_uring_setup (425)` and `SYS_io_uring_enter (426)` synchronously with `EPERM`. |
+| **3g** | Supervisor crash fail-closed check | **VERIFIED** | Kernel immediately terminates all tracees via `PTRACE_O_EXITKILL`. |
+| **3h** | Multi-threaded symlink-swap race | **TOCTOU in ptrace (15.3% leaks) / ELIMINATED in Landlock (0% leaks)** | Proves that user-space ptrace cannot be the sole prevention engine. |
+| **3i** | Unauthorized `connect()` | **PREVENTED** | Intercepted at socket connect and denied. |
 
 ---
 
-## 9. Next Implementation Milestone: Milestone 1 Acceptance Criteria
+## 9. Architectural Decision & Layered Governance Strategy
 
-With Phase 0 enforcement proven, the immediate next milestone is:
-**Milestone 1: Task Contract Engine, Event Schemas & Storage Migration**
-1. Implement Pydantic data models for `TaskContract` and `RuntimeAuditEvent`.
-2. Implement schema validation and path canonicalization resolving directory traversal escapes (`../../`) and symlinks.
-3. Extend SQLite schema in [`app/storage/db.py`](file:///c:/Users/thiji/OneDrive/Documents/Projects/A2A/demo/security_monitor/app/storage/db.py) to persist task contracts and OS-level runtime audit events.
-4. Integrate the verified ptrace supervisor into a clean `app/runtime/supervisor.py` module.
-5. Verify 100% test pass rate with zero regressions across the existing 70 tests.
+Based on the empirical findings, the runtime governance architecture is formally established as a **layered, defense-in-depth model**:
+
+1. **Tool Broker (F5.1 - Semantic Application Layer):**
+   - Primary prevention layer for agent workflows. Mediates tool calls (`read_file`, `write_file`, `http_get`, `run_command`, `call_agent`) before execution against the task boundary.
+2. **Landlock LSM (Kernel VFS Floor):**
+   - Provides a race-free, TOCTOU-immune kernel sandbox restricting unmediated file system access to authorized task directories.
+   - *Platform Requirement:* Task workspaces must reside on native Linux filesystems (`ext4` or `tmpfs` under WSL), as 9p/drvfs mounts (`/mnt/c`) lack inode security attribute tracking.
+3. **Seccomp BPF (Attack Surface Minimization):**
+   - Enforces 64-bit x86_64 ABI, killing foreign/x32 syscall attempts.
+   - Synchronously denies `io_uring` ring buffer setup (`SYS_io_uring_setup`, `SYS_io_uring_enter`).
+4. **Ptrace + `SECCOMP_RET_TRACE` (OS Sensor & Interactive Interception):**
+   - Serves as the OS-level observation sensor (F5.4) and provides a non-polling pause-and-resume point for dynamic boundary expansions (F8).
+

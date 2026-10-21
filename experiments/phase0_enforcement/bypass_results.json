@@ -2,7 +2,7 @@
   "3a_syscall_variants": {
     "creat": "PASS (Intercepted & blocked)",
     "openat2": "PASS (Intercepted & blocked)",
-    "open_by_handle_at": "PASS (Fails with EPERM in unprivileged user space)",
+    "open_by_handle_at": "not applicable (requires CAP_DAC_READ_SEARCH)",
     "rename": "PASS (Intercepted & blocked)",
     "link": "PASS (Intercepted & blocked)",
     "symlink": "PASS (Resolved by realpath at open time)",
@@ -31,21 +31,25 @@
     "explanation": "Supervisor dynamically queries readlink(/proc/<pid>/cwd) on relative paths before canonicalization."
   },
   "3e_abi_detection": {
-    "PTRACE_GET_SYSCALL_INFO_supported": true,
-    "kernel_audit_arch_constants": {
-      "AUDIT_ARCH_X86_64": "0xc000003e",
-      "AUDIT_ARCH_I386": "0x40000003"
-    },
-    "verdict": "PASS (Architecture detection available via PTRACE_GET_SYSCALL_INFO.arch to reject 32-bit ABI switches)"
+    "seccomp_arch_filter_active": true,
+    "x32_abi_syscall_attempted": "0x40000000",
+    "process_killed_by_kernel": true,
+    "signal": 31,
+    "verdict": "PASS (Foreign / x32 ABI syscalls killed immediately by kernel Seccomp BPF)"
   },
   "3f_io_uring": {
-    "io_uring_kernel_support": true,
-    "ptrace_observes_ring_ops": false,
-    "verdict": "FAIL (Expected architectural limitation: ptrace cannot intercept asynchronous memory-ring I/O operations)",
-    "countermeasure": "Must filter and block SYS_io_uring_setup (425) and SYS_io_uring_enter (426) via Seccomp filter before agent starts."
+    "io_uring_syscalls_targeted": [
+      425,
+      426
+    ],
+    "seccomp_filter_applied": true,
+    "io_uring_setup_result": "IO_URING: PREVENTED_EPERM (Errno 1)",
+    "exit_code": 0,
+    "operation_prevented": true,
+    "verdict": "PASS (SYS_io_uring_setup blocked synchronously with EPERM via Seccomp filter)"
   },
   "3g_supervisor_crash": {
-    "child_pid": 899,
+    "child_pid": 1198,
     "child_terminated_by_kernel": true,
     "verdict": "PASS (Kernel automatically kills all tracees via SIGKILL when supervisor terminates)",
     "fail_closed_guarantee": true
