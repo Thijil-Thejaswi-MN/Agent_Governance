@@ -1,0 +1,15 @@
+{
+  "landlock_abi_version": 7,
+  "filesystem_type_workspace": "9p (drvfs)",
+  "filesystem_type_native": "tmpfs (/tmp)",
+  "drvfs_behavior": "Landlock path-beneath rules fail or deny all access on 9p/drvfs mounts due to lack of inode security xattrs",
+  "case1_benign": "PASS",
+  "case2_credentials_access": "PREVENTED (EACCES)",
+  "case3_symlink_access": "PREVENTED (EACCES)",
+  "case_3h_symlink_swap_race": {
+    "attempts": 1000,
+    "leaks": 0,
+    "blocked": 740,
+    "allowed_reads": 260
+  }
+}

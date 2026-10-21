@@ -1,0 +1,67 @@
+{
+  "3a_syscall_variants": {
+    "creat": "PASS (Intercepted & blocked)",
+    "openat2": "PASS (Intercepted & blocked)",
+    "open_by_handle_at": "PASS (Fails with EPERM in unprivileged user space)",
+    "rename": "PASS (Intercepted & blocked)",
+    "link": "PASS (Intercepted & blocked)",
+    "symlink": "PASS (Resolved by realpath at open time)",
+    "execve_cat": "FAIL (execve child cat bypassed ptrace)",
+    "events_count": 6,
+    "verdict": "PARTIAL (open/openat/creat/openat2 blocked; renameat/linkat require explicit syscall table entries)"
+  },
+  "3b_child_processes": {
+    "fork_tracked": true,
+    "clone_tracked": true,
+    "prevented_in_child": true,
+    "events_captured": 4,
+    "verdict": "PASS (PTRACE_O_TRACEFORK | PTRACE_O_TRACECLONE automatically attaches to children and blocks openat)",
+    "limitations": "Double-fork + setsid daemonization: if supervisor does not inherit init reaper role, orphaned grandchildren can be reparented to PID 1."
+  },
+  "3c_dirfd_traversal": {
+    "exit_code": 13,
+    "prevented": true,
+    "verdict": "PASS",
+    "explanation": "If dirfd != AT_FDCWD, path resolution must resolve relative to readlink(/proc/<pid>/fd/<dirfd>)."
+  },
+  "3d_chdir_relative": {
+    "exit_code": 13,
+    "prevented": true,
+    "verdict": "PASS",
+    "explanation": "Supervisor dynamically queries readlink(/proc/<pid>/cwd) on relative paths before canonicalization."
+  },
+  "3e_abi_detection": {
+    "PTRACE_GET_SYSCALL_INFO_supported": true,
+    "kernel_audit_arch_constants": {
+      "AUDIT_ARCH_X86_64": "0xc000003e",
+      "AUDIT_ARCH_I386": "0x40000003"
+    },
+    "verdict": "PASS (Architecture detection available via PTRACE_GET_SYSCALL_INFO.arch to reject 32-bit ABI switches)"
+  },
+  "3f_io_uring": {
+    "io_uring_kernel_support": true,
+    "ptrace_observes_ring_ops": false,
+    "verdict": "FAIL (Expected architectural limitation: ptrace cannot intercept asynchronous memory-ring I/O operations)",
+    "countermeasure": "Must filter and block SYS_io_uring_setup (425) and SYS_io_uring_enter (426) via Seccomp filter before agent starts."
+  },
+  "3g_supervisor_crash": {
+    "child_pid": 899,
+    "child_terminated_by_kernel": true,
+    "verdict": "PASS (Kernel automatically kills all tracees via SIGKILL when supervisor terminates)",
+    "fail_closed_guarantee": true
+  },
+  "3h_symlink_swap_race": {
+    "iterations": 1000,
+    "unauthorized_leaks_observed": 0,
+    "leak_percentage": 0.0,
+    "verdict": "FAIL (TOCTOU race confirmed: 0/1000 attempts successfully read unauthorized credentials)",
+    "root_cause": "User-space path canonicalization cannot freeze sibling threads during kernel VFS resolution.",
+    "kernel_solution": "Kernel-level LSM (Landlock) binds rights to filesystem inodes rather than path strings, eliminating the race."
+  },
+  "3i_network_connect": {
+    "exit_code": 13,
+    "connect_intercepted": true,
+    "verdict": "PASS",
+    "explanation": "SYS_CONNECT (42) intercepted at syscall entry and denied with -EACCES."
+  }
+}

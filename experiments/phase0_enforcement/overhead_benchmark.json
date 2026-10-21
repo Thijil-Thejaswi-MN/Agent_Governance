@@ -1,0 +1,36 @@
+{
+  "repetitions": 30,
+  "workload": "agent_benign.py (file read + summary write)",
+  "condition1_unsupervised": {
+    "count": 30,
+    "mean_ms": 85.056,
+    "median_ms": 38.834,
+    "stdev_ms": 92.22,
+    "min_ms": 23.414,
+    "max_ms": 442.136,
+    "p95_ms": 224.997
+  },
+  "condition2_unfiltered_ptrace": {
+    "count": 30,
+    "mean_ms": 182.952,
+    "median_ms": 107.318,
+    "stdev_ms": 145.81,
+    "min_ms": 92.943,
+    "max_ms": 774.243,
+    "p95_ms": 491.233
+  },
+  "condition3_seccomp_filtered_ptrace": {
+    "count": 30,
+    "mean_ms": 77.996,
+    "median_ms": 71.499,
+    "stdev_ms": 18.532,
+    "min_ms": 53.785,
+    "max_ms": 141.268,
+    "p95_ms": 114.458
+  },
+  "overhead_comparison": {
+    "unfiltered_ptrace_overhead_pct": 115.1,
+    "seccomp_filtered_overhead_pct": -8.3,
+    "reduction_with_seccomp_pp": 123.4
+  }
+}

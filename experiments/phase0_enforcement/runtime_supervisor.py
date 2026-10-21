@@ -28,14 +28,28 @@ PTRACE_O_TRACEVFORK = (1 << 2)
 PTRACE_O_TRACECLONE = (1 << 3)
 PTRACE_O_TRACEEXEC = (1 << 4)
 PTRACE_O_TRACEEXIT = (1 << 6)
+PTRACE_O_EXITKILL = (1 << 20)
+
+PTRACE_GETEVENTMSG = 0x4201
+PTRACE_EVENT_FORK = 1
+PTRACE_EVENT_VFORK = 2
+PTRACE_EVENT_CLONE = 3
+PTRACE_EVENT_EXEC = 4
+PTRACE_EVENT_VFORK_DONE = 5
+PTRACE_EVENT_EXIT = 6
 
 # x86_64 System Calls
 SYS_OPEN = 2
+SYS_CREAT = 85
 SYS_OPENAT = 257
+SYS_OPENAT2 = 437
 SYS_EXECVE = 59
 SYS_CLONE = 56
 SYS_FORK = 57
 SYS_VFORK = 58
+SYS_CONNECT = 42
+SYS_RENAME = 82
+SYS_LINK = 86
 
 # Open flags
 O_ACCMODE = 0o003
@@ -228,62 +242,105 @@ class TaskRuntimeSupervisor:
 
         # In supervisor: wait for child initial SIGSTOP
         _, status = os.waitpid(pid, 0)
-        options = PTRACE_O_TRACESYSGOOD | PTRACE_O_TRACEEXEC | PTRACE_O_TRACEFORK | PTRACE_O_TRACECLONE
+        options = (
+            PTRACE_O_TRACESYSGOOD
+            | PTRACE_O_TRACEEXEC
+            | PTRACE_O_TRACEFORK
+            | PTRACE_O_TRACEVFORK
+            | PTRACE_O_TRACECLONE
+            | PTRACE_O_EXITKILL
+        )
         ptrace(PTRACE_SETOPTIONS, pid, None, options)
 
+        active_pids = {pid}
+        in_syscall: dict[int, bool] = {pid: False}
+        suppressed_syscall: dict[int, bool] = {pid: False}
         regs = UserRegsStruct()
-        in_syscall = False
-        suppressed_syscall = False
-        last_verdict = "ALLOW"
-        last_action = "ALLOW"
-        last_prevented = False
-        last_raw_path = ""
-        last_canonical_path = ""
-        last_is_write = False
+        main_exit_code = 0
 
-        while True:
-            ptrace(PTRACE_SYSCALL, pid, None, None)
-            _, status = os.waitpid(pid, 0)
+        # Start initial process
+        ptrace(PTRACE_SYSCALL, pid, None, None)
+
+        while active_pids:
+            try:
+                wpid, status = os.waitpid(-1, 0)
+            except ChildProcessError:
+                break
+            except Exception:
+                break
+
+            if wpid not in active_pids:
+                # Untracked child or exited thread
+                continue
 
             if os.WIFEXITED(status):
-                exit_code = os.WEXITSTATUS(status)
-                break
+                code = os.WEXITSTATUS(status)
+                if wpid == pid:
+                    main_exit_code = code
+                active_pids.discard(wpid)
+                in_syscall.pop(wpid, None)
+                suppressed_syscall.pop(wpid, None)
+                continue
+
             if os.WIFSIGNALED(status):
-                exit_code = -os.WTERMSIG(status)
-                break
+                sig = os.WTERMSIG(status)
+                if wpid == pid:
+                    main_exit_code = -sig
+                active_pids.discard(wpid)
+                in_syscall.pop(wpid, None)
+                suppressed_syscall.pop(wpid, None)
+                continue
 
             if os.WIFSTOPPED(status):
                 sig = os.WSTOPSIG(status)
+                event_code = status >> 16
+
+                # Handle fork, vfork, clone events
+                if event_code in (PTRACE_EVENT_FORK, PTRACE_EVENT_VFORK, PTRACE_EVENT_CLONE):
+                    new_pid_val = ctypes.c_ulong()
+                    ptrace(PTRACE_GETEVENTMSG, wpid, None, ctypes.byref(new_pid_val))
+                    new_child = new_pid_val.value
+                    if new_child:
+                        active_pids.add(new_child)
+                        in_syscall[new_child] = False
+                        suppressed_syscall[new_child] = False
+                    ptrace(PTRACE_SYSCALL, wpid, None, None)
+                    continue
+
                 if sig == (signal.SIGTRAP | 0x80):
                     # Syscall stop
-                    ptrace(PTRACE_GETREGS, pid, None, ctypes.byref(regs))
+                    ptrace(PTRACE_GETREGS, wpid, None, ctypes.byref(regs))
                     syscall_nr = regs.orig_rax
 
-                    if not in_syscall:
+                    was_in = in_syscall.get(wpid, False)
+                    if not was_in:
                         # Syscall entry
-                        in_syscall = True
-                        if syscall_nr in (SYS_OPEN, SYS_OPENAT):
-                            path_addr = regs.rsi if syscall_nr == SYS_OPENAT else regs.rdi
-                            flags = regs.rdx if syscall_nr == SYS_OPENAT else regs.rsi
-                            raw_path = read_string_from_pid(pid, path_addr)
+                        in_syscall[wpid] = True
+                        if syscall_nr in (SYS_OPEN, SYS_OPENAT, SYS_CREAT, SYS_OPENAT2, SYS_RENAME, SYS_LINK):
+                            path_addr = regs.rsi if syscall_nr in (SYS_OPENAT, SYS_OPENAT2) else regs.rdi
+                            flags = regs.rdx if syscall_nr == SYS_OPENAT else (
+                                O_RDONLY if syscall_nr == SYS_OPENAT2 else (
+                                    (O_WRONLY | O_CREAT) if syscall_nr == SYS_CREAT else regs.rsi
+                                )
+                            )
+                            raw_path = read_string_from_pid(wpid, path_addr)
 
-                            verdict, action, prevented = self.evaluate_path_access(pid, raw_path, flags)
-                            
-                            # Only log events within the workspace or policy violations
+                            verdict, action, prevented = self.evaluate_path_access(wpid, raw_path, flags)
+
                             is_workspace_or_violation = (verdict != "ALLOW") or ("workspace" in raw_path) or ("report.txt" in raw_path) or ("summary.txt" in raw_path) or ("credentials.txt" in raw_path)
-                            
+
                             if is_workspace_or_violation:
                                 self._event_counter += 1
                                 full_p = os.path.join(self.canonical_workspace, raw_path) if not os.path.isabs(raw_path) else raw_path
                                 canonical_p = os.path.realpath(os.path.abspath(full_p))
-                                
+
                                 event = RuntimeAuditEvent(
                                     event_id=f"evt_{self._event_counter:04d}",
                                     timestamp_ns=time.perf_counter_ns(),
                                     task_id=self.contract.task_id,
                                     agent_id=self.contract.agent_id,
-                                    pid=pid,
-                                    syscall_name="openat" if syscall_nr == SYS_OPENAT else "open",
+                                    pid=wpid,
+                                    syscall_name="openat" if syscall_nr == SYS_OPENAT else ("openat2" if syscall_nr == SYS_OPENAT2 else ("creat" if syscall_nr == SYS_CREAT else "open")),
                                     raw_path=raw_path,
                                     canonical_path=canonical_p,
                                     is_write=bool(flags & (O_WRONLY | O_RDWR | O_CREAT)),
@@ -295,17 +352,42 @@ class TaskRuntimeSupervisor:
 
                             if verdict != "ALLOW" and self.contract.enforcement_mode == "BLOCK":
                                 # SYNCHRONOUS ENFORCEMENT:
-                                # Nullify syscall so kernel never executes openat
+                                # Nullify syscall so kernel never executes it
                                 regs.orig_rax = ctypes.c_ulonglong(-1).value
-                                ptrace(PTRACE_SETREGS, pid, None, ctypes.byref(regs))
-                                suppressed_syscall = True
+                                ptrace(PTRACE_SETREGS, wpid, None, ctypes.byref(regs))
+                                suppressed_syscall[wpid] = True
+                        elif syscall_nr == SYS_CONNECT:
+                            # Intercept network connect attempts
+                            action = "SYSCALL_NULLIFIED_EACCES" if self.contract.enforcement_mode == "BLOCK" else "AUDIT"
+                            self._event_counter += 1
+                            event = RuntimeAuditEvent(
+                                event_id=f"evt_{self._event_counter:04d}",
+                                timestamp_ns=time.perf_counter_ns(),
+                                task_id=self.contract.task_id,
+                                agent_id=self.contract.agent_id,
+                                pid=wpid,
+                                syscall_name="connect",
+                                raw_path="network://external",
+                                canonical_path="network://external",
+                                is_write=True,
+                                policy_verdict="DENY_NETWORK_CONNECT",
+                                enforcement_action=action,
+                                operation_prevented=(self.contract.enforcement_mode == "BLOCK"),
+                            )
+                            self.events.append(event)
+                            if self.contract.enforcement_mode == "BLOCK":
+                                regs.orig_rax = ctypes.c_ulonglong(-1).value
+                                ptrace(PTRACE_SETREGS, wpid, None, ctypes.byref(regs))
+                                suppressed_syscall[wpid] = True
                     else:
                         # Syscall exit
-                        in_syscall = False
-                        if suppressed_syscall:
+                        in_syscall[wpid] = False
+                        if suppressed_syscall.get(wpid, False):
                             # Inject -EACCES (-13) into return register rax
                             regs.rax = ctypes.c_ulonglong(-13).value # -EACCES
-                            ptrace(PTRACE_SETREGS, pid, None, ctypes.byref(regs))
-                            suppressed_syscall = False
+                            ptrace(PTRACE_SETREGS, wpid, None, ctypes.byref(regs))
+                            suppressed_syscall[wpid] = False
 
-        return exit_code, self.events
+                ptrace(PTRACE_SYSCALL, wpid, None, None)
+
+        return main_exit_code, self.events
