@@ -2556,6 +2556,10 @@ def create_app(
         async def root_redirect():
             return RedirectResponse(url="/dashboard")
 
+    # Include Governance Layer API
+    from ..governance.api import governance_router
+    app.include_router(governance_router, prefix="/api/governance", tags=["governance"])
+
     return app
 
 

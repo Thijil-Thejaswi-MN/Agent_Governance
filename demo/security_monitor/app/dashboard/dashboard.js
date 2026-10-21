@@ -127,8 +127,9 @@ function loadTabSpecificData(tab) {
   }
   if (tab === "events") fetchEvents();
   if (tab === "topology") renderTopologyDualZone();
-  if (tab === "findings") fetchEvaluations();
-  if (tab === "performance") fetchPerformance();
+  if (tab === "gov-tasks") loadGovernanceTasks();
+  if (tab === "gov-inventory") loadGovernanceInventory();
+  if (tab === "gov-alerts") loadGovernanceAlerts();
 }
 
 // --- Polling & Fetching ---
@@ -136,6 +137,9 @@ async function pollLiveData() {
   if (currentTab === "overview") fetchOverview();
   if (currentTab === "events") fetchEvents();
   if (currentTab === "workspace") fetchWorkspaceAgentState();
+  if (currentTab === "gov-tasks") loadGovernanceTasks();
+  if (currentTab === "gov-inventory") loadGovernanceInventory();
+  if (currentTab === "gov-alerts") loadGovernanceAlerts();
 }
 
 async function refreshAllData() {
@@ -1641,3 +1645,219 @@ function escapeHtml(str) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
+
+// =========================================================================
+// RUNTIME TASK GOVERNANCE & INVENTORY (F1, F10, F11, F12)
+// =========================================================================
+
+async function loadGovernanceTasks() {
+  try {
+    const res = await fetch("/api/governance/tasks");
+    if (!res.ok) return;
+    const tasks = await res.json();
+    const tbody = document.getElementById("gov-tasks-tbody");
+    const countBadge = document.getElementById("nav-gov-tasks-count");
+    if (countBadge) countBadge.textContent = tasks.length;
+    if (!tbody) return;
+
+    if (tasks.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">No tasks recorded yet. Submit a task above.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = tasks.map(t => {
+      const compColor = t.compliance_pct === 100 ? "#10b981" : (t.compliance_pct >= 50 ? "#f59e0b" : "#ef4444");
+      return `
+        <tr>
+          <td><code style="font-size:0.75rem;color:var(--accent-primary);">${escapeHtml(t.task_id)}</code></td>
+          <td style="font-weight:600;">${escapeHtml(t.request_text)}</td>
+          <td><span class="badge">${escapeHtml(t.agent_id)}</span></td>
+          <td><span class="status-pill status-${t.status.toLowerCase()}">${escapeHtml(t.status)}</span></td>
+          <td style="font-weight:700;color:${compColor};">${t.compliance_pct}%</td>
+          <td>${t.actions_inside} inside / <strong style="color:#ef4444;">${t.actions_outside} outside</strong></td>
+          <td><span class="badge" style="background:rgba(16,185,129,0.15);color:#10b981;">${t.prevented_count} stopped</span></td>
+          <td>
+            <button class="btn btn-secondary btn-sm" onclick="loadGovernanceTaskDetail('${escapeHtml(t.task_id)}')">
+              <i class="fa-solid fa-eye"></i> View Detail
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join("");
+  } catch (err) {
+    console.error("Failed to load governance tasks:", err);
+  }
+}
+window.loadGovernanceTasks = loadGovernanceTasks;
+
+async function submitGovernanceTask() {
+  const textEl = document.getElementById("gov-task-input-text");
+  const agentEl = document.getElementById("gov-task-input-agent");
+  const modeEl = document.getElementById("gov-task-input-mode");
+  if (!textEl || !agentEl || !modeEl) return;
+
+  const request_text = textEl.value.trim();
+  const agent_id = agentEl.value.trim();
+  const enforcement_mode = modeEl.value;
+
+  if (!request_text) {
+    alert("Please enter a task request text.");
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/governance/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ request_text, agent_id, enforcement_mode }),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      alert("Task submission failed: " + (err.detail || "Error"));
+      return;
+    }
+    const data = await res.json();
+    alert(`Task '${data.task.task_id}' created with boundary version ${data.boundary.version}.`);
+    loadGovernanceTasks();
+    loadGovernanceTaskDetail(data.task.task_id);
+  } catch (err) {
+    alert("Failed to submit task: " + err.message);
+  }
+}
+window.submitGovernanceTask = submitGovernanceTask;
+
+async function loadGovernanceTaskDetail(taskId) {
+  try {
+    const card = document.getElementById("gov-task-detail-card");
+    const titleEl = document.getElementById("gov-task-detail-title");
+    const badgeEl = document.getElementById("gov-task-detail-badge");
+    const summaryEl = document.getElementById("gov-task-boundary-summary");
+    const eventsTbody = document.getElementById("gov-task-events-tbody");
+
+    const [detRes, evRes] = await Promise.all([
+      fetch(`/api/governance/tasks/${taskId}`),
+      fetch(`/api/governance/tasks/${taskId}/events`),
+    ]);
+
+    if (!detRes.ok || !evRes.ok) return;
+    const detail = await detRes.json();
+    const events = await evRes.json();
+
+    if (card) card.style.display = "block";
+    if (titleEl) titleEl.innerHTML = `<i class="fa-solid fa-timeline" style="color:var(--accent-primary);"></i> Task Detail: ${escapeHtml(taskId)} &mdash; ${escapeHtml(detail.task.request_text)}`;
+    if (badgeEl) badgeEl.textContent = detail.task.status;
+
+    if (summaryEl && detail.boundary) {
+      summaryEl.innerHTML = `
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:1rem;">
+          <div><strong>Workspace Root:</strong><br>${escapeHtml(detail.boundary.workspace_root)}</div>
+          <div><strong>Allowed Files Read:</strong><br>${escapeHtml(detail.boundary.files_read.join(", ") || "(none)")}</div>
+          <div><strong>Allowed Files Write:</strong><br>${escapeHtml(detail.boundary.files_write.join(", ") || "(none)")}</div>
+          <div><strong>Allowed Tools:</strong><br>${escapeHtml(detail.boundary.tools.join(", "))}</div>
+          <div><strong>Allowed Network:</strong><br>${escapeHtml(detail.boundary.network.join(", ") || "(Default Deny)")}</div>
+          <div><strong>Allowed Peer Agents:</strong><br>${escapeHtml(detail.boundary.peer_agents.join(", ") || "(Default Deny)")}</div>
+        </div>
+      `;
+    }
+
+    if (eventsTbody) {
+      if (events.length === 0) {
+        eventsTbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">No events recorded yet for this task.</td></tr>';
+      } else {
+        eventsTbody.innerHTML = events.map(e => {
+          const isInside = e.verdict === "INSIDE";
+          const vColor = isInside ? "#10b981" : "#ef4444";
+          const prevBadge = e.prevented ? '<span class="badge" style="background:rgba(16,185,129,0.2);color:#10b981;">STOPPED BEFORE EXEC</span>' : '<span class="badge" style="background:rgba(148,163,184,0.1);color:var(--text-muted);">Observed / Allowed</span>';
+          return `
+            <tr>
+              <td style="font-family:var(--font-mono);font-size:0.75rem;">${escapeHtml(e.timestamp.substring(11, 19))}</td>
+              <td><span class="badge">${escapeHtml(e.source)}</span></td>
+              <td><strong>${escapeHtml(e.kind)}</strong></td>
+              <td><code style="font-size:0.75rem;">${escapeHtml(e.target)}</code></td>
+              <td><strong style="color:${vColor};">${escapeHtml(e.verdict)}</strong></td>
+              <td><span class="status-pill status-${e.risk_tier.toLowerCase()}">${escapeHtml(e.risk_tier)}</span></td>
+              <td>${escapeHtml(e.action_taken)}</td>
+              <td>${prevBadge}</td>
+            </tr>
+          `;
+        }).join("");
+      }
+    }
+  } catch (err) {
+    console.error("Failed to load task detail:", err);
+  }
+}
+window.loadGovernanceTaskDetail = loadGovernanceTaskDetail;
+
+async function loadGovernanceInventory() {
+  try {
+    const res = await fetch("/api/governance/inventory");
+    if (!res.ok) return;
+    const items = await res.json();
+    const tbody = document.getElementById("gov-inventory-tbody");
+    if (!tbody) return;
+
+    if (items.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);">No agents discovered yet.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = items.map(item => {
+      const isShadow = item.classification === "SHADOW";
+      const classBadge = isShadow ? '<span class="badge" style="background:rgba(239,68,68,0.2);color:#ef4444;border:1px solid #ef4444;"><i class="fa-solid fa-triangle-exclamation"></i> UNGOVERNED SHADOW</span>' : '<span class="badge" style="background:rgba(16,185,129,0.2);color:#10b981;border:1px solid #10b981;"><i class="fa-solid fa-shield-halved"></i> GOVERNED</span>';
+      return `
+        <tr>
+          <td>${classBadge}</td>
+          <td><code style="font-size:0.78rem;font-weight:700;">${escapeHtml(item.agent_id)}</code></td>
+          <td>${escapeHtml(item.name)}</td>
+          <td>${escapeHtml(item.owner)}</td>
+          <td><span class="status-pill status-${item.status.toLowerCase()}">${escapeHtml(item.status)}</span></td>
+          <td>${item.current_task_id ? `<code style="font-size:0.75rem;">${escapeHtml(item.current_task_id)} (v${item.boundary_version})</code>` : '<span style="color:var(--text-muted);">&mdash;</span>'}</td>
+          <td style="color:#10b981;font-weight:600;">${item.actions_inside}</td>
+          <td style="color:${item.actions_outside > 0 ? '#ef4444' : 'inherit'};font-weight:600;">${item.actions_outside}</td>
+          <td><strong style="color:${item.violations_count > 0 ? '#ef4444' : 'inherit'};">${item.violations_count}</strong></td>
+          <td style="font-family:var(--font-mono);font-size:0.75rem;">${item.last_seen_utc ? escapeHtml(item.last_seen_utc.substring(0, 19).replace('T', ' ')) : '&mdash;'}</td>
+        </tr>
+      `;
+    }).join("");
+  } catch (err) {
+    console.error("Failed to load governance inventory:", err);
+  }
+}
+window.loadGovernanceInventory = loadGovernanceInventory;
+
+async function loadGovernanceAlerts() {
+  try {
+    const res = await fetch("/api/governance/alerts");
+    if (!res.ok) return;
+    const alerts = await res.json();
+    const tbody = document.getElementById("gov-alerts-tbody");
+    const countBadge = document.getElementById("nav-gov-alerts-count");
+    if (countBadge) countBadge.textContent = alerts.length;
+    if (!tbody) return;
+
+    if (alerts.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);">No active compliance or governance alerts.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = alerts.map(a => {
+      const isShadow = a.is_shadow;
+      return `
+        <tr>
+          <td style="font-family:var(--font-mono);font-size:0.75rem;">${escapeHtml(a.timestamp.substring(11, 19))}</td>
+          <td><code style="font-size:0.75rem;">${escapeHtml(a.event_id)}</code></td>
+          <td><span class="badge">${escapeHtml(a.source)}</span></td>
+          <td><strong>${escapeHtml(a.agent_id)}</strong> ${isShadow ? '<span class="badge" style="background:#ef4444;color:#fff;font-size:0.6rem;">SHADOW</span>' : ''}</td>
+          <td><code style="font-size:0.75rem;">${escapeHtml(a.target)}</code></td>
+          <td><span class="status-pill status-${a.severity.toLowerCase()}">${escapeHtml(a.severity)}</span></td>
+          <td><span class="badge" style="background:rgba(239,68,68,0.15);color:#ef4444;">${escapeHtml(a.action_taken)}</span></td>
+          <td style="font-size:0.8rem;color:var(--text-muted);">${escapeHtml(a.rule_matched)}</td>
+        </tr>
+      `;
+    }).join("");
+  } catch (err) {
+    console.error("Failed to load governance alerts:", err);
+  }
+}
+window.loadGovernanceAlerts = loadGovernanceAlerts;

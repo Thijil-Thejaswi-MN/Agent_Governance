@@ -63,6 +63,24 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           Latency &amp; Overhead
         </button>
+
+        <div style="margin: 0.85rem 0.75rem 0.35rem; font-size: 0.68rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; border-top: 1px solid var(--border-subtle); padding-top: 0.65rem;">
+          Task Governance Layer
+        </div>
+        <button class="nav-item" data-tab="gov-tasks" id="nav-btn-gov-tasks">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          Tasks &amp; Compliance
+          <span class="nav-badge" id="nav-gov-tasks-count" style="background: rgba(16, 185, 129, 0.2); color: #10b981;">0</span>
+        </button>
+        <button class="nav-item" data-tab="gov-inventory" id="nav-btn-gov-inventory">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+          Agent Inventory (F10)
+        </button>
+        <button class="nav-item" data-tab="gov-alerts" id="nav-btn-gov-alerts">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Governance Alerts
+          <span class="nav-badge" id="nav-gov-alerts-count" style="background: rgba(239, 68, 68, 0.2); color: #ef4444;">0</span>
+        </button>
       </nav>
 
       <div class="sidebar-footer">
@@ -863,6 +881,152 @@
                 <span class="bar-val" id="bar-sec-text">0.095 ms</span>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 8. RUNTIME TASK GOVERNANCE TAB (F1 / F11) -->
+      <section class="tab-pane" id="pane-gov-tasks">
+        <div class="glass-panel" style="margin-bottom: 1.5rem;">
+          <div class="panel-header">
+            <h3><i class="fa-solid fa-plus-circle" style="color: var(--accent-primary);"></i> Submit New Governed Task (F1)</h3>
+          </div>
+          <div style="display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 1rem; align-items: end; padding: 1rem 0 0.5rem;">
+            <div>
+              <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.35rem;">TASK REQUEST TEXT</label>
+              <input type="text" id="gov-task-input-text" class="input-text" placeholder="e.g. Analyse report.pdf and write summary.txt" style="width: 100%;" value="Analyse report.pdf and write summary.txt">
+            </div>
+            <div>
+              <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.35rem;">ASSIGNED AGENT</label>
+              <input type="text" id="gov-task-input-agent" class="input-text" value="agent_doc_summarizer" style="width: 100%;">
+            </div>
+            <div>
+              <label style="font-size: 0.75rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.35rem;">ENFORCEMENT MODE</label>
+              <select id="gov-task-input-mode" class="input-select" style="width: 100%;">
+                <option value="ENFORCE">ENFORCE (Active Block)</option>
+                <option value="OBSERVE">OBSERVE (Audit / Alert Only)</option>
+              </select>
+            </div>
+            <button class="btn btn-primary" id="btn-submit-gov-task" onclick="submitGovernanceTask()">
+              <i class="fa-solid fa-play"></i> Launch Task
+            </button>
+          </div>
+        </div>
+
+        <div class="glass-panel" style="margin-bottom: 1.5rem;">
+          <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h3><i class="fa-solid fa-list-check" style="color: var(--accent-primary);"></i> Active &amp; Historical Tasks (F11)</h3>
+            <button class="btn btn-secondary btn-sm" onclick="loadGovernanceTasks()"><i class="fa-solid fa-rotate"></i> Refresh Tasks</button>
+          </div>
+          <div class="table-container" style="margin-top: 0.75rem;">
+            <table class="data-table" id="gov-tasks-table">
+              <thead>
+                <tr>
+                  <th>Task ID</th>
+                  <th>Request Text</th>
+                  <th>Agent</th>
+                  <th>Status</th>
+                  <th>Compliance %</th>
+                  <th>Actions (Inside / Outside)</th>
+                  <th>Prevented</th>
+                  <th>Timeline</th>
+                </tr>
+              </thead>
+              <tbody id="gov-tasks-tbody">
+                <tr><td colspan="8" style="text-align: center; color: var(--text-muted);">Loading tasks from governance.db...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="glass-panel" id="gov-task-detail-card" style="display: none;">
+          <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h3 id="gov-task-detail-title"><i class="fa-solid fa-timeline" style="color: var(--accent-primary);"></i> Task Detail &amp; Execution Timeline</h3>
+            <span id="gov-task-detail-badge" class="badge">ACTIVE</span>
+          </div>
+          <div id="gov-task-boundary-summary" style="margin: 1rem 0; padding: 1rem; background: var(--bg-surface-alt); border-radius: 8px; font-family: var(--font-mono); font-size: 0.8rem;"></div>
+          <h4>Observed Actions Timeline</h4>
+          <div class="table-container" style="margin-top: 0.5rem;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Source</th>
+                  <th>Action / Kind</th>
+                  <th>Target</th>
+                  <th>Verdict</th>
+                  <th>Risk</th>
+                  <th>Action Taken</th>
+                  <th>Real Prevention</th>
+                </tr>
+              </thead>
+              <tbody id="gov-task-events-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 9. AGENT INVENTORY TAB (F10) -->
+      <section class="tab-pane" id="pane-gov-inventory">
+        <div class="glass-panel">
+          <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <h3><i class="fa-solid fa-network-wired" style="color: var(--accent-primary);"></i> Agent Inventory &amp; Shadow Discovery (F10)</h3>
+              <p style="color: var(--text-muted); font-size: 0.8rem; margin: 0.25rem 0 0;">
+                All agents discovered across the network. Governed agents operate within assigned task contracts; ungoverned shadow agents trigger alerts.
+              </p>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="loadGovernanceInventory()"><i class="fa-solid fa-rotate"></i> Refresh Inventory</button>
+          </div>
+          <div class="table-container" style="margin-top: 1rem;">
+            <table class="data-table" id="gov-inventory-table">
+              <thead>
+                <tr>
+                  <th>Classification</th>
+                  <th>Agent ID</th>
+                  <th>Name</th>
+                  <th>Owner</th>
+                  <th>Status</th>
+                  <th>Current Task</th>
+                  <th>Actions Inside</th>
+                  <th>Actions Outside</th>
+                  <th>Violations</th>
+                  <th>Last Seen (UTC)</th>
+                </tr>
+              </thead>
+              <tbody id="gov-inventory-tbody">
+                <tr><td colspan="10" style="text-align: center; color: var(--text-muted);">Loading agent inventory...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 10. GOVERNANCE ALERTS TAB -->
+      <section class="tab-pane" id="pane-gov-alerts">
+        <div class="glass-panel">
+          <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
+            <h3><i class="fa-solid fa-triangle-exclamation" style="color: #ef4444;"></i> Real-Time Governance &amp; Compliance Alerts</h3>
+            <button class="btn btn-secondary btn-sm" onclick="loadGovernanceAlerts()"><i class="fa-solid fa-rotate"></i> Refresh Alerts</button>
+          </div>
+          <div class="table-container" style="margin-top: 1rem;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Time (UTC)</th>
+                  <th>Event ID</th>
+                  <th>Source</th>
+                  <th>Agent ID</th>
+                  <th>Target Resource</th>
+                  <th>Severity</th>
+                  <th>Action Taken</th>
+                  <th>Rule Matched</th>
+                </tr>
+              </thead>
+              <tbody id="gov-alerts-tbody">
+                <tr><td colspan="8" style="text-align: center; color: var(--text-muted);">Loading alerts...</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </section>
