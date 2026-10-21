@@ -66,16 +66,7 @@ class BoundaryEvaluator:
         resolved_str = str(resolved_real).replace("\\", "/")
         filename = resolved_real.name.lower()
 
-        # 2. Check for sensitive credential-like file patterns -> HIGH RISK (Case-Insensitive)
-        for pattern in SENSITIVE_FILE_PATTERNS:
-            if fnmatch.fnmatch(filename, pattern.lower()):
-                return EvaluationResult(
-                    verdict=EventVerdict.OUTSIDE,
-                    risk_tier=RiskTier.HIGH,
-                    rule_matched=f"prohibited sensitive credential pattern: {pattern}",
-                )
-
-        # 3. Check workspace boundary containment -> HIGH RISK on escape or symlink pointing outside
+        # 2. Check workspace boundary containment -> HIGH RISK on escape or symlink pointing outside
         try:
             rel_path = resolved_real.relative_to(w_root)
             rel_str = str(rel_path).replace("\\", "/")
@@ -86,11 +77,30 @@ class BoundaryEvaluator:
                 rule_matched="path escapes task workspace_root (canonical target outside boundary)",
             )
 
-        # 4. Check against allowed read/write boundary list (Strict relative path matching)
         allowed_list = boundary.files_write if is_write else boundary.files_read
         mode_str = "files.write" if is_write else "files.read"
-
         rel_lower = rel_str.lower()
+
+        # 3. Check for exact non-wildcard match in allowed list (explicit human grants)
+        for pattern in allowed_list:
+            pat_clean = pattern.replace("\\", "/").lower()
+            if not any(c in pat_clean for c in ["*", "?", "["]) and rel_lower == pat_clean:
+                return EvaluationResult(
+                    verdict=EventVerdict.INSIDE,
+                    risk_tier=RiskTier.LOW,
+                    rule_matched=f"matched explicitly allowed {mode_str} exact grant: {pattern}",
+                )
+
+        # 4. Check for sensitive credential-like file patterns -> HIGH RISK (Case-Insensitive)
+        for pattern in SENSITIVE_FILE_PATTERNS:
+            if fnmatch.fnmatch(filename, pattern.lower()):
+                return EvaluationResult(
+                    verdict=EventVerdict.OUTSIDE,
+                    risk_tier=RiskTier.HIGH,
+                    rule_matched=f"prohibited sensitive credential pattern: {pattern}",
+                )
+
+        # 5. Check against allowed read/write boundary list (Strict relative pattern matching)
         for pattern in allowed_list:
             pat_clean = pattern.replace("\\", "/").lower()
             # Match normalized relative path
@@ -101,7 +111,7 @@ class BoundaryEvaluator:
                     rule_matched=f"matched allowed {mode_str} pattern: {pattern}",
                 )
 
-        # 5. File is inside workspace, but unlisted -> OUTSIDE (MEDIUM risk)
+        # 6. File is inside workspace, but unlisted -> OUTSIDE (MEDIUM risk)
         return EvaluationResult(
             verdict=EventVerdict.OUTSIDE,
             risk_tier=RiskTier.MEDIUM,

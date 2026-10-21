@@ -17,6 +17,8 @@ from .models import (
     TaskBoundary,
     GovernanceEvent,
     ExpansionRequest,
+    ExpansionStatus,
+    ProvenanceRecord,
     TaskLifecycle,
     EnforcementMode,
     EventSource,
@@ -128,16 +130,32 @@ class GovernanceStorage:
                 CREATE TABLE IF NOT EXISTS governance_expansions (
                     request_id TEXT PRIMARY KEY,
                     task_id TEXT NOT NULL,
-                    requester TEXT NOT NULL,
-                    kind TEXT NOT NULL,
-                    resource TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    resource_type TEXT NOT NULL,
+                    resource_target TEXT NOT NULL,
                     justification TEXT NOT NULL,
-                    risk_tier TEXT NOT NULL,
+                    baseline_risk_tier TEXT NOT NULL,
+                    effective_risk_tier TEXT NOT NULL,
+                    escalated_by_provenance INTEGER NOT NULL DEFAULT 0,
                     status TEXT NOT NULL,
-                    decision_by TEXT,
-                    decided_at TEXT,
-                    provenance_events_json TEXT,
-                    created_at TEXT DEFAULT (datetime('now', 'utc'))
+                    created_at TEXT NOT NULL,
+                    resolved_at TEXT,
+                    resolved_by TEXT,
+                    single_use INTEGER NOT NULL DEFAULT 0,
+                    used_count INTEGER NOT NULL DEFAULT 0,
+                    timeout_seconds REAL NOT NULL DEFAULT 5.0
+                )
+            """)
+
+            # 6. Provenance Events (All untrusted reads during task execution)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS governance_provenance (
+                    task_id TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    source_type TEXT NOT NULL,
+                    source_target TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    content_len INTEGER NOT NULL
                 )
             """)
             conn.commit()
@@ -349,3 +367,153 @@ class GovernanceStorage:
                 )
                 for r in rows
             ]
+
+    # --- Provenance Tracking Methods ---
+    def record_provenance(self, record: ProvenanceRecord) -> None:
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO governance_provenance (
+                    task_id, timestamp, source_type, source_target, content_hash, content_len
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.task_id,
+                    record.timestamp,
+                    record.source_type,
+                    record.source_target,
+                    record.content_hash,
+                    record.content_len,
+                ),
+            )
+            conn.commit()
+
+    def get_provenance_for_task(self, task_id: str) -> list[ProvenanceRecord]:
+        with self.get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM governance_provenance WHERE task_id = ? ORDER BY timestamp ASC",
+                (task_id,),
+            ).fetchall()
+            return [
+                ProvenanceRecord(
+                    task_id=r["task_id"],
+                    timestamp=r["timestamp"],
+                    source_type=r["source_type"],
+                    source_target=r["source_target"],
+                    content_hash=r["content_hash"],
+                    content_len=r["content_len"],
+                )
+                for r in rows
+            ]
+
+    # --- Expansion Request Methods ---
+    def save_expansion_request(self, req: ExpansionRequest) -> None:
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO governance_expansions (
+                    request_id, task_id, agent_id, resource_type, resource_target,
+                    justification, baseline_risk_tier, effective_risk_tier,
+                    escalated_by_provenance, status, created_at, resolved_at,
+                    resolved_by, single_use, used_count, timeout_seconds
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(request_id) DO UPDATE SET
+                    status=excluded.status,
+                    resolved_at=coalesce(excluded.resolved_at, governance_expansions.resolved_at),
+                    resolved_by=coalesce(excluded.resolved_by, governance_expansions.resolved_by),
+                    used_count=excluded.used_count
+                """,
+                (
+                    req.request_id,
+                    req.task_id,
+                    req.agent_id,
+                    req.resource_type,
+                    req.resource_target,
+                    req.justification,
+                    req.baseline_risk_tier.value,
+                    req.effective_risk_tier.value,
+                    1 if req.escalated_by_provenance else 0,
+                    req.status.value,
+                    req.created_at,
+                    req.resolved_at,
+                    req.resolved_by,
+                    1 if req.single_use else 0,
+                    req.used_count,
+                    req.timeout_seconds,
+                ),
+            )
+            conn.commit()
+
+    def get_expansion_request(self, request_id: str) -> ExpansionRequest | None:
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM governance_expansions WHERE request_id = ?",
+                (request_id,),
+            ).fetchone()
+            if not row:
+                return None
+            return self._row_to_expansion(row)
+
+    def list_expansion_requests(
+        self, task_id: str | None = None, status: str | None = None
+    ) -> list[ExpansionRequest]:
+        query = "SELECT * FROM governance_expansions WHERE 1=1"
+        params: list[Any] = []
+        if task_id:
+            query += " AND task_id = ?"
+            params.append(task_id)
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        query += " ORDER BY created_at DESC"
+
+        with self.get_connection() as conn:
+            rows = conn.execute(query, params).fetchall()
+            return [self._row_to_expansion(r) for r in rows]
+
+    def update_expansion_status(
+        self, request_id: str, status: ExpansionStatus, resolved_by: str, resolved_at: str
+    ) -> None:
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE governance_expansions SET
+                    status = ?, resolved_by = ?, resolved_at = ?
+                WHERE request_id = ?
+                """,
+                (status.value, resolved_by, resolved_at, request_id),
+            )
+            conn.commit()
+
+    def increment_expansion_usage(self, request_id: str) -> int:
+        with self.get_connection() as conn:
+            conn.execute(
+                "UPDATE governance_expansions SET used_count = used_count + 1 WHERE request_id = ?",
+                (request_id,),
+            )
+            conn.commit()
+            row = conn.execute(
+                "SELECT used_count FROM governance_expansions WHERE request_id = ?",
+                (request_id,),
+            ).fetchone()
+            return int(row["used_count"]) if row else 1
+
+    def _row_to_expansion(self, r: sqlite3.Row) -> ExpansionRequest:
+        return ExpansionRequest(
+            request_id=r["request_id"],
+            task_id=r["task_id"],
+            agent_id=r["agent_id"],
+            resource_type=r["resource_type"],
+            resource_target=r["resource_target"],
+            justification=r["justification"],
+            baseline_risk_tier=RiskTier(r["baseline_risk_tier"]),
+            effective_risk_tier=RiskTier(r["effective_risk_tier"]),
+            escalated_by_provenance=bool(r["escalated_by_provenance"]),
+            status=ExpansionStatus(r["status"]),
+            created_at=r["created_at"],
+            resolved_at=r["resolved_at"],
+            resolved_by=r["resolved_by"],
+            single_use=bool(r["single_use"]),
+            used_count=r["used_count"],
+            timeout_seconds=float(r["timeout_seconds"]),
+        )

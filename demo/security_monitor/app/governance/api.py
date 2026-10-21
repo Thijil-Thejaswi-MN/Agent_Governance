@@ -12,13 +12,16 @@ from pydantic import BaseModel, Field
 
 from .models import EnforcementMode, TaskLifecycle, TaskBoundary, TaskRecord
 from .storage import GovernanceStorage
+import os
 from .intake import TaskIntakeService
 from .inventory import AgentInventoryService
+from .expansion import ExpansionService
 
 governance_router = APIRouter()
 _storage = GovernanceStorage()
 _intake = TaskIntakeService(_storage)
 _inventory_service = AgentInventoryService(_storage)
+_expansion_service = ExpansionService(_storage)
 
 
 class SubmitTaskRequest(BaseModel):
@@ -115,11 +118,90 @@ async def get_alerts() -> list[dict[str, Any]]:
     return _inventory_service.get_alerts()
 
 
+@governance_router.get("/config")
+async def get_governance_config() -> dict[str, Any]:
+    mode = os.getenv("GOVERNANCE_SYSTEM_MODE", "OBSERVE").upper()
+    return {
+        "system_mode": mode,
+        "default_mode": "OBSERVE",
+        "provenance_enabled": _expansion_service.provenance_enabled,
+        "description": "OBSERVE (audits shadow agents) | ENFORCE (blocks untokened/unauthorized callers)",
+    }
+
+
+class ExpansionSubmission(BaseModel):
+    task_id: str
+    agent_id: str
+    resource_type: str
+    resource_target: str
+    justification: str
+    timeout_seconds: float = 5.0
+    provenance_enabled: bool = True
+
+
+class ExpansionDecision(BaseModel):
+    decided_by: str  # Must not be the requesting agent
+    reason: str = ""
+
+
 @governance_router.get("/expansions")
-async def list_expansions(task_id: str | None = Query(None)) -> list[dict[str, Any]]:
-    with _storage.get_connection() as conn:
-        if task_id:
-            rows = conn.execute("SELECT * FROM governance_expansions WHERE task_id = ?", (task_id,)).fetchall()
-        else:
-            rows = conn.execute("SELECT * FROM governance_expansions ORDER BY created_at DESC").fetchall()
-        return [dict(r) for r in rows]
+async def list_expansions(
+    task_id: str | None = Query(None),
+    status: str | None = Query(None),
+) -> list[dict[str, Any]]:
+    expansions = _storage.list_expansion_requests(task_id=task_id, status=status)
+    return [e.model_dump() for e in expansions]
+
+
+@governance_router.post("/expansions/request")
+async def request_expansion(payload: ExpansionSubmission) -> dict[str, Any]:
+    try:
+        req = _expansion_service.evaluate_request(
+            task_id=payload.task_id,
+            agent_id=payload.agent_id,
+            resource_type=payload.resource_type,
+            resource_target=payload.resource_target,
+            justification=payload.justification,
+            provenance_enabled=payload.provenance_enabled,
+            timeout_seconds=payload.timeout_seconds,
+        )
+        return req.model_dump()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@governance_router.post("/expansions/{request_id}/approve")
+async def approve_expansion(request_id: str, payload: ExpansionDecision) -> dict[str, Any]:
+    try:
+        new_boundary = _expansion_service.approve_request(
+            request_id=request_id,
+            approved_by=payload.decided_by,
+        )
+        req = _storage.get_expansion_request(request_id)
+        return {
+            "status": "APPROVED",
+            "request": req.model_dump() if req else None,
+            "new_boundary": new_boundary.model_dump(),
+        }
+    except PermissionError as pe:
+        # Agent self-approval attempt strictly forbidden
+        raise HTTPException(status_code=403, detail=str(pe))
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+
+
+@governance_router.post("/expansions/{request_id}/deny")
+async def deny_expansion(request_id: str, payload: ExpansionDecision) -> dict[str, Any]:
+    try:
+        _expansion_service.deny_request(
+            request_id=request_id,
+            denied_by=payload.decided_by,
+            reason=payload.reason,
+        )
+        req = _storage.get_expansion_request(request_id)
+        return {
+            "status": "DENIED",
+            "request": req.model_dump() if req else None,
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))

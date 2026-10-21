@@ -1861,3 +1861,119 @@ async function loadGovernanceAlerts() {
   }
 }
 window.loadGovernanceAlerts = loadGovernanceAlerts;
+
+async function loadGovernanceConfig() {
+  try {
+    const res = await fetch("/api/governance/config");
+    if (!res.ok) return;
+    const cfg = await res.json();
+    const modeEl = document.getElementById("hdr-gov-mode");
+    const pillEl = document.getElementById("hdr-gov-mode-pill");
+    if (modeEl) modeEl.textContent = cfg.system_mode || "OBSERVE";
+    if (pillEl) {
+      if (cfg.system_mode === "ENFORCE") {
+        pillEl.style.background = "rgba(239, 68, 68, 0.15)";
+        pillEl.style.color = "#f87171";
+        pillEl.style.border = "1px solid rgba(239, 68, 68, 0.3)";
+      } else {
+        pillEl.style.background = "rgba(99, 102, 241, 0.15)";
+        pillEl.style.color = "#818cf8";
+        pillEl.style.border = "1px solid rgba(99, 102, 241, 0.3)";
+      }
+    }
+  } catch (err) {
+    console.error("Failed to load governance config:", err);
+  }
+}
+window.loadGovernanceConfig = loadGovernanceConfig;
+
+async function loadGovernanceExpansions() {
+  try {
+    const res = await fetch("/api/governance/expansions");
+    if (!res.ok) return;
+    const expansions = await res.json();
+    const tbody = document.getElementById("gov-expansions-tbody");
+    const countBadge = document.getElementById("nav-gov-expansions-count");
+    const pendingCount = expansions.filter(e => e.status === "PENDING").length;
+    if (countBadge) countBadge.textContent = pendingCount;
+    if (!tbody) return;
+
+    if (expansions.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);">No expansion requests recorded.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = expansions.map(e => {
+      const isPending = e.status === "PENDING";
+      const isEscalated = e.escalated_by_provenance;
+      const statusBadge = isPending
+        ? '<span class="status-pill status-pending" style="background:rgba(245,158,11,0.2);color:#f59e0b;">PENDING</span>'
+        : (e.status === "APPROVED"
+          ? '<span class="status-pill status-allowed" style="background:rgba(16,185,129,0.2);color:#10b981;">APPROVED</span>'
+          : '<span class="status-pill status-blocked" style="background:rgba(239,68,68,0.2);color:#ef4444;">DENIED</span>');
+
+      const actionButtons = isPending ? `
+        <div style="display:flex;gap:0.3rem;">
+          <button class="btn btn-primary btn-sm" onclick="approveExpansion('${escapeHtml(e.request_id)}')"><i class="fa-solid fa-check"></i> Approve</button>
+          <button class="btn btn-danger btn-sm" onclick="denyExpansion('${escapeHtml(e.request_id)}')"><i class="fa-solid fa-xmark"></i> Deny</button>
+        </div>
+      ` : `<span style="font-size:0.75rem;color:var(--text-muted);">Resolved by ${escapeHtml(e.resolved_by || '')}</span>`;
+
+      return `
+        <tr>
+          <td><code style="font-size:0.75rem;">${escapeHtml(e.request_id)}</code></td>
+          <td><code style="font-size:0.75rem;">${escapeHtml(e.task_id)}</code></td>
+          <td><strong>${escapeHtml(e.agent_id)}</strong></td>
+          <td><span class="badge">${escapeHtml(e.resource_type)}</span></td>
+          <td><code style="font-size:0.75rem;">${escapeHtml(e.resource_target)}</code></td>
+          <td><span class="status-pill status-${e.baseline_risk_tier.toLowerCase()}">${escapeHtml(e.baseline_risk_tier)}</span></td>
+          <td><span class="status-pill status-${e.effective_risk_tier.toLowerCase()}">${escapeHtml(e.effective_risk_tier)}</span></td>
+          <td>${isEscalated ? '<span class="badge" style="background:#ef4444;color:#fff;font-size:0.65rem;">ESCALATED (+1)</span>' : '<span style="color:var(--text-muted);font-size:0.75rem;">No (Baseline)</span>'}</td>
+          <td>${statusBadge}</td>
+          <td>${actionButtons}</td>
+        </tr>
+      `;
+    }).join("");
+  } catch (err) {
+    console.error("Failed to load governance expansions:", err);
+  }
+}
+window.loadGovernanceExpansions = loadGovernanceExpansions;
+
+async function approveExpansion(requestId) {
+  try {
+    const res = await fetch(`/api/governance/expansions/${requestId}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decided_by: "human_operator" })
+    });
+    if (res.ok) {
+      await loadGovernanceExpansions();
+    } else {
+      const err = await res.json();
+      alert(`Approval failed: ${err.detail || 'Error'}`);
+    }
+  } catch (err) {
+    console.error("Error approving expansion:", err);
+  }
+}
+window.approveExpansion = approveExpansion;
+
+async function denyExpansion(requestId) {
+  try {
+    const res = await fetch(`/api/governance/expansions/${requestId}/deny`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decided_by: "human_operator", reason: "Denied by operator" })
+    });
+    if (res.ok) {
+      await loadGovernanceExpansions();
+    } else {
+      const err = await res.json();
+      alert(`Denial failed: ${err.detail || 'Error'}`);
+    }
+  } catch (err) {
+    console.error("Error denying expansion:", err);
+  }
+}
+window.denyExpansion = denyExpansion;

@@ -105,16 +105,38 @@ class GovernanceEvent(BaseModel):
     boundary_version: int | None = None
 
 
+class ProvenanceRecord(BaseModel):
+    """Provenance tracking record for untrusted runtime reads."""
+    task_id: str
+    timestamp: str
+    source_type: str  # "file_read", "http_get", "peer_message"
+    source_target: str
+    content_hash: str  # SHA-256 of content read
+    content_len: int
+
+
+class ExpansionStatus(str, Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    DENIED = "DENIED"
+    EXPIRED = "EXPIRED"
+
+
 class ExpansionRequest(BaseModel):
     """Dynamic request to expand an active task boundary mid-execution."""
     request_id: str
     task_id: str
-    requester: str  # "agent" or "user"
-    kind: str       # "file_read", "file_write", "network", "tool", "peer_agent"
-    resource: str
+    agent_id: str
+    resource_type: str  # "file_read", "file_write", "network", "peer_agent"
+    resource_target: str  # Exact resource only (no wildcards allowed)
     justification: str
-    risk_tier: RiskTier
-    status: str = "PENDING"  # PENDING, APPROVED, DENIED
-    decision_by: str | None = None  # "policy" or "user"
-    decided_at: str | None = None
-    provenance_events: list[str] = Field(default_factory=list)
+    baseline_risk_tier: RiskTier
+    effective_risk_tier: RiskTier
+    escalated_by_provenance: bool = False
+    status: ExpansionStatus = ExpansionStatus.PENDING
+    created_at: str
+    resolved_at: str | None = None
+    resolved_by: str | None = None  # "auto_policy", "human_user", "timeout_fail_closed"
+    single_use: bool = False  # True for human-approved HIGH grants
+    used_count: int = 0
+    timeout_seconds: float = 5.0

@@ -1449,10 +1449,18 @@ def create_app(
             else:
                 target_url = base_url
 
+        def _should_forward_header(header_name: str, header_value: str) -> bool:
+            hn = header_name.lower()
+            if hn in {"host", "content-length", "x-governance-task-token", "x-task-token"}:
+                return False
+            if hn == "authorization" and header_value.lower().startswith("bearer gov_tok_"):
+                return False
+            return True
+
         req_headers = {
             k: v
             for k, v in request.headers.items()
-            if k.lower() not in {"host", "content-length"}
+            if _should_forward_header(k, v)
         }
 
         client = getattr(app.state, "http_client", None)

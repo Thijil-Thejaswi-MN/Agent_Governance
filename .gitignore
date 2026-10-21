@@ -71,3 +71,6 @@ desktop.ini
 
 # Phase 0 disposable experiment test workspace
 experiments/phase0_enforcement/workspace/
+
+# Ephemeral demo data and workspaces
+demo/data/

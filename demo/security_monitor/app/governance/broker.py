@@ -22,6 +22,7 @@ from .models import (
 from .storage import GovernanceStorage
 from .evaluator import BoundaryEvaluator
 from .policy import TaskPolicyEngine
+from .expansion import ExpansionService
 
 
 class ToolBroker:
@@ -32,15 +33,57 @@ class ToolBroker:
         storage: GovernanceStorage,
         evaluator: BoundaryEvaluator | None = None,
         policy_engine: TaskPolicyEngine | None = None,
+        expansion_service: ExpansionService | None = None,
     ) -> None:
         self.storage = storage
         self.evaluator = evaluator or BoundaryEvaluator()
         self.policy_engine = policy_engine or TaskPolicyEngine()
+        self.expansion_service = expansion_service or ExpansionService(self.storage)
         self._event_counter = 0
 
     def _generate_event_id(self) -> str:
         self._event_counter += 1
         return f"evt_broker_{self._event_counter:04d}_{uuid.uuid4().hex[:6]}"
+
+    def _check_and_consume_single_use(self, boundary: Any, resource_type: str, target: str) -> None:
+        """Enforces single-use consumption for human-approved HIGH expansion grants."""
+        if not boundary.parent_expansion_id:
+            return
+        req = self.storage.get_expansion_request(boundary.parent_expansion_id)
+        if not req or not req.single_use:
+            return
+        if req.resource_type == resource_type and req.resource_target == target:
+            used = self.storage.increment_expansion_usage(req.request_id)
+            if used >= 1:
+                # Consume single-use grant: remove resource from boundary so subsequent accesses are blocked
+                if resource_type == "file_read" and target in boundary.files_read:
+                    boundary.files_read.remove(target)
+                elif resource_type == "file_write" and target in boundary.files_write:
+                    boundary.files_write.remove(target)
+                elif resource_type == "network" and target in boundary.network:
+                    boundary.network.remove(target)
+                elif resource_type == "peer_agent" and target in boundary.peer_agents:
+                    boundary.peer_agents.remove(target)
+                self.storage.save_boundary(boundary)
+
+    def request_expansion(
+        self,
+        token: str,
+        resource_type: str,
+        resource_target: str,
+        justification: str,
+        timeout_seconds: float = 2.0,
+    ) -> tuple[bool, str]:
+        """Allows an agent to synchronously request boundary expansion mid-execution."""
+        task_id, agent_id = self._authenticate(token)
+        return self.expansion_service.request_and_wait(
+            task_id=task_id,
+            agent_id=agent_id,
+            resource_type=resource_type,
+            resource_target=resource_target,
+            justification=justification,
+            timeout_seconds=timeout_seconds,
+        )
 
     def _authenticate(self, token: str) -> tuple[str, str]:
         """
@@ -135,7 +178,21 @@ class ToolBroker:
         if not target.is_absolute():
             target = Path(boundary.workspace_root) / target
         with open(target, "r", encoding="utf-8", errors="replace") as f:
-            return f.read()
+            content = f.read()
+
+        # Record untrusted read in provenance tracker
+        if self.expansion_service:
+            self.expansion_service.record_untrusted_read(
+                task_id=task_id,
+                source_type="file_read",
+                source_target=file_path,
+                content=content,
+            )
+
+        # Enforce single-use consumption if granted under HIGH human approval
+        self._check_and_consume_single_use(boundary, "file_read", file_path)
+
+        return content
 
     def write_file(self, token: str, file_path: str, content: str) -> int:
         """
@@ -236,8 +293,16 @@ class ToolBroker:
             raise PermissionError(f"Outbound network request to '{url}' denied by boundary: {eval_res.rule_matched}")
 
         # In testing / stub mode:
-        # If response simulates a redirect or handler is passed, check redirect target:
-        return {"status": 200, "url": url, "body": "Mock response from authorized endpoint"}
+        body_content = "Mock response from authorized endpoint"
+        if self.expansion_service:
+            self.expansion_service.record_untrusted_read(
+                task_id=task_id,
+                source_type="http_get",
+                source_target=url,
+                content=body_content,
+            )
+        self._check_and_consume_single_use(boundary, "network", url)
+        return {"status": 200, "url": url, "body": body_content}
 
     def handle_http_redirect(self, token: str, original_url: str, redirect_target: str) -> str:
         """
@@ -343,4 +408,14 @@ class ToolBroker:
         if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
             raise PermissionError(f"Communication with agent '{target_agent}' denied by boundary: {eval_res.rule_matched}")
 
-        return {"status": "ok", "target_agent": target_agent, "reply": "Authorized message delivered"}
+        reply_content = "Authorized message delivered"
+        if self.expansion_service:
+            self.expansion_service.record_untrusted_read(
+                task_id=task_id,
+                source_type="peer_message",
+                source_target=target_agent,
+                content=reply_content,
+            )
+        self._check_and_consume_single_use(boundary, "peer_agent", target_agent)
+
+        return {"status": "ok", "target_agent": target_agent, "reply": reply_content}
