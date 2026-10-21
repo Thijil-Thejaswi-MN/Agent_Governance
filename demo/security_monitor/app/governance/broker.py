@@ -235,8 +235,46 @@ class ToolBroker:
         if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
             raise PermissionError(f"Outbound network request to '{url}' denied by boundary: {eval_res.rule_matched}")
 
-        # Local stub response
+        # In testing / stub mode:
+        # If response simulates a redirect or handler is passed, check redirect target:
         return {"status": 200, "url": url, "body": "Mock response from authorized endpoint"}
+
+    def handle_http_redirect(self, token: str, original_url: str, redirect_target: str) -> str:
+        """
+        Re-evaluates a redirect hop against the task boundary before following.
+        Prevents redirect-based boundary escapes (e.g. allowed.host -> 302 -> evil.com).
+        """
+        task_id, agent_id = self._authenticate(token)
+        boundary = self.storage.get_boundary(task_id)
+        if not boundary:
+            raise RuntimeError(f"Active boundary not found for task {task_id}")
+
+        eval_res = self.evaluator.evaluate_network(boundary, redirect_target)
+        action, prevented = self.policy_engine.decide(boundary, eval_res)
+
+        event = GovernanceEvent(
+            event_id=self._generate_event_id(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            source=EventSource.TOOL_BROKER,
+            task_id=task_id,
+            agent_id=agent_id,
+            pid=os.getpid(),
+            kind="network_http_redirect",
+            target=redirect_target,
+            details={"original_url": original_url},
+            verdict=eval_res.verdict,
+            risk_tier=eval_res.risk_tier,
+            action_taken=action,
+            prevented=prevented,
+            rule_matched=eval_res.rule_matched,
+            boundary_version=boundary.version,
+        )
+        self.storage.record_event(event)
+
+        if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
+            raise PermissionError(f"HTTP redirect to '{redirect_target}' denied by boundary: {eval_res.rule_matched}")
+
+        return redirect_target
 
     def run_command(self, token: str, command: str) -> dict[str, Any]:
         """

@@ -135,18 +135,25 @@ class BoundaryDerivationV1:
             for f in file_matches:
                 f_norm = f.replace("\\", "/")
                 f_lower = f_norm.lower()
+                basename = Path(f_norm).name
+                
+                # Check if path explicitly has directory or was bare
                 if any(w in f_lower for w in ["summary", "output", "result", "analysis"]):
-                    files_write.append(f_norm)
-                    files_write.append(f"output/{Path(f_norm).name}")
+                    if "/" in f_norm:
+                        files_write.append(f_norm)
+                    else:
+                        files_write.append(f"output/{basename}")
                 else:
-                    files_read.append(f_norm)
-                    files_read.append(f"input/{Path(f_norm).name}")
+                    if "/" in f_norm:
+                        files_read.append(f_norm)
+                    else:
+                        files_read.append(f"input/{basename}")
 
             # Fallbacks if regex didn't catch explicit names
             if not files_read:
-                files_read = ["input/report.pdf", "report.pdf", "input/report.txt", "report.txt"]
+                files_read = ["input/report.pdf"]
             if not files_write:
-                files_write = ["output/summary.txt", "summary.txt"]
+                files_write = ["output/summary.txt"]
 
         elif any(w in req_lower for w in ["research", "web", "fetch", "http"]):
             # Web research template

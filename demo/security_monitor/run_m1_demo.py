@@ -85,26 +85,30 @@ def run_demo() -> None:
     broker = ToolBroker(storage)
     runner = ProcessAgentRunner(storage)
     
-    # Generate token and bind task
-    token, _ = runner.start_agent(task, [sys.executable, "-c", "pass"])
-    print(f"    - Issued Scoped Per-Task Token: {token[:16]}... (Redacted)")
-    print(f"    - Task State: ACTIVE (PID: {task.pid})")
+    # Launch scripted agent as an actual separate process
+    agent_cmd = [
+        sys.executable,
+        "-m",
+        "demo.security_monitor.app.governance.scripted_agent",
+        "input/report.pdf",
+        "output/summary.txt",
+    ]
+    token, pid = runner.start_agent(task, agent_cmd)
+    print(f"    - Execution Channel: Real Separate Process via Runner")
+    print(f"    - Runner Child PID: {pid}")
+    print(f"    - Injected Per-Task Token: {token[:16]}... (Redacted, passed via GOVERNANCE_TASK_TOKEN)")
+    print(f"    - Task Lifecycle: ACTIVE")
 
-    print(f"\n[4] RUNNING SCRIPTED AGENT SCENARIO (F13.1)")
-    agent = ScriptedAgentRunner(broker, token)
-    
-    # Execute full scenario
-    results = agent.run_scenario(
-        input_doc="input/report.pdf",
-        output_doc="output/summary.txt",
-    )
+    print(f"\n[4] RUNNING SCRIPTED AGENT SCENARIO IN SEPARATE PROCESS (F13.1)")
+    code, stdout, stderr = runner.wait_for_completion(task.task_id, timeout=10.0)
+    print(f"    - Process Finished with Exit Code: {code}")
 
-    print(f"\n[5] AGENT EXECUTION TIMELINE & OBSERVED ACTIONS")
-    for idx, act in enumerate(agent.history, 1):
-        status_color = "ALLOWED" if act["status"] == "SUCCESS" else "BLOCKED (PREVENTED)"
-        print(f"    {idx}. Action: {act['action']:<12} Target: {act['target']:<30} Verdict: {status_color}")
-        if "error" in act:
-            print(f"       -> Details: {act['error']}")
+    print(f"\n[5] AGENT EXECUTION TIMELINE & OBSERVED ACTIONS (AUDIT LOG)")
+    events = storage.get_events_for_task(task.task_id)
+    for idx, evt in enumerate(events, 1):
+        status_color = "ALLOWED" if evt.verdict == EventVerdict.INSIDE else "BLOCKED (PREVENTED)"
+        print(f"    {idx}. Action: {evt.kind:<14} Target: {evt.target:<30} Verdict: {status_color}")
+        print(f"       -> Rule: {evt.rule_matched} | Action: {evt.action_taken.value} | Prevented: {evt.prevented}")
 
     print(f"\n[6] TASK COMPLIANCE & AUDIT TRAIL SUMMARY")
     events = storage.get_events_for_task(task.task_id)

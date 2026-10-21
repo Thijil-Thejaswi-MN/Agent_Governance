@@ -50,6 +50,13 @@ class ProcessAgentRunner(BaseAgentRunner):
         env["GOVERNANCE_TASK_ID"] = task.task_id
         env["GOVERNANCE_AGENT_ID"] = task.agent_id
         env["GOVERNANCE_WORKSPACE_ROOT"] = task.workspace_root
+        if self.storage.db_path and self.storage.db_path != ":memory:":
+            env["GOVERNANCE_DB_PATH"] = str(self.storage.db_path)
+
+        # Ensure child process can import project packages
+        repo_root = str(Path(__file__).resolve().parent.parent.parent.parent.parent)
+        existing_pp = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = f"{repo_root}{os.pathsep}{existing_pp}" if existing_pp else repo_root
 
         # 3. Spawn child process
         proc = subprocess.Popen(

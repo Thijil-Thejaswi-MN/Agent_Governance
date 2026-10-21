@@ -5,6 +5,7 @@ Performs strict, zero-LLM compliance evaluation of runtime actions against the T
 from __future__ import annotations
 
 import fnmatch
+import os
 from pathlib import Path
 from urllib.parse import urlparse
 from pydantic import BaseModel
@@ -38,45 +39,62 @@ class BoundaryEvaluator:
 
     def evaluate_file_access(self, boundary: TaskBoundary, path_str: str, is_write: bool) -> EvaluationResult:
         w_root = Path(boundary.workspace_root).resolve()
-        raw_path = Path(path_str)
+        
+        # Strip trailing dots and whitespace (Windows filesystem normalization evasion)
+        cleaned_path = path_str.strip().rstrip(". ")
+        if not cleaned_path:
+            return EvaluationResult(
+                verdict=EventVerdict.OUTSIDE,
+                risk_tier=RiskTier.HIGH,
+                rule_matched="empty or invalid path target",
+            )
 
-        # 1. Resolve canonical path
+        raw_path = Path(cleaned_path)
+
+        # 1. Resolve canonical path using realpath to dereference symlinks/junctions
         if not raw_path.is_absolute():
-            resolved = (w_root / raw_path).resolve()
+            full_path = w_root / raw_path
         else:
-            resolved = raw_path.resolve()
+            full_path = raw_path
 
-        resolved_str = str(resolved).replace("\\", "/")
-        filename = resolved.name.lower()
+        try:
+            # os.path.realpath resolves symlinks on both Linux and Windows
+            resolved_real = Path(os.path.realpath(str(full_path)))
+        except Exception:
+            resolved_real = full_path.resolve()
 
-        # 2. Check for sensitive credential-like file patterns -> HIGH RISK
+        resolved_str = str(resolved_real).replace("\\", "/")
+        filename = resolved_real.name.lower()
+
+        # 2. Check for sensitive credential-like file patterns -> HIGH RISK (Case-Insensitive)
         for pattern in SENSITIVE_FILE_PATTERNS:
-            if fnmatch.fnmatch(filename, pattern):
+            if fnmatch.fnmatch(filename, pattern.lower()):
                 return EvaluationResult(
                     verdict=EventVerdict.OUTSIDE,
                     risk_tier=RiskTier.HIGH,
                     rule_matched=f"prohibited sensitive credential pattern: {pattern}",
                 )
 
-        # 3. Check workspace boundary containment -> HIGH RISK on escape
+        # 3. Check workspace boundary containment -> HIGH RISK on escape or symlink pointing outside
         try:
-            rel_path = resolved.relative_to(w_root)
+            rel_path = resolved_real.relative_to(w_root)
             rel_str = str(rel_path).replace("\\", "/")
         except ValueError:
             return EvaluationResult(
                 verdict=EventVerdict.OUTSIDE,
                 risk_tier=RiskTier.HIGH,
-                rule_matched="path escapes task workspace_root",
+                rule_matched="path escapes task workspace_root (canonical target outside boundary)",
             )
 
-        # 4. Check against allowed read/write boundary list
+        # 4. Check against allowed read/write boundary list (Strict relative path matching)
         allowed_list = boundary.files_write if is_write else boundary.files_read
         mode_str = "files.write" if is_write else "files.read"
 
+        rel_lower = rel_str.lower()
         for pattern in allowed_list:
-            pat_clean = pattern.replace("\\", "/")
-            # Match either relative path or base filename
-            if fnmatch.fnmatch(rel_str, pat_clean) or fnmatch.fnmatch(filename, pat_clean):
+            pat_clean = pattern.replace("\\", "/").lower()
+            # Match normalized relative path
+            if fnmatch.fnmatch(rel_lower, pat_clean):
                 return EvaluationResult(
                     verdict=EventVerdict.INSIDE,
                     risk_tier=RiskTier.LOW,
@@ -91,34 +109,53 @@ class BoundaryEvaluator:
         )
 
     def evaluate_network(self, boundary: TaskBoundary, url_or_host: str) -> EvaluationResult:
-        # Parse host and port
-        if "://" in url_or_host:
-            parsed = urlparse(url_or_host)
-            host = parsed.hostname or ""
-            port = parsed.port or (443 if parsed.scheme == "https" else 80)
-        elif ":" in url_or_host:
-            parts = url_or_host.split(":")
-            host = parts[0]
-            try:
-                port = int(parts[1])
-            except ValueError:
-                port = 80
+        raw = url_or_host.strip()
+        
+        # Ensure scheme for reliable urlparse handling of userinfo & IPv6
+        if "://" not in raw:
+            to_parse = "http://" + raw
         else:
-            host = url_or_host
-            port = 80
+            to_parse = raw
 
-        target_hostport = f"{host}:{port}".lower()
+        parsed = urlparse(to_parse)
+        
+        # urlparse extracts the real hostname even if userinfo is present (e.g. http://allowed@evil.com)
+        host = (parsed.hostname or "").lower()
+        
+        if not host:
+            return EvaluationResult(
+                verdict=EventVerdict.OUTSIDE,
+                risk_tier=RiskTier.HIGH,
+                rule_matched="invalid or empty network destination host",
+            )
+
+        # Determine effective port
+        if parsed.port is not None:
+            port = parsed.port
+        else:
+            port = 443 if parsed.scheme == "https" else 80
+
+        target_hostport = f"{host}:{port}"
 
         for allowed in boundary.network:
-            allowed_clean = allowed.lower()
-            if fnmatch.fnmatch(target_hostport, allowed_clean) or fnmatch.fnmatch(host.lower(), allowed_clean):
-                return EvaluationResult(
-                    verdict=EventVerdict.INSIDE,
-                    risk_tier=RiskTier.LOW,
-                    rule_matched=f"matched allowed network endpoint: {allowed}",
-                )
+            allowed_clean = allowed.lower().strip()
+            # Allow wildcard port or explicit host:port or bare host matching default port
+            if ":" in allowed_clean:
+                if fnmatch.fnmatch(target_hostport, allowed_clean):
+                    return EvaluationResult(
+                        verdict=EventVerdict.INSIDE,
+                        risk_tier=RiskTier.LOW,
+                        rule_matched=f"matched allowed network endpoint: {allowed}",
+                    )
+            else:
+                # Bare host in boundary matches on host regardless of port or on default ports
+                if fnmatch.fnmatch(host, allowed_clean):
+                    return EvaluationResult(
+                        verdict=EventVerdict.INSIDE,
+                        risk_tier=RiskTier.LOW,
+                        rule_matched=f"matched allowed network host: {allowed}",
+                    )
 
-        # Unknown network destination is high risk
         return EvaluationResult(
             verdict=EventVerdict.OUTSIDE,
             risk_tier=RiskTier.HIGH,
@@ -142,7 +179,6 @@ class BoundaryEvaluator:
         )
 
     def evaluate_command(self, boundary: TaskBoundary, command: str) -> EvaluationResult:
-        # In Milestone 1, unmediated command execution is denied by default per prompt specification
         return EvaluationResult(
             verdict=EventVerdict.OUTSIDE,
             risk_tier=RiskTier.HIGH,
