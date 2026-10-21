@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 import json
+import os
 import urllib.parse
 from ..core.models import PolicyAction, SecuritySeverity, SecurityViolation
 from ..cards.normalizer import normalize_agent_card
@@ -44,6 +45,30 @@ def create_app(
     app.state.active_agent_id = "helloworld"
     app.state.monitoring_enabled = {"helloworld": True, "agentalice": True}
     app.state.agent_policy_mode = {"helloworld": "GRADUATED", "agentalice": "GRADUATED"}
+
+    # Initialize Task Governance layer for A2A peer boundary checks
+    from ..governance.storage import GovernanceStorage
+    from ..governance.gateway_integration import A2AGatewayGovernance
+    from ..governance.models import EnforcementMode, TaskAction
+
+    gov_db_path = os.getenv("GOVERNANCE_DB_PATH")
+    if gov_db_path:
+        gov_storage = GovernanceStorage(Path(gov_db_path))
+    else:
+        default_db = Path(__file__).resolve().parent.parent.parent / "data" / "governance.db"
+        gov_storage = GovernanceStorage(default_db)
+
+    gov_mode_str = os.getenv("GOVERNANCE_SYSTEM_MODE", "OBSERVE").upper()
+    gov_mode = EnforcementMode(gov_mode_str) if gov_mode_str in EnforcementMode._value2member_map_ else EnforcementMode.OBSERVE
+    gov_ungov_str = os.getenv("GOVERNANCE_UNGOVERNED_ACTION")
+    gov_ungov_act = TaskAction(gov_ungov_str) if gov_ungov_str and gov_ungov_str in TaskAction._value2member_map_ else None
+
+    app.state.governance_storage = gov_storage
+    app.state.governance_a2a = A2AGatewayGovernance(
+        storage=gov_storage,
+        system_mode=gov_mode,
+        ungoverned_action=gov_ungov_act,
+    )
 
     @app.on_event("shutdown")
     async def shutdown() -> None:
@@ -1104,6 +1129,33 @@ def create_app(
                 pass
 
         target_op = rpc_method or path or request.method
+
+        # --- STEP 0: Task Governance Check (Peer-Agent Boundary) ---
+        task_token = request.headers.get("x-governance-task-token") or request.headers.get("x-task-token")
+        if not task_token:
+            auth_header = request.headers.get("authorization", "")
+            if auth_header.lower().startswith("bearer gov_tok_"):
+                task_token = auth_header[7:].strip()
+
+        if hasattr(app.state, "governance_a2a") and app.state.governance_a2a is not None:
+            gov_allowed, gov_reason = app.state.governance_a2a.check_a2a_call(
+                caller_token=task_token,
+                target_agent_id=agent_id,
+                declared_caller_id=caller_id,
+                details={"path": path, "target_op": target_op},
+            )
+            if not gov_allowed:
+                return JSONResponse(
+                    status_code=403,
+                    content={
+                        "jsonrpc": "2.0",
+                        "error": {
+                            "code": -32003,
+                            "message": f"Governance Policy Denied: {gov_reason}",
+                        },
+                        "id": body_json.get("id") if body_json else None,
+                    },
+                )
 
         # --- STEP 1: Quarantine Check (HIGH Enforcement) ---
         if app.state.inventory.is_quarantined(agent_id):

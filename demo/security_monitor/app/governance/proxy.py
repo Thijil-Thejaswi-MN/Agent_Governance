@@ -173,8 +173,18 @@ class EgressProxyServer:
                 # DNS failure
                 pass
 
+            target_connect_ip = resolved_ips[0] if resolved_ips else dst_host
+
             # 4. Evaluate destination host and resolved IP against task boundary
             eval_res = self.evaluator.evaluate_network(boundary, f"{dst_host}:{dst_port}")
+            # Also evaluate the exact resolved IP if it differs from the hostname
+            if eval_res.verdict == EventVerdict.INSIDE and resolved_ips:
+                for r_ip in resolved_ips:
+                    ip_eval = self.evaluator.evaluate_network(boundary, f"{r_ip}:{dst_port}")
+                    if ip_eval.verdict == EventVerdict.OUTSIDE:
+                        eval_res = ip_eval
+                        break
+
             action, prevented = self.policy_engine.decide(boundary, eval_res)
 
             # Record GovernanceEvent
@@ -192,6 +202,7 @@ class EgressProxyServer:
                     "dst_host": dst_host,
                     "dst_port": dst_port,
                     "resolved_ips": resolved_ips,
+                    "target_connect_ip": target_connect_ip,
                 },
                 verdict=eval_res.verdict,
                 risk_tier=eval_res.risk_tier,
@@ -209,9 +220,9 @@ class EgressProxyServer:
                 await writer.wait_closed()
                 return
 
-            # 5. Connect to destination and tunnel bytes bidirectionally
+            # 5. Connect to destination exact IP (NO SECOND DNS LOOKUP) and tunnel
             try:
-                remote_reader, remote_writer = await asyncio.open_connection(dst_host, dst_port)
+                remote_reader, remote_writer = await asyncio.open_connection(target_connect_ip, dst_port)
             except Exception as e:
                 writer.write(f"HTTP/1.1 502 Bad Gateway\r\n\r\n{e}\r\n".encode("utf-8"))
                 await writer.drain()
@@ -222,6 +233,28 @@ class EgressProxyServer:
             if method.upper() == "CONNECT":
                 writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
                 await writer.drain()
+            else:
+                # Plain HTTP absolute-form proxying (e.g. GET http://host/path HTTP/1.1)
+                parsed = urlparse(target)
+                upstream_path = parsed.path or "/"
+                if parsed.query:
+                    upstream_path += f"?{parsed.query}"
+                req_line = f"{method} {upstream_path} {version}\r\n"
+                remote_writer.write(req_line.encode("utf-8"))
+
+                # Forward headers, stripping proxy-specific hop headers
+                for hk, hv in headers.items():
+                    if hk not in ("proxy-authorization", "proxy-connection"):
+                        remote_writer.write(f"{hk.title()}: {hv}\r\n".encode("utf-8"))
+                remote_writer.write(b"\r\n")
+                await remote_writer.drain()
+
+                # If request has a body (e.g. POST), read and forward
+                cl = int(headers.get("content-length", 0))
+                if cl > 0:
+                    body_data = await reader.readexactly(cl)
+                    remote_writer.write(body_data)
+                    await remote_writer.drain()
 
             # Bidirectional pipe
             async def forward(src: asyncio.StreamReader, dst: asyncio.StreamWriter) -> None:
@@ -235,7 +268,10 @@ class EgressProxyServer:
                 except Exception:
                     pass
                 finally:
-                    dst.close()
+                    try:
+                        dst.close()
+                    except Exception:
+                        pass
 
             await asyncio.gather(
                 forward(reader, remote_writer),

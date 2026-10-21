@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import Request, HTTPException
 
 from .models import (
+    EnforcementMode,
     EventSource,
     GovernanceEvent,
     RiskTier,
@@ -30,10 +31,14 @@ class A2AGatewayGovernance:
         storage: GovernanceStorage,
         evaluator: BoundaryEvaluator | None = None,
         policy_engine: TaskPolicyEngine | None = None,
+        system_mode: EnforcementMode = EnforcementMode.ENFORCE,
+        ungoverned_action: TaskAction | None = None,
     ) -> None:
         self.storage = storage
         self.evaluator = evaluator or BoundaryEvaluator()
         self.policy_engine = policy_engine or TaskPolicyEngine()
+        self.system_mode = system_mode
+        self.ungoverned_action = ungoverned_action
         self._event_counter = 0
 
     def _generate_event_id(self) -> str:
@@ -57,6 +62,11 @@ class A2AGatewayGovernance:
         if not caller_token:
             # Caller is acting without an assigned task -> UNGOVERNED / SHADOW AGENT
             effective_agent = declared_caller_id or "unknown_shadow_agent"
+            action = self.ungoverned_action or (
+                TaskAction.BLOCK_ACTION if self.system_mode == EnforcementMode.ENFORCE else TaskAction.ALERT
+            )
+            prevented = action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK, TaskAction.ASK_USER)
+
             evt = GovernanceEvent(
                 event_id=self._generate_event_id(),
                 timestamp=now_utc,
@@ -69,17 +79,20 @@ class A2AGatewayGovernance:
                 details={
                     "declared_caller_id": declared_caller_id,
                     "reason": "missing_task_token_ungoverned_agent",
+                    "system_mode": self.system_mode.value,
                     **(details or {}),
                 },
                 verdict=EventVerdict.OUTSIDE,
                 risk_tier=RiskTier.HIGH,
-                action_taken=TaskAction.ALERT,
-                prevented=False,  # Detected ungoverned agent
+                action_taken=action,
+                prevented=prevented,
                 rule_matched="ungoverned agent activity detected without active task boundary",
                 boundary_version=None,
             )
             self.storage.record_event(evt)
-            return True, "Ungoverned agent activity audited"
+            if prevented:
+                return False, f"Ungoverned agent blocked ({action.value}): missing task token"
+            return True, f"Ungoverned agent activity audited ({action.value})"
 
         # 2. Look up task by token
         lookup = self.storage.lookup_task_by_token(caller_token)

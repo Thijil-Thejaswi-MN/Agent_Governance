@@ -84,7 +84,7 @@ async def main() -> None:
     
     # Configure boundary network & peer agents
     boundary.network = [target_addr]
-    boundary.peer_agents = ["peer_sentiment_analyst"]
+    boundary.peer_agents = ["peer_sentiment_analyst", "helloworld"]
     storage.save_boundary(boundary)
 
     # Issue task execution token
@@ -143,9 +143,21 @@ async def main() -> None:
     writer.close()
     await writer.wait_closed()
 
+    # Case 2D: Plain-HTTP absolute-form request
+    print("  -> Scenario 2D: Agent sends plain-HTTP absolute-form GET through proxy...")
+    reader, writer = await asyncio.open_connection("127.0.0.1", proxy_port)
+    raw_get = f"GET http://{target_addr}/data HTTP/1.1\r\nHost: {target_addr}\r\nProxy-Authorization: Bearer {task_token}\r\n\r\n".encode()
+    writer.write(raw_get)
+    await writer.drain()
+    http_resp_line = await reader.readline()
+    print(f"     Proxy Response: {http_resp_line.decode().strip()} (Plain HTTP absolute GET succeeded)")
+    assert b"200 OK" in http_resp_line
+    writer.close()
+    await writer.wait_closed()
+
     # 4. Test A2A Gateway Inter-Agent Governance
     print(f"\n[3] A2A GATEWAY INTER-AGENT GOVERNANCE")
-    a2a_gov = A2AGatewayGovernance(storage)
+    a2a_gov = A2AGatewayGovernance(storage, system_mode=EnforcementMode.ENFORCE)
 
     # Case 3A: Allowed peer call
     print("  -> Scenario 3A: Governed agent calls authorized peer 'peer_sentiment_analyst'...")
@@ -169,15 +181,40 @@ async def main() -> None:
     print(f"     Gateway Verdict: Allowed={allowed_3b}, Reason={reason_3b}")
     assert allowed_3b is False
 
-    # Case 3C: Shadow agent call (unauthenticated)
-    print("  -> Scenario 3C: Unregistered shadow agent 'shadow_crawler_007' calls gateway...")
+    # Case 3C: Shadow agent call (unauthenticated) under ENFORCE mode -> BLOCKED
+    print("  -> Scenario 3C: Unregistered shadow agent 'shadow_crawler_007' calls gateway without token...")
     allowed_3c, reason_3c = a2a_gov.check_a2a_call(
         caller_token=None,
         target_agent_id="peer_sentiment_analyst",
         declared_caller_id="shadow_crawler_007",
         details={"type": "extract_feed"},
     )
-    print(f"     Gateway Verdict: Allowed={allowed_3c}, Status={reason_3c}")
+    print(f"     Gateway Verdict: Allowed={allowed_3c}, Status={reason_3c} (BLOCKED in ENFORCE mode)")
+    assert allowed_3c is False
+
+    # Case 3D: Real Route /proxy/{agent_id} inspection
+    print("  -> Scenario 3D: Calling real A2A route /proxy/{agent_id} with task token...")
+    from fastapi.testclient import TestClient
+    from demo.security_monitor.app.gateway.server import create_app
+    os.environ["GOVERNANCE_DB_PATH"] = str(db_path)
+    os.environ["GOVERNANCE_SYSTEM_MODE"] = "ENFORCE"
+    gateway_app = create_app()
+    client = TestClient(gateway_app)
+
+    # Calling allowed peer on real route
+    resp_route_allowed = client.get(
+        "/proxy/helloworld/.well-known/agent-card.json",
+        headers={"x-governance-task-token": task_token},
+    )
+    # Target peer_database_admin (not in boundary) on real route -> 403
+    resp_route_blocked = client.get(
+        "/proxy/peer_database_admin/.well-known/agent-card.json",
+        headers={"x-governance-task-token": task_token},
+    )
+    print(f"     Real Route Allowed Check: Status={resp_route_allowed.status_code} (Passed)")
+    print(f"     Real Route Blocked Check: Status={resp_route_blocked.status_code} ({resp_route_blocked.json()['error']['message']})")
+    assert resp_route_allowed.status_code == 200
+    assert resp_route_blocked.status_code == 403
 
     # 5. Agent Inventory Service
     print(f"\n[4] AGENT INVENTORY SERVICE (F10)")
