@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import hashlib
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -56,8 +57,10 @@ class ExpansionService:
         now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
         if isinstance(content, str):
             content_bytes = content.encode("utf-8", errors="replace")
+            snippet = content[:4096]
         else:
             content_bytes = content
+            snippet = content[:4096].decode("utf-8", errors="replace")
 
         content_hash = hashlib.sha256(content_bytes).hexdigest()
         record = ProvenanceRecord(
@@ -67,9 +70,62 @@ class ExpansionService:
             source_target=source_target,
             content_hash=content_hash,
             content_len=len(content_bytes),
+            content_snippet=snippet,
         )
         self.storage.record_provenance(record)
         return record
+
+    @staticmethod
+    def is_anticipated_by_user(user_request_text: str, resource_target: str) -> bool:
+        """
+        Determines whether a requested resource target is explicitly anticipated
+        in the user's original request text.
+
+        Strict rules:
+        1. Path traversal ('..' or leading '/') is NEVER anticipated and rejected.
+        2. Normalizes target: strips whitespace, converts backslashes to forward slashes.
+        3. Tokenizes user request text into discrete words/paths using boundary delimiters.
+        4. Matches ONLY if:
+           - The exact relative path appears as an explicit token (e.g. "input/appendix.pdf"), OR
+           - The exact filename appears as an explicit token (e.g. "appendix.pdf"), OR
+           - An explicit stem with recognized document extension matches an exact token
+             (e.g., token "appendix" matches "appendix.pdf" where stem == "appendix").
+        5. SUBSTRING MATCHES ARE STRICTLY FORBIDDEN:
+           - Prompt "summarize the report" does NOT match "input/report_secrets.txt"
+           - Prompt "summarize the report" does NOT match "input/report.pdf.bak"
+           - Prompt "summarize the report" does NOT match "../report.pdf"
+        """
+        raw_target = resource_target.strip().replace("\\", "/")
+        parts = [p for p in raw_target.split("/") if p]
+        if ".." in parts or raw_target.startswith("/"):
+            return False
+
+        target_clean = raw_target.lstrip("./").lower()
+        target_basename = Path(target_clean).name.lower()
+        if not target_basename:
+            return False
+
+        # Extract discrete tokens from user prompt (never substring match raw prompt string)
+        tokens = set(re.findall(r'[a-zA-Z0-9_\.\-]+', user_request_text.lower()))
+
+        # Rule A: Exact relative path match (e.g. "input/appendix.pdf")
+        if target_clean in tokens:
+            return True
+
+        # Rule B: Exact filename match (e.g. "appendix.pdf")
+        if target_basename in tokens:
+            return True
+
+        # Rule C: Exact stem match for standard document extensions (e.g. token "appendix" for "appendix.pdf")
+        recognized_exts = {".pdf", ".txt", ".csv", ".json", ".md", ".tsv", ".xml"}
+        target_ext = Path(target_basename).suffix.lower()
+        target_stem = Path(target_basename).stem.lower()
+
+        if target_ext in recognized_exts:
+            if target_stem in tokens and not any(p in target_basename for p in ("_secrets", ".bak", ".old", "~")):
+                return True
+
+        return False
 
     def evaluate_request(
         self,
@@ -79,6 +135,7 @@ class ExpansionService:
         resource_target: str,
         justification: str,
         provenance_enabled: bool | None = None,
+        provenance_mode: str | None = None,  # "off", "any", "content_linked"
         timeout_seconds: float = 5.0,
     ) -> ExpansionRequest:
         """
@@ -126,28 +183,37 @@ class ExpansionService:
             baseline_tier = RiskTier.MEDIUM
 
         # 3. Check if explicitly anticipated by user original request text
-        user_request_text = task.request_text.lower()
-        target_basename = Path(target_norm).name.lower()
-        # The user's original request text is the ONLY trusted source
-        anticipated_by_user = (
-            target_norm in user_request_text
-            or (target_basename and target_basename in user_request_text)
-            or (target_basename.split(".")[0] in user_request_text if "." in target_basename else False)
-        )
+        anticipated_by_user = self.is_anticipated_by_user(task.request_text, resource_target)
 
         # 4. Provenance-Aware Escalation Analysis
-        use_provenance = self.provenance_enabled if provenance_enabled is None else provenance_enabled
+        if provenance_mode is not None:
+            mode = provenance_mode.lower()
+        elif provenance_enabled is not None:
+            mode = "any" if provenance_enabled else "off"
+        else:
+            mode = "any" if self.provenance_enabled else "off"
+
         escalated = False
         effective_tier = baseline_tier
 
-        if use_provenance:
-            # Check if agent has ingested ANY untrusted data during this task
+        if mode != "off":
             prior_reads = self.storage.get_provenance_for_task(task_id)
-            if len(prior_reads) > 0:
-                if not anticipated_by_user:
-                    # Ingested untrusted inputs + requested resource was NOT anticipated by user
-                    # Prompt injection risk -> escalate risk tier by one level!
+            if len(prior_reads) > 0 and not anticipated_by_user:
+                if mode == "any":
+                    # Any untrusted read taints the agent
                     escalated = True
+                elif mode == "content_linked":
+                    # Escalate only if requested resource target / name / host appears in untrusted content read earlier
+                    needle_path = target_norm
+                    needle_name = Path(target_norm).name.lower()
+                    host_part = target_norm.split(":")[0] if ":" in target_norm else target_norm
+                    for pr in prior_reads:
+                        snippet = (pr.content_snippet or "").lower()
+                        if needle_path in snippet or needle_name in snippet or (resource_type == "network" and host_part in snippet):
+                            escalated = True
+                            break
+
+                if escalated:
                     if baseline_tier == RiskTier.LOW:
                         effective_tier = RiskTier.MEDIUM
                     elif baseline_tier == RiskTier.MEDIUM:
@@ -315,6 +381,51 @@ class ExpansionService:
                 return False, f"Denied by {current.resolved_by}"
 
         # Timeout reached: Fail-closed to DENY
+        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        self.deny_request(req.request_id, denied_by="timeout_fail_closed", reason="Approval request timed out")
+        return False, "Approval request timed out: denied (fail-closed)"
+
+    async def async_request_and_wait(
+        self,
+        task_id: str,
+        agent_id: str,
+        resource_type: str,
+        resource_target: str,
+        justification: str,
+        timeout_seconds: float = 2.0,
+        provenance_enabled: bool | None = None,
+        provenance_mode: str | None = None,
+    ) -> tuple[bool, str]:
+        """
+        Asynchronous request and wait loop for FastAPI server handlers.
+        Uses asyncio.sleep so other requests on the event loop are never blocked.
+        """
+        req = self.evaluate_request(
+            task_id=task_id,
+            agent_id=agent_id,
+            resource_type=resource_type,
+            resource_target=resource_target,
+            justification=justification,
+            provenance_enabled=provenance_enabled,
+            provenance_mode=provenance_mode,
+            timeout_seconds=timeout_seconds,
+        )
+
+        if req.status == ExpansionStatus.APPROVED:
+            return True, f"Auto-approved under {req.effective_risk_tier.value} risk policy"
+
+        start_time = time.time()
+        poll_interval = 0.05
+        while (time.time() - start_time) < timeout_seconds:
+            await asyncio.sleep(poll_interval)
+            current = self.storage.get_expansion_request(req.request_id)
+            if not current:
+                break
+            if current.status == ExpansionStatus.APPROVED:
+                return True, f"Approved by {current.resolved_by}"
+            if current.status == ExpansionStatus.DENIED:
+                return False, f"Denied by {current.resolved_by}"
+
         now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
         self.deny_request(req.request_id, denied_by="timeout_fail_closed", reason="Approval request timed out")
         return False, "Approval request timed out: denied (fail-closed)"

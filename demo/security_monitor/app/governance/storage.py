@@ -155,9 +155,14 @@ class GovernanceStorage:
                     source_type TEXT NOT NULL,
                     source_target TEXT NOT NULL,
                     content_hash TEXT NOT NULL,
-                    content_len INTEGER NOT NULL
+                    content_len INTEGER NOT NULL,
+                    content_snippet TEXT
                 )
             """)
+            try:
+                cursor.execute("ALTER TABLE governance_provenance ADD COLUMN content_snippet TEXT")
+            except Exception:
+                pass
             conn.commit()
 
     # --- Task Methods ---
@@ -374,8 +379,8 @@ class GovernanceStorage:
             conn.execute(
                 """
                 INSERT INTO governance_provenance (
-                    task_id, timestamp, source_type, source_target, content_hash, content_len
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    task_id, timestamp, source_type, source_target, content_hash, content_len, content_snippet
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.task_id,
@@ -384,6 +389,7 @@ class GovernanceStorage:
                     record.source_target,
                     record.content_hash,
                     record.content_len,
+                    record.content_snippet,
                 ),
             )
             conn.commit()
@@ -402,6 +408,7 @@ class GovernanceStorage:
                     source_target=r["source_target"],
                     content_hash=r["content_hash"],
                     content_len=r["content_len"],
+                    content_snippet=r["content_snippet"] if "content_snippet" in r.keys() else None,
                 )
                 for r in rows
             ]

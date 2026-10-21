@@ -1,0 +1,207 @@
+{
+  "manifest_version": "2.0.0",
+  "benchmark_name": "Task-Aware Runtime Governance Empirical Evaluation v2",
+  "dataset_type": "synthetic_and_scripted",
+  "disclaimer": "All 40 scenarios are synthetic and scripted evaluation cases designed for controlled ablation.",
+  "git_commit": "f24f0d4b3b20a916c0fa31824228283e110117d1",
+  "timestamp_utc": "2026-10-21T15:22:31.089010+00:00",
+  "seed": 42,
+  "total_scenarios": 40,
+  "results_summary": {
+    "off": {
+      "condition": "Condition A (Provenance OFF)",
+      "mode": "off",
+      "total_trials": 40,
+      "correct_decisions": {
+        "count": 20,
+        "total": 40,
+        "rate": 0.5,
+        "percentage": 50.0,
+        "ci95_lower": 0.352,
+        "ci95_upper": 0.648,
+        "ci95_percentage": [
+          35.2,
+          64.8
+        ]
+      },
+      "wrongly_approved": {
+        "count": 20,
+        "total": 40,
+        "rate": 0.5,
+        "percentage": 50.0,
+        "ci95_lower": 0.352,
+        "ci95_upper": 0.648,
+        "ci95_percentage": [
+          35.2,
+          64.8
+        ]
+      },
+      "wrongly_denied": {
+        "count": 0,
+        "total": 40,
+        "rate": 0.0,
+        "percentage": 0.0,
+        "ci95_lower": 0.0,
+        "ci95_upper": 0.0876,
+        "ci95_percentage": [
+          0.0,
+          8.76
+        ]
+      },
+      "user_prompts": {
+        "count": 10,
+        "total": 40,
+        "rate": 0.25,
+        "percentage": 25.0,
+        "ci95_lower": 0.1419,
+        "ci95_upper": 0.4019,
+        "ci95_percentage": [
+          14.19,
+          40.19
+        ]
+      },
+      "correctly_approved": {
+        "count": 10,
+        "total": 40,
+        "rate": 0.25,
+        "percentage": 25.0,
+        "ci95_lower": 0.1419,
+        "ci95_upper": 0.4019,
+        "ci95_percentage": [
+          14.19,
+          40.19
+        ]
+      }
+    },
+    "any": {
+      "condition": "Condition B (Provenance ON - Any Untrusted Read)",
+      "mode": "any",
+      "total_trials": 40,
+      "correct_decisions": {
+        "count": 40,
+        "total": 40,
+        "rate": 1.0,
+        "percentage": 100.0,
+        "ci95_lower": 0.9124,
+        "ci95_upper": 1.0,
+        "ci95_percentage": [
+          91.24,
+          100.0
+        ]
+      },
+      "wrongly_approved": {
+        "count": 0,
+        "total": 40,
+        "rate": 0.0,
+        "percentage": 0.0,
+        "ci95_lower": 0.0,
+        "ci95_upper": 0.0876,
+        "ci95_percentage": [
+          0.0,
+          8.76
+        ]
+      },
+      "wrongly_denied": {
+        "count": 0,
+        "total": 40,
+        "rate": 0.0,
+        "percentage": 0.0,
+        "ci95_lower": 0.0,
+        "ci95_upper": 0.0876,
+        "ci95_percentage": [
+          0.0,
+          8.76
+        ]
+      },
+      "user_prompts": {
+        "count": 30,
+        "total": 40,
+        "rate": 0.75,
+        "percentage": 75.0,
+        "ci95_lower": 0.5981,
+        "ci95_upper": 0.8581,
+        "ci95_percentage": [
+          59.81,
+          85.81
+        ]
+      },
+      "correctly_approved": {
+        "count": 10,
+        "total": 40,
+        "rate": 0.25,
+        "percentage": 25.0,
+        "ci95_lower": 0.1419,
+        "ci95_upper": 0.4019,
+        "ci95_percentage": [
+          14.19,
+          40.19
+        ]
+      }
+    },
+    "content_linked": {
+      "condition": "Condition C (Content-Linked Provenance)",
+      "mode": "content_linked",
+      "total_trials": 40,
+      "correct_decisions": {
+        "count": 40,
+        "total": 40,
+        "rate": 1.0,
+        "percentage": 100.0,
+        "ci95_lower": 0.9124,
+        "ci95_upper": 1.0,
+        "ci95_percentage": [
+          91.24,
+          100.0
+        ]
+      },
+      "wrongly_approved": {
+        "count": 0,
+        "total": 40,
+        "rate": 0.0,
+        "percentage": 0.0,
+        "ci95_lower": 0.0,
+        "ci95_upper": 0.0876,
+        "ci95_percentage": [
+          0.0,
+          8.76
+        ]
+      },
+      "wrongly_denied": {
+        "count": 0,
+        "total": 40,
+        "rate": 0.0,
+        "percentage": 0.0,
+        "ci95_lower": 0.0,
+        "ci95_upper": 0.0876,
+        "ci95_percentage": [
+          0.0,
+          8.76
+        ]
+      },
+      "user_prompts": {
+        "count": 30,
+        "total": 40,
+        "rate": 0.75,
+        "percentage": 75.0,
+        "ci95_lower": 0.5981,
+        "ci95_upper": 0.8581,
+        "ci95_percentage": [
+          59.81,
+          85.81
+        ]
+      },
+      "correctly_approved": {
+        "count": 10,
+        "total": 40,
+        "rate": 0.25,
+        "percentage": 25.0,
+        "ci95_lower": 0.1419,
+        "ci95_upper": 0.4019,
+        "ci95_percentage": [
+          14.19,
+          40.19
+        ]
+      }
+    }
+  }
+}

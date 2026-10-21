@@ -386,3 +386,95 @@ def test_synchronous_wait_timeout_fail_closed(m3_storage: GovernanceStorage, m3_
     assert len(exp_list) >= 1
     assert exp_list[0].status == ExpansionStatus.DENIED
     assert exp_list[0].resolved_by == "timeout_fail_closed"
+
+
+# --- 10. ADVERSARIAL ANTICIPATION EXACT MATCHING (ITEM 2) ---
+
+def test_anticipation_exact_matching_adversarial_cases(m3_storage: GovernanceStorage, m3_workspace: Path) -> None:
+    """Adversarial tests: prompt 'summarize the report' must NOT treat report_secrets.txt, report.pdf.bak, or ../report.pdf as anticipated."""
+    exp_service = ExpansionService(m3_storage)
+
+    prompt = "summarize the report and save output/summary.txt"
+
+    # Adversarial target 1: report_secrets.txt (substring prefix match attempt)
+    assert exp_service.is_anticipated_by_user(prompt, "input/report_secrets.txt") is False
+
+    # Adversarial target 2: report.pdf.bak (backup file evasion attempt)
+    assert exp_service.is_anticipated_by_user(prompt, "input/report.pdf.bak") is False
+
+    # Adversarial target 3: ../report.pdf (directory traversal attempt)
+    assert exp_service.is_anticipated_by_user(prompt, "../report.pdf") is False
+
+    # Adversarial target 4: ../../etc/passwd or absolute path escape
+    assert exp_service.is_anticipated_by_user(prompt, "../../etc/passwd") is False
+    assert exp_service.is_anticipated_by_user(prompt, "/etc/report.pdf") is False
+
+    # Legitimate exact targets:
+    assert exp_service.is_anticipated_by_user(prompt, "input/report.pdf") is True
+    assert exp_service.is_anticipated_by_user(prompt, "input/report.txt") is True
+
+    # Prompt with explicit appendix mention:
+    prompt_appendix = "Please analyze financial report.pdf and use the appendix if needed."
+    assert exp_service.is_anticipated_by_user(prompt_appendix, "input/appendix.pdf") is True
+    # But NOT appendix_leak.txt
+    assert exp_service.is_anticipated_by_user(prompt_appendix, "input/appendix_leak.txt") is False
+
+
+# --- 11. ASYNC WAIT DOES NOT BLOCK FASTAPI EVENT LOOP (ITEM 3) ---
+
+@pytest.mark.anyio
+async def test_async_request_and_wait_does_not_block_event_loop(m3_storage: GovernanceStorage, m3_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies that async_request_and_wait polls without blocking concurrent HTTP requests on the FastAPI event loop."""
+    import httpx
+    import time
+    from demo.security_monitor.app.gateway.server import create_app
+
+    monkeypatch.setenv("GOVERNANCE_DB_PATH", str(m3_storage.db_path))
+    monkeypatch.setenv("GOVERNANCE_SYSTEM_MODE", "OBSERVE")
+
+    intake = TaskIntakeService(m3_storage)
+    task, boundary = intake.submit_task("Analyze doc", "worker_agent", str(m3_workspace))
+
+    exp_service = ExpansionService(m3_storage)
+    # Untrusted read so it escalates to PENDING (ASK_USER)
+    exp_service.record_untrusted_read(task.task_id, "file_read", "input/report.pdf", "inject")
+
+    app = create_app()
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        # Launch a pending expansion request that waits for 0.4s
+        wait_task = asyncio.create_task(
+            client.post(
+                "/api/governance/expansions/request_and_wait",
+                json={
+                    "task_id": task.task_id,
+                    "agent_id": task.agent_id,
+                    "resource_type": "file_read",
+                    "resource_target": "input/internal_notes.txt",
+                    "justification": "Wait for approval",
+                    "timeout_seconds": 0.4,
+                    "provenance_enabled": True,
+                },
+            )
+        )
+
+        # Allow wait_task to start and begin polling
+        await asyncio.sleep(0.05)
+
+        # Send concurrent requests while the approval is pending
+        t0 = time.perf_counter()
+        health_resp = await client.get("/health")
+        config_resp = await client.get("/api/governance/config")
+        elapsed_concurrent = time.perf_counter() - t0
+
+        # Concurrent requests must succeed immediately without waiting for the 0.4s timeout
+        assert health_resp.status_code == 200
+        assert health_resp.json()["status"] == "healthy"
+        assert config_resp.status_code == 200
+        assert elapsed_concurrent < 0.25, f"Concurrent requests stalled! Took {elapsed_concurrent:.3f}s"
+
+        # Wait for the wait_task to complete its fail-closed timeout
+        res = await wait_task
+        assert res.status_code == 200
+        assert res.json()["approved"] is False
+        assert "timed out" in res.json()["message"]

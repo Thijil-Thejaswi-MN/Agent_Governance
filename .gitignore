@@ -73,4 +73,5 @@ desktop.ini
 experiments/phase0_enforcement/workspace/
 
 # Ephemeral demo data and workspaces
-demo/data/
+demo/data/*
+!demo/data/evaluation_v2/

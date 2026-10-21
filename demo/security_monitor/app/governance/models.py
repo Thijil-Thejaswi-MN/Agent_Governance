@@ -113,6 +113,7 @@ class ProvenanceRecord(BaseModel):
     source_target: str
     content_hash: str  # SHA-256 of content read
     content_len: int
+    content_snippet: str | None = None
 
 
 class ExpansionStatus(str, Enum):

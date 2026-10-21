@@ -12,16 +12,45 @@ from pydantic import BaseModel, Field
 
 from .models import EnforcementMode, TaskLifecycle, TaskBoundary, TaskRecord
 from .storage import GovernanceStorage
+from pathlib import Path
 import os
 from .intake import TaskIntakeService
 from .inventory import AgentInventoryService
 from .expansion import ExpansionService
 
 governance_router = APIRouter()
-_storage = GovernanceStorage()
-_intake = TaskIntakeService(_storage)
-_inventory_service = AgentInventoryService(_storage)
-_expansion_service = ExpansionService(_storage)
+_default_storage = GovernanceStorage()
+_default_intake = TaskIntakeService(_default_storage)
+_default_inventory = AgentInventoryService(_default_storage)
+_default_expansion = ExpansionService(_default_storage)
+
+
+def get_storage() -> GovernanceStorage:
+    env_path = os.environ.get("GOVERNANCE_DB_PATH")
+    if env_path and (_default_storage.db_path != env_path):
+        return GovernanceStorage(Path(env_path))
+    return _default_storage
+
+
+def get_intake() -> TaskIntakeService:
+    storage = get_storage()
+    if storage.db_path != _default_storage.db_path:
+        return TaskIntakeService(storage)
+    return _default_intake
+
+
+def get_inventory_service() -> AgentInventoryService:
+    storage = get_storage()
+    if storage.db_path != _default_storage.db_path:
+        return AgentInventoryService(storage)
+    return _default_inventory
+
+
+def get_expansion_service() -> ExpansionService:
+    storage = get_storage()
+    if storage.db_path != _default_storage.db_path:
+        return ExpansionService(storage)
+    return _default_expansion
 
 
 class SubmitTaskRequest(BaseModel):
@@ -33,10 +62,11 @@ class SubmitTaskRequest(BaseModel):
 
 @governance_router.get("/tasks")
 async def list_tasks() -> list[dict[str, Any]]:
-    tasks = _storage.list_tasks()
+    storage = get_storage()
+    tasks = storage.list_tasks()
     output = []
     for t in tasks:
-        events = _storage.get_events_for_task(t.task_id)
+        events = storage.get_events_for_task(t.task_id)
         total = len(events)
         inside = sum(1 for e in events if e.verdict == "INSIDE")
         prevented = sum(1 for e in events if e.prevented)
@@ -63,7 +93,7 @@ async def list_tasks() -> list[dict[str, Any]]:
 
 @governance_router.post("/tasks")
 async def submit_task(req: SubmitTaskRequest) -> dict[str, Any]:
-    task, boundary = _intake.submit_task(
+    task, boundary = get_intake().submit_task(
         request_text=req.request_text,
         agent_id=req.agent_id,
         workspace_root=req.workspace_root,
@@ -77,12 +107,13 @@ async def submit_task(req: SubmitTaskRequest) -> dict[str, Any]:
 
 @governance_router.get("/tasks/{task_id}")
 async def get_task_detail(task_id: str) -> dict[str, Any]:
-    task = _storage.get_task(task_id)
+    storage = get_storage()
+    task = storage.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    boundary = _storage.get_boundary(task_id)
-    events = _storage.get_events_for_task(task_id)
+    boundary = storage.get_boundary(task_id)
+    events = storage.get_events_for_task(task_id)
     total = len(events)
     inside = sum(1 for e in events if e.verdict == "INSIDE")
     prevented = sum(1 for e in events if e.prevented)
@@ -103,19 +134,19 @@ async def get_task_detail(task_id: str) -> dict[str, Any]:
 
 @governance_router.get("/tasks/{task_id}/events")
 async def get_task_events(task_id: str) -> list[dict[str, Any]]:
-    events = _storage.get_events_for_task(task_id)
+    events = get_storage().get_events_for_task(task_id)
     return [e.model_dump() for e in events]
 
 
 @governance_router.get("/inventory")
 async def get_agent_inventory() -> list[dict[str, Any]]:
-    items = _inventory_service.get_inventory()
+    items = get_inventory_service().get_inventory()
     return [i.model_dump() for i in items]
 
 
 @governance_router.get("/alerts")
 async def get_alerts() -> list[dict[str, Any]]:
-    return _inventory_service.get_alerts()
+    return get_inventory_service().get_alerts()
 
 
 @governance_router.get("/config")
@@ -124,7 +155,7 @@ async def get_governance_config() -> dict[str, Any]:
     return {
         "system_mode": mode,
         "default_mode": "OBSERVE",
-        "provenance_enabled": _expansion_service.provenance_enabled,
+        "provenance_enabled": get_expansion_service().provenance_enabled,
         "description": "OBSERVE (audits shadow agents) | ENFORCE (blocks untokened/unauthorized callers)",
     }
 
@@ -149,14 +180,14 @@ async def list_expansions(
     task_id: str | None = Query(None),
     status: str | None = Query(None),
 ) -> list[dict[str, Any]]:
-    expansions = _storage.list_expansion_requests(task_id=task_id, status=status)
+    expansions = get_storage().list_expansion_requests(task_id=task_id, status=status)
     return [e.model_dump() for e in expansions]
 
 
 @governance_router.post("/expansions/request")
 async def request_expansion(payload: ExpansionSubmission) -> dict[str, Any]:
     try:
-        req = _expansion_service.evaluate_request(
+        req = get_expansion_service().evaluate_request(
             task_id=payload.task_id,
             agent_id=payload.agent_id,
             resource_type=payload.resource_type,
@@ -170,14 +201,35 @@ async def request_expansion(payload: ExpansionSubmission) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@governance_router.post("/expansions/request_and_wait")
+async def request_expansion_and_wait(payload: ExpansionSubmission) -> dict[str, Any]:
+    """Non-blocking async request-and-wait endpoint. Uses asyncio.sleep so other requests are not blocked."""
+    try:
+        approved, message = await get_expansion_service().async_request_and_wait(
+            task_id=payload.task_id,
+            agent_id=payload.agent_id,
+            resource_type=payload.resource_type,
+            resource_target=payload.resource_target,
+            justification=payload.justification,
+            provenance_enabled=payload.provenance_enabled,
+            timeout_seconds=payload.timeout_seconds,
+        )
+        return {
+            "approved": approved,
+            "message": message,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @governance_router.post("/expansions/{request_id}/approve")
 async def approve_expansion(request_id: str, payload: ExpansionDecision) -> dict[str, Any]:
     try:
-        new_boundary = _expansion_service.approve_request(
+        new_boundary = get_expansion_service().approve_request(
             request_id=request_id,
             approved_by=payload.decided_by,
         )
-        req = _storage.get_expansion_request(request_id)
+        req = get_storage().get_expansion_request(request_id)
         return {
             "status": "APPROVED",
             "request": req.model_dump() if req else None,
@@ -193,12 +245,12 @@ async def approve_expansion(request_id: str, payload: ExpansionDecision) -> dict
 @governance_router.post("/expansions/{request_id}/deny")
 async def deny_expansion(request_id: str, payload: ExpansionDecision) -> dict[str, Any]:
     try:
-        _expansion_service.deny_request(
+        get_expansion_service().deny_request(
             request_id=request_id,
             denied_by=payload.decided_by,
             reason=payload.reason,
         )
-        req = _storage.get_expansion_request(request_id)
+        req = get_storage().get_expansion_request(request_id)
         return {
             "status": "DENIED",
             "request": req.model_dump() if req else None,
