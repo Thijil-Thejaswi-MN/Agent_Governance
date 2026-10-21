@@ -1,0 +1,117 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.1.1, pluggy-1.6.0 -- C:\Users\thiji\OneDrive\Documents\Projects\A2A\demo\security_monitor\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\thiji\OneDrive\Documents\Projects\A2A
+plugins: anyio-4.15.1
+collecting ... collected 70 items
+
+demo/security_monitor/tests/test_capability_cloaking.py::test_both_agents_normalize PASSED [  1%]
+demo/security_monitor/tests/test_capability_cloaking.py::test_capability_cloaking_allowed_methods PASSED [  2%]
+demo/security_monitor/tests/test_capability_cloaking.py::test_runtime_capability_cloaking_detected PASSED [  4%]
+demo/security_monitor/tests/test_capability_cloaking.py::test_manifest_capability_cloaking_detected PASSED [  5%]
+demo/security_monitor/tests/test_capability_cloaking.py::test_policy_engine_cc_mapping PASSED [  7%]
+demo/security_monitor/tests/test_capability_cloaking.py::test_gateway_runtime_cc_blocking PASSED [  8%]
+demo/security_monitor/tests/test_comparative_and_ablation.py::test_policy_engine_permissive_mode PASSED [ 10%]
+demo/security_monitor/tests/test_comparative_and_ablation.py::test_policy_engine_binary_quarantine_mode PASSED [ 11%]
+demo/security_monitor/tests/test_comparative_and_ablation.py::test_policy_engine_graduated_mode PASSED [ 12%]
+demo/security_monitor/tests/test_comparative_and_ablation.py::test_as_detector_ablation_flags PASSED [ 14%]
+demo/security_monitor/tests/test_comparative_and_ablation.py::test_cc_robustness_envelope_behavior PASSED [ 15%]
+demo/security_monitor/tests/test_comparative_and_ablation.py::test_co_robustness_depth_and_cycle PASSED [ 17%]
+demo/security_monitor/tests/test_cycle_overflow.py::test_delegation_tracker_normal_flow PASSED [ 18%]
+demo/security_monitor/tests/test_cycle_overflow.py::test_delegation_tracker_cycle_detected PASSED [ 20%]
+demo/security_monitor/tests/test_cycle_overflow.py::test_delegation_tracker_depth_exceeded PASSED [ 21%]
+demo/security_monitor/tests/test_cycle_overflow.py::test_policy_engine_co_mapping PASSED [ 22%]
+demo/security_monitor/tests/test_cycle_overflow.py::test_gateway_cycle_overflow_blocking PASSED [ 24%]
+demo/security_monitor/tests/test_cycle_overflow.py::test_co_depth_boundary_semantics_depths_4_5_6 PASSED [ 25%]
+demo/security_monitor/tests/test_dashboard_api.py::test_dashboard_static_page PASSED [ 27%]
+demo/security_monitor/tests/test_dashboard_api.py::test_root_redirect PASSED [ 28%]
+demo/security_monitor/tests/test_dashboard_api.py::test_api_overview PASSED [ 30%]
+demo/security_monitor/tests/test_dashboard_api.py::test_api_agents PASSED [ 31%]
+demo/security_monitor/tests/test_dashboard_api.py::test_api_events_filtering_and_search PASSED [ 32%]
+demo/security_monitor/tests/test_dashboard_api.py::test_api_evaluations_endpoints PASSED [ 34%]
+demo/security_monitor/tests/test_dashboard_api.py::test_api_performance PASSED [ 35%]
+demo/security_monitor/tests/test_dashboard_api.py::test_operator_controls_lifecycle PASSED [ 37%]
+demo/security_monitor/tests/test_dashboard_api.py::test_agent_detail_and_ping_endpoints PASSED [ 38%]
+demo/security_monitor/tests/test_dashboard_api.py::test_public_cards_endpoint PASSED [ 40%]
+demo/security_monitor/tests/test_dashboard_api.py::test_dispatch_task_interactive_workflow PASSED [ 41%]
+demo/security_monitor/tests/test_dashboard_api.py::test_governed_vs_discovered_catalog_distinction PASSED [ 42%]
+demo/security_monitor/tests/test_dashboard_api.py::test_agent_activation_deactivation_lifecycle PASSED [ 44%]
+demo/security_monitor/tests/test_dashboard_api.py::test_safety_boundary_blocks_public_catalog_task_execution PASSED [ 45%]
+demo/security_monitor/tests/test_dashboard_api.py::test_decision_inspector_and_execution_trace PASSED [ 47%]
+demo/security_monitor/tests/test_dashboard_api.py::test_controlled_security_demo_scenarios PASSED [ 48%]
+demo/security_monitor/tests/test_dashboard_api.py::test_human_readable_security_events_enrichment PASSED [ 50%]
+demo/security_monitor/tests/test_dashboard_api.py::test_agent_monitoring_and_policy_mode_controls PASSED [ 51%]
+demo/security_monitor/tests/test_detection.py::test_trusted_card_no_violation PASSED [ 52%]
+demo/security_monitor/tests/test_detection.py::test_homoglyph_spoof_detected PASSED [ 54%]
+demo/security_monitor/tests/test_detection.py::test_provenance_conflict_detected PASSED [ 55%]
+demo/security_monitor/tests/test_detection.py::test_typosquatting_detected PASSED [ 57%]
+demo/security_monitor/tests/test_detection.py::test_normalization_formats PASSED [ 58%]
+demo/security_monitor/tests/test_evaluation.py::test_wilson_ci_bounds_and_coverage PASSED [ 60%]
+demo/security_monitor/tests/test_evaluation.py::test_series_stats_calculation PASSED [ 61%]
+demo/security_monitor/tests/test_evaluation.py::test_scenarios_deterministic_reproducibility PASSED [ 62%]
+demo/security_monitor/tests/test_evaluation.py::test_evaluation_state_isolation_and_no_dev_db_pollution PASSED [ 64%]
+demo/security_monitor/tests/test_gateway.py::test_health_endpoint PASSED [ 65%]
+demo/security_monitor/tests/test_gateway.py::test_register_trusted_card_success PASSED [ 67%]
+demo/security_monitor/tests/test_gateway.py::test_register_spoof_card_quarantine PASSED [ 68%]
+demo/security_monitor/tests/test_persistence.py::test_sqlite_schema_initialization PASSED [ 70%]
+demo/security_monitor/tests/test_persistence.py::test_agent_persistence_across_restarts PASSED [ 71%]
+demo/security_monitor/tests/test_persistence.py::test_quarantine_persistence_and_release PASSED [ 72%]
+demo/security_monitor/tests/test_persistence.py::test_restriction_persistence_and_release PASSED [ 74%]
+demo/security_monitor/tests/test_persistence.py::test_security_events_persistence PASSED [ 75%]
+demo/security_monitor/tests/test_rate_limit.py::test_rate_limiter_unit_sliding_window PASSED [ 77%]
+demo/security_monitor/tests/test_rate_limit.py::test_rate_limiter_per_key_overrides PASSED [ 78%]
+demo/security_monitor/tests/test_rate_limit.py::test_rate_limiter_violation_and_policy_engine_mapping PASSED [ 80%]
+demo/security_monitor/tests/test_rate_limit.py::test_gateway_rate_limiting_enforcement PASSED [ 81%]
+demo/security_monitor/tests/test_real_world_generalization.py::test_real_card_schema_loading PASSED [ 82%]
+demo/security_monitor/tests/test_real_world_generalization.py::test_malformed_card_handling PASSED [ 84%]
+demo/security_monitor/tests/test_real_world_generalization.py::test_normalization PASSED [ 85%]
+demo/security_monitor/tests/test_real_world_generalization.py::test_detector_evaluation PASSED [ 87%]
+demo/security_monitor/tests/test_real_world_generalization.py::test_mutation_generation PASSED [ 88%]
+demo/security_monitor/tests/test_real_world_generalization.py::test_no_external_network_access PASSED [ 90%]
+demo/security_monitor/tests/test_real_world_generalization.py::test_reproducibility PASSED [ 91%]
+demo/security_monitor/tests/test_real_world_generalization.py::test_preservation_of_frozen_stage4_5_datasets PASSED [ 92%]
+demo/security_monitor/tests/test_real_world_generalization.py::test_preservation_of_stage6_and_manifest_dataset PASSED [ 94%]
+demo/security_monitor/tests/test_restriction.py::test_restriction_policy_engine_mapping PASSED [ 95%]
+demo/security_monitor/tests/test_restriction.py::test_restricted_mode_blocks_mutating_allows_safe_inspection PASSED [ 97%]
+demo/security_monitor/tests/test_restriction.py::test_restricted_caller_enforcement PASSED [ 98%]
+demo/security_monitor/tests/test_restriction.py::test_operator_restriction_api_endpoints PASSED [100%]
+
+============================== warnings summary ===============================
+demo\security_monitor\.venv\Lib\site-packages\fastapi\testclient.py:1
+  C:\Users\thiji\OneDrive\Documents\Projects\A2A\demo\security_monitor\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+demo\security_monitor\app\gateway\server.py:48: 1 warning
+demo/security_monitor/tests/test_capability_cloaking.py: 1 warning
+demo/security_monitor/tests/test_cycle_overflow.py: 1 warning
+demo/security_monitor/tests/test_dashboard_api.py: 18 warnings
+demo/security_monitor/tests/test_evaluation.py: 1 warning
+demo/security_monitor/tests/test_gateway.py: 3 warnings
+demo/security_monitor/tests/test_rate_limit.py: 1 warning
+demo/security_monitor/tests/test_restriction.py: 3 warnings
+  C:\Users\thiji\OneDrive\Documents\Projects\A2A\demo\security_monitor\app\gateway\server.py:48: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("shutdown")
+
+demo\security_monitor\.venv\Lib\site-packages\fastapi\applications.py:4744: 1 warning
+demo/security_monitor/tests/test_capability_cloaking.py: 1 warning
+demo/security_monitor/tests/test_cycle_overflow.py: 1 warning
+demo/security_monitor/tests/test_dashboard_api.py: 18 warnings
+demo/security_monitor/tests/test_evaluation.py: 1 warning
+demo/security_monitor/tests/test_gateway.py: 3 warnings
+demo/security_monitor/tests/test_rate_limit.py: 1 warning
+demo/security_monitor/tests/test_restriction.py: 3 warnings
+  C:\Users\thiji\OneDrive\Documents\Projects\A2A\demo\security_monitor\.venv\Lib\site-packages\fastapi\applications.py:4744: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+====================== 70 passed, 59 warnings in 40.77s =======================
