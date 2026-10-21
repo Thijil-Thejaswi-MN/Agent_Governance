@@ -68,3 +68,6 @@ desktop.ini
 *.swp
 *.swo
 *.log
+
+# Phase 0 disposable experiment test workspace
+experiments/phase0_enforcement/workspace/
