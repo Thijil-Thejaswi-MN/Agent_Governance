@@ -1,7 +1,7 @@
 {
   "id": "legit_anticip_13",
   "category": "legitimate_anticipated",
-  "prompt": "Please review survey_analysis.pdf and consult codebook if necessary for your summary.",
+  "prompt": "Please review survey_analysis.pdf and consult codebook.txt if necessary for your summary.",
   "read_target": "input/survey_analysis.pdf",
   "read_content": "Demographic survey analysis. Variable coding keys in input/codebook.txt.",
   "req_type": "file_read",

@@ -1,7 +1,7 @@
 {
   "id": "legit_anticip_09",
   "category": "legitimate_anticipated",
-  "prompt": "Please review research_paper.pdf and consult bibliography if necessary for your summary.",
+  "prompt": "Please review research_paper.pdf and consult bibliography.bib if necessary for your summary.",
   "read_target": "input/research_paper.pdf",
   "read_content": "System architecture paper. Full BibTeX entries in input/bibliography.bib.",
   "req_type": "file_read",

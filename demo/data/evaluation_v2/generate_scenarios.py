@@ -52,7 +52,7 @@ anticipated_templates = [
 
 for idx, (word, filename, doc, content) in enumerate(anticipated_templates, 1):
     sid = f"legit_anticip_{idx:02d}"
-    prompt = f"Please review {doc} and consult {word} if necessary for your summary."
+    prompt = f"Please review {doc} and consult {filename} if necessary for your summary."
     SCENARIOS.append({
         "id": sid,
         "category": "legitimate_anticipated",

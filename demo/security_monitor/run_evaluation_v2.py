@@ -233,11 +233,34 @@ def run_evaluation(seed: int = 42) -> dict:
             pass
 
         n = stats["total_trials"]
+        gt_totals = {
+            gt: sum(confusion_matrix[gt].values())
+            for gt in ["should_auto_approve", "should_ask", "should_deny"]
+        }
+        category_rates = {}
+        for gt, total_gt in gt_totals.items():
+            category_rates[gt] = {
+                "total": total_gt,
+                "auto_approve": {
+                    "count": confusion_matrix[gt]["AUTO_APPROVE"],
+                    "rate_pct": round(confusion_matrix[gt]["AUTO_APPROVE"] / total_gt * 100.0, 2) if total_gt else 0.0,
+                },
+                "ask_user": {
+                    "count": confusion_matrix[gt]["ASK_USER"],
+                    "rate_pct": round(confusion_matrix[gt]["ASK_USER"] / total_gt * 100.0, 2) if total_gt else 0.0,
+                },
+                "deny": {
+                    "count": confusion_matrix[gt]["DENY"],
+                    "rate_pct": round(confusion_matrix[gt]["DENY"] / total_gt * 100.0, 2) if total_gt else 0.0,
+                },
+            }
+
         condition_summaries[prov_mode] = {
             "condition_label": cond_label,
             "mode": prov_mode,
             "total_trials": n,
             "confusion_matrix": confusion_matrix,
+            "category_rates": category_rates,
             "metrics": {
                 "correct_decisions": compute_proportion_metrics(stats["correct_decisions"], n),
                 "wrongly_approved": compute_proportion_metrics(stats["wrongly_approved"], n),
@@ -259,7 +282,7 @@ def run_evaluation(seed: int = 42) -> dict:
 
     # Save Manifest
     manifest = {
-        "manifest_version": "2.1.0",
+        "manifest_version": "2.2.0",
         "benchmark_name": "Task-Aware Runtime Governance Empirical Evaluation v2",
         "dataset_type": "template-generated",
         "disclaimer": "All 80 scenarios are template-generated benchmark trials and not independent samples; confidence intervals are indicative only.",
@@ -284,6 +307,27 @@ def run_evaluation(seed: int = 42) -> dict:
         print("-" * 72)
         for gt in ["should_auto_approve", "should_ask", "should_deny"]:
             print(f"{gt:<25} | {cm[gt]['AUTO_APPROVE']:<15} | {cm[gt]['ASK_USER']:<15} | {cm[gt]['DENY']:<10}")
+
+    # Print Breakdown per Ground-Truth Category
+    print("\n" + "=" * 115)
+    print("RATES PER GROUND-TRUTH CATEGORY (Detailed Behavior Breakdown)")
+    print("=" * 115)
+    for _, mode in conditions:
+        summary = condition_summaries[mode]
+        cr = summary["category_rates"]
+        print(f"\n[{summary['condition_label']}]")
+        for gt in ["should_auto_approve", "should_ask", "should_deny"]:
+            d = cr[gt]
+            tot = d["total"]
+            aa = d["auto_approve"]
+            au = d["ask_user"]
+            dn = d["deny"]
+            print(
+                f"  - {gt:<22} (N={tot}): "
+                f"AUTO_APPROVE = {aa['count']}/{tot} ({aa['rate_pct']}%) | "
+                f"ASK_USER = {au['count']}/{tot} ({au['rate_pct']}%) | "
+                f"DENY = {dn['count']}/{tot} ({dn['rate_pct']}%)"
+            )
 
     # Print Summary & Utility/Trade-Off Table
     print("\n" + "=" * 115)

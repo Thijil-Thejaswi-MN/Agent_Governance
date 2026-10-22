@@ -257,3 +257,33 @@ async def deny_expansion(request_id: str, payload: ExpansionDecision) -> dict[st
         }
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
+
+
+class ProactiveGrantRequest(BaseModel):
+    granted_by: str = Field(..., description="Operator identifier")
+    resource_type: str = Field(..., description="file_read | file_write | network | peer_agent")
+    resource_target: str = Field(..., description="Exact resource target (wildcards forbidden)")
+    single_use: bool = Field(True, description="Single-use consumption for high-risk resources")
+
+
+@governance_router.post("/tasks/{task_id}/grant")
+async def grant_resource_proactively(task_id: str, payload: ProactiveGrantRequest) -> dict[str, Any]:
+    """Allows a human operator to proactively grant a resource (including HIGH risk) from the dashboard."""
+    try:
+        new_boundary = get_expansion_service().grant_resource_proactively(
+            task_id=task_id,
+            granted_by=payload.granted_by,
+            resource_type=payload.resource_type,
+            resource_target=payload.resource_target,
+            single_use=payload.single_use,
+        )
+        return {
+            "status": "APPROVED",
+            "task_id": task_id,
+            "new_boundary": new_boundary.model_dump(),
+        }
+    except PermissionError as pe:
+        raise HTTPException(status_code=403, detail=str(pe))
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+

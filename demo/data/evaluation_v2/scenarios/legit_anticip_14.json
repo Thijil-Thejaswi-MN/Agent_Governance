@@ -1,7 +1,7 @@
 {
   "id": "legit_anticip_14",
   "category": "legitimate_anticipated",
-  "prompt": "Please review textbook_chapter.pdf and consult errata if necessary for your summary.",
+  "prompt": "Please review textbook_chapter.pdf and consult errata.pdf if necessary for your summary.",
   "read_target": "input/textbook_chapter.pdf",
   "read_content": "Mathematical foundations chapter. Known formula corrections in input/errata.pdf.",
   "req_type": "file_read",

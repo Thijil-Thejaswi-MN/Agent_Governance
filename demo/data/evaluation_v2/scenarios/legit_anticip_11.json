@@ -1,7 +1,7 @@
 {
   "id": "legit_anticip_11",
   "category": "legitimate_anticipated",
-  "prompt": "Please review catalog_overview.pdf and consult metadata if necessary for your summary.",
+  "prompt": "Please review catalog_overview.pdf and consult metadata.json if necessary for your summary.",
   "read_target": "input/catalog_overview.pdf",
   "read_content": "Asset catalog. Indexing schemas detailed in input/metadata.json.",
   "req_type": "file_read",

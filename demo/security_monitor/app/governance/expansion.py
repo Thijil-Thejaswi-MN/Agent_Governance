@@ -112,26 +112,31 @@ class ExpansionService:
 
         target_parent = Path(target_clean).parent.as_posix().lower()
 
-        # Extract discrete tokens from user prompt (never substring match raw prompt string)
-        tokens = set(re.findall(r'[a-zA-Z0-9_\.\-]+', user_request_text.lower()))
+        # The target must reside within 'input/' (or relative root .)
+        if target_parent not in ("input", "."):
+            return False
 
-        # Rule A: Exact relative path match (e.g. "input/appendix.pdf")
-        if target_clean in tokens:
+        # Extract discrete tokens from user prompt (words, paths, filenames)
+        tokens = set(re.findall(r'[a-zA-Z0-9_\.\-/]+', user_request_text.lower()))
+        words = set(re.findall(r'[a-zA-Z0-9_\.\-]+', user_request_text.lower()))
+        all_tokens = tokens | words
+
+        # Rule A: Exact relative path match (e.g. "input/figures.csv")
+        if target_clean in all_tokens:
             return True
 
-        # Rule B: Exact filename match (e.g. "appendix.pdf")
-        if target_basename in tokens:
+        # Rule B: Exact filename match (e.g. "figures.csv")
+        if target_basename in all_tokens:
             return True
 
-        # Rule C: Constrained stem match requiring input directory and document extension
-        if target_parent in ("input", "."):
-            recognized_doc_exts = {".pdf", ".txt"}
-            target_ext = Path(target_basename).suffix.lower()
-            target_stem = Path(target_basename).stem.lower()
+        # Rule C: Constrained stem match requiring input directory and document extension (.pdf, .txt)
+        recognized_doc_exts = {".pdf", ".txt"}
+        target_ext = Path(target_basename).suffix.lower()
+        target_stem = Path(target_basename).stem.lower()
 
-            if target_ext in recognized_doc_exts:
-                if target_stem in tokens and not any(p in target_basename for p in ("_secrets", ".bak", ".old", "~")):
-                    return True
+        if target_ext in recognized_doc_exts:
+            if target_stem in words and not any(p in target_basename for p in ("_secrets", ".bak", ".old", "~")):
+                return True
 
         return False
 
@@ -149,6 +154,7 @@ class ExpansionService:
         """
         Creates and evaluates a dynamic expansion request.
         Applies provenance escalation and determines baseline vs effective risk tier.
+        Agent-initiated HIGH risk expansion requests are automatically DENIED by policy.
         """
         now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
         request_id = self._generate_request_id()
@@ -230,11 +236,26 @@ class ExpansionService:
                         effective_tier = RiskTier.HIGH
 
         # 5. Determine Initial Status
-        # LOW is auto-approved; MEDIUM/HIGH requires human approval (ASK_USER)
-        is_auto_approved = (effective_tier == RiskTier.LOW)
-        status = ExpansionStatus.APPROVED if is_auto_approved else ExpansionStatus.PENDING
-        resolved_by = "auto_policy" if is_auto_approved else None
-        resolved_at = now_utc if is_auto_approved else None
+        # Policy rules:
+        # LOW: Auto-approved
+        # MEDIUM: PENDING (escalates to operator approval: ASK_USER)
+        # HIGH: DENIED by policy for agent-initiated requests (DENY)
+        if effective_tier == RiskTier.LOW:
+            status = ExpansionStatus.APPROVED
+            resolved_by = "auto_policy"
+            resolved_at = now_utc
+            is_auto_approved = True
+        elif effective_tier == RiskTier.MEDIUM:
+            status = ExpansionStatus.PENDING
+            resolved_by = None
+            resolved_at = None
+            is_auto_approved = False
+        else:  # RiskTier.HIGH
+            status = ExpansionStatus.DENIED
+            resolved_by = "policy_deny_high_risk"
+            resolved_at = now_utc
+            is_auto_approved = False
+
         single_use = (effective_tier == RiskTier.HIGH)
 
         req = ExpansionRequest(
@@ -374,8 +395,10 @@ class ExpansionService:
 
         if req.status == ExpansionStatus.APPROVED:
             return True, f"Auto-approved under {req.effective_risk_tier.value} risk policy"
+        if req.status == ExpansionStatus.DENIED:
+            return False, f"Denied by policy: agent-initiated expansion to {req.effective_risk_tier.value}-risk resource '{resource_target}' is prohibited"
 
-        # Polling wait loop up to timeout_seconds
+        # Polling wait loop up to timeout_seconds for MEDIUM risk (PENDING)
         start_time = time.time()
         poll_interval = 0.05
         while (time.time() - start_time) < timeout_seconds:
@@ -421,6 +444,8 @@ class ExpansionService:
 
         if req.status == ExpansionStatus.APPROVED:
             return True, f"Auto-approved under {req.effective_risk_tier.value} risk policy"
+        if req.status == ExpansionStatus.DENIED:
+            return False, f"Denied by policy: agent-initiated expansion to {req.effective_risk_tier.value}-risk resource '{resource_target}' is prohibited"
 
         start_time = time.time()
         poll_interval = 0.05
@@ -437,3 +462,58 @@ class ExpansionService:
         now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
         self.deny_request(req.request_id, denied_by="timeout_fail_closed", reason="Approval request timed out")
         return False, "Approval request timed out: denied (fail-closed)"
+
+    def grant_resource_proactively(
+        self,
+        task_id: str,
+        granted_by: str,
+        resource_type: str,
+        resource_target: str,
+        single_use: bool = True,
+    ) -> TaskBoundary:
+        """
+        User-initiated proactive grant of a resource (including HIGH-risk).
+        STRICTLY PROHIBITS AGENT SELF-GRANT.
+        Creates an APPROVED ExpansionRequest authored by the user and expands boundary to version N+1.
+        HIGH-risk grants are marked single_use=True.
+        """
+        task = self.storage.get_task(task_id)
+        if not task:
+            raise ValueError(f"Task '{task_id}' not found.")
+
+        if granted_by.lower() in (task.agent_id.lower(), "agent", "caller", "self"):
+            raise PermissionError(f"Agent '{granted_by}' is strictly prohibited from granting itself resources.")
+
+        target_norm = resource_target.strip().replace("\\", "/").lower()
+        if any(c in resource_target for c in ("*", "?", "[", "]")):
+            raise ValueError(f"Wildcards are strictly prohibited. Resource target '{resource_target}' must be exact.")
+
+        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        request_id = self._generate_request_id()
+
+        # Determine risk tier for record
+        tier = RiskTier.HIGH if (
+            any(p in target_norm for p in ("credential", "secret", "password", ".env", "id_rsa", "shadow"))
+            or (resource_type == "network" and not any(target_norm.startswith(h) for h in ("127.0.0.1", "localhost", "internal.")))
+        ) else RiskTier.MEDIUM
+
+        req = ExpansionRequest(
+            request_id=request_id,
+            task_id=task_id,
+            agent_id="human_operator",
+            resource_type=resource_type,
+            resource_target=resource_target,
+            justification=f"Proactive grant by user '{granted_by}'",
+            baseline_risk_tier=tier,
+            effective_risk_tier=tier,
+            escalated_by_provenance=False,
+            status=ExpansionStatus.APPROVED,
+            created_at=now_utc,
+            resolved_at=now_utc,
+            resolved_by=granted_by,
+            single_use=(tier == RiskTier.HIGH or single_use),
+            used_count=0,
+            timeout_seconds=0.0,
+        )
+        self.storage.save_expansion_request(req)
+        return self._apply_boundary_expansion(req)
