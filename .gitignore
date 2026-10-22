@@ -75,3 +75,9 @@ experiments/phase0_enforcement/workspace/
 # Ephemeral demo data and workspaces
 demo/data/*
 !demo/data/evaluation_v2/
+!demo/data/overhead_benchmark_results.json
+
+# OS Layer compiled binaries
+demo/security_monitor/app/governance/os_layer/landlock_enforcer
+demo/security_monitor/app/governance/os_layer/seccomp_filter
+demo/security_monitor/app/governance/os_layer/sensor
