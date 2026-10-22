@@ -189,9 +189,10 @@ class LandlockSandbox:
         scratch_dir.mkdir(parents=True, exist_ok=True)
         self.allow_read_write(scratch_dir)
 
-        # Temporary workspace scratch
-        if os.path.exists("/tmp"):
-            self.allow_read_write("/tmp")
+        # Task tmp directory (read-write) - /tmp is strictly excluded
+        tmp_dir = ws / "tmp"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        self.allow_read_write(tmp_dir)
 
         # Network egress: proxy port only
         if proxy_port:

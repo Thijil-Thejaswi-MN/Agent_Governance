@@ -9,9 +9,11 @@
 #include <fcntl.h>
 #include <linux/landlock.h>
 #include <linux/prctl.h>
+#include <sched.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mount.h>
 #include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -71,6 +73,63 @@ static int add_net_rule(int ruleset_fd, __u64 port, __u64 access_mask) {
     return landlock_add_rule(ruleset_fd, LANDLOCK_RULE_NET_PORT, &attr, 0);
 }
 
+static int isolate_user_and_mounts(uid_t host_uid, gid_t host_gid) {
+    if (unshare(CLONE_NEWUSER | CLONE_NEWNS) != 0) {
+        // If unshare is restricted by kernel, proceed with Landlock-only enforcement
+        return 0;
+    }
+
+    // Setgroups deny
+    int fd = open("/proc/self/setgroups", O_WRONLY);
+    if (fd >= 0) {
+        if (write(fd, "deny", 4) < 0) {}
+        close(fd);
+    }
+
+    // uid_map: 0 -> host_uid
+    char map_buf[128];
+    fd = open("/proc/self/uid_map", O_WRONLY);
+    if (fd >= 0) {
+        snprintf(map_buf, sizeof(map_buf), "0 %u 1\n", host_uid);
+        if (write(fd, map_buf, strlen(map_buf)) < 0) {}
+        close(fd);
+    }
+
+    // gid_map: 0 -> host_gid
+    fd = open("/proc/self/gid_map", O_WRONLY);
+    if (fd >= 0) {
+        snprintf(map_buf, sizeof(map_buf), "0 %u 1\n", host_gid);
+        if (write(fd, map_buf, strlen(map_buf)) < 0) {}
+        close(fd);
+    }
+
+    // 1. Mask /run/user/<host_uid> with an empty tmpfs (hides bus and systemd/private)
+    char run_user_path[256];
+    snprintf(run_user_path, sizeof(run_user_path), "/run/user/%u", host_uid);
+    struct stat st;
+    if (stat(run_user_path, &st) == 0 && S_ISDIR(st.st_mode)) {
+        mount("none", run_user_path, "tmpfs", 0, "");
+    }
+
+    // 2. Bind /bin/false over IPC escape binaries
+    const char *escape_bins[] = {
+        "/usr/bin/systemd-run",
+        "/bin/systemd-run",
+        "/usr/bin/busctl",
+        "/bin/busctl",
+        "/usr/bin/dbus-send",
+        "/bin/dbus-send",
+        NULL
+    };
+    for (int i = 0; escape_bins[i]; i++) {
+        if (stat(escape_bins[i], &st) == 0) {
+            mount("/bin/false", escape_bins[i], NULL, MS_BIND, NULL);
+        }
+    }
+
+    return 0;
+}
+
 int main(int argc, char **argv) {
     const char *workspace = NULL;
     int proxy_port = 0;
@@ -92,17 +151,31 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    uid_t uid = getuid();
+    gid_t gid = getgid();
+
+    // Setup per-task tmp directory
+    char task_tmp[4096];
+    snprintf(task_tmp, sizeof(task_tmp), "%s/tmp", workspace);
+    mkdir(task_tmp, 0700);
+    setenv("TMPDIR", task_tmp, 1);
+    setenv("TEMP", task_tmp, 1);
+    setenv("TMP", task_tmp, 1);
+
+    // Isolate mount and user namespaces (masks D-Bus / systemd sockets and escape binaries)
+    isolate_user_and_mounts(uid, gid);
+
     int abi = landlock_create_ruleset(NULL, 0, LANDLOCK_CREATE_RULESET_VERSION);
     if (abi < 1) {
         fprintf(stderr, "Landlock is not supported by kernel (abi=%d)\n", abi);
         return 1;
     }
 
-struct landlock_ruleset_attr_full {
-    __u64 handled_access_fs;
-    __u64 handled_access_net;
-    __u64 scoped_access;
-};
+    struct landlock_ruleset_attr_full {
+        __u64 handled_access_fs;
+        __u64 handled_access_net;
+        __u64 scoped_access;
+    };
 
     __u64 all_fs = (1ULL << 16) - 1; /* ABI 5-7 rights */
     __u64 all_net = (abi >= 4) ? (LANDLOCK_ACCESS_NET_BIND_TCP | LANDLOCK_ACCESS_NET_CONNECT_TCP) : 0;
@@ -159,13 +232,15 @@ struct landlock_ruleset_attr_full {
                LANDLOCK_ACCESS_FS_TRUNCATE | LANDLOCK_ACCESS_FS_REFER;
     add_path_rule(ruleset_fd, output_path, rw);
 
-    /* 5. Scratch & tmp directory */
+    /* 5. Task scratch directory (read-write) */
     char scratch_path[4096];
     snprintf(scratch_path, sizeof(scratch_path), "%s/scratch", workspace);
     add_path_rule(ruleset_fd, scratch_path, rw);
-    add_path_rule(ruleset_fd, "/tmp", rw);
 
-    /* 6. Port rule for egress proxy */
+    /* 6. Task-isolated tmp directory (read-write) - /tmp is strictly excluded! */
+    add_path_rule(ruleset_fd, task_tmp, rw);
+
+    /* 7. Port rule for egress proxy */
     if (proxy_port > 0 && abi >= 4) {
         add_net_rule(ruleset_fd, proxy_port, LANDLOCK_ACCESS_NET_CONNECT_TCP);
     }

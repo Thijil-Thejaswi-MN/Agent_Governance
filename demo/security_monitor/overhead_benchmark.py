@@ -1,13 +1,16 @@
-"""Overhead benchmark for OS-level enforcement on ext4 (WSL2 / Linux).
+"""Milestone 4 5-Arm Enforcement Overhead Benchmark on ext4 (WSL2 / Linux).
 
-Measures runtime latency of agent workload:
-- Baseline (Unconfined on ext4)
-- Sandboxed (Cgroups v2 + Seccomp filter + Landlock ABI 7 sandbox)
+Arms measured:
+1. Baseline: Unconfined execution on ext4
+2. Cgroup Scope Only: systemd-run --user --scope (no Landlock, no seccomp, no sensor)
+3. Landlock + Seccomp Only: seccomp_filter + landlock_enforcer (no systemd-run)
+4. Landlock + Seccomp + Sensor: sensor (ptrace) + seccomp_filter + landlock_enforcer (no systemd-run)
+5. Full: systemd-run + sensor + seccomp_filter + landlock_enforcer
 
 Methodology:
-- Interleaved execution order (Baseline, Sandboxed, Baseline, Sandboxed...)
-- Warm-up iterations (5 per condition)
-- N = 50 runs per condition (N >= 30)
+- Rotated interleaved execution order across all 5 arms
+- Warm-up iterations (5 per arm)
+- N = 35 trials per arm (N >= 30)
 - High-precision timing via time.perf_counter_ns
 - Computes: median, mean, p95, stdev, 95% Confidence Intervals
 """
@@ -16,8 +19,8 @@ from __future__ import annotations
 import json
 import math
 import os
-import random
 import statistics
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -27,10 +30,7 @@ repo_root = Path(__file__).resolve().parent.parent.parent
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
-from demo.security_monitor.app.governance.os_layer.runner import (
-    CgroupTaskRunner,
-    TaskWorkspace,
-)
+from demo.security_monitor.app.governance.os_layer.runner import TaskWorkspace
 
 PYTHON_BIN = "/usr/bin/python3" if os.path.exists("/usr/bin/python3") else sys.executable
 
@@ -42,175 +42,178 @@ def compute_ci95(data: list[float]) -> tuple[float, float]:
         return (data[0], data[0]) if data else (0.0, 0.0)
     mean = statistics.mean(data)
     stderr = statistics.stdev(data) / math.sqrt(n)
-    # Critical t for n=50 (df=49) at alpha=0.05 is ~2.0096
-    # Exact approximation for df >= 30: 1.960 + 2.37/(n-1)
     t_crit = 1.960 + (2.37 / (n - 1))
     margin = t_crit * stderr
     return (round(mean - margin, 3), round(mean + margin, 3))
 
 
-def run_benchmark(n_trials: int = 50, n_warmup: int = 5) -> dict:
-    print(f"=== Milestone 4 Ext4 Enforcement Overhead Benchmark ===")
+def p95(data: list[float]) -> float:
+    s = sorted(data)
+    idx = int(0.95 * len(s))
+    return s[min(idx, len(s) - 1)]
+
+
+def run_benchmark(n_trials: int = 35, n_warmup: int = 5) -> dict:
+    print("=== Milestone 4 5-Arm Ext4 Enforcement Overhead Benchmark ===")
     print(f"Kernel: {os.uname().release}")
-    print(f"Interleaved trials: {n_trials} per condition (Warm-up: {n_warmup})")
+    print(f"Trials per arm: {n_trials} (Warm-up: {n_warmup} per arm)")
 
-    # Setup ext4 workspaces
-    ws_base = TaskWorkspace(task_id="bench_baseline")
-    ws_base.setup()
-    ws_sand = TaskWorkspace(task_id="bench_sandboxed")
-    ws_sand.setup()
+    os_layer_dir = repo_root / "demo" / "security_monitor" / "app" / "governance" / "os_layer"
+    landlock_bin = os_layer_dir / "landlock_enforcer"
+    seccomp_bin = os_layer_dir / "seccomp_filter"
+    sensor_bin = os_layer_dir / "sensor"
 
-    # Create dummy workload input
-    workload_input = ws_base.input_dir / "data.csv"
-    workload_input.write_text("id,val\n" + "\n".join(f"{i},{i*2}" for i in range(1000)), encoding="utf-8")
-    (ws_sand.input_dir / "data.csv").write_text(workload_input.read_text(encoding="utf-8"), encoding="utf-8")
+    assert landlock_bin.exists(), f"Missing {landlock_bin}"
+    assert seccomp_bin.exists(), f"Missing {seccomp_bin}"
+    assert sensor_bin.exists(), f"Missing {sensor_bin}"
 
-    # Workload: read 1000-line input, compute hash, write output
-    workload_code = (
-        "import hashlib, os, sys\n"
-        "ws = sys.argv[1]\n"
-        "inp = os.path.join(ws, 'input', 'data.csv')\n"
-        "with open(inp, 'r') as f:\n"
-        "    data = f.read()\n"
-        "h = hashlib.sha256(data.encode('utf-8')).hexdigest()\n"
-        "out = os.path.join(ws, 'output', 'hash.txt')\n"
-        "with open(out, 'w') as f:\n"
-        "    f.write(h)\n"
-    )
-
-    script_base = ws_base.root / "workload.py"
-    script_base.write_text(workload_code, encoding="utf-8")
-    script_sand = ws_sand.root / "workload.py"
-    script_sand.write_text(workload_code, encoding="utf-8")
-
-    runner = CgroupTaskRunner()
-
-    def run_one_baseline() -> float:
-        t0 = time.perf_counter_ns()
-        # Direct execution in ext4 workspace without confinement
-        import subprocess
-        res = subprocess.run(
-            [PYTHON_BIN, str(script_base), str(ws_base.root)],
-            cwd=str(ws_base.root),
-            capture_output=True,
-            text=True,
+    # Setup ext4 workspaces for each arm
+    workspaces: dict[str, TaskWorkspace] = {}
+    arms = [
+        "1_baseline",
+        "2_cgroup_only",
+        "3_landlock_seccomp",
+        "4_landlock_seccomp_sensor",
+        "5_full",
+    ]
+    for arm in arms:
+        ws = TaskWorkspace(task_id=f"bench_{arm}")
+        ws.setup()
+        workspaces[arm] = ws
+        # Prepare workload input: 1000 records CSV
+        inp = ws.input_dir / "data.csv"
+        inp.write_text("id,val\n" + "\n".join(f"{i},{i*2}" for i in range(1000)), encoding="utf-8")
+        # Prepare workload code: read CSV, compute SHA-256, write output
+        code = (
+            "import hashlib, os, sys\n"
+            "ws = sys.argv[1]\n"
+            "inp = os.path.join(ws, 'input', 'data.csv')\n"
+            "with open(inp, 'r') as f:\n"
+            "    data = f.read()\n"
+            "h = hashlib.sha256(data.encode('utf-8')).hexdigest()\n"
+            "out = os.path.join(ws, 'output', 'hash.txt')\n"
+            "with open(out, 'w') as f:\n"
+            "    f.write(h)\n"
         )
-        t1 = time.perf_counter_ns()
-        assert res.returncode == 0, f"Baseline failed: {res.stderr}"
-        return (t1 - t0) / 1_000_000.0  # ms
+        (ws.root / "workload.py").write_text(code, encoding="utf-8")
 
-    def run_one_sandboxed() -> float:
+    # Define execution functions for each arm
+    def run_arm(arm_name: str) -> float:
+        ws = workspaces[arm_name]
+        script = str(ws.root / "workload.py")
+        unit_name = f"bench-{arm_name[:8]}-{int(time.time()*10000)%100000}"
+
+        if arm_name == "1_baseline":
+            cmd = [PYTHON_BIN, script, str(ws.root)]
+        elif arm_name == "2_cgroup_only":
+            cmd = ["systemd-run", "--user", "--scope", f"--unit={unit_name}", "--", PYTHON_BIN, script, str(ws.root)]
+        elif arm_name == "3_landlock_seccomp":
+            cmd = [str(seccomp_bin), str(landlock_bin), "--workspace", str(ws.root), "--", PYTHON_BIN, script, str(ws.root)]
+        elif arm_name == "4_landlock_seccomp_sensor":
+            cmd = [str(sensor_bin), str(seccomp_bin), str(landlock_bin), "--workspace", str(ws.root), "--", PYTHON_BIN, script, str(ws.root)]
+        elif arm_name == "5_full":
+            cmd = ["systemd-run", "--user", "--scope", f"--unit={unit_name}", "--",
+                   str(sensor_bin), str(seccomp_bin), str(landlock_bin), "--workspace", str(ws.root), "--",
+                   PYTHON_BIN, script, str(ws.root)]
+        else:
+            raise ValueError(f"Unknown arm {arm_name}")
+
         t0 = time.perf_counter_ns()
-        res = runner.run_task_command(
-            task_id=ws_sand.task_id,
-            cmd=[PYTHON_BIN, str(script_sand), str(ws_sand.root)],
-            workspace=ws_sand,
-            enable_landlock=True,
-            enable_seccomp=True,
-        )
+        res = subprocess.run(cmd, cwd=str(ws.root), capture_output=True, text=True)
         t1 = time.perf_counter_ns()
-        assert res.returncode == 0, f"Sandboxed failed: {res.stderr}"
+        assert res.returncode == 0, f"Arm {arm_name} failed: {res.stderr}"
         return (t1 - t0) / 1_000_000.0  # ms
 
     # Warm-up
     print("Running warm-up iterations...")
     for _ in range(n_warmup):
-        run_one_baseline()
-        run_one_sandboxed()
+        for arm in arms:
+            run_arm(arm)
 
-    # Interleaved measurement
-    print(f"Collecting {n_trials} interleaved measurements...")
-    baseline_times: list[float] = []
-    sandboxed_times: list[float] = []
+    # Interleaved execution across 5 arms
+    print(f"Collecting {n_trials} trials across {len(arms)} arms (rotated interleaved)...")
+    results_raw: dict[str, list[float]] = {arm: [] for arm in arms}
 
     for i in range(n_trials):
-        # Alternate order to avoid bias
-        if i % 2 == 0:
-            b_t = run_one_baseline()
-            s_t = run_one_sandboxed()
-        else:
-            s_t = run_one_sandboxed()
-            b_t = run_one_baseline()
-        baseline_times.append(b_t)
-        sandboxed_times.append(s_t)
+        # Rotate order each trial: e.g. [0,1,2,3,4], [1,2,3,4,0], etc.
+        rotated_arms = arms[i % len(arms):] + arms[:i % len(arms)]
+        for arm in rotated_arms:
+            dur = run_arm(arm)
+            results_raw[arm].append(dur)
 
-    # Cleanup
-    ws_base.cleanup()
-    ws_sand.cleanup()
+    # Cleanup workspaces
+    for ws in workspaces.values():
+        ws.cleanup()
 
-    # Statistics
-    base_sorted = sorted(baseline_times)
-    sand_sorted = sorted(sandboxed_times)
+    # Compile statistics
+    stats: dict[str, dict] = {}
+    for arm in arms:
+        data = results_raw[arm]
+        stats[arm] = {
+            "median_ms": round(statistics.median(data), 3),
+            "mean_ms": round(statistics.mean(data), 3),
+            "p95_ms": round(p95(data), 3),
+            "stdev_ms": round(statistics.stdev(data), 3),
+            "ci95_ms": compute_ci95(data),
+            "samples": [round(x, 3) for x in data],
+        }
 
-    def p95(data_sorted: list[float]) -> float:
-        idx = int(0.95 * len(data_sorted))
-        return data_sorted[min(idx, len(data_sorted) - 1)]
+    # Print summary table
+    print("\n" + "=" * 90)
+    print(f"{'Arm':<30} | {'Median':<11} | {'Mean':<11} | {'p95':<11} | {'95% CI':<20}")
+    print("-" * 90)
+    arm_labels = {
+        "1_baseline": "1. Baseline (Unconfined)",
+        "2_cgroup_only": "2. Cgroup Scope Only",
+        "3_landlock_seccomp": "3. Landlock + Seccomp Only",
+        "4_landlock_seccomp_sensor": "4. Landlock + Seccomp + Sensor",
+        "5_full": "5. Full (Cgroup+LL+Sec+Sens)",
+    }
+    for arm in arms:
+        s = stats[arm]
+        label = arm_labels[arm]
+        ci_str = f"[{s['ci95_ms'][0]:.2f}, {s['ci95_ms'][1]:.2f}]"
+        print(f"{label:<30} | {s['median_ms']:>8.3f} ms | {s['mean_ms']:>8.3f} ms | {s['p95_ms']:>8.3f} ms | {ci_str:<20}")
+    print("=" * 90)
 
-    base_median = statistics.median(baseline_times)
-    base_mean = statistics.mean(baseline_times)
-    base_p95 = p95(base_sorted)
-    base_ci95 = compute_ci95(baseline_times)
+    # Isolated Deltas
+    base_med = stats["1_baseline"]["median_ms"]
+    cg_delta = round(stats["2_cgroup_only"]["median_ms"] - base_med, 3)
+    ll_sec_delta = round(stats["3_landlock_seccomp"]["median_ms"] - base_med, 3)
+    sensor_delta = round(stats["4_landlock_seccomp_sensor"]["median_ms"] - stats["3_landlock_seccomp"]["median_ms"], 3)
+    full_delta = round(stats["5_full"]["median_ms"] - base_med, 3)
 
-    sand_median = statistics.median(sandboxed_times)
-    sand_mean = statistics.mean(sandboxed_times)
-    sand_p95 = p95(sand_sorted)
-    sand_ci95 = compute_ci95(sandboxed_times)
+    print("\nIsolated Overhead Contributions (Median Deltas):")
+    print(f"  - Cgroup unit scope (systemd-run):       +{cg_delta:+.3f} ms")
+    print(f"  - Landlock + Seccomp syscall filter:     +{ll_sec_delta:+.3f} ms")
+    print(f"  - Sensor ptrace tracing overhead:        +{sensor_delta:+.3f} ms")
+    print(f"  - Total Full Stack Overhead:             +{full_delta:+.3f} ms")
+    print("=" * 90 + "\n")
 
-    overhead_median_ms = sand_median - base_median
-    overhead_p95_ms = sand_p95 - base_p95
-    overhead_mean_ms = sand_mean - base_mean
-
-    results = {
+    report = {
         "metadata": {
             "kernel": os.uname().release,
             "filesystem": "ext4",
-            "trials": n_trials,
-            "warmup": n_warmup,
-            "unit": "milliseconds",
+            "trials_per_arm": n_trials,
+            "warmup_per_arm": n_warmup,
+            "arms": arm_labels,
         },
-        "baseline": {
-            "median_ms": round(base_median, 3),
-            "mean_ms": round(base_mean, 3),
-            "p95_ms": round(base_p95, 3),
-            "stdev_ms": round(statistics.stdev(baseline_times), 3),
-            "ci95_ms": base_ci95,
-            "raw_samples": [round(x, 3) for x in baseline_times],
-        },
-        "sandboxed": {
-            "median_ms": round(sand_median, 3),
-            "mean_ms": round(sand_mean, 3),
-            "p95_ms": round(sand_p95, 3),
-            "stdev_ms": round(statistics.stdev(sandboxed_times), 3),
-            "ci95_ms": sand_ci95,
-            "raw_samples": [round(x, 3) for x in sandboxed_times],
-        },
-        "overhead": {
-            "median_overhead_ms": round(overhead_median_ms, 3),
-            "mean_overhead_ms": round(overhead_mean_ms, 3),
-            "p95_overhead_ms": round(overhead_p95_ms, 3),
+        "stats": stats,
+        "deltas": {
+            "cgroup_scope_overhead_ms": cg_delta,
+            "landlock_seccomp_overhead_ms": ll_sec_delta,
+            "sensor_ptrace_overhead_ms": sensor_delta,
+            "total_full_stack_overhead_ms": full_delta,
         },
     }
 
-    # Print Table
-    print("\n" + "=" * 65)
-    print(f"{'Metric':<20} | {'Baseline (Unconfined)':<18} | {'Sandboxed (M4 Full)':<18}")
-    print("-" * 65)
-    print(f"{'Median':<20} | {base_median:>14.3f} ms | {sand_median:>14.3f} ms")
-    print(f"{'Mean':<20} | {base_mean:>14.3f} ms | {sand_mean:>14.3f} ms")
-    print(f"{'p95':<20} | {base_p95:>14.3f} ms | {sand_p95:>14.3f} ms")
-    print(f"{'95% CI':<20} | [{base_ci95[0]:.2f}, {base_ci95[1]:.2f}] ms | [{sand_ci95[0]:.2f}, {sand_ci95[1]:.2f}] ms")
-    print("=" * 65)
-    print(f"Median Enforcement Overhead: +{overhead_median_ms:.3f} ms")
-    print(f"p95 Enforcement Overhead:    +{overhead_p95_ms:.3f} ms")
-    print("=" * 65 + "\n")
+    out_file = repo_root / "demo" / "data" / "overhead_benchmark_results.json"
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    out_file.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    print(f"Saved results to {out_file}")
 
-    out_path = repo_root / "demo" / "data" / "overhead_benchmark_results.json"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
-    print(f"Saved benchmark results to {out_path}")
-
-    return results
+    return report
 
 
 if __name__ == "__main__":
-    run_benchmark(n_trials=50, n_warmup=5)
+    run_benchmark(n_trials=35, n_warmup=5)

@@ -35,6 +35,7 @@ class TaskWorkspace:
         self.input_dir = self.root / "input"
         self.output_dir = self.root / "output"
         self.scratch_dir = self.root / "scratch"
+        self.tmp_dir = self.root / "tmp"
 
     def setup(self) -> None:
         """Creates the directory structure on ext4."""
@@ -42,12 +43,28 @@ class TaskWorkspace:
         self.input_dir.mkdir(parents=True, exist_ok=True)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.scratch_dir.mkdir(parents=True, exist_ok=True)
+        self.tmp_dir.mkdir(parents=True, exist_ok=True)
 
     def cleanup(self) -> None:
         """Removes the task workspace."""
         import shutil
         if self.root.exists():
             shutil.rmtree(self.root, ignore_errors=True)
+
+
+def read_task_token() -> str | None:
+    """Reads the governance task token from inherited pipe FD once, closes it, and unsets env var."""
+    fd_str = os.environ.get("GOVERNANCE_TOKEN_FD")
+    if not fd_str:
+        return None
+    try:
+        fd = int(fd_str)
+        token_bytes = os.read(fd, 4096)
+        os.close(fd)
+        os.environ.pop("GOVERNANCE_TOKEN_FD", None)
+        return token_bytes.decode("utf-8").strip()
+    except Exception:
+        return None
 
 
 class CgroupTaskRunner:
@@ -85,6 +102,7 @@ class CgroupTaskRunner:
         cmd: list[str],
         workspace: TaskWorkspace,
         proxy_port: int | None = None,
+        token: str | None = None,
         timeout: float = 30.0,
         enable_landlock: bool = True,
         enable_seccomp: bool = True,
@@ -126,11 +144,9 @@ class CgroupTaskRunner:
         ] + wrapped_cmd
 
         # Record task cgroup in storage if available
-        # Unit scope maps to /user.slice/user-<uid>.slice/user@<uid>.service/app.slice/<unit_name>.scope
         cgroup_id = f"/user.slice/{unit_name}.scope"
         if self.storage:
             try:
-                # Save cgroup mapping in storage
                 with self.storage._get_conn() as conn:
                     conn.execute(
                         """
@@ -151,10 +167,34 @@ class CgroupTaskRunner:
             except Exception:
                 pass
 
-        return subprocess.run(
-            systemd_cmd,
-            cwd=str(workspace.root),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+        env = dict(os.environ)
+        env["TMPDIR"] = str(workspace.tmp_dir)
+        env["TEMP"] = str(workspace.tmp_dir)
+        env["TMP"] = str(workspace.tmp_dir)
+
+        r_fd = None
+        pass_fds = ()
+        if token:
+            r_fd, w_fd = os.pipe()
+            os.write(w_fd, token.encode("utf-8"))
+            os.close(w_fd)
+            os.set_inheritable(r_fd, True)
+            env["GOVERNANCE_TOKEN_FD"] = str(r_fd)
+            pass_fds = (r_fd,)
+
+        try:
+            return subprocess.run(
+                systemd_cmd,
+                cwd=str(workspace.root),
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env=env,
+                pass_fds=pass_fds,
+            )
+        finally:
+            if r_fd is not None:
+                try:
+                    os.close(r_fd)
+                except Exception:
+                    pass
