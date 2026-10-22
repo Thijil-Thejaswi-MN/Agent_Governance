@@ -40,7 +40,9 @@ SCENARIOS_DIR = DATA_DIR / "scenarios"
 RESULTS_DIR = DATA_DIR / "results"
 
 
-def get_git_commit_hash() -> str:
+def get_git_info() -> tuple[str, bool]:
+    commit = "unknown"
+    is_dirty = False
     try:
         res = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -49,9 +51,18 @@ def get_git_commit_hash() -> str:
             text=True,
             check=True,
         )
-        return res.stdout.strip()
+        commit = res.stdout.strip()
+        status_res = subprocess.run(
+            ["git", "status", "--porcelain", "--", ":!demo/data/evaluation_v2/results"],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        is_dirty = len(status_res.stdout.strip()) > 0
     except Exception:
-        return "85cdda7"
+        pass
+    return commit, is_dirty
 
 
 def load_all_scenarios() -> list[dict]:
@@ -73,12 +84,12 @@ def run_evaluation(seed: int = 42) -> dict:
     if len(scenarios) < 80:
         raise RuntimeError(f"Expected at least 80 scenarios, found {len(scenarios)}")
 
-    commit_hash = get_git_commit_hash()
+    commit_hash, is_git_dirty = get_git_info()
     eval_timestamp = datetime.now(timezone.utc).isoformat()
 
     print("=" * 115)
     print("TASK-AWARE RUNTIME AGENT GOVERNANCE LAYER - EMPIRICAL EVALUATION V2 (CHECKPOINT 3C)")
-    print(f"Git Commit: {commit_hash} | Seed: {seed} | Total Scenarios: {len(scenarios)}")
+    print(f"Git Commit: {commit_hash} (Dirty: {is_git_dirty}) | Seed: {seed} | Total Scenarios: {len(scenarios)}")
     print("DISCLAIMER: All scenarios are template-generated benchmark trials; confidence intervals are indicative only.")
     print("=" * 115)
 
@@ -287,6 +298,7 @@ def run_evaluation(seed: int = 42) -> dict:
         "dataset_type": "template-generated",
         "disclaimer": "All 80 scenarios are template-generated benchmark trials and not independent samples; confidence intervals are indicative only.",
         "git_commit": commit_hash,
+        "is_git_dirty": is_git_dirty,
         "timestamp_utc": eval_timestamp,
         "seed": seed,
         "total_scenarios": len(scenarios),

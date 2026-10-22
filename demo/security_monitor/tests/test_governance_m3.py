@@ -573,3 +573,58 @@ def test_proactive_user_grant_high_risk_single_use(m3_storage: GovernanceStorage
     with pytest.raises(PermissionError, match="denied by boundary"):
         broker.read_file(token, "credentials.json")
 
+
+def test_extended_sensitive_patterns_and_structural_rules(m3_storage: GovernanceStorage, m3_workspace: Path) -> None:
+    """
+    Tests:
+    1. server.key and extended sensitive patterns (*.key, *.p12, *.pfx, *.kdbx, .ssh/**, .aws/**, .kube/config, .git-credentials, .npmrc, .netrc) are HIGH risk.
+    2. Structural rules:
+       - Outside workspace (leading '/', '..' segments, drive root) -> HIGH
+       - Outside input/ (e.g. shared/data.csv) -> at least MEDIUM
+       - Inside input/ non-sensitive -> LOW
+    3. Agent-initiated request for server.key is immediately DENIED by policy.
+    """
+    exp_service = ExpansionService(m3_storage)
+
+    # 1. Extended sensitive pattern checks
+    assert exp_service.classify_resource_risk("file_read", "server.key") == RiskTier.HIGH
+    assert exp_service.classify_resource_risk("file_read", "input/server.key") == RiskTier.HIGH
+    assert exp_service.classify_resource_risk("file_read", "certs/client.p12") == RiskTier.HIGH
+    assert exp_service.classify_resource_risk("file_read", "certs/bundle.pfx") == RiskTier.HIGH
+    assert exp_service.classify_resource_risk("file_read", "passwords.kdbx") == RiskTier.HIGH
+    assert exp_service.classify_resource_risk("file_read", ".ssh/id_ed25519") == RiskTier.HIGH
+    assert exp_service.classify_resource_risk("file_read", ".aws/config") == RiskTier.HIGH
+    assert exp_service.classify_resource_risk("file_read", ".kube/config") == RiskTier.HIGH
+    assert exp_service.classify_resource_risk("file_read", ".git-credentials") == RiskTier.HIGH
+    assert exp_service.classify_resource_risk("file_read", ".npmrc") == RiskTier.HIGH
+    assert exp_service.classify_resource_risk("file_read", ".netrc") == RiskTier.HIGH
+
+    # 2. Structural rules
+    # Outside workspace -> HIGH
+    assert exp_service.classify_resource_risk("file_read", "../outside.txt") == RiskTier.HIGH
+    assert exp_service.classify_resource_risk("file_read", "/etc/passwd") == RiskTier.HIGH
+    assert exp_service.classify_resource_risk("file_read", "C:/Windows/System32/cmd.exe") == RiskTier.HIGH
+
+    # Outside input/ -> at least MEDIUM
+    assert exp_service.classify_resource_risk("file_read", "shared/dataset.csv") == RiskTier.MEDIUM
+    assert exp_service.classify_resource_risk("file_read", "temp/intermediate.txt") == RiskTier.MEDIUM
+
+    # Inside input/ and non-sensitive -> LOW
+    assert exp_service.classify_resource_risk("file_read", "input/dataset.csv") == RiskTier.LOW
+    assert exp_service.classify_resource_risk("file_read", "input/notes.txt") == RiskTier.LOW
+
+    # 3. Agent request for server.key is immediately DENIED
+    intake = TaskIntakeService(m3_storage)
+    task, boundary = intake.submit_task("Process certs", "agent_cert", str(m3_workspace))
+    req = exp_service.evaluate_request(
+        task_id=task.task_id,
+        agent_id=task.agent_id,
+        resource_type="file_read",
+        resource_target="server.key",
+        justification="Install certificate",
+    )
+    assert req.status == ExpansionStatus.DENIED
+    assert req.effective_risk_tier == RiskTier.HIGH
+    assert req.resolved_by == "policy_deny_high_risk"
+
+

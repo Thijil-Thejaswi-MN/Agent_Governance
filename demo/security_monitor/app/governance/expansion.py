@@ -170,31 +170,108 @@ class ExpansionService:
         if not task:
             raise ValueError(f"Task '{task_id}' not found.")
 
-        # 2. Determine Baseline Risk Tier
+    @staticmethod
+    def classify_resource_risk(resource_type: str, resource_target: str) -> RiskTier:
+        """
+        Classifies baseline risk tier based on structural rules and sensitive resource patterns.
+
+        Structural Rules (independent of sensitive list):
+        1. Outside workspace (leading '/', '..' in path segments, or Windows drive root like 'c:') -> HIGH
+        2. File writes outside 'output/' -> HIGH
+        3. Agent-requested files outside 'input/' -> at least MEDIUM
+        4. Files inside 'input/' (and not sensitive) -> LOW
+
+        Sensitive Resource Patterns (automatically HIGH):
+        - Credentials, secrets, passwords, .env, id_rsa, shadow
+        - Key material and certificates: *.key, *.p12, *.pfx, *.kdbx
+        - Configuration vaults: .ssh/**, .aws/**, .kube/config, .git-credentials, .npmrc, .netrc
+        - External network egress (not 127.0.0.1, localhost, internal.*) -> HIGH
+        """
         target_norm = resource_target.strip().replace("\\", "/").lower()
-        baseline_tier = RiskTier.LOW
+        parts = [p for p in target_norm.split("/") if p]
+
+        # 1. Structural Rule: Outside workspace is HIGH
+        is_outside_workspace = (
+            target_norm.startswith("/")
+            or ".." in parts
+            or (len(parts) > 0 and len(parts[0]) == 2 and parts[0][1] == ":")
+        )
+        if is_outside_workspace:
+            return RiskTier.HIGH
 
         if resource_type in ("file_read", "file_write"):
-            # Sensitive filename patterns are automatically HIGH
-            sensitive_patterns = ("credential", "secret", "password", ".env", "id_rsa", "shadow")
-            if any(p in target_norm for p in sensitive_patterns):
-                baseline_tier = RiskTier.HIGH
-            elif resource_type == "file_write" and not target_norm.startswith("output/"):
-                baseline_tier = RiskTier.HIGH
-            elif not (target_norm.startswith("input/") or target_norm.startswith("output/")):
-                baseline_tier = RiskTier.MEDIUM
-            else:
-                baseline_tier = RiskTier.LOW
+            # 2. Sensitive pattern matching -> HIGH
+            sensitive_substrs = (
+                "credential", "secret", "password", ".env", "id_rsa", "shadow",
+                ".git-credentials", ".npmrc", ".netrc"
+            )
+            sensitive_exts = (".key", ".p12", ".pfx", ".kdbx")
+            sensitive_prefixes = (".ssh", ".aws", ".kube")
+
+            if any(s in target_norm for s in sensitive_substrs):
+                return RiskTier.HIGH
+
+            target_name = Path(target_norm).name
+            if any(target_name.endswith(ext) for ext in sensitive_exts):
+                return RiskTier.HIGH
+
+            if any(p in sensitive_prefixes for p in parts) or any(target_norm.startswith(pre + "/") for pre in sensitive_prefixes):
+                return RiskTier.HIGH
+
+            # 3. Structural Rule: Writes outside output/ are HIGH
+            if resource_type == "file_write" and not target_norm.startswith("output/"):
+                return RiskTier.HIGH
+
+            # 4. Structural Rule: Files outside input/ are at least MEDIUM
+            if not target_norm.startswith("input/"):
+                return RiskTier.MEDIUM
+
+            return RiskTier.LOW
 
         elif resource_type == "network":
             # Local/private hosts are MEDIUM; external/unknown are HIGH
             if any(target_norm.startswith(h) for h in ("127.0.0.1", "localhost", "internal.")):
-                baseline_tier = RiskTier.MEDIUM
-            else:
-                baseline_tier = RiskTier.HIGH
+                return RiskTier.MEDIUM
+            return RiskTier.HIGH
 
         elif resource_type == "peer_agent":
-            baseline_tier = RiskTier.MEDIUM
+            return RiskTier.MEDIUM
+
+        return RiskTier.MEDIUM
+
+    def evaluate_request(
+        self,
+        task_id: str,
+        agent_id: str,
+        resource_type: str,
+        resource_target: str,
+        justification: str,
+        provenance_enabled: bool | None = None,
+        provenance_mode: str | None = None,  # "off", "any", "content_linked"
+        timeout_seconds: float = 5.0,
+    ) -> ExpansionRequest:
+        """
+        Creates and evaluates a dynamic expansion request.
+        Applies provenance escalation and determines baseline vs effective risk tier.
+        Agent-initiated HIGH risk expansion requests are automatically DENIED by policy.
+        """
+        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        request_id = self._generate_request_id()
+
+        # 1. Enforce Exact Resource Scope (NO WILDCARDS ALLOWED)
+        if any(c in resource_target for c in ("*", "?", "[", "]")):
+            raise ValueError(
+                f"Wildcards are strictly prohibited in expansion requests. "
+                f"Resource target '{resource_target}' must be exact."
+            )
+
+        task = self.storage.get_task(task_id)
+        if not task:
+            raise ValueError(f"Task '{task_id}' not found.")
+
+        # 2. Determine Baseline Risk Tier using structural rules and sensitive patterns
+        target_norm = resource_target.strip().replace("\\", "/").lower()
+        baseline_tier = self.classify_resource_risk(resource_type, resource_target)
 
         # 3. Check if explicitly anticipated by user original request text
         anticipated_by_user = self.is_anticipated_by_user(task.request_text, resource_target)
@@ -492,10 +569,7 @@ class ExpansionService:
         request_id = self._generate_request_id()
 
         # Determine risk tier for record
-        tier = RiskTier.HIGH if (
-            any(p in target_norm for p in ("credential", "secret", "password", ".env", "id_rsa", "shadow"))
-            or (resource_type == "network" and not any(target_norm.startswith(h) for h in ("127.0.0.1", "localhost", "internal.")))
-        ) else RiskTier.MEDIUM
+        tier = self.classify_resource_risk(resource_type, resource_target)
 
         req = ExpansionRequest(
             request_id=request_id,

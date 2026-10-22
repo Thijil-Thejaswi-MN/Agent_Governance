@@ -11,9 +11,9 @@ This benchmark evaluates the task-aware dynamic boundary expansion engine across
 
 | Governance Condition | Wrongly Approved (Vulnerability) | Operator Prompts (Friction Cost) | Ask on Should-Deny | Strict Decision Accuracy |
 | :--- | :---: | :---: | :---: | :---: |
-| **Condition A (Provenance OFF)** | **37.50%** (30/80)<br>95% CI: [27.69%, 48.45%] | **2.50%** (2/80) | 2/80 (2.5%) | **60.00%** (48/80)<br>95% CI: [49.05%, 70.04%] |
+| **Condition A (Provenance OFF)** | **37.50%** (30/80)<br>95% CI: [27.69%, 48.45%] | **0.00%** (0/80) | 0/80 (0.0%) | **62.50%** (50/80)<br>95% CI: [51.55%, 72.31%] |
 | **Condition B (Coarse Provenance)** | **0.00%** (0/80)<br>95% CI: [0.00%, 4.58%] | **50.00%** (40/80) | 0/80 (0.0%) | **87.50%** (70/80)<br>95% CI: [78.50%, 93.07%] |
-| **Condition C (Content-Linked)** | **11.25%** (9/80)<br>95% CI: [6.03%, 20.02%] | **27.50%** (22/80) | 1/80 (1.25%) | **87.50%** (70/80)<br>95% CI: [78.50%, 93.07%] |
+| **Condition C (Content-Linked)** | **11.25%** (9/80)<br>95% CI: [6.03%, 20.02%] | **26.25%** (21/80) | 0/80 (0.0%) | **88.75%** (71/80)<br>95% CI: [79.98%, 93.97%] |
 
 ---
 
@@ -24,7 +24,7 @@ This benchmark evaluates the task-aware dynamic boundary expansion engine across
 | :--- | :---: | :---: | :---: | :---: |
 | **`should_auto_approve`** | 30 | 0 | 0 | 30 |
 | **`should_ask`** | **30 (Wrongly Approved)** | 0 | 0 | 30 |
-| **`should_deny`** | 0 | 2 | 18 | 20 |
+| **`should_deny`** | 0 | 0 | **20 (Hard Denial)** | 20 |
 
 ### Condition B: Provenance ON (Coarse / Any Untrusted Read)
 | Ground Truth Label | Engine: AUTO_APPROVE | Engine: ASK_USER | Engine: DENY | Category Total |
@@ -38,7 +38,7 @@ This benchmark evaluates the task-aware dynamic boundary expansion engine across
 | :--- | :---: | :---: | :---: | :---: |
 | **`should_auto_approve`** | **30 (Zero Friction)** | 0 | 0 | 30 |
 | **`should_ask`** | **9 (Wrongly Approved)** | 21 | 0 | 30 |
-| **`should_deny`** | 0 | 1 | 19 | 20 |
+| **`should_deny`** | 0 | 0 | **20 (Hard Denial)** | 20 |
 
 ---
 
@@ -55,9 +55,9 @@ This benchmark evaluates the task-aware dynamic boundary expansion engine across
 - **Condition C**: AUTO_APPROVE = 9/30 (30.0% - Obfuscation Vulnerability) | ASK_USER = 21/30 (70.0%) | DENY = 0/30 (0.0%)
 
 ### `should_deny` ($N=20$)
-- **Condition A**: AUTO_APPROVE = 0/20 (0.0%) | ASK_USER = 2/20 (10.0%) | DENY = 18/20 (90.0%)
+- **Condition A**: AUTO_APPROVE = 0/20 (0.0%) | ASK_USER = 0/20 (0.0%) | DENY = 20/20 (100.0% - Hard Policy Denial)
 - **Condition B**: AUTO_APPROVE = 0/20 (0.0%) | ASK_USER = 0/20 (0.0%) | DENY = 20/20 (100.0% - Hard Policy Denial)
-- **Condition C**: AUTO_APPROVE = 0/20 (0.0%) | ASK_USER = 1/20 (5.0%) | DENY = 19/20 (95.0%)
+- **Condition C**: AUTO_APPROVE = 0/20 (0.0%) | ASK_USER = 0/20 (0.0%) | DENY = 20/20 (100.0% - Hard Policy Denial)
 
 ---
 

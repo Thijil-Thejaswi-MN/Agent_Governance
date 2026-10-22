@@ -3,8 +3,9 @@
   "benchmark_name": "Task-Aware Runtime Governance Empirical Evaluation v2",
   "dataset_type": "template-generated",
   "disclaimer": "All 80 scenarios are template-generated benchmark trials and not independent samples; confidence intervals are indicative only.",
-  "git_commit": "8dee43932c5a42d3a5d0d080d34dd4cc0d58b8d2",
-  "timestamp_utc": "2026-10-22T06:32:27.915788+00:00",
+  "git_commit": "83c3872fdeb2bd6f64ccfa0292829b499397b27a",
+  "is_git_dirty": false,
+  "timestamp_utc": "2026-10-22T08:05:01.326209+00:00",
   "seed": 42,
   "total_scenarios": 80,
   "results_summary": {
@@ -25,8 +26,8 @@
         },
         "should_deny": {
           "AUTO_APPROVE": 0,
-          "ASK_USER": 2,
-          "DENY": 18
+          "ASK_USER": 0,
+          "DENY": 20
         }
       },
       "category_rates": {
@@ -67,26 +68,26 @@
             "rate_pct": 0.0
           },
           "ask_user": {
-            "count": 2,
-            "rate_pct": 10.0
+            "count": 0,
+            "rate_pct": 0.0
           },
           "deny": {
-            "count": 18,
-            "rate_pct": 90.0
+            "count": 20,
+            "rate_pct": 100.0
           }
         }
       },
       "metrics": {
         "correct_decisions": {
-          "count": 48,
+          "count": 50,
           "total": 80,
-          "rate": 0.6,
-          "percentage": 60.0,
-          "ci95_lower": 0.4905,
-          "ci95_upper": 0.7004,
+          "rate": 0.625,
+          "percentage": 62.5,
+          "ci95_lower": 0.5155,
+          "ci95_upper": 0.7231,
           "ci95_percentage": [
-            49.05,
-            70.04
+            51.55,
+            72.31
           ]
         },
         "wrongly_approved": {
@@ -114,34 +115,34 @@
           ]
         },
         "total_user_prompts": {
-          "count": 2,
+          "count": 0,
           "total": 80,
-          "rate": 0.025,
-          "percentage": 2.5,
-          "ci95_lower": 0.0069,
-          "ci95_upper": 0.0866,
+          "rate": 0.0,
+          "percentage": 0.0,
+          "ci95_lower": 0.0,
+          "ci95_upper": 0.0458,
           "ci95_percentage": [
-            0.69,
-            8.66
+            0.0,
+            4.58
           ]
         },
         "ask_on_should_deny": {
-          "count": 2,
+          "count": 0,
           "total": 80,
-          "rate": 0.025,
-          "percentage": 2.5,
-          "ci95_lower": 0.0069,
-          "ci95_upper": 0.0866,
+          "rate": 0.0,
+          "percentage": 0.0,
+          "ci95_lower": 0.0,
+          "ci95_upper": 0.0458,
           "ci95_percentage": [
-            0.69,
-            8.66
+            0.0,
+            4.58
           ]
         }
       },
       "utility_tradeoff": {
         "security_containment_rate": 62.5,
-        "operator_prompt_burden_count": 2,
-        "operator_prompt_burden_rate": 2.5
+        "operator_prompt_burden_count": 0,
+        "operator_prompt_burden_rate": 0.0
       }
     },
     "any": {
@@ -297,8 +298,8 @@
         },
         "should_deny": {
           "AUTO_APPROVE": 0,
-          "ASK_USER": 1,
-          "DENY": 19
+          "ASK_USER": 0,
+          "DENY": 20
         }
       },
       "category_rates": {
@@ -339,26 +340,26 @@
             "rate_pct": 0.0
           },
           "ask_user": {
-            "count": 1,
-            "rate_pct": 5.0
+            "count": 0,
+            "rate_pct": 0.0
           },
           "deny": {
-            "count": 19,
-            "rate_pct": 95.0
+            "count": 20,
+            "rate_pct": 100.0
           }
         }
       },
       "metrics": {
         "correct_decisions": {
-          "count": 70,
+          "count": 71,
           "total": 80,
-          "rate": 0.875,
-          "percentage": 87.5,
-          "ci95_lower": 0.785,
-          "ci95_upper": 0.9307,
+          "rate": 0.8875,
+          "percentage": 88.75,
+          "ci95_lower": 0.7998,
+          "ci95_upper": 0.9397,
           "ci95_percentage": [
-            78.5,
-            93.07
+            79.98,
+            93.97
           ]
         },
         "wrongly_approved": {
@@ -386,34 +387,34 @@
           ]
         },
         "total_user_prompts": {
-          "count": 22,
+          "count": 21,
           "total": 80,
-          "rate": 0.275,
-          "percentage": 27.5,
-          "ci95_lower": 0.1892,
-          "ci95_upper": 0.3814,
+          "rate": 0.2625,
+          "percentage": 26.25,
+          "ci95_lower": 0.1786,
+          "ci95_upper": 0.3682,
           "ci95_percentage": [
-            18.92,
-            38.14
+            17.86,
+            36.82
           ]
         },
         "ask_on_should_deny": {
-          "count": 1,
+          "count": 0,
           "total": 80,
-          "rate": 0.0125,
-          "percentage": 1.25,
-          "ci95_lower": 0.0022,
-          "ci95_upper": 0.0675,
+          "rate": 0.0,
+          "percentage": 0.0,
+          "ci95_lower": 0.0,
+          "ci95_upper": 0.0458,
           "ci95_percentage": [
-            0.22,
-            6.75
+            0.0,
+            4.58
           ]
         }
       },
       "utility_tradeoff": {
         "security_containment_rate": 88.75,
-        "operator_prompt_burden_count": 22,
-        "operator_prompt_burden_rate": 27.5
+        "operator_prompt_burden_count": 21,
+        "operator_prompt_burden_rate": 26.25
       }
     }
   }
