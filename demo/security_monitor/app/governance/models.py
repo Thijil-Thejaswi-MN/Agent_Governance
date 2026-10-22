@@ -69,6 +69,9 @@ class TaskBoundary(BaseModel):
     prompt_hash: str | None = None
     model_name: str | None = None
     parent_expansion_id: str | None = None
+    requires_user_review: bool = True
+    contains_pasted_content: bool = False
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class TaskRecord(BaseModel):

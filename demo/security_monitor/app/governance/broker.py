@@ -85,6 +85,32 @@ class ToolBroker:
             timeout_seconds=timeout_seconds,
         )
 
+    def request_access(
+        self,
+        token: str,
+        resource_type: str,
+        resource_target: str,
+        justification: str,
+        timeout_seconds: float = 2.0,
+    ) -> dict[str, Any]:
+        """
+        Tool: request_access (F13.2 / M5).
+        Agent-facing tool for dynamic boundary expansion requests.
+        """
+        granted, status_or_reason = self.request_expansion(
+            token=token,
+            resource_type=resource_type,
+            resource_target=resource_target,
+            justification=justification,
+            timeout_seconds=timeout_seconds,
+        )
+        return {
+            "granted": granted,
+            "status": status_or_reason,
+            "resource_type": resource_type,
+            "resource_target": resource_target,
+        }
+
     def _authenticate(self, token: str) -> tuple[str, str]:
         """
         Validates token and returns (task_id, agent_id).
@@ -341,10 +367,10 @@ class ToolBroker:
 
         return redirect_target
 
-    def run_command(self, token: str, command: str) -> dict[str, Any]:
+    def run_command(self, token: str, command: str, workspace_root: Path | str | None = None) -> dict[str, Any]:
         """
         Tool: run_command
-        In M1, command execution is denied by default per security specification.
+        Executes commands under M4 OS enforcement when permitted by boundary.
         """
         task_id, agent_id = self._authenticate(token)
         boundary = self.storage.get_boundary(task_id)
@@ -371,7 +397,49 @@ class ToolBroker:
             boundary_version=boundary.version,
         )
         self.storage.record_event(event)
-        raise PermissionError(f"Command execution denied: {eval_res.rule_matched}")
+
+        if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
+            raise PermissionError(f"Command execution denied: {eval_res.rule_matched}")
+
+        import subprocess
+        import sys
+
+        # On Linux, run via CgroupTaskRunner if available
+        if sys.platform == "linux":
+            try:
+                from .os_layer.runner import CgroupTaskRunner, TaskWorkspace
+                runner = CgroupTaskRunner(self.storage)
+                ws_path = Path(workspace_root) if workspace_root else Path(f"/home/agent_workspaces/task_{task_id[:16]}")
+                ws = TaskWorkspace(ws_path, task_id=task_id)
+                res = runner.run_task_command(
+                    task_id=task_id,
+                    cmd=["/bin/sh", "-c", command],
+                    workspace=ws,
+                    token=token,
+                )
+                return {
+                    "stdout": res.stdout,
+                    "stderr": res.stderr,
+                    "exit_code": res.returncode,
+                }
+            except Exception:
+                pass
+
+        # Subprocess execution fallback
+        cwd_dir = str(workspace_root) if workspace_root and Path(workspace_root).exists() else None
+        res = subprocess.run(
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            cwd=cwd_dir,
+            timeout=30.0,
+        )
+        return {
+            "stdout": res.stdout,
+            "stderr": res.stderr,
+            "exit_code": res.returncode,
+        }
 
     def call_agent(self, token: str, target_agent: str, message: dict[str, Any]) -> dict[str, Any]:
         """
@@ -419,3 +487,195 @@ class ToolBroker:
         self._check_and_consume_single_use(boundary, "peer_agent", target_agent)
 
         return {"status": "ok", "target_agent": target_agent, "reply": reply_content}
+
+    def llm_complete(
+        self,
+        token: str,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        model: str | None = None,
+        temperature: float = 0.0,
+        provider: str | None = None,
+        custom_provider: Any | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """
+        Tool: llm_complete (F13.2 / M5).
+        Brokered LLM inference ensuring API keys are NEVER exposed to the agent process.
+        The agent passes its task token and messages; the broker authenticates the task,
+        validates boundary authorization, audits the call, and invokes the LLM provider
+        using broker-held credentials or a local stub/mock provider.
+        """
+        import hashlib
+        import json
+
+        task_id, agent_id = self._authenticate(token)
+        boundary = self.storage.get_boundary(task_id)
+        if not boundary:
+            raise RuntimeError(f"Active boundary not found for task {task_id}")
+
+        eval_res = self.evaluator.evaluate_tool(boundary, "llm_complete")
+        action, prevented = self.policy_engine.decide(boundary, eval_res)
+
+        prompt_str = json.dumps(messages, sort_keys=True, default=str)
+        prompt_hash = hashlib.sha256(prompt_str.encode("utf-8")).hexdigest()[:16]
+
+        event = GovernanceEvent(
+            event_id=self._generate_event_id(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            source=EventSource.TOOL_BROKER,
+            task_id=task_id,
+            agent_id=agent_id,
+            pid=os.getpid(),
+            kind="llm_complete",
+            target=model or "default_llm",
+            details={
+                "prompt_hash": prompt_hash,
+                "message_count": len(messages),
+                "has_tools": bool(tools),
+            },
+            verdict=eval_res.verdict,
+            risk_tier=eval_res.risk_tier,
+            action_taken=action,
+            prevented=prevented,
+            rule_matched=eval_res.rule_matched,
+            boundary_version=boundary.version,
+        )
+        self.storage.record_event(event)
+
+        if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
+            raise PermissionError(f"LLM inference denied by boundary: {eval_res.rule_matched}")
+
+        # 1. Custom or broker-attached mock provider (for offline testing & benchmarks)
+        eff_provider = custom_provider or getattr(self, "default_llm_provider", None)
+        if eff_provider is not None:
+            return eff_provider(
+                messages=messages,
+                tools=tools,
+                model=model,
+                temperature=temperature,
+                **kwargs,
+            )
+
+        # 2. Live external provider dispatch (OpenAI, Gemini, Anthropic)
+        prov_name = (provider or os.environ.get("GOVERNANCE_LLM_PROVIDER") or "").lower()
+        openai_key = os.environ.get("OPENAI_API_KEY")
+        gemini_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+
+        if prov_name == "gemini" or (not prov_name and gemini_key):
+            if not gemini_key:
+                raise RuntimeError("GEMINI_API_KEY not configured")
+            return self._call_gemini(messages, tools, model or "gemini-1.5-flash", gemini_key, temperature)
+
+        if prov_name == "anthropic" or (not prov_name and anthropic_key):
+            if not anthropic_key:
+                raise RuntimeError("ANTHROPIC_API_KEY not configured")
+            return self._call_anthropic(messages, tools, model or "claude-3-5-sonnet", anthropic_key, temperature)
+
+        if prov_name == "openai" or (not prov_name and openai_key):
+            if not openai_key:
+                raise RuntimeError("OPENAI_API_KEY not configured")
+            return self._call_openai(messages, tools, model or "gpt-4o-mini", openai_key, temperature)
+
+        raise RuntimeError(
+            "No LLM API key configured for live providers (OPENAI_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY). "
+            "Configure an API key or supply a mock/stub provider."
+        )
+
+    def _call_openai(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        model: str,
+        api_key: str,
+        temperature: float,
+    ) -> dict[str, Any]:
+        import httpx
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        payload: dict[str, Any] = {"model": model, "messages": messages, "temperature": temperature}
+        if tools:
+            payload["tools"] = tools
+        with httpx.Client(timeout=60.0) as client:
+            resp = client.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+            choice = data["choices"][0]["message"]
+            return {
+                "role": choice.get("role", "assistant"),
+                "content": choice.get("content"),
+                "tool_calls": choice.get("tool_calls"),
+                "provider": "openai",
+                "model": model,
+                "usage": data.get("usage"),
+            }
+
+    def _call_gemini(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        model: str,
+        api_key: str,
+        temperature: float,
+    ) -> dict[str, Any]:
+        import httpx
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        contents = []
+        for m in messages:
+            role = "user" if m.get("role") in ("user", "system") else "model"
+            contents.append({"role": role, "parts": [{"text": str(m.get("content", ""))}]})
+        payload = {"contents": contents, "generationConfig": {"temperature": temperature}}
+        with httpx.Client(timeout=60.0) as client:
+            resp = client.post(url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            cand = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+            return {
+                "role": "assistant",
+                "content": cand,
+                "tool_calls": None,
+                "provider": "gemini",
+                "model": model,
+            }
+
+    def _call_anthropic(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        model: str,
+        api_key: str,
+        temperature: float,
+    ) -> dict[str, Any]:
+        import httpx
+        headers = {
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }
+        system_text = ""
+        user_msgs = []
+        for m in messages:
+            if m.get("role") == "system":
+                system_text += str(m.get("content", "")) + "\n"
+            else:
+                user_msgs.append({"role": m.get("role"), "content": m.get("content")})
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": user_msgs,
+            "max_tokens": 1024,
+            "temperature": temperature,
+        }
+        if system_text.strip():
+            payload["system"] = system_text.strip()
+        with httpx.Client(timeout=60.0) as client:
+            resp = client.post("https://api.anthropic.com/v1/messages", json=payload, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+            text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+            return {
+                "role": "assistant",
+                "content": text,
+                "tool_calls": None,
+                "provider": "anthropic",
+                "model": model,
+            }

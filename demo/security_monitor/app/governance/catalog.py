@@ -52,6 +52,18 @@ class ServiceCatalog:
                 description="Invoke peer A2A agents",
                 risk_level=RiskTier.MEDIUM,
             ),
+            "request_access": ServiceItem(
+                name="request_access",
+                category="tool",
+                description="Request dynamic boundary expansion",
+                risk_level=RiskTier.LOW,
+            ),
+            "llm_complete": ServiceItem(
+                name="llm_complete",
+                category="tool",
+                description="Invoke LLM inference via secure gateway (broker-held API key)",
+                risk_level=RiskTier.LOW,
+            ),
         }
 
         self.peer_agents: dict[str, ServiceItem] = {
@@ -67,10 +79,61 @@ class ServiceCatalog:
                 description="A2A Bob Agent",
                 risk_level=RiskTier.LOW,
             ),
+            "agent_summarizer": ServiceItem(
+                name="agent_summarizer",
+                category="peer_agent",
+                description="Summarization Specialist Agent",
+                risk_level=RiskTier.LOW,
+            ),
+            "agent_analyst": ServiceItem(
+                name="agent_analyst",
+                category="peer_agent",
+                description="Data Analysis Specialist Agent",
+                risk_level=RiskTier.LOW,
+            ),
+        }
+
+        self.network_destinations: dict[str, ServiceItem] = {
+            "api.github.com:443": ServiceItem(
+                name="api.github.com:443",
+                category="network",
+                description="GitHub Public API",
+                risk_level=RiskTier.LOW,
+            ),
+            "weather.internal:80": ServiceItem(
+                name="weather.internal:80",
+                category="network",
+                description="Internal Weather Service",
+                risk_level=RiskTier.LOW,
+            ),
+            "data.internal:8080": ServiceItem(
+                name="data.internal:8080",
+                category="network",
+                description="Internal Analytics Cluster",
+                risk_level=RiskTier.MEDIUM,
+            ),
+            "localhost:8000": ServiceItem(
+                name="localhost:8000",
+                category="network",
+                description="Local Gateway / Mock Endpoint",
+                risk_level=RiskTier.LOW,
+            ),
+            "127.0.0.1:8000": ServiceItem(
+                name="127.0.0.1:8000",
+                category="network",
+                description="Local Loopback Gateway",
+                risk_level=RiskTier.LOW,
+            ),
         }
 
     def get_tool(self, name: str) -> ServiceItem | None:
         return self.tools.get(name)
+
+    def get_peer_agent(self, name: str) -> ServiceItem | None:
+        return self.peer_agents.get(name)
+
+    def get_network(self, host_port: str) -> ServiceItem | None:
+        return self.network_destinations.get(host_port)
 
 
 def normalize_workspace_path(workspace_root: str, path_str: str) -> str:

@@ -189,6 +189,12 @@ class BoundaryEvaluator:
         )
 
     def evaluate_command(self, boundary: TaskBoundary, command: str) -> EvaluationResult:
+        if "run_command" in boundary.tools:
+            return EvaluationResult(
+                verdict=EventVerdict.INSIDE,
+                risk_tier=RiskTier.LOW,
+                rule_matched="run_command tool granted in boundary",
+            )
         return EvaluationResult(
             verdict=EventVerdict.OUTSIDE,
             risk_tier=RiskTier.HIGH,
@@ -196,6 +202,12 @@ class BoundaryEvaluator:
         )
 
     def evaluate_tool(self, boundary: TaskBoundary, tool_name: str) -> EvaluationResult:
+        if tool_name in ("llm_complete", "request_access"):
+            return EvaluationResult(
+                verdict=EventVerdict.INSIDE,
+                risk_tier=RiskTier.LOW,
+                rule_matched=f"governance primitive tool granted: {tool_name}",
+            )
         if tool_name in boundary.tools:
             return EvaluationResult(
                 verdict=EventVerdict.INSIDE,

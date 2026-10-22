@@ -13,3 +13,9 @@ def isolated_test_db(tmp_path, monkeypatch):
     test_db = tmp_path / "test_secmon.db"
     monkeypatch.setenv("SECMON_DB_PATH", str(test_db))
     yield test_db
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+

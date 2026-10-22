@@ -121,16 +121,16 @@ class CgroupTaskRunner:
 
         wrapped_cmd = list(cmd)
 
-        # Landlock wrapping
-        if enable_landlock and landlock_bin.exists():
+        # Landlock wrapping (Linux only)
+        if sys.platform == "linux" and enable_landlock and landlock_bin.exists():
             ll_args = [str(landlock_bin), "--workspace", str(workspace.root)]
             if proxy_port:
                 ll_args.extend(["--proxy-port", str(proxy_port)])
             ll_args.append("--")
             wrapped_cmd = ll_args + wrapped_cmd
 
-        # Seccomp wrapping
-        if enable_seccomp and seccomp_bin.exists():
+        # Seccomp wrapping (Linux only)
+        if sys.platform == "linux" and enable_seccomp and seccomp_bin.exists():
             wrapped_cmd = [str(seccomp_bin)] + wrapped_cmd
 
         # Wrap in systemd-run scope
@@ -168,6 +168,19 @@ class CgroupTaskRunner:
                 pass
 
         env = dict(os.environ)
+        # Scrub secret API keys and credentials so agent process NEVER sees them (M5 API Key Protection)
+        for secret_var in [
+            "OPENAI_API_KEY",
+            "GEMINI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "GOOGLE_API_KEY",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_ACCESS_KEY_ID",
+            "AZURE_OPENAI_API_KEY",
+            "SECMON_API_KEY",
+        ]:
+            env.pop(secret_var, None)
+
         env["TMPDIR"] = str(workspace.tmp_dir)
         env["TEMP"] = str(workspace.tmp_dir)
         env["TMP"] = str(workspace.tmp_dir)
@@ -182,15 +195,17 @@ class CgroupTaskRunner:
             env["GOVERNANCE_TOKEN_FD"] = str(r_fd)
             pass_fds = (r_fd,)
 
+        exec_cmd = systemd_cmd if sys.platform == "linux" else wrapped_cmd
+        effective_pass_fds = pass_fds if sys.platform == "linux" else ()
         try:
             return subprocess.run(
-                systemd_cmd,
+                exec_cmd,
                 cwd=str(workspace.root),
                 capture_output=True,
                 text=True,
                 timeout=timeout,
                 env=env,
-                pass_fds=pass_fds,
+                pass_fds=effective_pass_fds,
             )
         finally:
             if r_fd is not None:
