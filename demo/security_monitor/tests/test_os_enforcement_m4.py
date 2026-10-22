@@ -703,9 +703,7 @@ def test_proc_environ_kernel_mechanism_proven() -> None:
             unconfined_data = f.read()
         assert secret_token.encode("utf-8") in unconfined_data, "Unconfined same-UID should be able to read environ"
 
-        # Step 2: Child process in a NEW user namespace -> FAILS with PermissionError
-        # Demonstrates that it is the user namespace capability boundary (not Yama or Landlock)
-        # that blocks access to outer namespace process environments.
+        # Step 2: Arm 1 - Child process in user namespace (1000->1000) without Landlock -> FAILS
         userns_script = f"""
 import sys
 try:
@@ -719,12 +717,45 @@ except PermissionError:
 """
         uid = os.getuid()
         res_userns = subprocess.run(
-            ["unshare", "-U", f"--map-user={uid}", PYTHON_BIN, "-c", userns_script],
+            ["unshare", "-U", f"--map-user={uid}", f"--map-group={uid}", PYTHON_BIN, "-c", userns_script],
             capture_output=True,
             text=True,
         )
         assert res_userns.returncode == 0
         assert "USERNS_BOUNDARY_PERMISSION_ERROR" in res_userns.stdout
+
+        # Step 3: Arm 2 - Landlock alone (observe mode, no namespace) -> FAILS via security/landlock/ptrace.c
+        here = Path(__file__).resolve().parent.parent / "app" / "governance" / "os_layer"
+        landlock_bin = here / "landlock_enforcer"
+        res_ll = subprocess.run(
+            [
+                str(landlock_bin),
+                "--workspace", "/home/thiji/agent_workspaces/test_probe",
+                "--mode", "observe",
+                "--simulate-unshare-fail",
+                "--",
+                PYTHON_BIN, "-c", userns_script
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert res_ll.returncode == 0
+        assert "USERNS_BOUNDARY_PERMISSION_ERROR" in res_ll.stdout
+
+        # Step 4: Arm 3 - Full Enforcer (User namespace + Landlock floor) -> FAILS (Defense-in-depth)
+        res_full = subprocess.run(
+            [
+                str(landlock_bin),
+                "--workspace", "/home/thiji/agent_workspaces/test_probe",
+                "--mode", "enforce",
+                "--",
+                PYTHON_BIN, "-c", userns_script
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert res_full.returncode == 0
+        assert "USERNS_BOUNDARY_PERMISSION_ERROR" in res_full.stdout
     finally:
         p_target.kill()
 

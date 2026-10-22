@@ -29,19 +29,44 @@ The OS sensor intercepts the `openat` syscall from `p_daemon.pid` and attributes
 
 ## 3. Kernel Mechanism of `/proc/<pid>/environ` Denial
 
-### Precise Root Cause
-We conducted isolated experiments across 4 distinct configurations to pinpoint why a sandboxed task cannot inspect another process's `/proc/<pid>/environ`:
-1. **Unconfined same-UID process (same user namespace):** `open('/proc/<target_pid>/environ')` $\to$ **SUCCEEDS** (token found).
-2. **User namespace boundary alone (`unshare -U`):** `open('/proc/<target_pid>/environ')` $\to$ **DENIED** (`PermissionError`, `errno 13`).
-3. **`PR_SET_NO_NEW_PRIVS` alone (same user namespace):** $\to$ **SUCCEEDS**.
+### Active LSMs on Host Kernel (Linux 6.18.54 WSL2)
+Inspecting the kernel LSM initialization log (`dmesg`) reveals:
+`LSM: initializing lsm=capability,landlock,yama,safesetid,selinux,bpf,ima`
+Active security modules: `capability`, `landlock`, `yama`, `safesetid`, `selinux`, `bpf`, `ima`.
+Yama ptrace scope is set to `1` (`/proc/sys/kernel/yama/ptrace_scope = 1`). Note that Yama only restricts `PTRACE_MODE_ATTACH` (`security/yama/yama_lsm.c:yama_ptrace_access_check()`), returning 0 for `PTRACE_MODE_READ_FSCREDS`.
 
-### Mechanism
-In Linux (`fs/proc/base.c`), reading `/proc/<pid>/environ` requires `ptrace_may_access(target, PTRACE_MODE_READ_FSCREDS)`. In `kernel/ptrace.c`, `__ptrace_may_access()` enforces:
-```c
-if (!has_ns_capability(__task_cred(target)->user_ns, CAP_SYS_PTRACE))
-    return -EPERM;
-```
-When a process enters a child user namespace, it possesses capabilities only within that child namespace. It explicitly **lacks `CAP_SYS_PTRACE` in the target's parent user namespace**. Therefore, the denial is governed strictly by the **Linux user namespace capability boundary**, not by Yama ptrace_scope or Landlock filesystem path rules.
+### 3-Arm Ablation Experiment
+We re-verified the access control against an unconfined same-UID (UID 1000) target holding a dummy secret across three configurations:
+1. **Arm 1: User+Mount Namespace with 1000->1000 mapping, NO Landlock**
+   - Result: **BLOCKED** with `PermissionError` (`errno 13`).
+   - Root Cause: In `kernel/ptrace.c:__ptrace_may_access()`, even though UID check passes, access to process memory/environ across user namespaces requires capability in the target's namespace:
+     ```c
+     if (!has_ns_capability(__task_cred(target)->user_ns, CAP_SYS_PTRACE))
+         return -EPERM;
+     ```
+     Because the child user namespace explicitly lacks `CAP_SYS_PTRACE` over the parent user namespace, the kernel returns `-EPERM` (`EACCES`/`PermissionError`).
+
+2. **Arm 2: Landlock Only, NO Namespace**
+   - Result: **BLOCKED** with `PermissionError` (`errno 13`).
+   - Root Cause: Landlock registers an LSM hook for ptrace access checks in `security/landlock/ptrace.c:hook_ptrace_access_check()`:
+     ```c
+     static int hook_ptrace_access_check(struct task_struct *const target, const unsigned int mode) {
+         const struct landlock_ruleset *const dom = landlock_get_current_domain();
+         if (!dom) return 0;
+         return check_ptrace(dom, target);
+     }
+     static int check_ptrace(const struct landlock_ruleset *const domain, const struct task_struct *const target) {
+         const struct landlock_ruleset *const target_domain = landlock_get_task_domain(target);
+         if (!landlock_is_subset(target_domain, domain))
+             return -EACCES;
+         return 0;
+     }
+     ```
+     Because the unconfined target task is not running within a sub-domain of the caller's Landlock domain, `check_ptrace()` returns `-EACCES`. Reading `/proc/<pid>/environ` routes through `fs/proc/base.c:environ_open()` $\to$ `proc_mem_open(PTRACE_MODE_READ_FSCREDS)` $\to$ `security_ptrace_access_check()`, which Landlock denies with `-EACCES`.
+
+3. **Arm 3: Full Enforcer (User Namespace + 1000->1000 + Landlock Floor)**
+   - Result: **BLOCKED** with `PermissionError` (`errno 13`).
+   - Root Cause: Defense-in-depth: access is doubly barred by both the User Namespace capability boundary (`kernel/ptrace.c`) AND Landlock's domain subset enforcement (`security/landlock/ptrace.c`). Normal proc files (`stat`, `status`, `cmdline`) remain readable, but privileged memory/environ inspection is completely denied.
 
 ---
 
