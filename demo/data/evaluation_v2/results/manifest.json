@@ -1,206 +1,278 @@
 {
-  "manifest_version": "2.0.0",
+  "manifest_version": "2.1.0",
   "benchmark_name": "Task-Aware Runtime Governance Empirical Evaluation v2",
-  "dataset_type": "synthetic_and_scripted",
-  "disclaimer": "All 40 scenarios are synthetic and scripted evaluation cases designed for controlled ablation.",
-  "git_commit": "f24f0d4b3b20a916c0fa31824228283e110117d1",
-  "timestamp_utc": "2026-10-21T15:22:31.089010+00:00",
+  "dataset_type": "template-generated",
+  "disclaimer": "All 80 scenarios are template-generated benchmark trials and not independent samples; confidence intervals are indicative only.",
+  "git_commit": "85cdda776cdeeb9578cbc5cab67f9a850b82a653",
+  "timestamp_utc": "2026-10-22T05:00:05.842451+00:00",
   "seed": 42,
-  "total_scenarios": 40,
+  "total_scenarios": 80,
   "results_summary": {
     "off": {
-      "condition": "Condition A (Provenance OFF)",
+      "condition_label": "Condition A (Provenance OFF)",
       "mode": "off",
-      "total_trials": 40,
-      "correct_decisions": {
-        "count": 20,
-        "total": 40,
-        "rate": 0.5,
-        "percentage": 50.0,
-        "ci95_lower": 0.352,
-        "ci95_upper": 0.648,
-        "ci95_percentage": [
-          35.2,
-          64.8
-        ]
+      "total_trials": 80,
+      "confusion_matrix": {
+        "should_auto_approve": {
+          "AUTO_APPROVE": 30,
+          "ASK_USER": 0,
+          "DENY": 0
+        },
+        "should_ask": {
+          "AUTO_APPROVE": 30,
+          "ASK_USER": 0,
+          "DENY": 0
+        },
+        "should_deny": {
+          "AUTO_APPROVE": 0,
+          "ASK_USER": 20,
+          "DENY": 0
+        }
       },
-      "wrongly_approved": {
-        "count": 20,
-        "total": 40,
-        "rate": 0.5,
-        "percentage": 50.0,
-        "ci95_lower": 0.352,
-        "ci95_upper": 0.648,
-        "ci95_percentage": [
-          35.2,
-          64.8
-        ]
+      "metrics": {
+        "correct_decisions": {
+          "count": 30,
+          "total": 80,
+          "rate": 0.375,
+          "percentage": 37.5,
+          "ci95_lower": 0.2769,
+          "ci95_upper": 0.4845,
+          "ci95_percentage": [
+            27.69,
+            48.45
+          ]
+        },
+        "wrongly_approved": {
+          "count": 30,
+          "total": 80,
+          "rate": 0.375,
+          "percentage": 37.5,
+          "ci95_lower": 0.2769,
+          "ci95_upper": 0.4845,
+          "ci95_percentage": [
+            27.69,
+            48.45
+          ]
+        },
+        "wrongly_denied": {
+          "count": 0,
+          "total": 80,
+          "rate": 0.0,
+          "percentage": 0.0,
+          "ci95_lower": 0.0,
+          "ci95_upper": 0.0458,
+          "ci95_percentage": [
+            0.0,
+            4.58
+          ]
+        },
+        "total_user_prompts": {
+          "count": 20,
+          "total": 80,
+          "rate": 0.25,
+          "percentage": 25.0,
+          "ci95_lower": 0.1681,
+          "ci95_upper": 0.3548,
+          "ci95_percentage": [
+            16.81,
+            35.48
+          ]
+        },
+        "ask_on_should_deny": {
+          "count": 20,
+          "total": 80,
+          "rate": 0.25,
+          "percentage": 25.0,
+          "ci95_lower": 0.1681,
+          "ci95_upper": 0.3548,
+          "ci95_percentage": [
+            16.81,
+            35.48
+          ]
+        }
       },
-      "wrongly_denied": {
-        "count": 0,
-        "total": 40,
-        "rate": 0.0,
-        "percentage": 0.0,
-        "ci95_lower": 0.0,
-        "ci95_upper": 0.0876,
-        "ci95_percentage": [
-          0.0,
-          8.76
-        ]
-      },
-      "user_prompts": {
-        "count": 10,
-        "total": 40,
-        "rate": 0.25,
-        "percentage": 25.0,
-        "ci95_lower": 0.1419,
-        "ci95_upper": 0.4019,
-        "ci95_percentage": [
-          14.19,
-          40.19
-        ]
-      },
-      "correctly_approved": {
-        "count": 10,
-        "total": 40,
-        "rate": 0.25,
-        "percentage": 25.0,
-        "ci95_lower": 0.1419,
-        "ci95_upper": 0.4019,
-        "ci95_percentage": [
-          14.19,
-          40.19
-        ]
+      "utility_tradeoff": {
+        "security_containment_rate": 62.5,
+        "operator_prompt_burden_count": 20,
+        "operator_prompt_burden_rate": 25.0
       }
     },
     "any": {
-      "condition": "Condition B (Provenance ON - Any Untrusted Read)",
+      "condition_label": "Condition B (Provenance ON - Any Untrusted Read)",
       "mode": "any",
-      "total_trials": 40,
-      "correct_decisions": {
-        "count": 40,
-        "total": 40,
-        "rate": 1.0,
-        "percentage": 100.0,
-        "ci95_lower": 0.9124,
-        "ci95_upper": 1.0,
-        "ci95_percentage": [
-          91.24,
-          100.0
-        ]
+      "total_trials": 80,
+      "confusion_matrix": {
+        "should_auto_approve": {
+          "AUTO_APPROVE": 8,
+          "ASK_USER": 22,
+          "DENY": 0
+        },
+        "should_ask": {
+          "AUTO_APPROVE": 0,
+          "ASK_USER": 30,
+          "DENY": 0
+        },
+        "should_deny": {
+          "AUTO_APPROVE": 0,
+          "ASK_USER": 20,
+          "DENY": 0
+        }
       },
-      "wrongly_approved": {
-        "count": 0,
-        "total": 40,
-        "rate": 0.0,
-        "percentage": 0.0,
-        "ci95_lower": 0.0,
-        "ci95_upper": 0.0876,
-        "ci95_percentage": [
-          0.0,
-          8.76
-        ]
+      "metrics": {
+        "correct_decisions": {
+          "count": 38,
+          "total": 80,
+          "rate": 0.475,
+          "percentage": 47.5,
+          "ci95_lower": 0.3692,
+          "ci95_upper": 0.583,
+          "ci95_percentage": [
+            36.92,
+            58.3
+          ]
+        },
+        "wrongly_approved": {
+          "count": 0,
+          "total": 80,
+          "rate": 0.0,
+          "percentage": 0.0,
+          "ci95_lower": 0.0,
+          "ci95_upper": 0.0458,
+          "ci95_percentage": [
+            0.0,
+            4.58
+          ]
+        },
+        "wrongly_denied": {
+          "count": 0,
+          "total": 80,
+          "rate": 0.0,
+          "percentage": 0.0,
+          "ci95_lower": 0.0,
+          "ci95_upper": 0.0458,
+          "ci95_percentage": [
+            0.0,
+            4.58
+          ]
+        },
+        "total_user_prompts": {
+          "count": 72,
+          "total": 80,
+          "rate": 0.9,
+          "percentage": 90.0,
+          "ci95_lower": 0.8149,
+          "ci95_upper": 0.9485,
+          "ci95_percentage": [
+            81.49,
+            94.85
+          ]
+        },
+        "ask_on_should_deny": {
+          "count": 20,
+          "total": 80,
+          "rate": 0.25,
+          "percentage": 25.0,
+          "ci95_lower": 0.1681,
+          "ci95_upper": 0.3548,
+          "ci95_percentage": [
+            16.81,
+            35.48
+          ]
+        }
       },
-      "wrongly_denied": {
-        "count": 0,
-        "total": 40,
-        "rate": 0.0,
-        "percentage": 0.0,
-        "ci95_lower": 0.0,
-        "ci95_upper": 0.0876,
-        "ci95_percentage": [
-          0.0,
-          8.76
-        ]
-      },
-      "user_prompts": {
-        "count": 30,
-        "total": 40,
-        "rate": 0.75,
-        "percentage": 75.0,
-        "ci95_lower": 0.5981,
-        "ci95_upper": 0.8581,
-        "ci95_percentage": [
-          59.81,
-          85.81
-        ]
-      },
-      "correctly_approved": {
-        "count": 10,
-        "total": 40,
-        "rate": 0.25,
-        "percentage": 25.0,
-        "ci95_lower": 0.1419,
-        "ci95_upper": 0.4019,
-        "ci95_percentage": [
-          14.19,
-          40.19
-        ]
+      "utility_tradeoff": {
+        "security_containment_rate": 100.0,
+        "operator_prompt_burden_count": 72,
+        "operator_prompt_burden_rate": 90.0
       }
     },
     "content_linked": {
-      "condition": "Condition C (Content-Linked Provenance)",
+      "condition_label": "Condition C (Content-Linked Provenance)",
       "mode": "content_linked",
-      "total_trials": 40,
-      "correct_decisions": {
-        "count": 40,
-        "total": 40,
-        "rate": 1.0,
-        "percentage": 100.0,
-        "ci95_lower": 0.9124,
-        "ci95_upper": 1.0,
-        "ci95_percentage": [
-          91.24,
-          100.0
-        ]
+      "total_trials": 80,
+      "confusion_matrix": {
+        "should_auto_approve": {
+          "AUTO_APPROVE": 18,
+          "ASK_USER": 12,
+          "DENY": 0
+        },
+        "should_ask": {
+          "AUTO_APPROVE": 9,
+          "ASK_USER": 21,
+          "DENY": 0
+        },
+        "should_deny": {
+          "AUTO_APPROVE": 0,
+          "ASK_USER": 20,
+          "DENY": 0
+        }
       },
-      "wrongly_approved": {
-        "count": 0,
-        "total": 40,
-        "rate": 0.0,
-        "percentage": 0.0,
-        "ci95_lower": 0.0,
-        "ci95_upper": 0.0876,
-        "ci95_percentage": [
-          0.0,
-          8.76
-        ]
+      "metrics": {
+        "correct_decisions": {
+          "count": 39,
+          "total": 80,
+          "rate": 0.4875,
+          "percentage": 48.75,
+          "ci95_lower": 0.3811,
+          "ci95_upper": 0.5951,
+          "ci95_percentage": [
+            38.11,
+            59.51
+          ]
+        },
+        "wrongly_approved": {
+          "count": 9,
+          "total": 80,
+          "rate": 0.1125,
+          "percentage": 11.25,
+          "ci95_lower": 0.0603,
+          "ci95_upper": 0.2002,
+          "ci95_percentage": [
+            6.03,
+            20.02
+          ]
+        },
+        "wrongly_denied": {
+          "count": 0,
+          "total": 80,
+          "rate": 0.0,
+          "percentage": 0.0,
+          "ci95_lower": 0.0,
+          "ci95_upper": 0.0458,
+          "ci95_percentage": [
+            0.0,
+            4.58
+          ]
+        },
+        "total_user_prompts": {
+          "count": 53,
+          "total": 80,
+          "rate": 0.6625,
+          "percentage": 66.25,
+          "ci95_lower": 0.5536,
+          "ci95_upper": 0.7565,
+          "ci95_percentage": [
+            55.36,
+            75.65
+          ]
+        },
+        "ask_on_should_deny": {
+          "count": 20,
+          "total": 80,
+          "rate": 0.25,
+          "percentage": 25.0,
+          "ci95_lower": 0.1681,
+          "ci95_upper": 0.3548,
+          "ci95_percentage": [
+            16.81,
+            35.48
+          ]
+        }
       },
-      "wrongly_denied": {
-        "count": 0,
-        "total": 40,
-        "rate": 0.0,
-        "percentage": 0.0,
-        "ci95_lower": 0.0,
-        "ci95_upper": 0.0876,
-        "ci95_percentage": [
-          0.0,
-          8.76
-        ]
-      },
-      "user_prompts": {
-        "count": 30,
-        "total": 40,
-        "rate": 0.75,
-        "percentage": 75.0,
-        "ci95_lower": 0.5981,
-        "ci95_upper": 0.8581,
-        "ci95_percentage": [
-          59.81,
-          85.81
-        ]
-      },
-      "correctly_approved": {
-        "count": 10,
-        "total": 40,
-        "rate": 0.25,
-        "percentage": 25.0,
-        "ci95_lower": 0.1419,
-        "ci95_upper": 0.4019,
-        "ci95_percentage": [
-          14.19,
-          40.19
-        ]
+      "utility_tradeoff": {
+        "security_containment_rate": 88.75,
+        "operator_prompt_burden_count": 53,
+        "operator_prompt_burden_rate": 66.25
       }
     }
   }

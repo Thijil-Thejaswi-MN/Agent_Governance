@@ -409,6 +409,12 @@ def test_anticipation_exact_matching_adversarial_cases(m3_storage: GovernanceSto
     assert exp_service.is_anticipated_by_user(prompt, "../../etc/passwd") is False
     assert exp_service.is_anticipated_by_user(prompt, "/etc/report.pdf") is False
 
+    # Adversarial target 5: input/report.json (different extension/data format when prose report stated)
+    assert exp_service.is_anticipated_by_user(prompt, "input/report.json") is False
+
+    # Adversarial target 6: secrets/report.txt (unauthorized directory outside input/)
+    assert exp_service.is_anticipated_by_user(prompt, "secrets/report.txt") is False
+
     # Legitimate exact targets:
     assert exp_service.is_anticipated_by_user(prompt, "input/report.pdf") is True
     assert exp_service.is_anticipated_by_user(prompt, "input/report.txt") is True
@@ -416,8 +422,9 @@ def test_anticipation_exact_matching_adversarial_cases(m3_storage: GovernanceSto
     # Prompt with explicit appendix mention:
     prompt_appendix = "Please analyze financial report.pdf and use the appendix if needed."
     assert exp_service.is_anticipated_by_user(prompt_appendix, "input/appendix.pdf") is True
-    # But NOT appendix_leak.txt
+    # But NOT appendix_leak.txt or outside directory
     assert exp_service.is_anticipated_by_user(prompt_appendix, "input/appendix_leak.txt") is False
+    assert exp_service.is_anticipated_by_user(prompt_appendix, "secrets/appendix.pdf") is False
 
 
 # --- 11. ASYNC WAIT DOES NOT BLOCK FASTAPI EVENT LOOP (ITEM 3) ---

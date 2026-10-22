@@ -86,14 +86,19 @@ class ExpansionService:
         2. Normalizes target: strips whitespace, converts backslashes to forward slashes.
         3. Tokenizes user request text into discrete words/paths using boundary delimiters.
         4. Matches ONLY if:
-           - The exact relative path appears as an explicit token (e.g. "input/appendix.pdf"), OR
-           - The exact filename appears as an explicit token (e.g. "appendix.pdf"), OR
-           - An explicit stem with recognized document extension matches an exact token
-             (e.g., token "appendix" matches "appendix.pdf" where stem == "appendix").
+           - Rule A: The exact relative path appears as an explicit token in the prompt (e.g. "input/appendix.pdf").
+           - Rule B: The exact filename with extension appears as an explicit token in the prompt (e.g. "appendix.pdf").
+           - Rule C (Constrained Stem Matching):
+             a) The target must reside within 'input/' (the designated task input directory). Any other directory (e.g., 'secrets/') is rejected.
+             b) The extension must be a standard document (.pdf or .txt). Data formats (.json, .csv) are NOT anticipated by a prose word unless explicitly mentioned.
+             c) The stem must exactly match a discrete word token in the prompt (e.g., word "appendix" matches "input/appendix.pdf", but "report" does NOT match "input/report.json" or "secrets/report.txt").
+             d) Suffix patterns like "_secrets", ".bak", ".old", "~" are strictly rejected.
         5. SUBSTRING MATCHES ARE STRICTLY FORBIDDEN:
            - Prompt "summarize the report" does NOT match "input/report_secrets.txt"
            - Prompt "summarize the report" does NOT match "input/report.pdf.bak"
            - Prompt "summarize the report" does NOT match "../report.pdf"
+           - Prompt "summarize the report" does NOT match "secrets/report.txt"
+           - Prompt "summarize the report" does NOT match "input/report.json"
         """
         raw_target = resource_target.strip().replace("\\", "/")
         parts = [p for p in raw_target.split("/") if p]
@@ -104,6 +109,8 @@ class ExpansionService:
         target_basename = Path(target_clean).name.lower()
         if not target_basename:
             return False
+
+        target_parent = Path(target_clean).parent.as_posix().lower()
 
         # Extract discrete tokens from user prompt (never substring match raw prompt string)
         tokens = set(re.findall(r'[a-zA-Z0-9_\.\-]+', user_request_text.lower()))
@@ -116,14 +123,15 @@ class ExpansionService:
         if target_basename in tokens:
             return True
 
-        # Rule C: Exact stem match for standard document extensions (e.g. token "appendix" for "appendix.pdf")
-        recognized_exts = {".pdf", ".txt", ".csv", ".json", ".md", ".tsv", ".xml"}
-        target_ext = Path(target_basename).suffix.lower()
-        target_stem = Path(target_basename).stem.lower()
+        # Rule C: Constrained stem match requiring input directory and document extension
+        if target_parent in ("input", "."):
+            recognized_doc_exts = {".pdf", ".txt"}
+            target_ext = Path(target_basename).suffix.lower()
+            target_stem = Path(target_basename).stem.lower()
 
-        if target_ext in recognized_exts:
-            if target_stem in tokens and not any(p in target_basename for p in ("_secrets", ".bak", ".old", "~")):
-                return True
+            if target_ext in recognized_doc_exts:
+                if target_stem in tokens and not any(p in target_basename for p in ("_secrets", ".bak", ".old", "~")):
+                    return True
 
         return False
 
