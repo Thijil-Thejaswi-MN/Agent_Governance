@@ -2,7 +2,7 @@
  * Landlock Task Sandbox Enforcer (C Implementation)
  *
  * Usage:
- *   landlock_enforcer --workspace /path/to/ws [--proxy-port 8080] -- cmd arg1 arg2 ...
+ *   landlock_enforcer --workspace /path/to/ws [--proxy-port 8080] [--mode enforce|observe] [--simulate-unshare-fail] -- cmd arg1 arg2 ...
  */
 #define _GNU_SOURCE
 #include <errno.h>
@@ -73,45 +73,87 @@ static int add_net_rule(int ruleset_fd, __u64 port, __u64 access_mask) {
     return landlock_add_rule(ruleset_fd, LANDLOCK_RULE_NET_PORT, &attr, 0);
 }
 
-static int isolate_user_and_mounts(uid_t host_uid, gid_t host_gid) {
+static int isolate_user_and_mounts(uid_t host_uid, gid_t host_gid, int enforce_mode, int simulate_fail) {
+    if (simulate_fail) {
+        errno = EPERM;
+        if (enforce_mode) {
+            fprintf(stderr, "SECURITY_ERROR: unshare(CLONE_NEWUSER|CLONE_NEWNS) simulated failure: %s. Aborting in ENFORCE mode.\n", strerror(errno));
+            return -1;
+        } else {
+            fprintf(stderr, "WARNING: unshare simulated failure: %s. Continuing in OBSERVE mode (isolation_level=landlock_only).\n", strerror(errno));
+            setenv("GOVERNANCE_ISOLATION_LEVEL", "landlock_only", 1);
+            return 0;
+        }
+    }
+
     if (unshare(CLONE_NEWUSER | CLONE_NEWNS) != 0) {
-        // If unshare is restricted by kernel, proceed with Landlock-only enforcement
-        return 0;
+        if (enforce_mode) {
+            fprintf(stderr, "SECURITY_ERROR: unshare(CLONE_NEWUSER|CLONE_NEWNS) failed: %s. Aborting in ENFORCE mode.\n", strerror(errno));
+            return -1;
+        } else {
+            fprintf(stderr, "WARNING: unshare failed: %s. Continuing in OBSERVE mode (isolation_level=landlock_only).\n", strerror(errno));
+            setenv("GOVERNANCE_ISOLATION_LEVEL", "landlock_only", 1);
+            return 0;
+        }
     }
 
     // Setgroups deny
     int fd = open("/proc/self/setgroups", O_WRONLY);
     if (fd >= 0) {
-        if (write(fd, "deny", 4) < 0) {}
+        if (write(fd, "deny", 4) < 0 && enforce_mode) {
+            fprintf(stderr, "SECURITY_ERROR: failed to write /proc/self/setgroups\n");
+            close(fd);
+            return -1;
+        }
         close(fd);
     }
 
-    // uid_map: 0 -> host_uid
+    // uid_map: map host_uid -> host_uid (agent runs as non-root UID inside user namespace)
     char map_buf[128];
     fd = open("/proc/self/uid_map", O_WRONLY);
     if (fd >= 0) {
-        snprintf(map_buf, sizeof(map_buf), "0 %u 1\n", host_uid);
-        if (write(fd, map_buf, strlen(map_buf)) < 0) {}
+        snprintf(map_buf, sizeof(map_buf), "%u %u 1\n", host_uid, host_uid);
+        if (write(fd, map_buf, strlen(map_buf)) < 0 && enforce_mode) {
+            fprintf(stderr, "SECURITY_ERROR: failed to write /proc/self/uid_map\n");
+            close(fd);
+            return -1;
+        }
         close(fd);
+    } else if (enforce_mode) {
+        fprintf(stderr, "SECURITY_ERROR: failed to open /proc/self/uid_map\n");
+        return -1;
     }
 
-    // gid_map: 0 -> host_gid
+    // gid_map: map host_gid -> host_gid
     fd = open("/proc/self/gid_map", O_WRONLY);
     if (fd >= 0) {
-        snprintf(map_buf, sizeof(map_buf), "0 %u 1\n", host_gid);
-        if (write(fd, map_buf, strlen(map_buf)) < 0) {}
+        snprintf(map_buf, sizeof(map_buf), "%u %u 1\n", host_gid, host_gid);
+        if (write(fd, map_buf, strlen(map_buf)) < 0 && enforce_mode) {
+            fprintf(stderr, "SECURITY_ERROR: failed to write /proc/self/gid_map\n");
+            close(fd);
+            return -1;
+        }
         close(fd);
+    } else if (enforce_mode) {
+        fprintf(stderr, "SECURITY_ERROR: failed to open /proc/self/gid_map\n");
+        return -1;
     }
 
-    // 1. Mask /run/user/<host_uid> with an empty tmpfs (hides bus and systemd/private)
+    // 1. Primary Security Guarantee: Mask /run/user/<host_uid> with an empty tmpfs
+    // Hides the host session D-Bus socket (/run/user/<uid>/bus) and systemd private socket
     char run_user_path[256];
     snprintf(run_user_path, sizeof(run_user_path), "/run/user/%u", host_uid);
     struct stat st;
     if (stat(run_user_path, &st) == 0 && S_ISDIR(st.st_mode)) {
-        mount("none", run_user_path, "tmpfs", 0, "");
+        if (mount("none", run_user_path, "tmpfs", 0, "") != 0 && enforce_mode) {
+            fprintf(stderr, "SECURITY_ERROR: failed to mount tmpfs over %s: %s\n", run_user_path, strerror(errno));
+            return -1;
+        }
     }
 
-    // 2. Bind /bin/false over IPC escape binaries
+    // 2. Defense-in-depth: Bind /bin/false over IPC escape binaries
+    // Note: The primary guarantee rests on user-session sockets being unreachable above;
+    // these bind mounts provide an additional layer of defense.
     const char *escape_bins[] = {
         "/usr/bin/systemd-run",
         "/bin/systemd-run",
@@ -127,12 +169,15 @@ static int isolate_user_and_mounts(uid_t host_uid, gid_t host_gid) {
         }
     }
 
+    setenv("GOVERNANCE_ISOLATION_LEVEL", "landlock+ns", 1);
     return 0;
 }
 
 int main(int argc, char **argv) {
     const char *workspace = NULL;
     int proxy_port = 0;
+    int enforce_mode = 1; // Default: 1 (ENFORCE mode: fail-closed)
+    int simulate_fail = 0;
     int cmd_idx = -1;
 
     for (int i = 1; i < argc; i++) {
@@ -140,6 +185,15 @@ int main(int argc, char **argv) {
             workspace = argv[++i];
         } else if (strcmp(argv[i], "--proxy-port") == 0 && i + 1 < argc) {
             proxy_port = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--mode") == 0 && i + 1 < argc) {
+            const char *m = argv[++i];
+            if (strcmp(m, "observe") == 0) {
+                enforce_mode = 0;
+            } else {
+                enforce_mode = 1;
+            }
+        } else if (strcmp(argv[i], "--simulate-unshare-fail") == 0) {
+            simulate_fail = 1;
         } else if (strcmp(argv[i], "--") == 0) {
             cmd_idx = i + 1;
             break;
@@ -147,7 +201,7 @@ int main(int argc, char **argv) {
     }
 
     if (!workspace || cmd_idx < 0 || cmd_idx >= argc) {
-        fprintf(stderr, "Usage: %s --workspace <path> [--proxy-port <port>] -- <cmd> [args...]\n", argv[0]);
+        fprintf(stderr, "Usage: %s --workspace <path> [--proxy-port <port>] [--mode enforce|observe] [--simulate-unshare-fail] -- <cmd> [args...]\n", argv[0]);
         return 1;
     }
 
@@ -162,8 +216,11 @@ int main(int argc, char **argv) {
     setenv("TEMP", task_tmp, 1);
     setenv("TMP", task_tmp, 1);
 
-    // Isolate mount and user namespaces (masks D-Bus / systemd sockets and escape binaries)
-    isolate_user_and_mounts(uid, gid);
+    // Isolate mount and user namespaces (Fail-closed in ENFORCE mode)
+    if (isolate_user_and_mounts(uid, gid, enforce_mode, simulate_fail) != 0) {
+        fprintf(stderr, "Task execution aborted due to namespace isolation failure in ENFORCE mode.\n");
+        return 1;
+    }
 
     int abi = landlock_create_ruleset(NULL, 0, LANDLOCK_CREATE_RULESET_VERSION);
     if (abi < 1) {

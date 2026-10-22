@@ -627,3 +627,144 @@ print(f'IO_URING_RES={res},ERRNO={err}')
     )
     assert res.returncode == 0
     assert "IO_URING_RES=-1,ERRNO=1" in res.stdout
+
+
+# --- TEST 9: FAIL-CLOSED ON ISOLATION FAILURE ---
+
+def test_fail_closed_on_isolation_failure(test_workspace: TaskWorkspace) -> None:
+    """
+    Verifies that:
+    1. In ENFORCE mode (default), namespace/mount failure aborts the task (exit code != 0),
+       and the task payload does NOT execute.
+    2. In OBSERVE mode, execution continues and GOVERNANCE_ISOLATION_LEVEL is recorded as 'landlock_only'.
+    """
+    here = Path(__file__).resolve().parent.parent / "app" / "governance" / "os_layer"
+    landlock_bin = here / "landlock_enforcer"
+
+    marker_file = test_workspace.scratch_dir / "executed.marker"
+
+    # 1. ENFORCE MODE (Simulated Unshare Failure) -> MUST ABORT
+    res_enforce = subprocess.run(
+        [
+            str(landlock_bin),
+            "--workspace", str(test_workspace.root),
+            "--mode", "enforce",
+            "--simulate-unshare-fail",
+            "--",
+            PYTHON_BIN, "-c", f"open('{marker_file}', 'w').write('LEAK')"
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert res_enforce.returncode != 0
+    assert "SECURITY_ERROR" in res_enforce.stderr
+    assert "Aborting in ENFORCE mode" in res_enforce.stderr
+    assert not marker_file.exists(), "Payload must NOT execute when isolation setup fails in ENFORCE mode"
+
+    # 2. OBSERVE MODE (Simulated Unshare Failure) -> CONTINUES with isolation_level=landlock_only
+    res_observe = subprocess.run(
+        [
+            str(landlock_bin),
+            "--workspace", str(test_workspace.root),
+            "--mode", "observe",
+            "--simulate-unshare-fail",
+            "--",
+            PYTHON_BIN, "-c", "import os; print('OBSERVE_LEVEL=' + str(os.environ.get('GOVERNANCE_ISOLATION_LEVEL')))"
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert res_observe.returncode == 0
+    assert "OBSERVE_LEVEL=landlock_only" in res_observe.stdout
+
+
+# --- TEST 10: EXACT KERNEL MECHANISM OF /proc/<pid>/environ DENIAL ---
+
+def test_proc_environ_kernel_mechanism_proven() -> None:
+    """
+    Proves the exact kernel mechanism preventing /proc/<pid>/environ token theft:
+    - Control (same user namespace): Same-UID process CAN read /proc/<pid>/environ.
+    - User namespace boundary: Entering a new user namespace causes /proc/<target_pid>/environ
+      read to fail with PermissionError because kernel ptrace_may_access() requires
+      has_ns_capability(target->user_ns, CAP_SYS_PTRACE).
+    """
+    # Start target process with secret in parent user namespace
+    secret_token = "TARGET_SECRET_TOKEN_8899"
+    p_target = subprocess.Popen(
+        [PYTHON_BIN, "-c", "import time; time.sleep(10)"],
+        env=dict(os.environ, TARGET_TOKEN=secret_token)
+    )
+    time.sleep(0.3)
+    target_pid = p_target.pid
+
+    try:
+        # Step 1: Unconfined same-UID process in SAME user namespace -> SUCCEEDS
+        with open(f"/proc/{target_pid}/environ", "rb") as f:
+            unconfined_data = f.read()
+        assert secret_token.encode("utf-8") in unconfined_data, "Unconfined same-UID should be able to read environ"
+
+        # Step 2: Child process in a NEW user namespace -> FAILS with PermissionError
+        # Demonstrates that it is the user namespace capability boundary (not Yama or Landlock)
+        # that blocks access to outer namespace process environments.
+        userns_script = f"""
+import sys
+try:
+    with open('/proc/{target_pid}/environ', 'rb') as f:
+        f.read()
+    print('VULNERABLE_USERNS_READ')
+    sys.exit(1)
+except PermissionError:
+    print('USERNS_BOUNDARY_PERMISSION_ERROR')
+    sys.exit(0)
+"""
+        uid = os.getuid()
+        res_userns = subprocess.run(
+            ["unshare", "-U", f"--map-user={uid}", PYTHON_BIN, "-c", userns_script],
+            capture_output=True,
+            text=True,
+        )
+        assert res_userns.returncode == 0
+        assert "USERNS_BOUNDARY_PERMISSION_ERROR" in res_userns.stdout
+    finally:
+        p_target.kill()
+
+
+# --- TEST 11: ISOLATION IMMUTABILITY & NON-ROOT UID INSIDE SANDBOX ---
+
+def test_isolation_immutability_non_root_uid(test_workspace: TaskWorkspace) -> None:
+    """
+    Verifies that:
+    1. The agent runs as non-root UID inside the user namespace (e.g. UID 1000 != 0).
+    2. The agent cannot undo mount isolation (e.g. calling umount on /run/user/<uid> fails with EPERM).
+    3. The masking of /run/user/<uid> remains strictly in effect.
+    """
+    runner = CgroupTaskRunner()
+    test_script = """
+import ctypes, os, sys
+
+# 1. Assert non-root UID inside user namespace
+uid = os.getuid()
+euid = os.geteuid()
+assert uid != 0, f"Agent must not run as root (uid={uid})"
+assert euid != 0, f"Agent must not run as effective root (euid={euid})"
+
+# 2. Attempt to unmount /run/user/<uid> to restore host D-Bus / systemd sockets
+libc = ctypes.CDLL(None, use_errno=True)
+run_path = f"/run/user/{uid}"
+res = libc.umount(run_path.encode('utf-8'))
+err = ctypes.get_errno()
+
+print(f'NON_ROOT_UID={uid}')
+print(f'UMOUNT_RES={res},ERRNO={err}')
+"""
+    res = runner.run_task_command(
+        task_id=test_workspace.task_id,
+        cmd=[PYTHON_BIN, "-c", test_script],
+        workspace=test_workspace,
+        enable_landlock=True,
+    )
+
+    assert res.returncode == 0, f"Immutability test failed: {res.stderr}"
+    assert "NON_ROOT_UID=1000" in res.stdout
+    assert "UMOUNT_RES=-1,ERRNO=1" in res.stdout  # ERRNO 1 = EPERM
+
