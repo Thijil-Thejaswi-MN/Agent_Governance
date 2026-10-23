@@ -606,10 +606,11 @@ class ToolBroker:
         seed: int | None = 42,
         num_ctx: int = 8192,
         base_url: str | None = None,
-        timeout: float = 120.0,
+        timeout: float = 300.0,
     ) -> dict[str, Any]:
-        """Invokes local Ollama via its OpenAI-compatible /v1/chat/completions endpoint."""
+        """Invokes local Ollama via its OpenAI-compatible /v1/chat/completions endpoint with retry support."""
         import httpx
+        import time
         root_url = (base_url or os.environ.get("OLLAMA_BASE_URL") or "http://127.0.0.1:11434").rstrip("/")
         if root_url.endswith("/v1"):
             api_base = root_url[:-3]
@@ -636,42 +637,50 @@ class ToolBroker:
         if tools:
             payload["tools"] = tools
 
-        try:
-            with httpx.Client(timeout=timeout) as client:
-                resp = client.post(v1_url, json=payload)
-                resp.raise_for_status()
-                data = resp.json()
-                choice = data.get("choices", [{}])[0].get("message", {})
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                with httpx.Client(timeout=timeout) as client:
+                    resp = client.post(v1_url, json=payload)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    choice = data.get("choices", [{}])[0].get("message", {})
 
-                # Resolve model digest from /api/tags if available
-                model_digest = ""
-                try:
-                    tag_resp = client.get(f"{api_base}/api/tags", timeout=2.0)
-                    if tag_resp.status_code == 200:
-                        for m in tag_resp.json().get("models", []):
-                            if m.get("name") == model or m.get("model") == model or m.get("name", "").startswith(model):
-                                model_digest = m.get("digest", "")
-                                break
-                except Exception:
-                    pass
+                    # Resolve model digest from /api/tags if available
+                    model_digest = ""
+                    try:
+                        tag_resp = client.get(f"{api_base}/api/tags", timeout=5.0)
+                        if tag_resp.status_code == 200:
+                            for m in tag_resp.json().get("models", []):
+                                if m.get("name") == model or m.get("model") == model or m.get("name", "").startswith(model):
+                                    model_digest = m.get("digest", "")
+                                    break
+                    except Exception:
+                        pass
 
-                return {
-                    "role": choice.get("role", "assistant"),
-                    "content": choice.get("content"),
-                    "tool_calls": choice.get("tool_calls"),
-                    "provider": "ollama",
-                    "model": model,
-                    "model_digest": model_digest,
-                    "model_digest_or_tag": model_digest or data.get("model", model),
-                    "num_ctx": num_ctx,
-                    "temperature": temperature,
-                    "seed": seed,
-                    "usage": data.get("usage"),
-                }
-        except (httpx.ConnectError, httpx.TimeoutException) as ce:
-            raise RuntimeError(f"Ollama local service is unreachable or timed out at {v1_url}. Ensure Ollama is running.") from ce
-        except Exception as e:
-            raise RuntimeError(f"Ollama inference failed at {v1_url}: {e}") from e
+                    return {
+                        "role": choice.get("role", "assistant"),
+                        "content": choice.get("content"),
+                        "tool_calls": choice.get("tool_calls"),
+                        "provider": "ollama",
+                        "model": model,
+                        "model_digest": model_digest,
+                        "model_digest_or_tag": model_digest or data.get("model", model),
+                        "num_ctx": num_ctx,
+                        "temperature": temperature,
+                        "seed": seed,
+                        "usage": data.get("usage"),
+                    }
+            except (httpx.ConnectError, httpx.TimeoutException) as ce:
+                if attempt < max_retries - 1:
+                    time.sleep(3.0 * (attempt + 1))
+                    continue
+                raise RuntimeError(f"Ollama local service is unreachable or timed out at {v1_url} after {max_retries} attempts: {ce}. Ensure Ollama is running.") from ce
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    time.sleep(2.0)
+                    continue
+                raise RuntimeError(f"Ollama inference failed at {v1_url}: {e}") from e
 
     def _call_openai(
         self,

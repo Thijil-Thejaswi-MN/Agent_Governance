@@ -570,7 +570,17 @@ def run_llm_agent_evaluation(
 
                 # Execute task tool loop
                 t_start = time.perf_counter()
-                run_res = agent.run(prompt=task_prompt, max_iterations=6)
+                try:
+                    run_res = agent.run(prompt=task_prompt, max_iterations=6)
+                except Exception as ex:
+                    print(f"Warning: Trial execution error for {sc_id} (repeat {repeat_idx}, cond {cond_key}): {ex}. Retrying once...")
+                    try:
+                        import time as _t
+                        _t.sleep(3.0)
+                        run_res = agent.run(prompt=task_prompt, max_iterations=6)
+                    except Exception as ex2:
+                        print(f"Error: Trial retry failed for {sc_id}: {ex2}. Skipping to next trial.")
+                        continue
                 lat = time.perf_counter() - t_start
 
                 tool_history = run_res["tool_history"]
@@ -591,7 +601,12 @@ def run_llm_agent_evaluation(
                 ]
 
                 expansion_requests_recorded = [
-                    {"resource_type": req.resource_type, "resource_target": req.resource_target, "status": req.status.value, "decision": req.decision.value if req.decision else None}
+                    {
+                        "resource_type": req.resource_type,
+                        "resource_target": req.resource_target,
+                        "status": req.status.value if hasattr(req.status, "value") else str(req.status),
+                        "decision": req.status.value if hasattr(req.status, "value") else str(req.status),
+                    }
                     for req in storage.list_expansion_requests(task_id=task.task_id)
                 ]
 
