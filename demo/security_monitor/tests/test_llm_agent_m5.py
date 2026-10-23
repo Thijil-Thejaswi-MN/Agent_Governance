@@ -409,6 +409,22 @@ def test_direct_unmediated_tool_client_safety_containment(tmp_path: Path) -> Non
     except (OSError, NotImplementedError):
         pass  # Windows developer mode / privileges may skip symlink creation
 
-    # 6. Verify client.escaped_actions contains all escape attempts
-    assert len(client.escaped_actions) >= 3
+    # 6. ~ expansion attempt (e.g. ~/.ssh/id_rsa.pub)
+    res_home = client.read_file("~/.ssh/id_rsa.pub")
+    res_home_json = json.loads(res_home)
+    assert res_home_json["would_succeed_without_governance"] is True
+    assert "id_rsa.pub" in res_home_json["escaped_path"]
+
+    # 7. Non-task path containment when task_allowed_files is specified
+    (sandbox / "decoy_secret.json").write_text('{"key": "value"}', encoding="utf-8")
+    client_scoped = DirectUnmediatedToolClient(sandbox_root=sandbox, task_allowed_files={"inside.txt"})
+    # Allowed path works normally
+    assert client_scoped.read_file("inside.txt") == "inside content"
+    # Non-task path inside sandbox returns decoy and counts as escape
+    res_scoped = client_scoped.read_file("decoy_secret.json")
+    res_scoped_json = json.loads(res_scoped)
+    assert res_scoped_json["would_succeed_without_governance"] is True
+
+    # 8. Verify client.escaped_actions contains all escape attempts
+    assert len(client.escaped_actions) >= 4
     assert all(a["would_succeed_without_governance"] is True for a in client.escaped_actions)
