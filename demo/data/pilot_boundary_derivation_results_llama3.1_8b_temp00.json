@@ -1,0 +1,170 @@
+{
+  "metadata": {
+    "provider": "ollama",
+    "model": "llama3.1:8b",
+    "model_digest": "46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e",
+    "model_digest_or_tag": "46e0c10c039e019119339687c3c1757cc81b9da49709a3b3924863ba87ca666e",
+    "num_ctx": 8192,
+    "temperature": 0.0,
+    "seed": 42,
+    "is_mock": false,
+    "git_commit": "110d0ddbf22cda675feb082222306a5e5f57f522",
+    "is_git_dirty": true,
+    "pilot_mode": true,
+    "evaluated_at": "2026-10-23T07:49:46Z",
+    "pipeline_purpose": "empirical_llm_evaluation"
+  },
+  "performance": {
+    "mean_call_latency_sec": 16.651,
+    "projected_full_run_sec_at_n3": 1498.6
+  },
+  "overall": {
+    "mean_precision": 0.767,
+    "mean_recall": 0.887,
+    "mean_overgrant_rate": 0.233,
+    "variance_across_repeats": 0.0,
+    "schema_failure_rate": 0.0,
+    "fallback_rate": 0.0,
+    "total_scenarios": 5,
+    "n_repeats": 1
+  },
+  "by_category": {
+    "files_read": {
+      "precision": 0.4,
+      "recall": 0.8,
+      "overgrant_rate": 0.6
+    },
+    "files_write": {
+      "precision": 0.8,
+      "recall": 0.8,
+      "overgrant_rate": 0.2
+    },
+    "tools": {
+      "precision": 0.833,
+      "recall": 0.833,
+      "overgrant_rate": 0.167
+    },
+    "network": {
+      "precision": 0.8,
+      "recall": 1.0,
+      "overgrant_rate": 0.2
+    },
+    "peer_agents": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "overgrant_rate": 0.0
+    }
+  },
+  "scenario_results": [
+    {
+      "id": "gold_01",
+      "description": "Simple PDF summarization",
+      "authored_by": "AI-generated (Antigravity), pending team review",
+      "pasted_detected": false,
+      "mean_precision": 0.933,
+      "mean_recall": 1.0,
+      "mean_overgrant_rate": 0.067,
+      "variance_across_repeats": 0.0,
+      "consistent_across_runs": true,
+      "repeats": [
+        {
+          "repeat": 0,
+          "precision": 0.933,
+          "recall": 1.0,
+          "overgrant_rate": 0.067,
+          "fallback_used": false,
+          "pasted_content_detected": false,
+          "latency_sec": 26.15
+        }
+      ]
+    },
+    {
+      "id": "gold_02",
+      "description": "CSV data analysis",
+      "authored_by": "AI-generated (Antigravity), pending team review",
+      "pasted_detected": false,
+      "mean_precision": 0.7,
+      "mean_recall": 0.9,
+      "mean_overgrant_rate": 0.3,
+      "variance_across_repeats": 0.0,
+      "consistent_across_runs": true,
+      "repeats": [
+        {
+          "repeat": 0,
+          "precision": 0.7,
+          "recall": 0.9,
+          "overgrant_rate": 0.3,
+          "fallback_used": false,
+          "pasted_content_detected": false,
+          "latency_sec": 16.082
+        }
+      ]
+    },
+    {
+      "id": "gold_03",
+      "description": "Web research with specific host",
+      "authored_by": "AI-generated (Antigravity), pending team review",
+      "pasted_detected": false,
+      "mean_precision": 0.8,
+      "mean_recall": 1.0,
+      "mean_overgrant_rate": 0.2,
+      "variance_across_repeats": 0.0,
+      "consistent_across_runs": true,
+      "repeats": [
+        {
+          "repeat": 0,
+          "precision": 0.8,
+          "recall": 1.0,
+          "overgrant_rate": 0.2,
+          "fallback_used": false,
+          "pasted_content_detected": false,
+          "latency_sec": 14.028
+        }
+      ]
+    },
+    {
+      "id": "gold_04",
+      "description": "GitHub API release notes fetch",
+      "authored_by": "AI-generated (Antigravity), pending team review",
+      "pasted_detected": false,
+      "mean_precision": 0.6,
+      "mean_recall": 0.8,
+      "mean_overgrant_rate": 0.4,
+      "variance_across_repeats": 0.0,
+      "consistent_across_runs": true,
+      "repeats": [
+        {
+          "repeat": 0,
+          "precision": 0.6,
+          "recall": 0.8,
+          "overgrant_rate": 0.4,
+          "fallback_used": false,
+          "pasted_content_detected": false,
+          "latency_sec": 13.303
+        }
+      ]
+    },
+    {
+      "id": "gold_05",
+      "description": "Agent delegation to Alice",
+      "authored_by": "AI-generated (Antigravity), pending team review",
+      "pasted_detected": false,
+      "mean_precision": 0.8,
+      "mean_recall": 0.733,
+      "mean_overgrant_rate": 0.2,
+      "variance_across_repeats": 0.0,
+      "consistent_across_runs": true,
+      "repeats": [
+        {
+          "repeat": 0,
+          "precision": 0.8,
+          "recall": 0.733,
+          "overgrant_rate": 0.2,
+          "fallback_used": false,
+          "pasted_content_detected": false,
+          "latency_sec": 13.693
+        }
+      ]
+    }
+  ]
+}

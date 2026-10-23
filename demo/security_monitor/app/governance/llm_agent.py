@@ -296,15 +296,22 @@ class LLMAgent:
                 raw_args = tc.get("function", {}).get("arguments", "{}")
                 attempted_tools.append(fn_name)
 
+                malformed_args = False
                 try:
                     args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                    if not isinstance(args, dict):
+                        malformed_args = True
+                        args = {}
                 except Exception:
+                    malformed_args = True
                     args = {}
 
                 tool_record = {
                     "step": step_idx,
                     "tool": fn_name,
                     "args": args,
+                    "raw_args": raw_args,
+                    "malformed_tool_call": malformed_args or (fn_name not in ("read_file", "write_file", "http_get", "call_agent", "request_access", "run_command")),
                     "status": "success",
                     "output": None,
                     "error": None,

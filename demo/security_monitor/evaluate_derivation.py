@@ -136,6 +136,7 @@ def make_ollama_llm_client(
     base_url: str = "http://127.0.0.1:11434/v1",
     temperature: float = 0.0,
     seed: int = 42,
+    num_ctx: int = 8192,
     timeout: float = 120.0,
 ) -> tuple[Callable[[str], str], str]:
     """Creates an Ollama client for BoundaryDerivationV2 using the local OpenAI-compatible endpoint."""
@@ -160,7 +161,7 @@ def make_ollama_llm_client(
             if tags_resp.status_code == 200:
                 models_info = tags_resp.json().get("models", [])
                 for m in models_info:
-                    if m.get("name") == model or m.get("model") == model:
+                    if m.get("name") == model or m.get("model") == model or m.get("name", "").startswith(model):
                         model_digest = m.get("digest", m.get("name"))
                         break
     except Exception:
@@ -172,6 +173,11 @@ def make_ollama_llm_client(
             "messages": [{"role": "user", "content": prompt}],
             "temperature": temperature,
             "seed": seed,
+            "options": {
+                "num_ctx": num_ctx,
+                "temperature": temperature,
+                "seed": seed,
+            },
         }
         with httpx.Client(timeout=timeout) as client:
             resp = client.post(url, json=payload)
@@ -187,6 +193,7 @@ def evaluate_derivation_suite(
     model: str = "emulator_v1",
     temperature: float = 0.0,
     seed: int = 42,
+    num_ctx: int = 8192,
     n_repeats: int = 3,
     is_mock: bool = True,
     pilot_mode: bool = False,
@@ -205,7 +212,8 @@ def evaluate_derivation_suite(
         if is_mock:
             out_file = repo_root / "demo" / "data" / "boundary_derivation_results_RULE_EMULATOR.json"
         else:
-            out_file = repo_root / "demo" / "data" / f"boundary_derivation_results_{model.replace(':', '_')}_temp{str(temperature).replace('.', '')}.json"
+            mode_prefix = "pilot_" if pilot_mode else ""
+            out_file = repo_root / "demo" / "data" / f"{mode_prefix}boundary_derivation_results_{model.replace(':', '_')}_temp{str(temperature).replace('.', '')}.json"
     else:
         out_file = output_path
 
@@ -222,7 +230,7 @@ def evaluate_derivation_suite(
 
     if provider == "ollama":
         is_mock = False
-        llm_callable, model_digest = make_ollama_llm_client(model=model, temperature=temperature, seed=seed)
+        llm_callable, model_digest = make_ollama_llm_client(model=model, temperature=temperature, seed=seed, num_ctx=num_ctx)
     elif provider == "rule_emulator":
         is_mock = True
         llm_callable = rule_based_llm_emulator
@@ -361,7 +369,9 @@ def evaluate_derivation_suite(
         "metadata": {
             "provider": provider,
             "model": model,
+            "model_digest": model_digest,
             "model_digest_or_tag": model_digest,
+            "num_ctx": num_ctx,
             "temperature": temperature,
             "seed": seed,
             "is_mock": is_mock,

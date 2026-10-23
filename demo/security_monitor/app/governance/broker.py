@@ -560,13 +560,15 @@ class ToolBroker:
         # 2. Local Ollama provider dispatch (http://127.0.0.1:11434/v1)
         prov_name = (provider or os.environ.get("GOVERNANCE_LLM_PROVIDER") or "").lower()
         if prov_name == "ollama" or (not prov_name and os.environ.get("OLLAMA_MODEL")):
-            ollama_model = model or os.environ.get("OLLAMA_MODEL") or "llama3"
+            ollama_model = model or os.environ.get("OLLAMA_MODEL") or "llama3.1:8b"
+            num_ctx = int(kwargs.get("num_ctx") or os.environ.get("OLLAMA_NUM_CTX") or 8192)
             return self._call_ollama(
                 messages=messages,
                 tools=tools,
                 model=ollama_model,
                 temperature=temperature,
                 seed=kwargs.get("seed", 42),
+                num_ctx=num_ctx,
                 base_url=kwargs.get("base_url"),
             )
 
@@ -602,16 +604,32 @@ class ToolBroker:
         model: str,
         temperature: float = 0.0,
         seed: int | None = 42,
+        num_ctx: int = 8192,
         base_url: str | None = None,
         timeout: float = 120.0,
     ) -> dict[str, Any]:
         """Invokes local Ollama via its OpenAI-compatible /v1/chat/completions endpoint."""
         import httpx
-        url = (base_url or os.environ.get("OLLAMA_BASE_URL") or "http://127.0.0.1:11434/v1").rstrip("/") + "/chat/completions"
+        root_url = (base_url or os.environ.get("OLLAMA_BASE_URL") or "http://127.0.0.1:11434").rstrip("/")
+        if root_url.endswith("/v1"):
+            api_base = root_url[:-3]
+            v1_url = root_url + "/chat/completions"
+        else:
+            api_base = root_url
+            v1_url = root_url + "/v1/chat/completions"
+
+        options: dict[str, Any] = {
+            "num_ctx": num_ctx,
+            "temperature": temperature,
+        }
+        if seed is not None:
+            options["seed"] = seed
+
         payload: dict[str, Any] = {
             "model": model,
             "messages": messages,
             "temperature": temperature,
+            "options": options,
         }
         if seed is not None:
             payload["seed"] = seed
@@ -620,23 +638,40 @@ class ToolBroker:
 
         try:
             with httpx.Client(timeout=timeout) as client:
-                resp = client.post(url, json=payload)
+                resp = client.post(v1_url, json=payload)
                 resp.raise_for_status()
                 data = resp.json()
                 choice = data.get("choices", [{}])[0].get("message", {})
+
+                # Resolve model digest from /api/tags if available
+                model_digest = ""
+                try:
+                    tag_resp = client.get(f"{api_base}/api/tags", timeout=2.0)
+                    if tag_resp.status_code == 200:
+                        for m in tag_resp.json().get("models", []):
+                            if m.get("name") == model or m.get("model") == model or m.get("name", "").startswith(model):
+                                model_digest = m.get("digest", "")
+                                break
+                except Exception:
+                    pass
+
                 return {
                     "role": choice.get("role", "assistant"),
                     "content": choice.get("content"),
                     "tool_calls": choice.get("tool_calls"),
                     "provider": "ollama",
                     "model": model,
-                    "model_digest_or_tag": data.get("model", model),
+                    "model_digest": model_digest,
+                    "model_digest_or_tag": model_digest or data.get("model", model),
+                    "num_ctx": num_ctx,
+                    "temperature": temperature,
+                    "seed": seed,
                     "usage": data.get("usage"),
                 }
-        except httpx.ConnectError as ce:
-            raise RuntimeError(f"Ollama local service is unreachable at {url}. Ensure Ollama is running.") from ce
+        except (httpx.ConnectError, httpx.TimeoutException) as ce:
+            raise RuntimeError(f"Ollama local service is unreachable or timed out at {v1_url}. Ensure Ollama is running.") from ce
         except Exception as e:
-            raise RuntimeError(f"Ollama inference failed at {url}: {e}") from e
+            raise RuntimeError(f"Ollama inference failed at {v1_url}: {e}") from e
 
     def _call_openai(
         self,

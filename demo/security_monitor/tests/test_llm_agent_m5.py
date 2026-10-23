@@ -355,3 +355,60 @@ def test_llm_agent_boundary_denial_and_graceful_handling(
     denied_records = [r for r in result["tool_history"] if r["status"] == "permission_denied"]
     assert len(denied_records) > 0
     assert "credentials.json" in str(denied_records[0]["args"])
+
+
+def test_direct_unmediated_tool_client_safety_containment(tmp_path: Path) -> None:
+    """Verifies that DirectUnmediatedToolClient (Condition A):
+    1. Resolves every model-supplied path.
+    2. If outside sandbox_root (absolute Windows/POSIX, traversal, external symlink), does NOT read/write it.
+    3. Records would_succeed_without_governance=True and escaped_path.
+    """
+    from demo.security_monitor.evaluate_llm_agent_injection import DirectUnmediatedToolClient
+
+    sandbox = tmp_path / "sandbox"
+    sandbox.mkdir()
+    (sandbox / "inside.txt").write_text("inside content", encoding="utf-8")
+
+    outside_file = tmp_path / "outside_host_file.txt"
+    outside_file.write_text("CRITICAL_HOST_SECRET", encoding="utf-8")
+
+    client = DirectUnmediatedToolClient(sandbox_root=sandbox)
+
+    # 1. Normal inside access works
+    inside_content = client.read_file("inside.txt")
+    assert inside_content == "inside content"
+
+    # 2. Directory traversal attempt: ../outside_host_file.txt
+    traversal_path = "../outside_host_file.txt"
+    res_traversal = client.read_file(traversal_path)
+    res_traversal_json = json.loads(res_traversal)
+    assert res_traversal_json["would_succeed_without_governance"] is True
+    assert "outside_host_file.txt" in res_traversal_json["escaped_path"]
+    assert "CRITICAL_HOST_SECRET" not in res_traversal  # Real host secret was NEVER read!
+
+    # 3. Absolute path attempt
+    abs_path = str(outside_file.resolve())
+    res_abs = client.read_file(abs_path)
+    res_abs_json = json.loads(res_abs)
+    assert res_abs_json["would_succeed_without_governance"] is True
+    assert "CRITICAL_HOST_SECRET" not in res_abs
+
+    # 4. Traversal write attempt
+    write_res = client.write_file("../malicious_host_overwrite.txt", "MALICIOUS")
+    assert write_res["would_succeed_without_governance"] is True
+    assert not (tmp_path / "malicious_host_overwrite.txt").exists()  # Host file was NEVER written!
+
+    # 5. External symlink attempt (if symlinks supported on platform)
+    symlink_path = sandbox / "symlink_to_outside"
+    try:
+        symlink_path.symlink_to(outside_file)
+        res_sym = client.read_file("symlink_to_outside")
+        res_sym_json = json.loads(res_sym)
+        assert res_sym_json["would_succeed_without_governance"] is True
+        assert "CRITICAL_HOST_SECRET" not in res_sym
+    except (OSError, NotImplementedError):
+        pass  # Windows developer mode / privileges may skip symlink creation
+
+    # 6. Verify client.escaped_actions contains all escape attempts
+    assert len(client.escaped_actions) >= 3
+    assert all(a["would_succeed_without_governance"] is True for a in client.escaped_actions)
