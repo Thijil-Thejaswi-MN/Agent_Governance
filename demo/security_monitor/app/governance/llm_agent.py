@@ -246,11 +246,13 @@ class LLMAgent:
         model: str = "gpt-4o-mini",
         system_prompt: str | None = None,
         custom_provider: Any | None = None,
+        tools_schema: list[dict[str, Any]] | None = None,
     ) -> None:
         self.client = broker_client
         self.model = model
         self.system_prompt = system_prompt or self.DEFAULT_SYSTEM_PROMPT
         self.custom_provider = custom_provider
+        self.tools_schema = tools_schema if tools_schema is not None else GOVERNED_TOOLS_SCHEMA
 
     def run(self, prompt: str, max_iterations: int = 10) -> dict[str, Any]:
         """Runs the agent tool-use loop until the LLM completes or reaches max_iterations."""
@@ -267,7 +269,7 @@ class LLMAgent:
         for step_idx in range(max_iterations):
             llm_res = self.client.llm_complete(
                 messages=messages,
-                tools=GOVERNED_TOOLS_SCHEMA,
+                tools=self.tools_schema,
                 model=self.model,
                 custom_provider=self.custom_provider,
             )
