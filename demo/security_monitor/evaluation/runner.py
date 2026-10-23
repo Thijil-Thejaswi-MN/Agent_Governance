@@ -73,12 +73,17 @@ class EvaluationRunner:
         self.event_store = EventStore(storage=self.storage)
         self.rate_limiter = RateLimiter(max_requests=1000, window_seconds=1.0)
 
+        # Isolated governance storage for A2A checks during evaluation
+        from app.governance.storage import GovernanceStorage
+        self.gov_storage = GovernanceStorage(self.output_dir / f"{self.evaluation_id}_gov.db")
+
         # Isolated FastAPI gateway app
         self.app = create_app(
             inventory=self.inventory,
             policy_engine=self.policy_engine,
             event_store=self.event_store,
             rate_limiter=self.rate_limiter,
+            governance_storage=self.gov_storage,
         )
         self.client = TestClient(self.app)
 

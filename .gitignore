@@ -77,8 +77,8 @@ demo/data/*
 !demo/data/evaluation_v2/
 !demo/data/overhead_benchmark_results.json
 !demo/data/boundary_derivation_gold.json
-!demo/data/boundary_derivation_results.json
-!demo/data/llm_agent_evaluation_results.json
+!demo/data/boundary_derivation_results_RULE_EMULATOR.json
+!demo/data/llm_agent_evaluation_results_SCRIPTED_MOCK.json
 
 # OS Layer compiled binaries
 demo/security_monitor/app/governance/os_layer/landlock_enforcer

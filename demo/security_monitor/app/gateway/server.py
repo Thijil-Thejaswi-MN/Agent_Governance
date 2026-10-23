@@ -34,6 +34,7 @@ def create_app(
     policy_engine: PolicyEngine | None = None,
     event_store: EventStore | None = None,
     rate_limiter: RateLimiter | None = None,
+    governance_storage: Any | None = None,
 ) -> FastAPI:
     app = FastAPI(title="A2A Security Monitor Gateway & Operations Dashboard", version="0.2.0")
 
@@ -51,12 +52,15 @@ def create_app(
     from ..governance.gateway_integration import A2AGatewayGovernance
     from ..governance.models import EnforcementMode, TaskAction
 
-    gov_db_path = os.getenv("GOVERNANCE_DB_PATH")
-    if gov_db_path:
-        gov_storage = GovernanceStorage(Path(gov_db_path))
+    if governance_storage is not None:
+        gov_storage = governance_storage
     else:
-        default_db = Path(__file__).resolve().parent.parent.parent / "data" / "governance.db"
-        gov_storage = GovernanceStorage(default_db)
+        gov_db_path = os.getenv("GOVERNANCE_DB_PATH")
+        if gov_db_path:
+            gov_storage = GovernanceStorage(Path(gov_db_path))
+        else:
+            default_db = Path(__file__).resolve().parent.parent.parent / "data" / "governance.db"
+            gov_storage = GovernanceStorage(default_db)
 
     gov_mode_str = os.getenv("GOVERNANCE_SYSTEM_MODE", "OBSERVE").upper()
     gov_mode = EnforcementMode(gov_mode_str) if gov_mode_str in EnforcementMode._value2member_map_ else EnforcementMode.OBSERVE

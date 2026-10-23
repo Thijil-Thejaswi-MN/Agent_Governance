@@ -557,8 +557,20 @@ class ToolBroker:
                 **kwargs,
             )
 
-        # 2. Live external provider dispatch (OpenAI, Gemini, Anthropic)
+        # 2. Local Ollama provider dispatch (http://127.0.0.1:11434/v1)
         prov_name = (provider or os.environ.get("GOVERNANCE_LLM_PROVIDER") or "").lower()
+        if prov_name == "ollama" or (not prov_name and os.environ.get("OLLAMA_MODEL")):
+            ollama_model = model or os.environ.get("OLLAMA_MODEL") or "llama3"
+            return self._call_ollama(
+                messages=messages,
+                tools=tools,
+                model=ollama_model,
+                temperature=temperature,
+                seed=kwargs.get("seed", 42),
+                base_url=kwargs.get("base_url"),
+            )
+
+        # 3. Live external hosted provider dispatch (OpenAI, Gemini, Anthropic)
         openai_key = os.environ.get("OPENAI_API_KEY")
         gemini_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
         anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
@@ -579,9 +591,52 @@ class ToolBroker:
             return self._call_openai(messages, tools, model or "gpt-4o-mini", openai_key, temperature)
 
         raise RuntimeError(
-            "No LLM API key configured for live providers (OPENAI_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY). "
-            "Configure an API key or supply a mock/stub provider."
+            "No LLM provider configured (set GOVERNANCE_LLM_PROVIDER=ollama with running Ollama, "
+            "or configure OPENAI_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY, or supply a mock/stub provider)."
         )
+
+    def _call_ollama(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        model: str,
+        temperature: float = 0.0,
+        seed: int | None = 42,
+        base_url: str | None = None,
+        timeout: float = 120.0,
+    ) -> dict[str, Any]:
+        """Invokes local Ollama via its OpenAI-compatible /v1/chat/completions endpoint."""
+        import httpx
+        url = (base_url or os.environ.get("OLLAMA_BASE_URL") or "http://127.0.0.1:11434/v1").rstrip("/") + "/chat/completions"
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if seed is not None:
+            payload["seed"] = seed
+        if tools:
+            payload["tools"] = tools
+
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                resp = client.post(url, json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+                choice = data.get("choices", [{}])[0].get("message", {})
+                return {
+                    "role": choice.get("role", "assistant"),
+                    "content": choice.get("content"),
+                    "tool_calls": choice.get("tool_calls"),
+                    "provider": "ollama",
+                    "model": model,
+                    "model_digest_or_tag": data.get("model", model),
+                    "usage": data.get("usage"),
+                }
+        except httpx.ConnectError as ce:
+            raise RuntimeError(f"Ollama local service is unreachable at {url}. Ensure Ollama is running.") from ce
+        except Exception as e:
+            raise RuntimeError(f"Ollama inference failed at {url}: {e}") from e
 
     def _call_openai(
         self,

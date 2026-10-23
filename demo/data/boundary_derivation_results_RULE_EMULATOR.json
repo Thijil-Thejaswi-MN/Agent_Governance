@@ -305,5 +305,16 @@
       "overgrant_rate": 0.5,
       "consistent_across_runs": true
     }
-  ]
+  ],
+  "metadata": {
+    "provider": "rule_emulator",
+    "model": "emulator_v1",
+    "model_digest_or_tag": "none (rule-based emulator)",
+    "temperature": 0.0,
+    "seed": 42,
+    "is_mock": true,
+    "git_commit": "ea38b26ce8d69f52d2c524958e88c514cd31e0d1",
+    "is_git_dirty": true,
+    "pipeline_purpose": "pipeline_and_plumbing_validation_only"
+  }
 }

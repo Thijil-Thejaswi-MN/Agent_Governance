@@ -3975,5 +3975,16 @@
       ]
     }
   ],
-  "evaluated_at": "2026-10-22T16:53:45Z"
+  "evaluated_at": "2026-10-22T16:53:45Z",
+  "metadata": {
+    "provider": "scripted_mock",
+    "model": "mock_v1",
+    "model_digest_or_tag": "none (scripted mock provider)",
+    "temperature": 0.0,
+    "seed": 42,
+    "is_mock": true,
+    "git_commit": "ea38b26ce8d69f52d2c524958e88c514cd31e0d1",
+    "is_git_dirty": true,
+    "pipeline_purpose": "pipeline_and_plumbing_validation_only"
+  }
 }
