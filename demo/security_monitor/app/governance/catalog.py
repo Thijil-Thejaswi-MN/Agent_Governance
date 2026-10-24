@@ -244,6 +244,16 @@ class BoundaryDerivationV1:
         if output_targets:
             for out_t in output_targets:
                 out_norm = out_t.replace("\\", "/").strip()
+                # Reject absolute paths and path-traversal attempts
+                if out_norm.startswith("/") or out_norm.startswith("\\") or ".." in out_norm:
+                    raise ValueError(
+                        f"Invalid output_target '{out_t}': must be a relative path "
+                        f"without '..' components"
+                    )
+                if len(out_norm) > 0 and ":" in out_norm:
+                    raise ValueError(
+                        f"Invalid output_target '{out_t}': absolute Windows path not allowed"
+                    )
                 files_write.append(out_norm)
 
         # Ensure unique, normalized lists

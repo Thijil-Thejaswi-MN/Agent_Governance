@@ -174,6 +174,7 @@ class BoundaryDerivationV2:
         request_text: str,
         workspace_root: str,
         enforcement_mode: EnforcementMode = EnforcementMode.ENFORCE,
+        output_targets: list[str] | None = None,
     ) -> TaskBoundary:
         """Derives a task boundary using the LLM with strict validation and fallback."""
         now_utc = datetime.now(timezone.utc).isoformat()
@@ -217,12 +218,27 @@ class BoundaryDerivationV2:
 
         # Step 3: Use LLM derivation if valid; otherwise fallback to template derivation
         if validation_passed and derived_schema:
+            # Include explicit output targets in the LLM-derived write set
+            fw = list(derived_schema.files_write)
+            if output_targets:
+                for out_t in output_targets:
+                    out_norm = out_t.replace("\\", "/").strip()
+                    if out_norm.startswith("/") or out_norm.startswith("\\") or ".." in out_norm:
+                        raise ValueError(
+                            f"Invalid output_target '{out_t}': must be a relative path "
+                            f"without '..' components"
+                        )
+                    if len(out_norm) > 0 and ":" in out_norm:
+                        raise ValueError(
+                            f"Invalid output_target '{out_t}': absolute Windows path not allowed"
+                        )
+                    fw.append(out_norm)
             boundary = TaskBoundary(
                 task_id=task_id,
                 version=1,
                 workspace_root=str(Path(workspace_root).resolve()),
                 files_read=sorted(list(set(derived_schema.files_read))),
-                files_write=sorted(list(set(derived_schema.files_write))),
+                files_write=sorted(list(set(fw))),
                 network=sorted(list(set(derived_schema.network))),
                 tools=sorted(list(set(derived_schema.tools))),
                 peer_agents=sorted(list(set(derived_schema.peer_agents))),
@@ -254,6 +270,7 @@ class BoundaryDerivationV2:
             request_text=prompt_content,
             workspace_root=workspace_root,
             enforcement_mode=enforcement_mode,
+            output_targets=output_targets,
         )
         fallback_boundary.derived_by = "fallback_v1"
         fallback_boundary.prompt_hash = prompt_hash

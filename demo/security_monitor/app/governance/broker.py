@@ -430,9 +430,12 @@ class ToolBroker:
         if sys.platform == "linux":
             try:
                 from .os_layer.runner import CgroupTaskRunner, TaskWorkspace
+            except ImportError:
+                pass  # Linux isolation deps not installed; fall through to basic subprocess
+            else:
                 runner = CgroupTaskRunner(self.storage)
                 ws_path = Path(workspace_root) if workspace_root else Path(f"/home/agent_workspaces/task_{task_id[:16]}")
-                ws = TaskWorkspace(ws_path, task_id=task_id)
+                ws = TaskWorkspace(task_id=task_id, base_dir=ws_path)
                 res = runner.run_task_command(
                     task_id=task_id,
                     cmd=["/bin/sh", "-c", command],
@@ -444,8 +447,6 @@ class ToolBroker:
                     "stderr": res.stderr,
                     "exit_code": res.returncode,
                 }
-            except Exception:
-                pass
 
         # Subprocess execution fallback
         cwd_dir = str(workspace_root) if workspace_root and Path(workspace_root).exists() else None
