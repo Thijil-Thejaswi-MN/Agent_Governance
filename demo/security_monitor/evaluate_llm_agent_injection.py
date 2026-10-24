@@ -614,6 +614,7 @@ def run_llm_agent_evaluation(
                     agent_id="eval_agent",
                     workspace_root=str(ws_dir),
                     enforcement_mode=EnforcementMode.ENFORCE if has_governance else EnforcementMode.OBSERVE,
+                    output_targets=["output/summary.txt"],
                 )
                 token = f"tok_{cond_key}_{sc_id}_{repeat_idx}"
                 storage.save_token(token, task.task_id, task.agent_id)

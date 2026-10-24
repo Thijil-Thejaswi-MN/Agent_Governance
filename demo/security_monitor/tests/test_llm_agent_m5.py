@@ -564,8 +564,9 @@ def test_broker_rejects_empty_expansion_arguments(tmp_path: Path) -> None:
     assert len(storage.list_expansion_requests(task_id=task.task_id)) == 0
 
 
-def test_template_derivation_all_80_scenarios_cover_read_target() -> None:
-    """Verifies that BoundaryDerivationV1 includes every scenario's read_target for all 80 evaluation_v2 scenarios."""
+def test_template_derivation_all_80_scenarios_cover_read_target_and_output() -> None:
+    """Verifies that BoundaryDerivationV1 includes every scenario's read_target in files_read
+    AND output/summary.txt in files_write for all 80 evaluation_v2 scenarios."""
     import fnmatch
     from demo.security_monitor.app.governance.catalog import BoundaryDerivationV1
 
@@ -587,23 +588,87 @@ def test_template_derivation_all_80_scenarios_cover_read_target() -> None:
             task_id=f"test_{sc_id}",
             request_text=prompt,
             workspace_root="/tmp/fake_ws",
+            output_targets=["output/summary.txt"],
         )
 
         rt_norm = read_target.replace("\\", "/").lower()
-        allowed = any(
+        read_allowed = any(
             fnmatch.fnmatch(rt_norm, pat.replace("\\", "/").lower())
             for pat in boundary.files_read
         )
-        if not allowed:
+        write_allowed = any(
+            fnmatch.fnmatch("output/summary.txt", pat.replace("\\", "/").lower())
+            for pat in boundary.files_write
+        )
+
+        if not read_allowed or not write_allowed:
             missing_targets.append({
                 "scenario_id": sc_id,
                 "read_target": read_target,
+                "read_allowed": read_allowed,
+                "write_allowed": write_allowed,
                 "files_read": boundary.files_read,
+                "files_write": boundary.files_write,
                 "prompt": prompt,
             })
         scenarios_tested += 1
 
     assert scenarios_tested == 80, f"Expected 80 scenarios, found {scenarios_tested}"
-    assert not missing_targets, f"Failed scenarios with missing read_target: {missing_targets}"
+    assert not missing_targets, f"Failed scenarios with missing read_target or output target: {missing_targets}"
+
+
+def test_boundary_diff_before_vs_after_output_fix() -> None:
+    """Verifies that only scenarios whose files_write lacked output/summary.txt change when output_targets is provided."""
+    import fnmatch
+    from demo.security_monitor.app.governance.catalog import BoundaryDerivationV1
+
+    repo_dir = Path(__file__).resolve().parents[3]
+    sc_dir = repo_dir / "demo" / "data" / "evaluation_v2" / "scenarios"
+    derivation = BoundaryDerivationV1()
+
+    changed_scenarios = []
+
+    for sc_path in sorted(sc_dir.glob("*.json")):
+        sc_data = json.loads(sc_path.read_text(encoding="utf-8"))
+        prompt = sc_data["prompt"]
+        sc_id = sc_data["id"]
+
+        b_before = derivation.derive(
+            task_id=f"test_{sc_id}",
+            request_text=prompt,
+            workspace_root="/tmp/fake_ws",
+            output_targets=None,
+        )
+
+        b_after = derivation.derive(
+            task_id=f"test_{sc_id}",
+            request_text=prompt,
+            workspace_root="/tmp/fake_ws",
+            output_targets=["output/summary.txt"],
+        )
+
+        assert b_before.files_read == b_after.files_read, f"{sc_id} files_read changed unexpectedly"
+        assert b_before.tools == b_after.tools, f"{sc_id} tools changed unexpectedly"
+        assert b_before.network == b_after.network, f"{sc_id} network changed unexpectedly"
+        assert b_before.peer_agents == b_after.peer_agents, f"{sc_id} peer_agents changed unexpectedly"
+
+        gained_write = set(b_after.files_write) - set(b_before.files_write)
+        lost_write = set(b_before.files_write) - set(b_after.files_write)
+        assert not lost_write, f"{sc_id} unexpectedly lost files_write: {lost_write}"
+
+        if gained_write:
+            assert gained_write == {"output/summary.txt"}, f"{sc_id} gained unexpected writes: {gained_write}"
+            changed_scenarios.append(sc_id)
+
+    print(f"\nScenarios whose boundary changed: {changed_scenarios}")
+    expected_changed = [
+        "injected_high_obf_09",
+        "injected_high_plain_05",
+        "injected_low_plain_08",
+        "legit_anticip_04",
+        "legit_anticip_09",
+        "legit_anticip_13",
+    ]
+    assert changed_scenarios == expected_changed, f"Expected {expected_changed}, got {changed_scenarios}"
 
 

@@ -35,6 +35,7 @@ class TaskIntakeService:
         agent_id: str,
         workspace_root: str,
         enforcement_mode: EnforcementMode = EnforcementMode.ENFORCE,
+        output_targets: list[str] | None = None,
     ) -> tuple[TaskRecord, TaskBoundary]:
         """
         Creates a new task record, derives its initial execution boundary contract,
@@ -66,6 +67,7 @@ class TaskIntakeService:
             request_text=request_text,
             workspace_root=w_root,
             enforcement_mode=enforcement_mode,
+            output_targets=output_targets,
         )
         self.storage.save_boundary(boundary)
 

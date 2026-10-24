@@ -165,6 +165,7 @@ class BoundaryDerivationV1:
         request_text: str,
         workspace_root: str,
         enforcement_mode: EnforcementMode = EnforcementMode.ENFORCE,
+        output_targets: list[str] | None = None,
     ) -> TaskBoundary:
         """
         Derives an initial task boundary from user request text using rule-based templates.
@@ -238,6 +239,12 @@ class BoundaryDerivationV1:
             files_read = ["input/*"]
         if not files_write:
             files_write = ["output/summary.txt"]
+
+        # Always include explicitly specified task output targets (e.g. output/summary.txt)
+        if output_targets:
+            for out_t in output_targets:
+                out_norm = out_t.replace("\\", "/").strip()
+                files_write.append(out_norm)
 
         # Ensure unique, normalized lists
         files_read = sorted(list(set(files_read)))
