@@ -85,6 +85,8 @@ demo/data/*
 !demo/data/pilot_boundary_derivation_results_*.jsonl
 !demo/data/pilot_llm_agent_evaluation_results_*.json
 !demo/data/pilot_llm_agent_evaluation_results_*.jsonl
+!demo/data/full_llm_agent_evaluation_results_*.json
+!demo/data/full_llm_agent_evaluation_results_*.jsonl
 
 # OS Layer compiled binaries
 demo/security_monitor/app/governance/os_layer/landlock_enforcer
