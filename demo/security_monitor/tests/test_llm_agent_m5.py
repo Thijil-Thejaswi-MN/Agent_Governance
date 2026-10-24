@@ -428,3 +428,138 @@ def test_direct_unmediated_tool_client_safety_containment(tmp_path: Path) -> Non
     # 8. Verify client.escaped_actions contains all escape attempts
     assert len(client.escaped_actions) >= 4
     assert all(a["would_succeed_without_governance"] is True for a in client.escaped_actions)
+
+
+def test_normalize_request_access_args() -> None:
+    """Verifies that request_access argument aliases are normalized and types inferred."""
+    from demo.security_monitor.app.governance.llm_agent import normalize_request_access_args
+
+    # 1. Alias: resource -> resource_target with inferred file_read
+    args1 = {"resource": "input/appendix.pdf", "justification": "Need appendix"}
+    norm1, valid1, err1 = normalize_request_access_args(args1)
+    assert valid1 is True
+    assert norm1["resource_target"] == "input/appendix.pdf"
+    assert norm1["resource_type"] == "file_read"
+    assert norm1["justification"] == "Need appendix"
+
+    # 2. Alias: resource_path -> resource_target
+    args2 = {"resource_path": "input/data.csv"}
+    norm2, valid2, err2 = normalize_request_access_args(args2)
+    assert valid2 is True
+    assert norm2["resource_target"] == "input/data.csv"
+    assert norm2["resource_type"] == "file_read"
+
+    # 3. Alias: path -> resource_target with network inference
+    args3 = {"path": "https://api.github.com/v1", "reason": "Need GitHub API"}
+    norm3, valid3, err3 = normalize_request_access_args(args3)
+    assert valid3 is True
+    assert norm3["resource_target"] == "https://api.github.com/v1"
+    assert norm3["resource_type"] == "network"
+    assert norm3["justification"] == "Need GitHub API"
+
+    # 4. Peer agent inference
+    args4 = {"target": "agent_worker_2"}
+    norm4, valid4, err4 = normalize_request_access_args(args4)
+    assert valid4 is True
+    assert norm4["resource_target"] == "agent_worker_2"
+    assert norm4["resource_type"] == "peer_agent"
+
+    # 5. Invalid: missing target
+    args5 = {"justification": "I just want access"}
+    norm5, valid5, err5 = normalize_request_access_args(args5)
+    assert valid5 is False
+    assert "Missing required argument 'resource_target'" in err5
+
+    # 6. Invalid: empty string
+    args6 = {"resource": "   ", "type": "file"}
+    norm6, valid6, err6 = normalize_request_access_args(args6)
+    assert valid6 is False
+    assert "Missing required argument 'resource_target'" in err6
+
+
+def test_llm_agent_request_access_malformed_never_records_policy_decision(tmp_path: Path) -> None:
+    """Verifies that malformed request_access calls:
+    1. Are flagged as malformed_tool_call=True and status='validation_error'.
+    2. Return validation error message to the agent.
+    3. NEVER call the broker or record a policy decision in SQLite.
+    """
+    db_file = tmp_path / "test_malformed_gov.sqlite"
+    storage = GovernanceStorage(db_file)
+    broker = ToolBroker(storage)
+
+    intake = TaskIntakeService(storage)
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    task, boundary = intake.submit_task("Process document", "test_agent", str(ws))
+    token = "test_tok_malformed"
+    storage.save_token(token, task.task_id, task.agent_id)
+
+    client = AgentBrokerClient(broker=broker, token=token)
+
+    # Provider that issues an invalid request_access with empty resource
+    call_idx = 0
+    def malformed_llm_provider(messages: list[dict[str, Any]], **kwargs: Any) -> dict[str, Any]:
+        nonlocal call_idx
+        call_idx += 1
+        if call_idx == 1:
+            return {
+                "role": "assistant",
+                "content": "Requesting access without resource target",
+                "tool_calls": [
+                    {
+                        "id": "call_bad_exp_1",
+                        "function": {
+                            "name": "request_access",
+                            "arguments": json.dumps({"resource": "", "justification": "bad call"}),
+                        },
+                    }
+                ],
+            }
+        return {
+            "role": "assistant",
+            "content": "Acknowledged validation error, task completed",
+            "tool_calls": None,
+        }
+
+    agent = LLMAgent(broker_client=client, custom_provider=malformed_llm_provider)
+    result = agent.run("Test prompt", max_iterations=3)
+
+    assert result["completed"] is True
+    tool_hist = result["tool_history"]
+    assert len(tool_hist) == 1
+    assert tool_hist[0]["tool"] == "request_access"
+    assert tool_hist[0]["malformed_tool_call"] is True
+    assert tool_hist[0]["status"] == "validation_error"
+
+    # Verify no expansion request was stored in the database!
+    exp_requests = storage.list_expansion_requests(task_id=task.task_id)
+    assert len(exp_requests) == 0
+
+    # Verify message returned to agent was a Validation Error
+    tool_msgs = [m for m in result["messages"] if m.get("role") == "tool"]
+    assert len(tool_msgs) == 1
+    assert "Validation Error" in tool_msgs[0]["content"]
+
+
+def test_broker_rejects_empty_expansion_arguments(tmp_path: Path) -> None:
+    """Verifies that broker and expansion service reject empty targets/types with ValueError."""
+    db_file = tmp_path / "test_broker_rejects.sqlite"
+    storage = GovernanceStorage(db_file)
+    broker = ToolBroker(storage)
+
+    intake = TaskIntakeService(storage)
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    task, boundary = intake.submit_task("Process document", "test_agent", str(ws))
+    token = "test_tok_rejects"
+    storage.save_token(token, task.task_id, task.agent_id)
+
+    with pytest.raises(ValueError, match="resource_target cannot be empty"):
+        broker.request_access(token=token, resource_type="file_read", resource_target="", justification="test")
+
+    with pytest.raises(ValueError, match="resource_type cannot be empty"):
+        broker.request_access(token=token, resource_type="", resource_target="input/file.txt", justification="test")
+
+    # Ensure nothing was stored in expansions table
+    assert len(storage.list_expansion_requests(task_id=task.task_id)) == 0
+

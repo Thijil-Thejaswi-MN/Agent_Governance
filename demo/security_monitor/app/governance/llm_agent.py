@@ -148,6 +148,68 @@ GOVERNED_TOOLS_SCHEMA: list[dict[str, Any]] = [
 ]
 
 
+def normalize_request_access_args(args: dict[str, Any]) -> tuple[dict[str, Any], bool, str]:
+    """Normalizes argument aliases and infers resource_type for request_access calls.
+    
+    Recognized aliases for resource_target:
+    - resource_target, resource, resource_path, path, target, file_path, url, destination
+
+    Infers resource_type from resource_target if not provided or unrecognized:
+    - Starts with http:// or https:// or contains :// -> 'network'
+    - Starts with agent_ or agent: or agent. -> 'peer_agent'
+    - Default for file paths / filenames -> 'file_read'
+    Normalizes resource_type 'file' -> 'file_read'.
+
+    Returns: (normalized_args, is_valid, error_message)
+    """
+    if not isinstance(args, dict):
+        return {}, False, f"Expected arguments object/dictionary, got {type(args).__name__}"
+
+    # 1. Resolve resource_target from aliases
+    target = ""
+    for alias in ("resource_target", "resource", "resource_path", "path", "target", "file_path", "url", "destination"):
+        val = args.get(alias)
+        if val is not None and str(val).strip():
+            target = str(val).strip()
+            break
+
+    if not target:
+        return {}, False, "Missing required argument 'resource_target' (or aliases: resource, resource_path, path, target)"
+
+    # 2. Resolve or infer resource_type
+    res_type = ""
+    for alias in ("resource_type", "type"):
+        val = args.get(alias)
+        if val is not None and str(val).strip():
+            res_type = str(val).strip().lower()
+            break
+
+    # Alias normalization for resource_type
+    if res_type in ("file", "files", "filepath"):
+        res_type = "file_read"
+    elif res_type in ("web", "http", "https", "url", "net"):
+        res_type = "network"
+    elif res_type in ("agent", "peer"):
+        res_type = "peer_agent"
+
+    if not res_type or res_type not in ("file_read", "file_write", "network", "peer_agent"):
+        target_lower = target.lower()
+        if target_lower.startswith(("http://", "https://")) or "://" in target_lower:
+            res_type = "network"
+        elif target_lower.startswith(("agent_", "agent:", "agent.")):
+            res_type = "peer_agent"
+        else:
+            res_type = "file_read"
+
+    justification = str(args.get("justification") or args.get("reason") or args.get("rationale") or "").strip()
+
+    return {
+        "resource_type": res_type,
+        "resource_target": target,
+        "justification": justification,
+    }, True, ""
+
+
 class AgentBrokerClient:
     """Client interface for an agent process to communicate with the ToolBroker.
     
@@ -322,18 +384,35 @@ class LLMAgent:
 
                 try:
                     if fn_name == "read_file":
-                        res = self.client.read_file(args.get("file_path", ""))
+                        fpath = args.get("file_path") or args.get("path") or args.get("file") or ""
+                        res = self.client.read_file(fpath)
                     elif fn_name == "write_file":
-                        res = self.client.write_file(args.get("file_path", ""), args.get("content", ""))
+                        fpath = args.get("file_path") or args.get("path") or args.get("file") or ""
+                        content = args.get("content") or args.get("text") or args.get("data") or ""
+                        res = self.client.write_file(fpath, content)
                     elif fn_name == "http_get":
                         res = self.client.http_get(args.get("url", ""))
                     elif fn_name == "call_agent":
                         res = self.client.call_agent(args.get("target_agent", ""), args.get("message", {}))
                     elif fn_name == "request_access":
+                        norm_args, is_valid, val_err = normalize_request_access_args(args)
+                        if not is_valid:
+                            tool_record["malformed_tool_call"] = True
+                            tool_record["status"] = "validation_error"
+                            tool_record["error"] = val_err
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tc_id,
+                                "content": f"Validation Error: {val_err}. Please call request_access with 'resource_target' (e.g. 'input/appendix.pdf') and 'resource_type' ('file_read', 'file_write', 'network', 'peer_agent').",
+                            })
+                            tool_history.append(tool_record)
+                            continue
+
+                        tool_record["args"] = norm_args
                         res = self.client.request_access(
-                            resource_type=args.get("resource_type", ""),
-                            resource_target=args.get("resource_target", ""),
-                            justification=args.get("justification", ""),
+                            resource_type=norm_args["resource_type"],
+                            resource_target=norm_args["resource_target"],
+                            justification=norm_args["justification"],
                         )
                     elif fn_name == "run_command":
                         res = self.client.run_command(args.get("command", ""))

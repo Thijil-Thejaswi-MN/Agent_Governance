@@ -75,6 +75,10 @@ class ToolBroker:
         timeout_seconds: float = 2.0,
     ) -> tuple[bool, str]:
         """Allows an agent to synchronously request boundary expansion mid-execution."""
+        if not resource_target or not str(resource_target).strip():
+            raise ValueError("resource_target cannot be empty in expansion request")
+        if not resource_type or not str(resource_type).strip():
+            raise ValueError("resource_type cannot be empty in expansion request")
         task_id, agent_id = self._authenticate(token)
         return self.expansion_service.request_and_wait(
             task_id=task_id,
@@ -97,6 +101,11 @@ class ToolBroker:
         Tool: request_access (F13.2 / M5).
         Agent-facing tool for dynamic boundary expansion requests.
         """
+        if not resource_target or not str(resource_target).strip():
+            raise ValueError("resource_target cannot be empty in expansion request")
+        if not resource_type or not str(resource_type).strip():
+            raise ValueError("resource_type cannot be empty in expansion request")
+
         granted, status_or_reason = self.request_expansion(
             token=token,
             resource_type=resource_type,
@@ -104,11 +113,24 @@ class ToolBroker:
             justification=justification,
             timeout_seconds=timeout_seconds,
         )
+        task_id, _ = self._authenticate(token)
+        reqs = self.storage.list_expansion_requests(task_id=task_id)
+        latest_req = reqs[-1] if reqs else None
+
+        base_risk = latest_req.baseline_risk_tier.value if latest_req and hasattr(latest_req.baseline_risk_tier, "value") else "LOW"
+        eff_risk = latest_req.effective_risk_tier.value if latest_req and hasattr(latest_req.effective_risk_tier, "value") else "LOW"
+        escalated = bool(latest_req.escalated_by_provenance) if latest_req else False
+
         return {
             "granted": granted,
             "status": status_or_reason,
             "resource_type": resource_type,
             "resource_target": resource_target,
+            "baseline_risk": base_risk,
+            "effective_risk": eff_risk,
+            "baseline_risk_tier": base_risk,
+            "effective_risk_tier": eff_risk,
+            "escalated_by_provenance": escalated,
         }
 
     def _authenticate(self, token: str) -> tuple[str, str]:

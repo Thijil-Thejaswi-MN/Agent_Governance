@@ -374,12 +374,27 @@ class DirectUnmediatedToolClient:
             "resource_type": resource_type,
             "resource_target": resource_target,
             "justification": justification,
+            "baseline_risk": "LOW",
+            "effective_risk": "LOW",
+            "baseline_risk_tier": "LOW",
+            "effective_risk_tier": "LOW",
+            "escalated_by_provenance": False,
             "status": "APPROVED",
             "decision": "APPROVED",
             "resolved_by": "unmediated_auto_grant",
         }
         self.expansion_requests.append(req_record)
-        return {"granted": True, "status": "APPROVED", "resource_type": resource_type, "resource_target": resource_target}
+        return {
+            "granted": True,
+            "status": "APPROVED",
+            "resource_type": resource_type,
+            "resource_target": resource_target,
+            "baseline_risk": "LOW",
+            "effective_risk": "LOW",
+            "baseline_risk_tier": "LOW",
+            "effective_risk_tier": "LOW",
+            "escalated_by_provenance": False,
+        }
 
     def run_command(self, command: str) -> dict[str, Any]:
         escape_record = {
@@ -696,9 +711,11 @@ def run_llm_agent_evaluation(
                             "request_id": req.request_id,
                             "resource_type": req.resource_type,
                             "resource_target": req.resource_target,
+                            "baseline_risk": req.baseline_risk_tier.value if hasattr(req.baseline_risk_tier, "value") else str(req.baseline_risk_tier),
+                            "effective_risk": req.effective_risk_tier.value if hasattr(req.effective_risk_tier, "value") else str(req.effective_risk_tier),
                             "baseline_risk_tier": req.baseline_risk_tier.value if hasattr(req.baseline_risk_tier, "value") else str(req.baseline_risk_tier),
                             "effective_risk_tier": req.effective_risk_tier.value if hasattr(req.effective_risk_tier, "value") else str(req.effective_risk_tier),
-                            "escalated_by_provenance": req.escalated_by_provenance,
+                            "escalated_by_provenance": bool(req.escalated_by_provenance),
                             "status": req.status.value if hasattr(req.status, "value") else str(req.status),
                             "decision": req.status.value if hasattr(req.status, "value") else str(req.status),
                             "resolved_by": req.resolved_by,
@@ -783,9 +800,15 @@ if __name__ == "__main__":
     parser.add_argument("--repeats", type=int, default=3)
     parser.add_argument("--pilot", action="store_true", help="Run stratified pilot (16 scenarios x 1 repeat per condition)")
     parser.add_argument("--simulated-user-policy", choices=["oracle", "always_deny"], default="oracle", help="Simulated user policy for ASK_USER expansion requests")
+    parser.add_argument("--condition", choices=["both", "a", "b"], default="both", help="Condition(s) to evaluate: 'both', 'a' (unmediated), or 'b' (governed)")
+    parser.add_argument("--governed-only", action="store_true", help="Shortcut to evaluate Condition B (governed) only")
     parser.add_argument("--resume", action="store_true", help="Resume run by skipping trials already in JSONL")
     parser.add_argument("--output", type=str, default=None)
     args = parser.parse_args()
+
+    cond_arg = "b" if args.governed_only else args.condition
+    run_a = cond_arg in ("both", "a")
+    run_b = cond_arg in ("both", "b")
 
     out_p = Path(args.output) if args.output else None
     run_llm_agent_evaluation(
@@ -800,4 +823,6 @@ if __name__ == "__main__":
         simulated_user_policy=args.simulated_user_policy,
         output_path=out_p,
         resume=args.resume,
+        run_condition_a=run_a,
+        run_condition_b=run_b,
     )

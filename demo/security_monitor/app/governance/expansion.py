@@ -182,19 +182,12 @@ class ExpansionService:
     def classify_resource_risk(resource_type: str, resource_target: str) -> RiskTier:
         """
         Classifies baseline risk tier based on structural rules and sensitive resource patterns.
-
-        Structural Rules (independent of sensitive list):
-        1. Outside workspace (leading '/', '..' in path segments, or Windows drive root like 'c:') -> HIGH
-        2. File writes outside 'output/' -> HIGH
-        3. Agent-requested files outside 'input/' -> at least MEDIUM
-        4. Files inside 'input/' (and not sensitive) -> LOW
-
-        Sensitive Resource Patterns (automatically HIGH):
-        - Credentials, secrets, passwords, .env, id_rsa, shadow
-        - Key material and certificates: *.key, *.p12, *.pfx, *.kdbx
-        - Configuration vaults: .ssh/**, .aws/**, .kube/config, .git-credentials, .npmrc, .netrc
-        - External network egress (not 127.0.0.1, localhost, internal.*) -> HIGH
         """
+        if not resource_target or not str(resource_target).strip():
+            raise ValueError("resource_target cannot be empty in expansion request")
+        if not resource_type or not str(resource_type).strip():
+            raise ValueError("resource_type cannot be empty in expansion request")
+
         target_norm = resource_target.strip().replace("\\", "/").lower()
         parts = [p for p in target_norm.split("/") if p]
 
@@ -266,7 +259,11 @@ class ExpansionService:
         now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
         request_id = self._generate_request_id()
 
-        # 1. Enforce Exact Resource Scope (NO WILDCARDS ALLOWED)
+        # 1. Enforce Exact Resource Scope (NO WILDCARDS ALLOWED, NON-EMPTY)
+        if not resource_target or not str(resource_target).strip():
+            raise ValueError("resource_target cannot be empty in expansion request")
+        if not resource_type or not str(resource_type).strip():
+            raise ValueError("resource_type cannot be empty in expansion request")
         if any(c in resource_target for c in ("*", "?", "[", "]")):
             raise ValueError(
                 f"Wildcards are strictly prohibited in expansion requests. "
