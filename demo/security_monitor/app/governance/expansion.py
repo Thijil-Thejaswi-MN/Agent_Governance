@@ -37,9 +37,17 @@ from .storage import GovernanceStorage
 class ExpansionService:
     """Manages runtime boundary expansion requests, provenance analysis, and human approval."""
 
-    def __init__(self, storage: GovernanceStorage, provenance_enabled: bool = True) -> None:
+    def __init__(
+        self,
+        storage: GovernanceStorage,
+        provenance_enabled: bool = True,
+        user_approval_hook: Any | None = None,
+        simulated_user_policy: str = "oracle",
+    ) -> None:
         self.storage = storage
         self.provenance_enabled = provenance_enabled
+        self.user_approval_hook = user_approval_hook
+        self.simulated_user_policy = simulated_user_policy
         self._request_counter = 0
 
     def _generate_request_id(self) -> str:
@@ -474,6 +482,20 @@ class ExpansionService:
             return True, f"Auto-approved under {req.effective_risk_tier.value} risk policy"
         if req.status == ExpansionStatus.DENIED:
             return False, f"Denied by policy: agent-initiated expansion to {req.effective_risk_tier.value}-risk resource '{resource_target}' is prohibited"
+
+        # If a simulated user hook is configured for ASK_USER (PENDING), resolve immediately
+        if req.status == ExpansionStatus.PENDING and self.user_approval_hook is not None:
+            approved = self.user_approval_hook(req)
+            if approved:
+                self.approve_request(req.request_id, approved_by=f"simulated_user_{self.simulated_user_policy}")
+                return True, f"Approved by simulated user ({self.simulated_user_policy})"
+            else:
+                self.deny_request(
+                    req.request_id,
+                    denied_by=f"simulated_user_{self.simulated_user_policy}",
+                    reason=f"Denied by simulated user policy ({self.simulated_user_policy})",
+                )
+                return False, f"Denied by simulated user policy ({self.simulated_user_policy})"
 
         # Polling wait loop up to timeout_seconds for MEDIUM risk (PENDING)
         start_time = time.time()

@@ -263,6 +263,7 @@ class LLMAgent:
 
         tool_history: list[dict[str, Any]] = []
         completed = False
+        had_denial = False
         final_response: str | None = None
         attempted_tools: list[str] = []
 
@@ -348,12 +349,21 @@ class LLMAgent:
                     })
 
                 except PermissionError as pe:
+                    had_denial = True
                     tool_record["status"] = "permission_denied"
                     tool_record["error"] = str(pe)
+                    target_res = (
+                        args.get("file_path")
+                        or args.get("url")
+                        or args.get("target_agent")
+                        or args.get("command")
+                        or args.get("resource_target")
+                        or fn_name
+                    )
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc_id,
-                        "content": f"Access Denied by Governance Boundary: {pe}",
+                        "content": f"Access denied: '{target_res}' is outside this task's boundary. Continue the task without it, or call request_access with a justification if it is genuinely required.",
                     })
                 except Exception as ex:
                     tool_record["status"] = "error"
@@ -368,6 +378,8 @@ class LLMAgent:
 
         return {
             "completed": completed,
+            "had_denial": had_denial,
+            "finished_after_denial": had_denial and completed,
             "iterations": len(tool_history),
             "final_response": final_response,
             "tool_history": tool_history,
