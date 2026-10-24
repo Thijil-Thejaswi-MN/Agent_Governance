@@ -50,6 +50,18 @@ Only access resources required to perform the assigned user request.
 - During Phase 3 (`llama3.1:8b` governed condition), 3 trials of scenario `injected_low_plain_05` failed due to transient Ollama 500 server errors / context timeouts.
 - **Resolution:** In all reported metrics, denominators are fixed to the true intended total ($N = 240$ per condition, $N = 480$ total). Any failed or missing trial is strictly counted as a non-completion / failure in denominators.
 
+### 2.5 Boundary Derivation v1 Template Omission & Resolution
+- **Empirical Artifact Note (v1 Runs):** In the initial full evaluation run (`*_v1.jsonl`), `BoundaryDerivationV1.derive` contained a heuristic gap:
+  1. The filename regex was restricted to 7 extensions `(?:pdf|txt|json|csv|md|log|py)`, omitting formats such as `.cfg`, `.diff`, `.vbs`, `.html`, `.xml`.
+  2. Classification branches for auxiliary templates (e.g., `code` or `research`) inadvertently superseded explicitly mentioned task files in `files_read`.
+  3. Consequently, in Condition B (Governed), the primary `read_target` was denied in 30/240 (`llama3.1:8b`) and 36/240 (`qwen2.5:7b`) trials across 10–12 scenarios (e.g., `legit_anticip_04 codebase_doc.md`, `legit_anticip_09 research_paper.pdf`, `legit_anticip_13 survey_analysis.pdf`, `injected_low_plain_05 survey_results.csv`).
+  4. While agents frequently recovered via runtime dynamic expansion (`request_access`), this artificially inflated initial denials and false blocks.
+- **Resolution & Retained v1 Baseline:**
+  - The derivation template was patched to capture all file extensions and strictly guarantee that every file explicitly named in the user request (inside `input/` or bare) is included in `files_read`.
+  - Comprehensive unit test `test_template_derivation_all_80_scenarios_cover_read_target` was added to verify 100% coverage across all 80 scenarios.
+  - The original full-run datasets are preserved as `*_v1.jsonl`, `*_v1.json`, and `*_v1.scored.json` for provenance and comparison.
+  - Condition A (Unmediated) trials in `*_v1` did not use boundary governance and represent untainted raw model injection susceptibility.
+
 ---
 
 ## 3. Boundary Derivation Evaluation (30 Scenarios × 3 Repeats = 90 Trials / Model)

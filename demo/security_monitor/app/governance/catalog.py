@@ -179,61 +179,65 @@ class BoundaryDerivationV1:
         """
         req_lower = request_text.lower()
 
-        # Identify files mentioned in request
-        # Regex captures filenames with extensions (.pdf, .txt, .json, .csv, .md, .log, .py)
-        file_matches = re.findall(r'[\w\-./]+\.(?:pdf|txt|json|csv|md|log|py)', request_text, flags=re.IGNORECASE)
+        # Identify all files mentioned in request (any extension, inside input/ or bare)
+        # Avoid matching URLs, port numbers, or decimal versions
+        raw_tokens = re.findall(r'[a-zA-Z0-9_./\\-]+\.[a-zA-Z0-9_-]+', request_text)
+        file_matches = []
+        for tok in raw_tokens:
+            tok = tok.strip(".,;:!?()'\"")
+            if tok.startswith(("http://", "https://")):
+                continue
+            if ":" in tok or "/" in tok.split(".")[-1]:
+                continue
+            ext = tok.split(".")[-1]
+            if ext.isdigit():
+                continue
+            file_matches.append(tok)
 
         files_read: list[str] = []
         files_write: list[str] = []
-        tools: list[str] = []
+        tools: list[str] = ["read_file", "write_file"]
         network: list[str] = []
         peer_agents: list[str] = []
 
-        # Classification heuristics
-        if any(w in req_lower for w in ["summarise", "summarize", "analyse", "analyze", "report"]):
-            # Document analysis template
-            tools = ["read_file", "write_file"]
-            
-            # Determine read vs write files
-            for f in file_matches:
-                f_norm = f.replace("\\", "/")
-                f_lower = f_norm.lower()
-                basename = Path(f_norm).name
-                
-                # Check if path explicitly has directory or was bare
-                if any(w in f_lower for w in ["summary", "output", "result", "analysis"]):
-                    if "/" in f_norm:
-                        files_write.append(f_norm)
-                    else:
-                        files_write.append(f"output/{basename}")
-                else:
-                    if "/" in f_norm:
-                        files_read.append(f_norm)
-                    else:
+        # Determine read vs write files from explicitly mentioned files
+        for f in file_matches:
+            f_norm = f.replace("\\", "/").strip()
+            f_lower = f_norm.lower()
+            basename = Path(f_norm).name
+            base_lower = basename.lower()
+
+            # Output / write target classification
+            if f_lower.startswith("output/") or base_lower in ["summary.txt", "summary.md", "output.txt", "research_notes.txt"]:
+                files_write.append(f_norm if "/" in f_norm else f"output/{basename}")
+                files_write.append(basename)
+            else:
+                # Explicit input file mentioned in user request
+                if "/" in f_norm:
+                    files_read.append(f_norm)
+                    if not f_norm.startswith("input/"):
                         files_read.append(f"input/{basename}")
+                else:
+                    files_read.append(f"input/{basename}")
+                    files_read.append(basename)
 
-            # Fallbacks if regex didn't catch explicit names
-            if not files_read:
-                files_read = ["input/report.pdf"]
+        # Classification heuristics for auxiliary tools / templates
+        if any(w in req_lower for w in ["research", "web", "fetch", "http"]):
+            if "http_get" not in tools:
+                tools.append("http_get")
             if not files_write:
-                files_write = ["output/summary.txt"]
+                files_write.append("output/research_notes.txt")
+            network.extend(["localhost:8000", "127.0.0.1:8000"])
 
-        elif any(w in req_lower for w in ["research", "web", "fetch", "http"]):
-            # Web research template
-            tools = ["read_file", "write_file", "http_get"]
-            files_write = ["output/research_notes.txt", "research_notes.txt"]
-            # Network hosts extracted or local stub
-            network = ["localhost:8000", "127.0.0.1:8000"]
-        elif any(w in req_lower for w in ["fix", "code", "refactor", "patch"]):
-            # Code fix template
-            tools = ["read_file", "write_file"]
-            files_read = ["src/**", "tests/**"]
-            files_write = ["src/**", "tests/**"]
-        else:
-            # Minimal default template: read/write only within assigned workspace
-            tools = ["read_file", "write_file"]
+        if any(w in req_lower for w in ["fix", "code", "refactor", "patch"]):
+            files_read.extend(["src/**", "tests/**"])
+            files_write.extend(["src/**", "tests/**"])
+
+        # Fallbacks if regex didn't catch explicit names
+        if not files_read:
             files_read = ["input/*"]
-            files_write = ["output/*"]
+        if not files_write:
+            files_write = ["output/summary.txt"]
 
         # Ensure unique, normalized lists
         files_read = sorted(list(set(files_read)))

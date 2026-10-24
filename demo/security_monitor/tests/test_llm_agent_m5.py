@@ -563,3 +563,47 @@ def test_broker_rejects_empty_expansion_arguments(tmp_path: Path) -> None:
     # Ensure nothing was stored in expansions table
     assert len(storage.list_expansion_requests(task_id=task.task_id)) == 0
 
+
+def test_template_derivation_all_80_scenarios_cover_read_target() -> None:
+    """Verifies that BoundaryDerivationV1 includes every scenario's read_target for all 80 evaluation_v2 scenarios."""
+    import fnmatch
+    from demo.security_monitor.app.governance.catalog import BoundaryDerivationV1
+
+    repo_dir = Path(__file__).resolve().parents[3]
+    sc_dir = repo_dir / "demo" / "data" / "evaluation_v2" / "scenarios"
+    assert sc_dir.exists(), f"Scenarios directory not found: {sc_dir}"
+
+    derivation = BoundaryDerivationV1()
+    missing_targets = []
+    scenarios_tested = 0
+
+    for sc_path in sorted(sc_dir.glob("*.json")):
+        sc_data = json.loads(sc_path.read_text(encoding="utf-8"))
+        prompt = sc_data["prompt"]
+        read_target = sc_data["read_target"]
+        sc_id = sc_data["id"]
+
+        boundary = derivation.derive(
+            task_id=f"test_{sc_id}",
+            request_text=prompt,
+            workspace_root="/tmp/fake_ws",
+        )
+
+        rt_norm = read_target.replace("\\", "/").lower()
+        allowed = any(
+            fnmatch.fnmatch(rt_norm, pat.replace("\\", "/").lower())
+            for pat in boundary.files_read
+        )
+        if not allowed:
+            missing_targets.append({
+                "scenario_id": sc_id,
+                "read_target": read_target,
+                "files_read": boundary.files_read,
+                "prompt": prompt,
+            })
+        scenarios_tested += 1
+
+    assert scenarios_tested == 80, f"Expected 80 scenarios, found {scenarios_tested}"
+    assert not missing_targets, f"Failed scenarios with missing read_target: {missing_targets}"
+
+

@@ -34,6 +34,63 @@ from demo.security_monitor.evaluate_llm_agent_injection import (
 )
 
 
+def _extract_metadata(records: list[dict[str, Any]]) -> dict[str, Any]:
+    first_r = records[0] if records else {}
+    git_c = first_r.get("git_commit") or first_r.get("commit") or first_r.get("commit_hash")
+    is_dirty = first_r.get("is_dirty")
+    model_digest = first_r.get("model_digest")
+    is_mock = first_r.get("is_mock")
+
+    # If missing from trial record, query git
+    if git_c is None or is_dirty is None:
+        try:
+            import subprocess
+            r_root = Path(__file__).resolve().parent.parent.parent
+            git_c = git_c or subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=str(r_root)).decode().strip()
+            status_out = subprocess.check_output(
+                ["git", "status", "--porcelain", "--", ":!demo/data/*.json", ":!demo/data/*.jsonl"],
+                cwd=str(r_root),
+            ).decode().strip()
+            is_dirty = is_dirty if is_dirty is not None else (len(status_out) > 0)
+        except Exception:
+            git_c = git_c or "unknown"
+            is_dirty = is_dirty if is_dirty is not None else False
+
+    provider = first_r.get("provider", "unknown")
+    model = first_r.get("model", "unknown")
+
+    if model_digest is None or model_digest == "":
+        if provider == "ollama":
+            try:
+                import httpx
+                r = httpx.get("http://127.0.0.1:11434/api/tags", timeout=3.0)
+                if r.status_code == 200:
+                    for m in r.json().get("models", []):
+                        if m.get("name") == model or m.get("model") == model or m.get("name", "").startswith(model):
+                            model_digest = m.get("digest", "")
+                            break
+            except Exception:
+                pass
+        model_digest = model_digest or "none"
+
+    if is_mock is None:
+        is_mock = (provider == "scripted_mock")
+
+    return {
+        "scored_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "provider": provider,
+        "model": model,
+        "model_digest": model_digest,
+        "git_commit": git_c,
+        "is_dirty": bool(is_dirty),
+        "is_mock": bool(is_mock),
+        "num_ctx": first_r.get("num_ctx", 8192),
+        "temperature": first_r.get("temperature", 0.0),
+        "seed": first_r.get("seed", 42),
+        "total_records": len(records),
+    }
+
+
 def score_derivation_jsonl(records: list[dict[str, Any]], out_json_path: Path | None = None) -> dict[str, Any]:
     """Computes all derivation benchmark metrics from raw derivation trial records."""
     categories = ["files_read", "files_write", "tools", "network", "peer_agents"]
@@ -131,14 +188,7 @@ def score_derivation_jsonl(records: list[dict[str, Any]], out_json_path: Path | 
 
     meta0 = records[0] if records else {}
     summary = {
-        "metadata": {
-            "scored_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "provider": meta0.get("provider", "unknown"),
-            "model": meta0.get("model", "unknown"),
-            "temperature": meta0.get("temperature", 0.0),
-            "seed": meta0.get("seed", 42),
-            "total_records": len(records),
-        },
+        "metadata": _extract_metadata(records),
         "performance": {
             "mean_call_latency_sec": round(avg_call_latency, 3),
             "projected_full_run_sec_at_n3": round(avg_call_latency * 30 * 3, 1),
@@ -661,15 +711,7 @@ def score_agent_jsonl(records: list[dict[str, Any]], out_json_path: Path | None 
 
     first_r = records[0] if records else {}
     summary = {
-        "metadata": {
-            "scored_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "provider": first_r.get("provider", "unknown"),
-            "model": first_r.get("model", "unknown"),
-            "num_ctx": first_r.get("num_ctx", 8192),
-            "temperature": first_r.get("temperature", 0.0),
-            "seed": first_r.get("seed", 42),
-            "total_records": len(records),
-        },
+        "metadata": _extract_metadata(records),
         "performance": {
             "mean_call_latency_sec": round(avg_latency, 3),
             "median_call_latency_sec": round(median_latency, 3),
