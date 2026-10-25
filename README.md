@@ -84,7 +84,7 @@ Design notes and limitations for the OS layer: [`docs/M6_OS_BOUND_AGENT_NOTES.md
 | BPF-LSM dynamic grants | Planned |
 | Long-lived / shared agents via hooks | Planned |
 | Shadow-agent discovery from OS telemetry | Planned |
-| Enterprise features (OS telemetry and enterprise plan) | Planned |
+| Enterprise features ([OS telemetry and enterprise plan](docs/OS_TELEMETRY_AND_ENTERPRISE_PLAN.md)) | Planned |
 
 ## Verified results so far
 
