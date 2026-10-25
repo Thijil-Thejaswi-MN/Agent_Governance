@@ -148,11 +148,11 @@ The earlier v1 runs are kept as `*_v1.*`. For the run history (including a fixed
 
 | Work | Focus |
 | :--- | :--- |
-| AgentSight | Observation of agent behaviour at the OS level. |
-| ActPlane | eBPF information-flow control; inherited constraints can't be weakened. |
-| ContractWarden | A contract approved by a human, enforced with eBPF LSM; no mid-task expansion is described. |
-| Progent, Conseca | Policies at the tool level. |
-| Kernel-Level Evidence | Attribution at the session level; per-tool-call attribution is left open. |
+| [AgentSight](https://arxiv.org/abs/2508.02736) | Observation of agent behaviour at the OS level. |
+| [ActPlane](https://arxiv.org/abs/2606.25189) | eBPF information-flow control; inherited constraints can't be weakened. |
+| [ContractWarden](https://arxiv.org/abs/2609.38248) | A contract approved by a human, enforced with eBPF LSM; no mid-task expansion is described. |
+| [Progent](https://arxiv.org/abs/2504.11703), [Conseca](https://arxiv.org/abs/2501.17070) | Policies at the tool level. |
+| [Kernel-Level Evidence](https://arxiv.org/abs/2609.28915) | Attribution at the session level; per-tool-call attribution is left open. |
 
 This project claims only the combination of four things:
 - a boundary derived from the user's request;
@@ -187,7 +187,7 @@ Clone onto the WSL ext4 filesystem (for example `~/Agent_Governance`), not onto 
 
 ```bash
 git clone <repo-url> ~/Agent_Governance && cd ~/Agent_Governance
-python3 -m venv ~/m4_venv && source ~/m4_venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r demo/security_monitor/requirements.txt pytest-timeout
 sudo apt install gcc libseccomp-dev        # the Makefile links -lseccomp
 make -C demo/security_monitor/app/governance/os_layer

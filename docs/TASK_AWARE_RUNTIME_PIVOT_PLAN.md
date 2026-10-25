@@ -1,3 +1,5 @@
+> Historical planning document (Oct 2026). Some figures and wording here (e.g. test counts, ‘tamper-evident’) are superseded; see README.md for current, verified status.
+
 # Task-Aware Runtime Governance for AI Agents: Feasibility Analysis & Architectural Pivot Plan
 
 **Author:** Systems Security Researcher, Linux Runtime-Monitoring Engineer & AI-Agent Infrastructure Architect  
