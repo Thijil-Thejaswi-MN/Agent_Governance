@@ -132,6 +132,12 @@ class OSEventCorrelator:
                 return EventVerdict.INSIDE, RiskTier.LOW, "expansion delivery dir (granted/)"
             if rel == ".":
                 return EventVerdict.INSIDE, RiskTier.LOW, "workspace root directory handle"
+            if top in ("output", "scratch") and boundary is not None:
+                res = self.evaluator.evaluate_file_access(boundary, rel, is_write=is_write)
+                if res.verdict == EventVerdict.INSIDE:
+                    return res.verdict, res.risk_tier, res.rule_matched
+                note = "not in files_write" if is_write else "read of task-owned dir"
+                return EventVerdict.INSIDE, RiskTier.LOW, f"task-owned {top}/ directory ({note}): {rel}"
             if not is_write and boundary is not None:
                 # Read-back of a granted write target is allowed by the compiled profile.
                 wr = self.evaluator.evaluate_file_access(boundary, rel, is_write=True)
@@ -165,10 +171,40 @@ class OSEventCorrelator:
             return EventVerdict.INSIDE, RiskTier.LOW, "runtime system path (sandbox profile)"
         return EventVerdict.OUTSIDE, RiskTier.HIGH, "path outside task boundary and runtime profile"
 
-    def _classify(self, ev: dict[str, Any], boundary: Any) -> tuple[EventVerdict, RiskTier, str, str, list[str] | None]:
-        """Returns verdict, risk, rule, op, and the Landlock rights the access needs."""
+    _VERDICT_RANK = {EventVerdict.INSIDE: 0, EventVerdict.AMBIGUOUS: 1, EventVerdict.OUTSIDE: 2}
+    _NET_RE = re.compile(r"^(?:tcp|inet)6?:(?:\[([^\]]+)\]|([^:]+)):(\d+)$")
+    FSMOD = {
+        "rename": "file_rename", "renameat": "file_rename", "renameat2": "file_rename",
+        "unlink": "file_unlink", "unlinkat": "file_unlink", "rmdir": "file_unlink",
+        "mkdir": "dir_create", "mkdirat": "dir_create",
+        "link": "file_link", "linkat": "file_link",
+        "symlink": "file_symlink", "symlinkat": "file_symlink",
+        "truncate": "file_truncate", "ftruncate": "file_truncate",
+    }
+    AT_REMOVEDIR = 0x200
+
+    def _worst(self, parts: list[tuple[EventVerdict, RiskTier, str]]) -> tuple[EventVerdict, RiskTier, str]:
+        v, r, rule = max(parts, key=lambda x: (self._VERDICT_RANK.get(x[0], 0), x[1] == RiskTier.HIGH))
+        if len(parts) > 1:
+            rule = " | ".join(p[2] for p in parts)
+        return v, r, rule
+
+    def _classify_net(self, tgt: str, op: str) -> tuple[EventVerdict, RiskTier, str]:
+        if tgt == f"unix:{os.path.join(self.ws, BROKER_SOCKET_NAME)}":
+            return EventVerdict.INSIDE, RiskTier.LOW, "broker socket"
+        m = self._NET_RE.match(tgt)
+        if m:
+            host = m.group(2) or m.group(1)
+            if op == "network_connect" and self.proxy_port and int(m.group(3)) == self.proxy_port and host in ("127.0.0.1", "::1"):
+                return EventVerdict.INSIDE, RiskTier.LOW, "egress proxy"
+            return EventVerdict.OUTSIDE, RiskTier.HIGH, f"direct network {op.split('_')[1]} bypassing proxy: {tgt}"
+        return EventVerdict.OUTSIDE, RiskTier.MEDIUM, f"socket {op.split('_')[1]} outside boundary: {tgt}"
+
+    def _classify(self, ev: dict[str, Any], boundary: Any) -> tuple[EventVerdict, RiskTier, str, str, list[tuple[str, list[str]]] | None]:
+        """Returns verdict, risk, rule, op, and the Landlock checks [(path, rights)] the call needs."""
         sc = ev.get("syscall", "")
         tgt = ev.get("abs_target") or ""
+        pid = ev.get("pid")
         if sc in ("open", "openat", "openat2"):
             flags = int(ev.get("flags", 0) or 0)
             if not tgt:
@@ -182,47 +218,79 @@ class OSEventCorrelator:
                 rights = ["read_dir"]
             else:
                 rights = {"read": ["read_file"], "write": ["write_file"], "read_write": ["read_file", "write_file"]}.get(access, ["read_file"])
-            v, r, rule = self._classify_path(boundary, path, is_write, ev.get("pid"))
-            return v, r, rule, "file_write" if is_write else "file_read", rights
+            v, r, rule = self._classify_path(boundary, path, is_write, pid)
+            return v, r, rule, "file_write" if is_write else "file_read", [(path, rights)]
         if sc in ("execve", "execveat"):
             path = os.path.normpath(tgt) if tgt else ""
+            checks = [(path, ["execute"])] if path else None
             if path and any(_under(path, p) for p in SYSTEM_RX_PATHS):
                 if boundary is not None and "run_command" in boundary.tools:
-                    return EventVerdict.INSIDE, RiskTier.LOW, "exec of system binary (run_command granted)", "process_exec", ["execute"]
-                return EventVerdict.OUTSIDE, RiskTier.HIGH, "process exec without run_command in boundary", "process_exec", ["execute"]
-            return EventVerdict.OUTSIDE, RiskTier.HIGH, "exec of non-system binary", "process_exec", ["execute"]
-        if sc == "connect":
-            if tgt == f"unix:{os.path.join(self.ws, BROKER_SOCKET_NAME)}":
-                return EventVerdict.INSIDE, RiskTier.LOW, "broker socket", "network_connect", None
-            m = re.match(r"^tcp6?:(?:\[([^\]]+)\]|([^:]+)):(\d+)$", tgt)
-            if m:
-                port = int(m.group(3))
-                if self.proxy_port and port == self.proxy_port and (m.group(2) or m.group(1)) in ("127.0.0.1", "::1"):
-                    return EventVerdict.INSIDE, RiskTier.LOW, "egress proxy", "network_connect", None
-                return EventVerdict.OUTSIDE, RiskTier.HIGH, f"direct TCP connect bypassing proxy: {tgt}", "network_connect", None
-            return EventVerdict.OUTSIDE, RiskTier.MEDIUM, f"socket connect outside boundary: {tgt}", "network_connect", None
+                    return EventVerdict.INSIDE, RiskTier.LOW, "exec of system binary (run_command granted)", "process_exec", checks
+                return EventVerdict.OUTSIDE, RiskTier.HIGH, "process exec without run_command in boundary", "process_exec", checks
+            return EventVerdict.OUTSIDE, RiskTier.HIGH, "exec of non-system binary", "process_exec", checks
+        if sc in self.FSMOD:
+            op = self.FSMOD[sc]
+            p1 = os.path.normpath(tgt) if tgt else ""
+            t2 = ev.get("abs_target2") or ""
+            p2 = os.path.normpath(t2) if t2 else ""
+            if op in ("file_link", "file_symlink"):
+                paths = [p2]           # link content / source is not modified
+            elif op == "file_rename":
+                paths = [p1, p2]
+            else:
+                paths = [p1]
+            if not all(paths):
+                return EventVerdict.AMBIGUOUS, RiskTier.MEDIUM, f"{sc}: path could not be resolved", op, None
+            parts = [self._classify_path(boundary, x, True, pid) for x in paths]
+            v, r, rule = self._worst(parts)
+            parent = os.path.dirname
+            if op == "file_rename":
+                checks = [(parent(p1), ["remove_file"]), (parent(p2), ["make_reg"])]
+            elif op == "file_unlink":
+                removedir = sc == "rmdir" or (int(ev.get("aux_flags", 0) or 0) & self.AT_REMOVEDIR)
+                checks = [(parent(p1), ["remove_dir" if removedir else "remove_file"])]
+            elif op == "dir_create":
+                checks = [(parent(p1), ["make_dir"])]
+            elif op == "file_link":
+                checks = [(parent(p2), ["make_reg"])]
+            elif op == "file_symlink":
+                checks = [(parent(p2), ["make_sym"])]
+            else:
+                checks = [(p1, ["truncate"])]
+            return v, r, rule, op, checks
+        if sc in ("connect", "sendto", "sendmsg", "sendmmsg"):
+            op = "network_connect" if sc == "connect" else "network_send"
+            v, r, rule = self._classify_net(tgt, op)
+            return v, r, rule, op, None
+        if sc == "bind":
+            if tgt.startswith("unix:/"):
+                path = os.path.normpath(tgt[5:])
+                v, r, rule = self._classify_path(boundary, path, True, pid)
+                return v, r, rule, "network_bind", [(os.path.dirname(path), ["make_sock"])]
+            return EventVerdict.OUTSIDE, RiskTier.MEDIUM, f"listening socket not in boundary: {tgt}", "network_bind", None
         return EventVerdict.AMBIGUOUS, RiskTier.LOW, f"unclassified syscall {sc}", sc, None
 
-    def _prevented_by(self, ev: dict[str, Any], rights: list[str] | None) -> str:
+    def _prevented_by(self, ev: dict[str, Any], checks: list[tuple[str, list[str]]] | None) -> str:
         result = ev.get("result", "ok")
-        if result == "ok":
-            return "none"
-        if result not in DENIAL_RESULTS:
+        if result == "ok" or result not in DENIAL_RESULTS:
             return "none"
         sc = ev.get("syscall", "")
         tgt = ev.get("abs_target") or ""
-        if sc == "connect":
-            m = re.match(r"^tcp6?:.*:(\d+)$", tgt)
-            if m and is_port_permitted(self.spec, int(m.group(1))) is False:
-                return "landlock"
+        if sc in ("connect", "bind", "sendto", "sendmsg", "sendmmsg") and not tgt.startswith("unix:/"):
+            m = self._NET_RE.match(tgt)
+            if m and self.spec is not None:
+                if sc == "connect" and is_port_permitted(self.spec, int(m.group(3))) is False:
+                    return "landlock"  # Landlock TCP connect rule (UDP is not mediated by Landlock)
+                if sc == "bind":
+                    return "landlock"  # no bind ports are ever granted
             if tgt.startswith("unix-abstract:") and self.spec is not None:
                 return "landlock"  # ABI-6 abstract unix socket scoping
             return "none"
-        if rights is None or not tgt:
+        if not checks:
             return "none"
-        permitted = is_access_permitted(self.spec, os.path.normpath(tgt), rights)
-        if permitted is False:
-            return "landlock"
+        for path, rights in checks:
+            if rights and is_access_permitted(self.spec, path, rights) is False:
+                return "landlock"
         return "none"
 
     # --- main entry ---
@@ -344,6 +412,8 @@ class OSEventCorrelator:
         if len(self._pending) >= self.flush_every:
             self._flush_locked()
 
+        if rec["kind"] in ("file_rename", "file_link", "file_symlink"):
+            rec["target2"] = ev.get("abs_target2")
         if self.on_open and sc in ("open", "openat", "openat2") and result == "ok" and rec["target"]:
             self.on_open(os.path.normpath(rec["target"]))
         if action == TaskAction.PAUSE_TASK and self.on_violation:

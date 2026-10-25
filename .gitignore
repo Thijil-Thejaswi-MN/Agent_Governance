@@ -87,6 +87,15 @@ demo/data/*
 !demo/data/pilot_llm_agent_evaluation_results_*.jsonl
 !demo/data/full_llm_agent_evaluation_results_*.json
 !demo/data/full_llm_agent_evaluation_results_*.jsonl
+# M6 evaluation v3: checkpoint artifacts, scenarios and results are committed;
+# raw concurrency receipts are committed only as a tarball + per-task hash list.
+!demo/data/evaluation_v3/
+demo/data/evaluation_v3/*
+!demo/data/evaluation_v3/checkpoint1/
+!demo/data/evaluation_v3/scenarios/
+!demo/data/evaluation_v3/results/
+demo/data/evaluation_v3/checkpoint1/concurrency*/receipts/
+!demo/data/evaluation_v3/**/*.log
 
 # OS Layer compiled binaries
 demo/security_monitor/app/governance/os_layer/landlock_enforcer

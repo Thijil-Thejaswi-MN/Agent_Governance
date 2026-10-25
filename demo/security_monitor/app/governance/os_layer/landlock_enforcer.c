@@ -841,7 +841,7 @@ static int rules_main(int argc, char **argv) {
 
     char status[512];
     snprintf(status, sizeof(status),
-             "{\"isolation_level\":\"%s\",\"landlock_abi\":%d,\"landlock_applied\":true,\"rules_applied\":%d,"
+             "{\"enforcer\":\"rules\",\"isolation_level\":\"%s\",\"landlock_abi\":%d,\"landlock_applied\":true,\"rules_applied\":%d,"
              "\"rules_skipped_optional\":%d,\"tcp_connect_ports\":%d,\"net_restricted\":%s,\"scoped\":%s,"
              "\"seccomp_filters\":%d,\"mode\":\"%s\",\"pid\":%d}\n",
              isolation, abi, applied, skipped, spec.n_ports, abi >= 4 ? "true" : "false",

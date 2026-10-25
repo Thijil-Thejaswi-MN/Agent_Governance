@@ -96,6 +96,19 @@ def main() -> int:
         fresh = p.exists() and p.stat().st_mtime >= (OS_LAYER / f"{b}.c").stat().st_mtime
         check(f"binary built: {b}", os.access(p, os.X_OK) and fresh, "up to date" if fresh else "missing or older than source (run make)")
 
+    # Sensor observability of bind(): a pre-existing seccomp filter (WSL2 init) can outrank
+    # SECCOMP_RET_TRACE. Reported as WARN, not FAIL: Landlock still enforces TCP bind.
+    probe = ("import ctypes, socket\nlib=ctypes.CDLL('libseccomp.so.2')\nlib.seccomp_init.restype=ctypes.c_void_p\n"
+             "ctx=lib.seccomp_init(0x7fff0000)\nlib.seccomp_rule_add(ctypes.c_void_p(ctx), 0x7ff00003, 49, 0)\n"
+             "lib.seccomp_load(ctypes.c_void_p(ctx))\ns=socket.socket()\n"
+             "try:\n s.bind(('127.0.0.1', 0)); print('BIND_OK')\nexcept OSError as e: print('ERR', e.errno)\n")
+    r = run(["/usr/bin/python3", "-c", probe])
+    if "ERR 38" in r.stdout:
+        print("PASS  sensor can observe bind()")
+    else:
+        print("WARN  sensor cannot observe bind(): an inherited seccomp filter outranks SECCOMP_RET_TRACE "
+              "(Landlock still denies TCP bind)")
+
     # Ollama models respond and digests match M5
     try:
         with urllib.request.urlopen(f"{OLLAMA}/api/tags", timeout=5) as resp:

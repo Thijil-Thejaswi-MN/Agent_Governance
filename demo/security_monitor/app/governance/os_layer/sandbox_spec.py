@@ -7,10 +7,12 @@ workspace layout:
 - files_read  -> per-file READ_FILE rules (globs are expanded against the files
                  present at launch; sensitive-pattern matches are excluded, the
                  same way BoundaryEvaluator ranks them above glob grants).
-- files_write -> per-file READ_FILE|WRITE_FILE|TRUNCATE on exact targets (the
-                 target is pre-created empty because Landlock can only attach a
-                 rule to an existing inode); directory rules for '**'/'*' write
-                 patterns.
+- output/, scratch/ -> directory-level read-write (task-owned; temp-file + rename
+                 and sed -i work there).
+- files_write -> outside the task-owned dirs: per-file READ_FILE|WRITE_FILE|TRUNCATE
+                 on exact targets (pre-created empty because Landlock can only
+                 attach a rule to an existing inode); directory rules for glob
+                 write patterns. Bare names aliasing an output/ target are skipped.
 - task tmp dir, the pre-authorised read-only granted/ dir, the runtime code
   dir and the broker socket.
 - the system read/exec paths already used in M4.
@@ -44,7 +46,8 @@ SYSTEM_RX_PATHS = ["/usr", "/lib", "/lib64", "/bin", "/sbin"]
 SYSTEM_RO_PATHS = ["/etc", "/proc", "/dev/urandom", "/dev/zero"]
 SYSTEM_RW_FILES = ["/dev/null"]
 
-WORKSPACE_DIRS = ("input", "output", "granted", "tmp", "runtime")
+WORKSPACE_DIRS = ("input", "output", "scratch", "granted", "tmp", "runtime")
+TASK_OWNED_RW_DIRS = ("output", "scratch")
 BROKER_SOCKET_NAME = "broker.sock"
 
 
@@ -159,9 +162,23 @@ def compile_landlock_rules(
         else:
             skipped.append({"pattern": pat, "reason": "not_present_at_launch"})
 
-    # files_write: exact targets pre-created; glob patterns become directory rules
+    # Task-owned output/ and scratch/: directory-level read-write so temp-file + rename
+    # and in-place editors (sed -i) work. Writes there to names not in files_write are
+    # recorded INSIDE with a note by the correlator.
+    for owned in TASK_OWNED_RW_DIRS:
+        d = root / owned
+        d.mkdir(parents=True, exist_ok=True)
+        add(d, RW_DIR, why=f"task_owned_dir:{owned}/")
+
+    # files_write: other exact targets pre-created (per-file rule); glob patterns become directory rules
+    write_set = {w.replace("\\", "/") for w in boundary.files_write}
     for pat in boundary.files_write:
         norm = pat.replace("\\", "/")
+        if norm.split("/")[0] in TASK_OWNED_RW_DIRS and "/" in norm:
+            continue  # covered by the task-owned directory rule
+        if "/" not in norm and f"output/{norm}" in write_set:
+            skipped.append({"pattern": pat, "reason": "bare_alias_of_output_target"})
+            continue
         if _is_glob(norm):
             prefix = norm.split("*")[0].split("?")[0].split("[")[0].rstrip("/")
             d = _inside(root, prefix) if prefix else None

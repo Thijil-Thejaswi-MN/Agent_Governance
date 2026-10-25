@@ -449,19 +449,30 @@ class ToolBroker:
             except ImportError:
                 pass  # Linux isolation deps not installed; fall through to basic subprocess
             else:
+                # M6: Landlock rules are compiled from the task boundary (--rules mode),
+                # not from the workspace layout.
+                from .os_layer.sandbox_spec import compile_landlock_rules, write_rules_file
+
                 runner = CgroupTaskRunner(self.storage)
-                ws_path = Path(workspace_root) if workspace_root else Path(f"/home/agent_workspaces/task_{task_id[:16]}")
-                ws = TaskWorkspace(task_id=task_id, base_dir=ws_path)
+                ws_root = Path(workspace_root or boundary.workspace_root).resolve()
+                ws = TaskWorkspace(task_id=ws_root.name, base_dir=ws_root.parent)
+                ws.setup()
+                control = ws_root.parent / ".control" / task_id
+                control.mkdir(parents=True, exist_ok=True)
+                rules = write_rules_file(compile_landlock_rules(boundary, ws_root, proxy_port=None),
+                                         control / f"rules_broker_{uuid.uuid4().hex[:8]}.json")
                 res = runner.run_task_command(
                     task_id=task_id,
                     cmd=["/bin/sh", "-c", command],
                     workspace=ws,
                     token=token,
+                    rules_file=rules,
                 )
                 return {
                     "stdout": res.stdout,
                     "stderr": res.stderr,
                     "exit_code": res.returncode,
+                    "isolation_level": getattr(res, "isolation_level", "unknown"),
                 }
 
         # Subprocess execution fallback

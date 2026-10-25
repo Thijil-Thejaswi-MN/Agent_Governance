@@ -765,8 +765,13 @@ def test_broker_run_command_linux_isolation_and_fail_closed(tmp_path: Path) -> N
             assert res["stdout"] == "hello linux"
             assert res["exit_code"] == 0
 
-            # Verify TaskWorkspace was called with task_id= and base_dir=
-            mock_ws_cls.assert_called_once_with(task_id=task_id, base_dir=Path(str(ws_dir)))
+            # M6.1b: the command runs in the task workspace itself (rules are compiled for
+            # boundary.workspace_root), not in a nested <workspace_root>/<task_id>/ dir,
+            # and the enforcer runs in boundary-compiled --rules mode.
+            mock_ws_cls.assert_called_once_with(task_id=ws_dir.name, base_dir=ws_dir.parent)
+            kwargs = mock_runner.run_task_command.call_args.kwargs
+            assert kwargs["task_id"] == task_id
+            assert kwargs["rules_file"] is not None and Path(kwargs["rules_file"]).exists()
 
     # 2. Verify fail-closed behavior: unexpected isolation errors must NOT silently fall through to subprocess
     mock_mod_fail = MagicMock()

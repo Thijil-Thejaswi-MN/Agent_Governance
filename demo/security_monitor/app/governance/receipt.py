@@ -86,7 +86,7 @@ def _broker_entry(ev: Any) -> dict[str, Any]:
 
 
 def _os_entry(rec: dict[str, Any]) -> dict[str, Any]:
-    keep = ("timestamp", "source", "kind", "syscall", "target", "result", "pid", "ppid", "cgroup_path",
+    keep = ("timestamp", "source", "kind", "syscall", "target", "target2", "result", "pid", "ppid", "cgroup_path",
             "attribution_method", "attributed_task_id", "phase", "channel", "verdict", "risk_tier",
             "rule_matched", "action_taken", "prevented", "prevented_by", "observed_by", "seq")
     out = {k: rec.get(k) for k in keep}

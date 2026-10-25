@@ -86,8 +86,9 @@ def test_compile_rules_per_file_from_boundary(tmp_path: Path) -> None:
     assert paths[f"{real_ws}/input/sales.csv"] == ["read_file"]
     assert f"{real_ws}/input" not in paths, "must not grant the whole input/ directory"
     assert f"{real_ws}/input/private.txt" not in paths
-    assert (ws / "output" / "summary.txt").exists(), "exact write target is pre-created for its per-file rule"
-    assert set(paths[f"{real_ws}/output/summary.txt"]) == {"read_file", "write_file", "truncate"}
+    # output/ is task-owned: one directory-level read-write rule, no per-file pre-creation.
+    assert "make_reg" in paths[f"{real_ws}/output"] and "remove_file" in paths[f"{real_ws}/output"]
+    assert f"{real_ws}/output/summary.txt" not in paths
     assert spec["tcp_connect_ports"] == [12345]
     assert "/tmp" not in paths
     assert is_access_permitted(spec, f"{real_ws}/input/private.txt", ["read_file"]) is False
@@ -462,3 +463,195 @@ def test_freeze_on_unprevented_outside_access(tmp_path: Path) -> None:
         assert time.time() - t < 20
     finally:
         _cleanup(res)
+
+
+# ---------------------------------------------------------------------------
+# M6.1b: sensor coverage per syscall family
+# ---------------------------------------------------------------------------
+
+def _sensor_events(script: str, cwd: Path) -> list[dict]:
+    r = subprocess.run([str(OS_LAYER / "sensor"), "/usr/bin/python3", "-c", script],
+                       cwd=cwd, capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+    return [e for e in (json.loads(l) for l in r.stdout.splitlines() if l.startswith('{"source":"os_sensor"'))
+            if e.get("type") == "syscall"]
+
+
+def _one(events: list[dict], names: tuple[str, ...], needle: str) -> dict:
+    hits = [e for e in events if e["syscall"] in names and needle in (e.get("abs_target", "") + e.get("abs_target2", ""))]
+    assert hits, f"no {names} event for {needle}: {[e['syscall'] for e in events]}"
+    return hits[0]
+
+
+@linux_only
+@pytest.mark.parametrize("family,script,names,needle,expect", [
+    ("rename", "import os; open('a','w').close(); os.rename('a','b'); os.rename('missing','c') if False else None",
+     ("rename", "renameat", "renameat2"), "/b", "ok"),
+    ("unlink", "import os; open('u','w').close(); os.unlink('u')", ("unlink", "unlinkat"), "/u", "ok"),
+    ("mkdir", "import os; os.mkdir('dd'); os.rmdir('dd')", ("mkdir", "mkdirat"), "/dd", "ok"),
+    ("link", "import os; open('l1','w').close(); os.link('l1','l2')", ("link", "linkat"), "/l2", "ok"),
+    ("symlink", "import os; os.symlink('nowhere','sl')", ("symlink", "symlinkat"), "/sl", "ok"),
+    ("truncate", "import os; open('t','w').write('abc'); os.truncate('t', 1)", ("truncate",), "/t", "ok"),
+    ("ftruncate", "f=open('ft','w'); f.write('abc'); f.flush(); f.truncate(1); f.close()", ("ftruncate",), "/ft", "ok"),
+    ("unlink_fail", "import os\ntry: os.unlink('nope')\nexcept OSError: pass", ("unlink", "unlinkat"), "/nope", "ENOENT"),
+])
+def test_sensor_fsmod_families(tmp_path: Path, family, script, names, needle, expect) -> None:
+    ev = _one(_sensor_events(script, tmp_path), names, needle)
+    assert ev["result"] == expect and isinstance(ev["ret"], int)
+    assert ev["cgroup_status"] == "ok" and ev["ppid"] > 0
+    if family in ("rename", "link", "symlink"):
+        assert ev["abs_target2"].startswith(str(tmp_path))
+
+
+@linux_only
+def test_sensor_send_with_destination(tmp_path: Path) -> None:
+    script = ("import socket\nu=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n"
+              "u.sendto(b'x', ('127.0.0.1', 9))\nu.sendmsg([b'y'], [], 0, ('127.0.0.1', 9))\n"
+              "c=socket.socket(socket.AF_INET, socket.SOCK_DGRAM); c.connect(('127.0.0.1', 9)); c.send(b'z')\n")
+    evs = _sensor_events(script, tmp_path)
+    assert _one(evs, ("sendto",), "inet:127.0.0.1:9")["result"] == "ok"
+    assert _one(evs, ("sendmsg",), "inet:127.0.0.1:9")["result"] == "ok"
+    # send() on a connected socket has no destination address and is not emitted as sendto
+    assert sum(1 for e in evs if e["syscall"] == "sendto") == 1
+
+
+def _bind_traceable() -> bool:
+    """WSL2's init installs a seccomp filter whose action for bind() outranks SECCOMP_RET_TRACE."""
+    probe = ("import ctypes, socket\nlib=ctypes.CDLL('libseccomp.so.2')\nlib.seccomp_init.restype=ctypes.c_void_p\n"
+             "ctx=lib.seccomp_init(0x7fff0000)\nlib.seccomp_rule_add(ctypes.c_void_p(ctx), 0x7ff00003, 49, 0)\n"
+             "lib.seccomp_load(ctypes.c_void_p(ctx))\ns=socket.socket()\n"
+             "try:\n s.bind(('127.0.0.1', 0)); print('BIND_OK')\nexcept OSError as e: print('ERR', e.errno)\n")
+    r = subprocess.run(["/usr/bin/python3", "-c", probe], capture_output=True, text=True)
+    return "ERR 38" in r.stdout  # ENOSYS: our TRACE action took effect with no tracer attached
+
+
+@linux_only
+def test_sensor_bind(tmp_path: Path) -> None:
+    if not _bind_traceable():
+        pytest.skip("bind() not observable: a pre-existing seccomp filter (WSL2 init) outranks SECCOMP_RET_TRACE for bind")
+    ev = _one(_sensor_events("import socket; socket.socket().bind(('127.0.0.1', 0))", tmp_path), ("bind",), "inet:127.0.0.1:")
+    assert ev["result"] == "ok"
+
+
+@linux_only
+def test_landlock_denies_tcp_bind_even_if_unobserved(tmp_path: Path) -> None:
+    from demo.security_monitor.app.governance.os_layer.sandbox_spec import compile_landlock_rules, write_rules_file
+
+    ws = Path(os.environ["HOME"]) / "agent_workspaces" / f"pytest_bind_{os.getpid()}_{time.time_ns()}"
+    ws.mkdir(parents=True)
+    try:
+        b = TaskBoundary(task_id="t_bind", workspace_root=str(ws), tools=["run_command"])
+        rules = write_rules_file(compile_landlock_rules(b, ws, proxy_port=None), tmp_path / "r.json")
+        r = subprocess.run([str(OS_LAYER / "landlock_enforcer"), "--rules", str(rules), "--", "/usr/bin/python3", "-c",
+                            "import socket\ntry: socket.socket().bind(('127.0.0.1', 0)); print('BOUND')\nexcept PermissionError: print('DENIED')"],
+                           cwd=ws, capture_output=True, text=True, timeout=30)
+        assert "DENIED" in r.stdout, r.stdout + r.stderr
+    finally:
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# M6.1b: task-owned output/ is directory-level read-write
+# ---------------------------------------------------------------------------
+
+@linux_only
+def test_output_dir_sed_inplace_and_rename_work_but_not_into_input(tmp_path: Path) -> None:
+    from demo.security_monitor.app.governance.os_layer.sandbox_spec import compile_landlock_rules, write_rules_file
+
+    ws = Path(os.environ["HOME"]) / "agent_workspaces" / f"pytest_out_{os.getpid()}_{time.time_ns()}"
+    (ws / "input").mkdir(parents=True)
+    try:
+        (ws / "input" / "sales.csv").write_text("a\n")
+        b = TaskBoundary(task_id="t_out", workspace_root=str(ws), files_read=["input/sales.csv"],
+                         files_write=["output/summary.txt", "summary.txt"], tools=["run_command"])
+        spec = compile_landlock_rules(b, ws, proxy_port=None)
+        assert not (ws / "summary.txt").exists(), "bare alias of output target must not be pre-created"
+        assert not (ws / "output" / "summary.txt").exists(), "output/ targets are covered by the dir rule"
+        rules = write_rules_file(spec, tmp_path / "r.json")
+        script = (
+            "echo one > output/summary.txt && sed -i 's/one/two/' output/summary.txt && echo sed_ok; "
+            "echo tmp > output/.tmp_x && mv output/.tmp_x output/summary2.txt && echo rename_ok; "
+            "mkdir -p scratch/work && echo s > scratch/work/f && echo scratch_ok; "
+            "mv output/summary2.txt input/summary2.txt 2>/dev/null || echo into_input_denied; "
+            f"mv output/summary2.txt {os.environ['HOME']}/m6_should_not_exist.txt 2>/dev/null || echo outside_denied; "
+            "cp input/sales.csv input/copy.csv 2>/dev/null || echo input_write_denied"
+        )
+        r = subprocess.run([str(OS_LAYER / "landlock_enforcer"), "--rules", str(rules), "--", "/bin/sh", "-c", script],
+                           cwd=ws, capture_output=True, text=True, timeout=30)
+        for marker in ("sed_ok", "rename_ok", "scratch_ok", "into_input_denied", "outside_denied", "input_write_denied"):
+            assert marker in r.stdout, (marker, r.stdout, r.stderr)
+        assert (ws / "output" / "summary.txt").read_text() == "two\n"
+        assert (ws / "output" / "summary2.txt").exists()
+        assert not (Path(os.environ["HOME"]) / "m6_should_not_exist.txt").exists()
+    finally:
+        shutil.rmtree(ws, ignore_errors=True)
+
+
+@linux_only
+@needs_scope
+def test_unlisted_output_write_recorded_inside_with_note(tmp_path: Path) -> None:
+    steps = [
+        {"tool": "run_command", "args": {"command": "echo x > output/extra_notes.txt; sed -i 's/x/y/' output/extra_notes.txt; mv output/extra_notes.txt output/final.txt"}},
+        {"final": "done"},
+    ]
+    res, _, _ = _launch(tmp_path, steps)
+    try:
+        assert res.receipt["freeze_events"] == []
+        evs = [e for e in res.receipt["events"] if e.get("source") == "OS_SENSOR" and "output/" in str(e.get("target"))
+               and e["kind"] in ("file_write", "file_rename")]
+        assert evs and all(e["verdict"] == "INSIDE" for e in evs)
+        assert any("not in files_write" in e["rule_matched"] for e in evs)
+        assert any(e["kind"] == "file_rename" for e in evs)
+        assert (res.workspace / "output" / "final.txt").read_text() == "y\n"
+    finally:
+        _cleanup(res)
+
+
+# ---------------------------------------------------------------------------
+# M6.1b: broker.run_command uses --rules; legacy mode is labelled
+# ---------------------------------------------------------------------------
+
+@linux_only
+@needs_scope
+def test_broker_run_command_uses_boundary_rules(tmp_path: Path) -> None:
+    from demo.security_monitor.app.governance.broker import ToolBroker
+    from demo.security_monitor.app.governance.intake import TaskIntakeService
+
+    ws = Path(os.environ["HOME"]) / "agent_workspaces" / f"pytest_brk_{os.getpid()}_{time.time_ns()}"
+    (ws / "input").mkdir(parents=True)
+    try:
+        (ws / "input" / "report.txt").write_text("REPORT_OK\n")
+        (ws / "input" / "private.txt").write_text("PRIVATE_7788\n")
+        storage = GovernanceStorage(tmp_path / "g.db")
+        task, b = TaskIntakeService(storage).submit_task("Read input/report.txt", "agent_b", str(ws))
+        b.tools.append("run_command")
+        storage.save_boundary(b)
+        storage.save_token("gov_tok_brk", task.task_id, task.agent_id)
+        res = ToolBroker(storage).run_command("gov_tok_brk", "cat input/report.txt; cat input/private.txt")
+        assert res["isolation_level"] == "landlock_rules"
+        assert "REPORT_OK" in res["stdout"] and "PRIVATE_7788" not in res["stdout"]
+    finally:
+        shutil.rmtree(ws, ignore_errors=True)
+        shutil.rmtree(ws.parent / ".control" / task.task_id, ignore_errors=True)
+
+
+@linux_only
+@needs_scope
+def test_legacy_workspace_mode_is_labelled(tmp_path: Path) -> None:
+    from demo.security_monitor.app.governance.os_layer.runner import CgroupTaskRunner, TaskWorkspace
+
+    ws = TaskWorkspace(task_id=f"pytest_legacy_{os.getpid()}_{time.time_ns()}")
+    try:
+        res = CgroupTaskRunner().run_task_command(ws.task_id, ["/bin/true"], ws)
+        assert res.isolation_level == "legacy_workspace"
+    finally:
+        ws.cleanup()
+
+
+@linux_only
+def test_sensor_resolves_relative_unix_socket_path(tmp_path: Path) -> None:
+    """Regression (M6.1b): connect('broker.sock') must be reported with its absolute path,
+    otherwise the correlator cannot recognise the broker socket and would freeze the task."""
+    script = "import socket; s=socket.socket(socket.AF_UNIX); s.connect_ex('rel.sock')"
+    ev = _one(_sensor_events(script, tmp_path), ("connect",), "rel.sock")
+    assert ev["abs_target"] == f"unix:{os.path.realpath(tmp_path)}/rel.sock"

@@ -386,7 +386,7 @@ class TaskLauncher:
         task_id = task.task_id
 
         # 2. Workspace (+ control dir the sandbox cannot see)
-        for d in ("input", "output", "granted", "tmp", "runtime"):
+        for d in ("input", "output", "scratch", "granted", "tmp", "runtime"):
             (ws / d).mkdir(parents=True, exist_ok=True)
         for rel, content in spec.inputs.items():
             p = (ws / rel)
@@ -587,11 +587,18 @@ class TaskLauncher:
                     problems.append("TCP not restricted")
                 if int(isolation.get("seccomp_filters", -1)) < need:
                     problems.append(f"seccomp_filters={isolation.get('seccomp_filters')} < {need}")
+                if isolation.get("enforcer") != "rules":
+                    isolation["isolation_level"] = "legacy_workspace"
+                    problems.append("enforcer not in boundary-compiled --rules mode (legacy_workspace)")
             achieved = "landlock+ns+seccomp+sensor" if not problems else (isolation.get("isolation_level") or "none")
             isolation["isolation_level"] = achieved
             isolation["seccomp_filter_baseline"] = seccomp_baseline
             isolation["requirement_problems"] = problems
-            if problems and mode == EnforcementMode.ENFORCE:
+            requires_rules = (spec.condition or "").split("_")[0] in ("C", "D")
+            if requires_rules and isolation.get("enforcer") != "rules":
+                aborted = "condition requires boundary-compiled isolation; refusing legacy_workspace"
+                self._freeze("isolation_below_condition_requirement", problems)
+            elif problems and mode == EnforcementMode.ENFORCE:
                 self._freeze("isolation_below_enforce_requirement", problems)
             else:
                 rpc.armed.set()

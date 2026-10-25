@@ -1,8 +1,13 @@
 /*
  * OS Sensor: ptrace + SECCOMP_RET_TRACE Syscall Observer (observation only)
  *
- * Captures open/openat/openat2, execve/execveat and connect syscalls of the
- * traced process tree. For every event it records pid, ppid, syscall, target,
+ * Captures the traced process tree's syscalls in these families:
+ *   open:     open, openat, openat2
+ *   exec:     execve, execveat
+ *   fs-mod:   rename, renameat, renameat2, unlink, unlinkat, rmdir, mkdir, mkdirat,
+ *             link, linkat, symlink, symlinkat, truncate, ftruncate (fd resolved to path)
+ *   network:  connect, bind, sendto (only with a destination address),
+ *             sendmsg / sendmmsg (emitted only when msg_name carries an address) For every event it records pid, ppid, syscall, target,
  * return value and the cgroup v2 path read at event time (/proc/<pid>/cgroup).
  * The sensor never blocks or alters a syscall: Phase 0 showed a ptrace tracer
  * must not be used as the enforcer.
@@ -223,6 +228,11 @@ typedef struct {
     char target[TARGET_MAX];
     char abs_target[TARGET_MAX];
     int target_status; /* 0 ok, 1 truncated, -1 unreadable */
+    char target2[TARGET_MAX];     /* second path: rename/link destination, symlink link path */
+    char abs_target2[TARGET_MAX];
+    int has_target2;
+    long long aux;                /* unlinkat/renameat2/linkat flags */
+    int has_aux;
     long long flags;
     int has_flags;
     pid_t ppid;
@@ -230,7 +240,7 @@ typedef struct {
     int cg_status;
 } pending_t;
 
-#define MAX_TRACKED 1024
+#define MAX_TRACKED 512
 static pending_t table[MAX_TRACKED];
 
 static pending_t *slot_for(pid_t pid, int create) {
@@ -279,6 +289,13 @@ static void emit_syscall(pending_t *p, long long ret) {
     json_str(out, p->abs_target);
     fprintf(out, ",\"target_status\":\"%s\"",
             p->target_status == 0 ? "ok" : (p->target_status == 1 ? "truncated" : "unreadable"));
+    if (p->has_target2) {
+        fputs(",\"target2\":", out);
+        json_str(out, p->target2);
+        fputs(",\"abs_target2\":", out);
+        json_str(out, p->abs_target2);
+    }
+    if (p->has_aux) fprintf(out, ",\"aux_flags\":%lld", p->aux);
     if (p->has_flags) {
         fprintf(out, ",\"flags\":%lld,\"access\":\"%s\",\"creat\":%s", p->flags, access_name(p->flags),
                 (p->flags & O_CREAT) ? "true" : "false");
@@ -314,12 +331,12 @@ static void describe_sockaddr(pid_t pid, unsigned long addr, unsigned long addrl
         struct sockaddr_in *in = (struct sockaddr_in *)&ss;
         char ip[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &in->sin_addr, ip, sizeof(ip));
-        snprintf(dst, len, "tcp:%s:%u", ip, ntohs(in->sin_port));
+        snprintf(dst, len, "inet:%s:%u", ip, ntohs(in->sin_port));
     } else if (ss.ss_family == AF_INET6) {
         struct sockaddr_in6 *in6 = (struct sockaddr_in6 *)&ss;
         char ip[INET6_ADDRSTRLEN];
         inet_ntop(AF_INET6, &in6->sin6_addr, ip, sizeof(ip));
-        snprintf(dst, len, "tcp6:[%s]:%u", ip, ntohs(in6->sin6_port));
+        snprintf(dst, len, "inet6:[%s]:%u", ip, ntohs(in6->sin6_port));
     } else if (ss.ss_family == AF_UNIX) {
         struct sockaddr_un *un = (struct sockaddr_un *)&ss;
         size_t plen = n - offsetof(struct sockaddr_un, sun_path);
@@ -335,44 +352,82 @@ static void describe_sockaddr(pid_t pid, unsigned long addr, unsigned long addrl
             char name[sizeof(un->sun_path) + 1];
             memcpy(name, un->sun_path, sizeof(un->sun_path));
             name[sizeof(un->sun_path)] = '\0';
-            snprintf(dst, len, "unix:%s", name);
+            char base[PATH_MAX];
+            if (name[0] != '/' && resolve_base_dir(pid, AT_FDCWD, base, sizeof(base)) == 0) {
+                /* relative socket path: resolve against the caller's cwd, like file paths.
+                 * An over-long result is reported explicitly, never cut. */
+                int w = snprintf(dst, len, "unix:%s/%s", base, name);
+                if (w < 0 || (size_t)w >= len) snprintf(dst, len, "unix-unresolved:%s", name);
+            } else {
+                snprintf(dst, len, "unix:%s", name);
+            }
         }
     } else {
         snprintf(dst, len, "family:%u", ss.ss_family);
     }
 }
 
-/* Fills a pending record from a seccomp-stop. Returns 0 if the syscall is one we observe. */
+/* Reads a path argument and its absolute form (relative paths resolved via dirfd/cwd). */
+static int read_path_arg(pid_t pid, long dirfd, unsigned long addr, char *raw, char *abs, size_t len) {
+    raw[0] = '\0';
+    abs[0] = '\0';
+    int st = read_tracee_string(pid, addr, raw, len);
+    if (st == 0) {
+        char base[PATH_MAX];
+        base[0] = '\0';
+        if (raw[0] != '/') {
+            if (resolve_base_dir(pid, dirfd, base, sizeof(base)) != 0) base[0] = '\0';
+        }
+        join_path(abs, len, base, raw);
+    }
+    return st;
+}
+
+/* Resolves the destination address of sendmsg/sendmmsg (msg_name of the first msghdr). */
+static int msghdr_dest(pid_t pid, unsigned long msghdr_addr, char *dst, size_t len) {
+    struct {
+        unsigned long name;
+        unsigned int namelen;
+    } h;
+    if (msghdr_addr == 0 || read_tracee_bytes(pid, msghdr_addr, &h, sizeof(h)) != 0) return -1;
+    if (h.name == 0 || h.namelen == 0) return -1; /* connected socket: no explicit destination */
+    describe_sockaddr(pid, h.name, h.namelen, dst, len);
+    return 0;
+}
+
+/* Fills a pending record from a seccomp-stop. Returns 0 if the syscall is one we emit. */
 static int capture_entry(pid_t pid, pending_t *p) {
     struct user_regs_struct regs;
     if (ptrace(PTRACE_GETREGS, pid, 0, &regs) != 0) return -1;
     unsigned long nr = regs.orig_rax;
-    long dirfd = AT_FDCWD;
-    unsigned long path_addr = 0;
 
     p->has_flags = 0;
-    p->target[0] = '\0';
-    p->abs_target[0] = '\0';
+    p->has_target2 = 0;
+    p->has_aux = 0;
+    p->target[0] = p->abs_target[0] = '\0';
+    p->target2[0] = p->abs_target2[0] = '\0';
     p->target_status = 0;
+    const size_t L = TARGET_MAX;
+
+#define PATH1(dfd, a) (p->target_status = read_path_arg(pid, (dfd), (a), p->target, p->abs_target, L))
+#define PATH2(dfd, a) (p->has_target2 = 1, read_path_arg(pid, (dfd), (a), p->target2, p->abs_target2, L))
 
     switch (nr) {
     case 2: /* open(path, flags, mode) */
         p->syscall = "open";
-        path_addr = regs.rdi;
+        PATH1(AT_FDCWD, regs.rdi);
         p->flags = (long long)regs.rsi;
         p->has_flags = 1;
         break;
     case 257: /* openat(dfd, path, flags, mode) */
         p->syscall = "openat";
-        dirfd = (int)regs.rdi;
-        path_addr = regs.rsi;
+        PATH1((int)regs.rdi, regs.rsi);
         p->flags = (long long)regs.rdx;
         p->has_flags = 1;
         break;
     case __NR_openat2: { /* openat2(dfd, path, how, size); how->flags is the first u64 */
         p->syscall = "openat2";
-        dirfd = (int)regs.rdi;
-        path_addr = regs.rsi;
+        PATH1((int)regs.rdi, regs.rsi);
         uint64_t how_flags = 0;
         if (read_tracee_bytes(pid, regs.rdx, &how_flags, sizeof(how_flags)) == 0) {
             p->flags = (long long)how_flags;
@@ -382,33 +437,122 @@ static int capture_entry(pid_t pid, pending_t *p) {
     }
     case 59: /* execve(path, argv, envp) */
         p->syscall = "execve";
-        path_addr = regs.rdi;
+        PATH1(AT_FDCWD, regs.rdi);
         break;
     case 322: /* execveat(dfd, path, argv, envp, flags) */
         p->syscall = "execveat";
-        dirfd = (int)regs.rdi;
-        path_addr = regs.rsi;
+        PATH1((int)regs.rdi, regs.rsi);
         break;
+    case 82: /* rename(old, new) */
+        p->syscall = "rename";
+        PATH1(AT_FDCWD, regs.rdi);
+        PATH2(AT_FDCWD, regs.rsi);
+        break;
+    case 264: /* renameat(olddfd, old, newdfd, new) */
+    case 316: /* renameat2(olddfd, old, newdfd, new, flags) */
+        p->syscall = nr == 264 ? "renameat" : "renameat2";
+        PATH1((int)regs.rdi, regs.rsi);
+        PATH2((int)regs.rdx, regs.r10);
+        if (nr == 316) {
+            p->aux = (long long)regs.r8;
+            p->has_aux = 1;
+        }
+        break;
+    case 87: /* unlink(path) */
+        p->syscall = "unlink";
+        PATH1(AT_FDCWD, regs.rdi);
+        break;
+    case 84: /* rmdir(path) */
+        p->syscall = "rmdir";
+        PATH1(AT_FDCWD, regs.rdi);
+        break;
+    case 263: /* unlinkat(dfd, path, flags) */
+        p->syscall = "unlinkat";
+        PATH1((int)regs.rdi, regs.rsi);
+        p->aux = (long long)regs.rdx;
+        p->has_aux = 1;
+        break;
+    case 83: /* mkdir(path, mode) */
+        p->syscall = "mkdir";
+        PATH1(AT_FDCWD, regs.rdi);
+        break;
+    case 258: /* mkdirat(dfd, path, mode) */
+        p->syscall = "mkdirat";
+        PATH1((int)regs.rdi, regs.rsi);
+        break;
+    case 86: /* link(old, new) */
+        p->syscall = "link";
+        PATH1(AT_FDCWD, regs.rdi);
+        PATH2(AT_FDCWD, regs.rsi);
+        break;
+    case 265: /* linkat(olddfd, old, newdfd, new, flags) */
+        p->syscall = "linkat";
+        PATH1((int)regs.rdi, regs.rsi);
+        PATH2((int)regs.rdx, regs.r10);
+        p->aux = (long long)regs.r8;
+        p->has_aux = 1;
+        break;
+    case 88: /* symlink(target, linkpath): target is link content, not resolved */
+        p->syscall = "symlink";
+        p->target_status = read_tracee_string(pid, regs.rdi, p->target, L);
+        snprintf(p->abs_target, L, "%s", p->target);
+        PATH2(AT_FDCWD, regs.rsi);
+        break;
+    case 266: /* symlinkat(target, newdfd, linkpath) */
+        p->syscall = "symlinkat";
+        p->target_status = read_tracee_string(pid, regs.rdi, p->target, L);
+        snprintf(p->abs_target, L, "%s", p->target);
+        PATH2((int)regs.rsi, regs.rdx);
+        break;
+    case 76: /* truncate(path, len) */
+        p->syscall = "truncate";
+        PATH1(AT_FDCWD, regs.rdi);
+        break;
+    case 77: { /* ftruncate(fd, len): resolve the fd to its path */
+        p->syscall = "ftruncate";
+        char link[64];
+        snprintf(link, sizeof(link), "/proc/%d/fd/%d", pid, (int)regs.rdi);
+        ssize_t n = readlink(link, p->abs_target, L - 1);
+        if (n < 0) {
+            p->abs_target[0] = '\0';
+            p->target_status = -1;
+        } else {
+            p->abs_target[n] = '\0';
+        }
+        snprintf(p->target, L, "fd:%d", (int)regs.rdi);
+        break;
+    }
     case 42: /* connect(fd, sockaddr, len) */
         p->syscall = "connect";
-        describe_sockaddr(pid, regs.rsi, regs.rdx, p->target, sizeof(p->target));
-        snprintf(p->abs_target, sizeof(p->abs_target), "%s", p->target);
+        describe_sockaddr(pid, regs.rsi, regs.rdx, p->target, L);
+        snprintf(p->abs_target, L, "%s", p->target);
+        break;
+    case 49: /* bind(fd, sockaddr, len) */
+        p->syscall = "bind";
+        describe_sockaddr(pid, regs.rsi, regs.rdx, p->target, L);
+        snprintf(p->abs_target, L, "%s", p->target);
+        break;
+    case 44: /* sendto(fd, buf, len, flags, dest, addrlen); BPF only traps dest != NULL */
+        if (regs.r8 == 0) return -1;
+        p->syscall = "sendto";
+        describe_sockaddr(pid, regs.r8, regs.r9, p->target, L);
+        snprintf(p->abs_target, L, "%s", p->target);
+        break;
+    case 46: /* sendmsg(fd, msghdr, flags) */
+        if (msghdr_dest(pid, regs.rsi, p->target, L) != 0) return -1;
+        p->syscall = "sendmsg";
+        snprintf(p->abs_target, L, "%s", p->target);
+        break;
+    case 307: /* sendmmsg(fd, mmsghdr[], vlen, flags): destination of the first message */
+        if (msghdr_dest(pid, regs.rsi, p->target, L) != 0) return -1;
+        p->syscall = "sendmmsg";
+        snprintf(p->abs_target, L, "%s", p->target);
         break;
     default:
         return -1;
     }
-
-    if (path_addr) {
-        p->target_status = read_tracee_string(pid, path_addr, p->target, sizeof(p->target));
-        if (p->target_status == 0) {
-            char base[PATH_MAX];
-            base[0] = '\0';
-            if (p->target[0] != '/') {
-                if (resolve_base_dir(pid, dirfd, base, sizeof(base)) != 0) base[0] = '\0';
-            }
-            join_path(p->abs_target, sizeof(p->abs_target), base, p->target);
-        }
-    }
+#undef PATH1
+#undef PATH2
 
     p->ppid = read_ppid(pid);
     p->cg_status = read_tracee_cgroup(pid, p->cgroup, sizeof(p->cgroup));
@@ -425,6 +569,18 @@ static int observe_child_setup(void) {
     rc |= seccomp_rule_add(ctx, SCMP_ACT_TRACE(2), SCMP_SYS(execve), 0);
     rc |= seccomp_rule_add(ctx, SCMP_ACT_TRACE(2), SCMP_SYS(execveat), 0);
     rc |= seccomp_rule_add(ctx, SCMP_ACT_TRACE(3), SCMP_SYS(connect), 0);
+    rc |= seccomp_rule_add(ctx, SCMP_ACT_TRACE(3), SCMP_SYS(bind), 0);
+    rc |= seccomp_rule_add(ctx, SCMP_ACT_TRACE(3), SCMP_SYS(sendto), 1, SCMP_A4(SCMP_CMP_NE, 0));
+    rc |= seccomp_rule_add(ctx, SCMP_ACT_TRACE(3), SCMP_SYS(sendmsg), 0);
+    rc |= seccomp_rule_add(ctx, SCMP_ACT_TRACE(3), SCMP_SYS(sendmmsg), 0);
+    static const int fsmod[] = {
+        SCMP_SYS(rename), SCMP_SYS(renameat), SCMP_SYS(renameat2), SCMP_SYS(unlink), SCMP_SYS(unlinkat),
+        SCMP_SYS(rmdir), SCMP_SYS(mkdir), SCMP_SYS(mkdirat), SCMP_SYS(link), SCMP_SYS(linkat),
+        SCMP_SYS(symlink), SCMP_SYS(symlinkat), SCMP_SYS(truncate), SCMP_SYS(ftruncate),
+    };
+    for (size_t k = 0; k < sizeof(fsmod) / sizeof(fsmod[0]); k++) {
+        rc |= seccomp_rule_add(ctx, SCMP_ACT_TRACE(4), fsmod[k], 0);
+    }
     if (rc == 0) rc = seccomp_load(ctx);
     seccomp_release(ctx);
     return rc;

@@ -1,0 +1,21 @@
+{
+ "rounds": 20,
+ "tasks_run": 40,
+ "llm": "scripted_mock",
+ "total_events": 83720,
+ "cross_attributions": 0,
+ "unattributed": 0,
+ "background_events": 44400,
+ "background_events_misattributed": 0,
+ "background_events_after_shim_last_event": 25835,
+ "tasks_with_background_tree": 40,
+ "background_iterations_completed_min": 40,
+ "min_overlap_s": 10.32,
+ "mean_overlap_s": 10.48,
+ "mean_task_span_s": 10.49,
+ "tasks_not_completed": 0,
+ "tasks_with_freeze": 0,
+ "proxy_events_total": 120,
+ "landlock_prevented_outside_total": 240,
+ "attribution_method": "cgroup (task_os_identity table); tracer lineage used only as the reference"
+}

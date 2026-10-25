@@ -106,9 +106,15 @@ class CgroupTaskRunner:
         timeout: float = 30.0,
         enable_landlock: bool = True,
         enable_seccomp: bool = True,
+        rules_file: str | Path | None = None,
     ) -> subprocess.CompletedProcess:
         """
         Runs a command under systemd-run --user --scope with Landlock and Seccomp enforcement.
+
+        With `rules_file` the enforcer runs in boundary-compiled --rules mode (M6).
+        Without it, the M4 --workspace layout mode is used; that grants all of input/
+        and the result carries isolation_level="legacy_workspace" so callers that
+        require boundary-compiled isolation (conditions C/D) can refuse it.
         """
         workspace.setup()
         unit_name = f"agent-task-{task_id[:16]}-{int(time.time()*1000)%100000}"
@@ -122,11 +128,17 @@ class CgroupTaskRunner:
         wrapped_cmd = list(cmd)
 
         # Landlock wrapping (Linux only)
+        isolation_level = "none"
         if sys.platform == "linux" and enable_landlock and landlock_bin.exists():
-            ll_args = [str(landlock_bin), "--workspace", str(workspace.root)]
-            if proxy_port:
-                ll_args.extend(["--proxy-port", str(proxy_port)])
-            ll_args.append("--")
+            if rules_file is not None:
+                ll_args = [str(landlock_bin), "--rules", str(rules_file), "--"]
+                isolation_level = "landlock_rules"
+            else:
+                ll_args = [str(landlock_bin), "--workspace", str(workspace.root)]
+                if proxy_port:
+                    ll_args.extend(["--proxy-port", str(proxy_port)])
+                ll_args.append("--")
+                isolation_level = "legacy_workspace"
             wrapped_cmd = ll_args + wrapped_cmd
 
         # Seccomp wrapping (Linux only)
@@ -198,7 +210,7 @@ class CgroupTaskRunner:
         exec_cmd = systemd_cmd if sys.platform == "linux" else wrapped_cmd
         effective_pass_fds = pass_fds if sys.platform == "linux" else ()
         try:
-            return subprocess.run(
+            res = subprocess.run(
                 exec_cmd,
                 cwd=str(workspace.root),
                 capture_output=True,
@@ -207,6 +219,8 @@ class CgroupTaskRunner:
                 env=env,
                 pass_fds=effective_pass_fds,
             )
+            res.isolation_level = isolation_level  # type: ignore[attr-defined]
+            return res
         finally:
             if r_fd is not None:
                 try:
