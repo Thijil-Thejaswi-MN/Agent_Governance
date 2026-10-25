@@ -21,6 +21,7 @@
 #include <sys/user.h>
 #include <sys/wait.h>
 #include <time.h>
+#include <limits.h>
 #include <unistd.h>
 
 #ifndef PR_SET_PTRACER
@@ -46,32 +47,53 @@ static void read_tracee_string(pid_t pid, unsigned long addr, char *buffer, size
     buffer[max_len - 1] = '\0';
 }
 
-static void read_tracee_cgroup(pid_t pid, char *cgroup_buf, size_t max_len) {
-    char path[256];
+/*
+ * Reads the tracee's cgroup v2 path at event time.
+ * Returns CG_OK, CG_UNKNOWN (no /proc entry / unreadable) or CG_TRUNCATED.
+ * A truncated path is never emitted: it could match no task and make the
+ * event look UNATTRIBUTED, so truncation is reported explicitly instead.
+ */
+enum { CG_OK = 0, CG_UNKNOWN = 1, CG_TRUNCATED = 2 };
+
+static int read_tracee_cgroup(pid_t pid, char *cgroup_buf, size_t max_len) {
+    char path[64];
     snprintf(path, sizeof(path), "/proc/%d/cgroup", pid);
+    cgroup_buf[0] = '\0';
     FILE *f = fopen(path, "r");
     if (!f) {
-        snprintf(cgroup_buf, max_len, "unknown");
-        return;
+        return CG_UNKNOWN;
     }
-    char line[512];
-    if (fgets(line, sizeof(line), f)) {
-        char *nl = strchr(line, '\n');
-        if (nl) *nl = '\0';
-        char *colon = strrchr(line, ':');
-        if (colon) {
-            strncpy(cgroup_buf, colon + 1, max_len - 1);
-        } else {
-            strncpy(cgroup_buf, line, max_len - 1);
-        }
-    } else {
-        snprintf(cgroup_buf, max_len, "unknown");
-    }
+    char *line = NULL;
+    size_t cap = 0;
+    ssize_t n = getline(&line, &cap, f);
     fclose(f);
-    cgroup_buf[max_len - 1] = '\0';
+    if (n <= 0) {
+        free(line);
+        return CG_UNKNOWN;
+    }
+    if (line[n - 1] == '\n') line[--n] = '\0';
+    /* cgroup v2 line format: "0::/path" */
+    char *colon = strrchr(line, ':');
+    const char *src = colon ? colon + 1 : line;
+    size_t len = strlen(src);
+    if (len >= max_len) {
+        free(line);
+        return CG_TRUNCATED;
+    }
+    memcpy(cgroup_buf, src, len + 1);
+    free(line);
+    return CG_OK;
 }
 
-static void log_governance_event(pid_t pid, const char *syscall_name, const char *target, const char *cgroup_id, int verdict) {
+static const char *cgroup_status_name(int st) {
+    switch (st) {
+    case CG_OK: return "ok";
+    case CG_TRUNCATED: return "truncated";
+    default: return "unknown";
+    }
+}
+
+static void log_governance_event(pid_t pid, const char *syscall_name, const char *target, const char *cgroup_id, int cg_status, int verdict) {
     time_t now = time(NULL);
     struct tm tm_buf;
     gmtime_r(&now, &tm_buf);
@@ -79,8 +101,8 @@ static void log_governance_event(pid_t pid, const char *syscall_name, const char
     strftime(time_str, sizeof(time_str), "%Y-%m-%dT%H:%M:%SZ", &tm_buf);
 
     /* Output JSON line for ingestion by security monitor / storage */
-    printf("{\"source\":\"os_sensor\",\"timestamp\":\"%s\",\"pid\":%d,\"cgroup_id\":\"%s\",\"syscall\":\"%s\",\"target\":\"%s\",\"verdict\":\"%s\"}\n",
-           time_str, pid, cgroup_id, syscall_name, target, verdict ? "ALLOWED" : "PREVENTED");
+    printf("{\"source\":\"os_sensor\",\"timestamp\":\"%s\",\"pid\":%d,\"cgroup_id\":\"%s\",\"cgroup_status\":\"%s\",\"syscall\":\"%s\",\"target\":\"%s\",\"verdict\":\"%s\"}\n",
+           time_str, pid, cgroup_id, cgroup_status_name(cg_status), syscall_name, target, verdict ? "ALLOWED" : "PREVENTED");
     fflush(stdout);
 }
 
@@ -154,24 +176,24 @@ int main(int argc, char **argv) {
             struct user_regs_struct regs;
             ptrace(PTRACE_GETREGS, pid, 0, &regs);
 
-            char cgroup[256];
-            read_tracee_cgroup(pid, cgroup, sizeof(cgroup));
+            char cgroup[PATH_MAX];
+            int cg_status = read_tracee_cgroup(pid, cgroup, sizeof(cgroup));
 
             unsigned long syscall_nr = regs.orig_rax;
             char target_buf[1024] = {0};
 
             if (syscall_nr == 257) { /* openat(dfd, filename, flags, mode) */
                 read_tracee_string(pid, regs.rsi, target_buf, sizeof(target_buf));
-                log_governance_event(pid, "openat", target_buf, cgroup, 1);
+                log_governance_event(pid, "openat", target_buf, cgroup, cg_status, 1);
             } else if (syscall_nr == 2) { /* open(filename, flags, mode) */
                 read_tracee_string(pid, regs.rdi, target_buf, sizeof(target_buf));
-                log_governance_event(pid, "open", target_buf, cgroup, 1);
+                log_governance_event(pid, "open", target_buf, cgroup, cg_status, 1);
             } else if (syscall_nr == 59) { /* execve(filename, argv, envp) */
                 read_tracee_string(pid, regs.rdi, target_buf, sizeof(target_buf));
-                log_governance_event(pid, "execve", target_buf, cgroup, 1);
+                log_governance_event(pid, "execve", target_buf, cgroup, cg_status, 1);
             } else if (syscall_nr == 42) { /* connect(fd, sockaddr, len) */
                 snprintf(target_buf, sizeof(target_buf), "tcp_connect(fd=%lld)", (long long)regs.rdi);
-                log_governance_event(pid, "connect", target_buf, cgroup, 1);
+                log_governance_event(pid, "connect", target_buf, cgroup, cg_status, 1);
             }
         }
 

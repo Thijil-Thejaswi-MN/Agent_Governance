@@ -663,7 +663,9 @@ class ToolBroker:
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                with httpx.Client(timeout=timeout) as client:
+                # Bounded connect timeout: an unreachable Ollama (e.g. WSL mirrored
+                # networking, which hangs instead of refusing) fails within seconds.
+                with httpx.Client(timeout=httpx.Timeout(timeout, connect=5.0)) as client:
                     resp = client.post(v1_url, json=payload)
                     resp.raise_for_status()
                     data = resp.json()
@@ -672,7 +674,7 @@ class ToolBroker:
                     # Resolve model digest from /api/tags if available
                     model_digest = ""
                     try:
-                        tag_resp = client.get(f"{api_base}/api/tags", timeout=5.0)
+                        tag_resp = client.get(f"{api_base}/api/tags", timeout=httpx.Timeout(5.0, connect=5.0))
                         if tag_resp.status_code == 200:
                             for m in tag_resp.json().get("models", []):
                                 if m.get("name") == model or m.get("model") == model or m.get("name", "").startswith(model):
