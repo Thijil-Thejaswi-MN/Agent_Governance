@@ -340,6 +340,22 @@ class ToolBroker:
         if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
             raise PermissionError(f"Outbound network request to '{url}' denied by boundary: {eval_res.rule_matched}")
 
+        # M6: when a fetcher is attached (launcher routes it through the per-task
+        # egress proxy), perform the real GET; otherwise keep the M5 stub.
+        fetcher = getattr(self, "http_fetcher", None)
+        if fetcher is not None:
+            fetched = fetcher(token=token, task_id=task_id, url=url)
+            body_content = fetched.get("body", "")
+            if self.expansion_service:
+                self.expansion_service.record_untrusted_read(
+                    task_id=task_id,
+                    source_type="http_get",
+                    source_target=url,
+                    content=body_content,
+                )
+            self._check_and_consume_single_use(boundary, "network", url)
+            return {"status": fetched.get("status", 0), "url": url, "body": body_content}
+
         # In testing / stub mode:
         body_content = "Mock response from authorized endpoint"
         if self.expansion_service:
@@ -463,6 +479,46 @@ class ToolBroker:
             "stderr": res.stderr,
             "exit_code": res.returncode,
         }
+
+    def run_command_check(self, token: str, command: str) -> dict[str, Any]:
+        """
+        Tool: run_command_check (M6).
+        Decides whether run_command is in the task boundary WITHOUT executing it.
+        The agent shim executes allowed commands itself, inside the sandbox, so the
+        OS layer (not this broker) is what limits their effects.
+        """
+        from .redaction import redact_command
+
+        task_id, agent_id = self._authenticate(token)
+        boundary = self.storage.get_boundary(task_id)
+        if not boundary:
+            raise RuntimeError(f"Active boundary not found for task {task_id}")
+
+        eval_res = self.evaluator.evaluate_command(boundary, command)
+        action, prevented = self.policy_engine.decide(boundary, eval_res)
+
+        event = GovernanceEvent(
+            event_id=self._generate_event_id(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            source=EventSource.TOOL_BROKER,
+            task_id=task_id,
+            agent_id=agent_id,
+            pid=os.getpid(),
+            kind="run_command",
+            target=redact_command(command),
+            details={"execution": "agent_local_in_sandbox", "check_only": True},
+            verdict=eval_res.verdict,
+            risk_tier=eval_res.risk_tier,
+            action_taken=action,
+            prevented=prevented,
+            rule_matched=eval_res.rule_matched,
+            boundary_version=boundary.version,
+        )
+        self.storage.record_event(event)
+
+        if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
+            raise PermissionError(f"Command execution denied: {eval_res.rule_matched}")
+        return {"allowed": True, "rule_matched": eval_res.rule_matched}
 
     def call_agent(self, token: str, target_agent: str, message: dict[str, Any]) -> dict[str, Any]:
         """

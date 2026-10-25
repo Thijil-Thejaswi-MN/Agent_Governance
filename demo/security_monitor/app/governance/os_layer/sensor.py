@@ -5,14 +5,22 @@ into GovernanceStorage as GovernanceEvent records.
 """
 from __future__ import annotations
 
+import datetime
 import json
 import os
 import subprocess
 import threading
+import uuid
 from pathlib import Path
 from typing import Callable
 
-from demo.security_monitor.app.governance.models import GovernanceEvent
+from demo.security_monitor.app.governance.models import (
+    EventSource,
+    EventVerdict,
+    GovernanceEvent,
+    RiskTier,
+    TaskAction,
+)
 from demo.security_monitor.app.governance.storage import GovernanceStorage
 
 
@@ -61,19 +69,31 @@ class OSSensorBridge:
                         ev["task_id"] = task_id
                         captured_events.append(ev)
 
-                        if self.storage:
-                            # Record in storage as GovernanceEvent
+                        if self.storage and ev.get("type", "syscall") == "syscall":
+                            # task_id here comes from the caller, i.e. from which sensor
+                            # instance traced the process (tracer lineage), not from the
+                            # cgroup path. The verdict is not evaluated here (no boundary):
+                            # AMBIGUOUS. Boundary-aware, cgroup-based attribution lives in
+                            # app/governance/correlator.py (M6).
                             gov_ev = GovernanceEvent(
+                                event_id=f"evt_os_bridge_{uuid.uuid4().hex[:12]}",
+                                timestamp=ev.get("timestamp") or datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                                source=EventSource.OS_SENSOR,
                                 task_id=task_id,
-                                token="os_syscall_trace",
                                 agent_id="os_process",
-                                action_type=ev.get("syscall", "syscall"),
-                                resource=ev.get("target", "unknown"),
-                                verdict="INSIDE" if ev.get("verdict") == "ALLOWED" else "OUTSIDE",
-                                prevented=(ev.get("verdict") == "PREVENTED"),
-                                violation_type=None if ev.get("verdict") == "ALLOWED" else "OS_LANDLOCK_DENY",
-                                rule_matched="os_sensor_cgroup_attribution",
-                                timestamp=ev.get("timestamp"),
+                                pid=ev.get("pid"),
+                                kind=ev.get("syscall", "syscall"),
+                                target=str(ev.get("abs_target") or ev.get("target", "unknown")),
+                                details={
+                                    "attribution_method": "tracer_lineage",
+                                    "cgroup_path": ev.get("cgroup_id"),
+                                    "result": ev.get("result"),
+                                },
+                                verdict=EventVerdict.AMBIGUOUS,
+                                risk_tier=RiskTier.LOW,
+                                action_taken=TaskAction.LOG,
+                                prevented=False,
+                                rule_matched="os_sensor_tracer_lineage_attribution",
                             )
                             self.storage.record_event(gov_ev)
                     except Exception:

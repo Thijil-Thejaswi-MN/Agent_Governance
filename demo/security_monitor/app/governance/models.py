@@ -50,6 +50,7 @@ class EventVerdict(str, Enum):
     INSIDE = "INSIDE"
     OUTSIDE = "OUTSIDE"
     AMBIGUOUS = "AMBIGUOUS"
+    UNATTRIBUTED = "UNATTRIBUTED"  # OS event whose cgroup maps to no recorded task (M6)
 
 
 class TaskBoundary(BaseModel):

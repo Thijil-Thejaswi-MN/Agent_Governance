@@ -18,11 +18,44 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
+import struct
 import sys
 from pathlib import Path
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
+
+# --- Broker RPC framing (Unix domain socket transport, M6) ---
+# Each message is a 4-byte big-endian length followed by a UTF-8 JSON object.
+# Kept stdlib-only so the in-sandbox agent shim can import this module alone.
+RPC_MAX_REQUEST_BYTES = 2 * 1024 * 1024
+RPC_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+
+
+def rpc_send_frame(sock: socket.socket, obj: dict[str, Any]) -> None:
+    data = json.dumps(obj, default=str).encode("utf-8")
+    sock.sendall(struct.pack(">I", len(data)) + data)
+
+
+def _recv_exact(sock: socket.socket, n: int) -> bytes:
+    buf = bytearray()
+    while len(buf) < n:
+        chunk = sock.recv(min(65536, n - len(buf)))
+        if not chunk:
+            raise ConnectionError("broker socket closed mid-frame")
+        buf.extend(chunk)
+    return bytes(buf)
+
+
+def rpc_recv_frame(sock: socket.socket, max_bytes: int) -> dict[str, Any]:
+    (length,) = struct.unpack(">I", _recv_exact(sock, 4))
+    if length > max_bytes:
+        raise ValueError(f"frame of {length} bytes exceeds limit {max_bytes}")
+    obj = json.loads(_recv_exact(sock, length).decode("utf-8"))
+    if not isinstance(obj, dict):
+        raise ValueError("frame is not a JSON object")
+    return obj
 
 # Standard JSON schema for the broker's 6 governed tools
 GOVERNED_TOOLS_SCHEMA: list[dict[str, Any]] = [
@@ -213,39 +246,49 @@ def normalize_request_access_args(args: dict[str, Any]) -> tuple[dict[str, Any],
 class AgentBrokerClient:
     """Client interface for an agent process to communicate with the ToolBroker.
     
-    Can wrap a ToolBroker instance directly (for in-process execution)
-    or dispatch over HTTP to a local broker gateway.
+    Can wrap a ToolBroker instance directly (for in-process execution),
+    dispatch over HTTP to a local broker gateway, or (M6) talk to the per-task
+    agent-facing broker RPC over a Unix domain socket (`uds_path`).
     """
 
-    def __init__(self, broker: Any = None, token: str = "", gateway_url: str | None = None) -> None:
+    def __init__(
+        self,
+        broker: Any = None,
+        token: str = "",
+        gateway_url: str | None = None,
+        uds_path: str | None = None,
+        uds_timeout: float = 330.0,
+    ) -> None:
         self.broker = broker
         self.token = token
         self.gateway_url = gateway_url
+        self.uds_path = uds_path
+        self.uds_timeout = uds_timeout
 
     def read_file(self, file_path: str) -> str:
         if self.broker:
             return self.broker.read_file(self.token, file_path)
-        return self._http_call("read_file", {"file_path": file_path})
+        return self._remote_call("read_file", {"file_path": file_path})
 
     def write_file(self, file_path: str, content: str) -> dict[str, Any]:
         if self.broker:
             return self.broker.write_file(self.token, file_path, content)
-        return self._http_call("write_file", {"file_path": file_path, "content": content})
+        return self._remote_call("write_file", {"file_path": file_path, "content": content})
 
     def http_get(self, url: str) -> dict[str, Any]:
         if self.broker:
             return self.broker.http_get(self.token, url)
-        return self._http_call("http_get", {"url": url})
+        return self._remote_call("http_get", {"url": url})
 
     def call_agent(self, target_agent: str, message: dict[str, Any]) -> dict[str, Any]:
         if self.broker:
             return self.broker.call_agent(self.token, target_agent, message)
-        return self._http_call("call_agent", {"target_agent": target_agent, "message": message})
+        return self._remote_call("call_agent", {"target_agent": target_agent, "message": message})
 
     def request_access(self, resource_type: str, resource_target: str, justification: str) -> dict[str, Any]:
         if self.broker:
             return self.broker.request_access(self.token, resource_type, resource_target, justification)
-        return self._http_call("request_access", {
+        return self._remote_call("request_access", {
             "resource_type": resource_type,
             "resource_target": resource_target,
             "justification": justification,
@@ -254,7 +297,7 @@ class AgentBrokerClient:
     def run_command(self, command: str) -> dict[str, Any]:
         if self.broker:
             return self.broker.run_command(self.token, command)
-        return self._http_call("run_command", {"command": command})
+        return self._remote_call("run_command", {"command": command})
 
     def llm_complete(
         self,
@@ -271,7 +314,34 @@ class AgentBrokerClient:
                 model=model,
                 custom_provider=custom_provider,
             )
-        return self._http_call("llm_complete", {"messages": messages, "tools": tools, "model": model})
+        return self._remote_call("llm_complete", {"messages": messages, "tools": tools, "model": model})
+
+    def run_command_check(self, command: str) -> dict[str, Any]:
+        """Asks the broker whether run_command is in the boundary (M6, no execution)."""
+        if self.broker:
+            return self.broker.run_command_check(self.token, command)
+        return self._remote_call("run_command_check", {"command": command})
+
+    def _remote_call(self, endpoint: str, payload: dict[str, Any]) -> Any:
+        if self.uds_path:
+            return self._uds_call(endpoint, payload)
+        return self._http_call(endpoint, payload)
+
+    def _uds_call(self, endpoint: str, payload: dict[str, Any]) -> Any:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(self.uds_timeout)
+        try:
+            sock.connect(self.uds_path)
+            rpc_send_frame(sock, {"token": self.token, "method": endpoint, "params": payload})
+            resp = rpc_recv_frame(sock, RPC_MAX_RESPONSE_BYTES)
+        finally:
+            sock.close()
+        if resp.get("ok"):
+            return resp.get("result")
+        err = str(resp.get("error", "broker error"))
+        if resp.get("error_type") == "PermissionError":
+            raise PermissionError(err)
+        raise RuntimeError(err)
 
     def _http_call(self, endpoint: str, payload: dict[str, Any]) -> Any:
         import httpx

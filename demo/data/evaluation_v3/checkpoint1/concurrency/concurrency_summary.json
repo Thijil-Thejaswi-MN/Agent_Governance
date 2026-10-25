@@ -1,0 +1,12 @@
+{
+ "rounds": 20,
+ "tasks_run": 40,
+ "total_events": 14240,
+ "cross_attributions": 0,
+ "unattributed": 0,
+ "rounds_with_overlap": 20,
+ "min_overlap_s": 0.708,
+ "tasks_not_completed": 0,
+ "llm": "scripted_mock",
+ "attribution_method": "cgroup (task_os_identity table); tracer lineage used only as the reference"
+}

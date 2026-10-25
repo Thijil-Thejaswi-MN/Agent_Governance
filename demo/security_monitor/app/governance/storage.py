@@ -163,6 +163,18 @@ class GovernanceStorage:
                 cursor.execute("ALTER TABLE governance_provenance ADD COLUMN content_snippet TEXT")
             except Exception:
                 pass
+
+            # 7. Task OS identity (M6): task_id <-> cgroup path read from /proc/<pid>/cgroup
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS task_os_identity (
+                    task_id TEXT PRIMARY KEY,
+                    cgroup_path TEXT NOT NULL UNIQUE,
+                    unit_name TEXT NOT NULL,
+                    scope_pid INTEGER NOT NULL,
+                    recorded_at TEXT NOT NULL,
+                    source TEXT NOT NULL
+                )
+            """)
             conn.commit()
 
     # --- Task Methods ---
@@ -346,6 +358,31 @@ class GovernanceStorage:
             )
             conn.commit()
 
+    def record_events(self, events: list[GovernanceEvent]) -> None:
+        """Bulk insert (one transaction) for high-volume OS sensor streams."""
+        if not events:
+            return
+        with self.get_connection() as conn:
+            conn.executemany(
+                """
+                INSERT INTO governance_events (
+                    event_id, timestamp, source, task_id, agent_id, pid,
+                    kind, target, verdict, risk_tier, action_taken, prevented,
+                    rule_matched, boundary_version, details_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(event_id) DO NOTHING
+                """,
+                [
+                    (
+                        e.event_id, e.timestamp, e.source.value, e.task_id, e.agent_id, e.pid,
+                        e.kind, e.target, e.verdict.value, e.risk_tier.value, e.action_taken.value,
+                        1 if e.prevented else 0, e.rule_matched, e.boundary_version, json.dumps(e.details),
+                    )
+                    for e in events
+                ],
+            )
+            conn.commit()
+
     def get_events_for_task(self, task_id: str) -> list[GovernanceEvent]:
         with self.get_connection() as conn:
             rows = conn.execute(
@@ -372,6 +409,33 @@ class GovernanceStorage:
                 )
                 for r in rows
             ]
+
+    # --- Task OS Identity Methods (M6) ---
+    def save_task_cgroup(self, task_id: str, cgroup_path: str, unit_name: str, scope_pid: int, source: str = "proc_pid_cgroup") -> None:
+        import datetime
+        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            conn.execute(
+                "INSERT INTO task_os_identity (task_id, cgroup_path, unit_name, scope_pid, recorded_at, source) VALUES (?, ?, ?, ?, ?, ?)",
+                (task_id, cgroup_path, unit_name, scope_pid, now_utc, source),
+            )
+            conn.commit()
+
+    def lookup_task_by_cgroup(self, cgroup_path: str) -> str | None:
+        with self.get_connection() as conn:
+            row = conn.execute("SELECT task_id FROM task_os_identity WHERE cgroup_path = ?", (cgroup_path,)).fetchone()
+            return row["task_id"] if row else None
+
+    def get_task_cgroup(self, task_id: str) -> dict[str, Any] | None:
+        with self.get_connection() as conn:
+            row = conn.execute("SELECT * FROM task_os_identity WHERE task_id = ?", (task_id,)).fetchone()
+            return dict(row) if row else None
+
+    def list_task_cgroups(self) -> dict[str, str]:
+        """Returns {cgroup_path: task_id}."""
+        with self.get_connection() as conn:
+            rows = conn.execute("SELECT task_id, cgroup_path FROM task_os_identity").fetchall()
+            return {r["cgroup_path"]: r["task_id"] for r in rows}
 
     # --- Provenance Tracking Methods ---
     def record_provenance(self, record: ProvenanceRecord) -> None:
