@@ -72,6 +72,8 @@ class OSEventCorrelator:
         on_open: Callable[[str], None] | None = None,
         evaluator: BoundaryEvaluator | None = None,
         flush_every: int = 200,
+        condition: str | None = None,
+        freeze_on_outside: bool | None = None,
     ) -> None:
         self.storage = storage
         self.task_id = task_id
@@ -86,6 +88,14 @@ class OSEventCorrelator:
         self.on_open = on_open
         self.evaluator = evaluator or BoundaryEvaluator()
         self.flush_every = flush_every
+        if freeze_on_outside is None:
+            if condition is not None:
+                c = condition.strip().upper()
+                freeze_on_outside = c in ("C", "D", "B+F", "B_F", "BF")
+            else:
+                freeze_on_outside = True
+        self.freeze_on_outside = bool(freeze_on_outside)
+        self.condition = condition
 
         self.sensor_pid: int | None = None
         self.root_pid: int | None = None
@@ -354,7 +364,7 @@ class OSEventCorrelator:
             if prevented:
                 action = TaskAction.ALERT if risk == RiskTier.HIGH else TaskAction.LOG
             elif result == "ok":
-                if self.mode == EnforcementMode.ENFORCE:
+                if self.mode == EnforcementMode.ENFORCE and self.freeze_on_outside:
                     action = TaskAction.PAUSE_TASK  # an OUTSIDE access succeeded under ENFORCE: freeze
                 else:
                     action = TaskAction.ALERT

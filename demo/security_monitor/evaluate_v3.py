@@ -52,6 +52,7 @@ SHELL_ONLY_SYSTEM_PROMPT = (
 
 OLLAMA_URL = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
 EXPECTED_INJECTED_V3B_SHA256 = "48595aa2a1aad9602e6473272c32fbcde7aec199a253a5eaab9ffb2cae32ce4d"
+EXPECTED_INJECTED_V3B_SHELL_SHA256 = "328d0962e87f63f0bf3d8759345b5f5653572c059529dc43ee5d99454a865209"
 EXPECTED_LEGIT_V3B_SHA256 = "76e37a1e6b0a89bec513805f35d905808fd86d1bf2948fb3a969ee1efc031286"
 EXPECTED_V3B_SHA256 = EXPECTED_INJECTED_V3B_SHA256
 
@@ -366,8 +367,8 @@ def compile_attempts(res: Any, scenario: dict[str, Any], canary: str) -> list[di
         if cond == "D":
             prev = "landlock" if is_perm_denied else "none"
             obs = "agent"
-        elif cond in ("B", "C"):
-            prev = "broker" if (cond in ("B", "C") and is_perm_denied) else "none"
+        elif cond in ("B", "B+F", "C"):
+            prev = "broker" if (cond in ("B", "B+F", "C") and is_perm_denied) else "none"
             obs = "broker"
         else:
             prev = "none"
@@ -490,6 +491,13 @@ def main(argv: list[str] | None = None) -> int:
     print(f"✓ Verified legit_v3b.jsonl SHA256: {actual_legit_sha}")
     actual_v3b_sha = actual_injected_sha
 
+    injected_shell_path = repo_root / "demo/data/evaluation_v3/scenarios/injected_indirect_v3b_shell.jsonl"
+    actual_injected_shell_sha = None
+    if injected_shell_path.exists():
+        actual_injected_shell_sha = hashlib.sha256(injected_shell_path.read_bytes()).hexdigest()
+        assert actual_injected_shell_sha == EXPECTED_INJECTED_V3B_SHELL_SHA256, f"injected_indirect_v3b_shell SHA256 mismatch: {actual_injected_shell_sha} != {EXPECTED_INJECTED_V3B_SHELL_SHA256}"
+        print(f"✓ Verified injected_indirect_v3b_shell.jsonl SHA256: {actual_injected_shell_sha}")
+
     # Verify model digest matches reference
     if args.model in M5_EXPECTED_DIGESTS:
         exp_prefix = M5_EXPECTED_DIGESTS[args.model]
@@ -563,7 +571,7 @@ def main(argv: list[str] | None = None) -> int:
                         inputs=inputs,
                         output_targets=expected_bound.get("files_write", ["output/summary.txt"]),
                         declared_tools=declared_tools,
-                        enforcement_mode="ENFORCE" if cond in ("B", "C", "D") else "OBSERVE",
+                        enforcement_mode="ENFORCE" if cond in ("B", "B+F", "C", "D") else "OBSERVE",
                         llm={"provider": "ollama", "model": args.model},
                         system_prompt=system_prompt,
                         tools_schema=tools_schema,
@@ -571,7 +579,7 @@ def main(argv: list[str] | None = None) -> int:
                         decoys=decoys_tmpl,
                         canary=canary,
                         use_eval_world=True,
-                        approval_policy="oracle" if cond in ("B", "C") else "deny",
+                        approval_policy="oracle" if cond in ("B", "B+F", "C") else "deny",
                         oracle_allowed=[needed_res] if needed_res else [],
                         timeout_s=180.0,
                         command_timeout_s=30.0,
@@ -660,6 +668,8 @@ def main(argv: list[str] | None = None) -> int:
                         "git_commit": git_commit,
                         "is_dirty": is_dirty,
                         "injected_v3b_sha256": actual_injected_sha,
+                        "injected_v3b_shell_sha256": actual_injected_shell_sha,
+                        "v3b_shell_sha256": actual_injected_shell_sha,
                         "legit_v3b_sha256": actual_legit_sha,
                         "v3b_sha256": actual_v3b_sha,
                         "variant": "e1b_shell_only" if args.shell_only else "standard",

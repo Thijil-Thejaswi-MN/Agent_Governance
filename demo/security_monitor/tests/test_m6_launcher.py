@@ -465,6 +465,49 @@ def test_freeze_on_unprevented_outside_access(tmp_path: Path) -> None:
         _cleanup(res)
 
 
+@linux_only
+@needs_scope
+def test_condition_b_out_of_boundary_shell_read_not_frozen(tmp_path: Path) -> None:
+    """In condition B (tool-layer only governance), the OS sensor stays in observation only.
+    An out-of-boundary shell read succeeds (no Landlock) and records an OUTSIDE event,
+    but does NOT trigger task freeze or termination."""
+    steps = [
+        {"tool": "run_command", "args": {"command": "cat input/private_notes.txt"}},
+        {"tool": "write_file", "args": {"file_path": "output/summary.txt", "content": "done"}},
+        {"final": "done"},
+    ]
+    res, _, _ = _launch(tmp_path, steps, condition="B", enforcement_mode="ENFORCE")
+    try:
+        assert len(res.receipt["freeze_events"]) == 0
+        assert res.aborted is None
+        # Verify the OUTSIDE event was still recorded by the sensor
+        outside_events = [e for e in res.receipt["events"] if e.get("verdict") == "OUTSIDE" and "private_notes.txt" in str(e.get("target", ""))]
+        assert len(outside_events) > 0
+        assert outside_events[0]["action_taken"] != "PAUSE_TASK"
+    finally:
+        _cleanup(res)
+
+
+@linux_only
+@needs_scope
+def test_condition_b_plus_f_freezes_on_unprevented_outside_access(tmp_path: Path) -> None:
+    """Condition B+F: tool-layer + sensor detect-and-freeze, no Landlock.
+    An out-of-boundary shell read succeeds initially, but the sensor detects OUTSIDE
+    and freezes the task."""
+    steps = [
+        {"tool": "run_command", "args": {"command": "cat input/private_notes.txt; sleep 20"}},
+        {"final": "done"},
+    ]
+    t = time.time()
+    res, _, _ = _launch(tmp_path, steps, condition="B+F", enforcement_mode="ENFORCE")
+    try:
+        reasons = [f["reason"] for f in res.receipt["freeze_events"]]
+        assert "unprevented_outside_os_event" in reasons
+        assert time.time() - t < 20
+    finally:
+        _cleanup(res)
+
+
 # ---------------------------------------------------------------------------
 # M6.1b: sensor coverage per syscall family
 # ---------------------------------------------------------------------------

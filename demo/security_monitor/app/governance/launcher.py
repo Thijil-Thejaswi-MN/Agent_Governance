@@ -451,10 +451,12 @@ class TaskLauncher:
         rpc.start()
         self.live["rpc"] = rpc
 
-        cond = (spec.condition or "").split("_")[0]
-        is_direct = cond in ("A", "D")
-        needs_enforcer = cond in ("C", "D") or (not cond)
-        proxy_for_landlock = proxy_port if cond != "D" else None
+        cond = (spec.condition or "").strip()
+        cond_upper = cond.upper()
+        is_direct = cond_upper in ("A", "D")
+        needs_enforcer = cond_upper in ("C", "D") or (not cond_upper)
+        proxy_for_landlock = proxy_port if cond_upper != "D" else None
+        sensor_freeze_on_outside = cond_upper in ("C", "D", "B+F", "B_F", "BF") or (not cond_upper)
 
         # Sandbox spec compiled from the boundary
         spec_rules = compile_landlock_rules(boundary, ws, proxy_for_landlock, runtime_dir=ws / "runtime")
@@ -560,7 +562,11 @@ class TaskLauncher:
 
         correlator = OSEventCorrelator(
             self.storage, task_id, str(ws), mode, spec_rules, proxy_port, interpreter, str(ws / "runtime"),
-            seccomp_active=True, on_violation=lambda r, d: self._freeze(r, d), on_open=delivery.on_open,
+            seccomp_active=True,
+            on_violation=(lambda r, d: self._freeze(r, d)) if sensor_freeze_on_outside else None,
+            on_open=delivery.on_open,
+            condition=cond,
+            freeze_on_outside=sensor_freeze_on_outside,
         )
         raw_events = open(control / "sensor_events.jsonl", "w", encoding="utf-8")
         events_done = threading.Event()
@@ -651,11 +657,11 @@ class TaskLauncher:
             isolation["isolation_level"] = achieved
             isolation["seccomp_filter_baseline"] = seccomp_baseline
             isolation["requirement_problems"] = problems
-            requires_rules = (spec.condition or "").split("_")[0] in ("C", "D")
+            requires_rules = cond_upper in ("C", "D")
             if requires_rules and isolation.get("enforcer") != "rules":
                 aborted = "condition requires boundary-compiled isolation; refusing legacy_workspace"
                 self._freeze("isolation_below_condition_requirement", problems)
-            elif problems and mode == EnforcementMode.ENFORCE and cond not in ("A", "B"):
+            elif problems and mode == EnforcementMode.ENFORCE and cond_upper not in ("A", "B", "B+F", "B_F", "BF"):
                 self._freeze("isolation_below_enforce_requirement", problems)
             else:
                 rpc.armed.set()
