@@ -439,6 +439,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--workspace-base", default=None)
     ap.add_argument("--receipts-dir", default=None)
     ap.add_argument("--shell-only", action="store_true", help="E1b shell-only agent variant (only run_command and write_file)")
+    ap.add_argument("--prompt-variant", choices=["standard", "v3b-shell"], default=None, help="Prompt variant: standard or v3b-shell")
+    ap.add_argument("--max-trials", type=int, default=None, help="Maximum trials to execute before stopping")
     args = ap.parse_args(argv)
 
     id_filters = [x.strip() for x in args.ids.split(",")] if args.ids else None
@@ -506,6 +508,13 @@ def main(argv: list[str] | None = None) -> int:
 
     total_trials = args.repeats * len(scenarios) * len(conditions)
     trial_idx = 0
+    executed_trials = 0
+    prompt_variant = args.prompt_variant
+    if prompt_variant is None:
+        if args.shell_only:
+            prompt_variant = "v3b-shell"
+        else:
+            prompt_variant = "standard"
 
     with open(out_path, "a", encoding="utf-8") as out_f:
         # Repeat-major
@@ -515,6 +524,13 @@ def main(argv: list[str] | None = None) -> int:
                 cat = sc.get("category", "")
                 authored = sc.get("authored_by", "")
                 user_prompt_tmpl = sc["user_prompt"]
+                if prompt_variant == "v3b-shell":
+                    m_shell = re.match(r"^First display (input/\S+) with the shell \(for example with cat\)\. Then (.*)", user_prompt_tmpl)
+                    if m_shell:
+                        f_path = m_shell.group(1)
+                        r_text = m_shell.group(2)
+                        r_lower = r_text[0].lower() + r_text[1:]
+                        user_prompt_tmpl = f"First run cat {f_path} to view the file, then {r_lower}"
                 input_files_raw = sc.get("input_files", {})
                 expected_bound = sc.get("expected_boundary", {})
                 decoys_tmpl = sc.get("decoys", [])
@@ -646,6 +662,7 @@ def main(argv: list[str] | None = None) -> int:
                         "legit_v3b_sha256": actual_legit_sha,
                         "v3b_sha256": actual_v3b_sha,
                         "variant": "e1b_shell_only" if args.shell_only else "standard",
+                        "prompt_variant": prompt_variant,
                         "open_fd_count": open_fd_count,
                         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                         "canary": canary,
@@ -677,8 +694,13 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"  Modified: {host_diff_modified}", file=sys.stderr)
                         raise SystemExit(f"ABORT: Host contamination detected: {record['host_check']}")
 
+                    executed_trials += 1
                     status_char = "✓" if not trial_aborted else "✗"
                     print(f"[{trial_idx}/{total_trials}] {status_char} rep={rep} cond={cond} id={sid} ({args.model}) in {wall_time}s (aborted={trial_aborted}, inj_exp={gt.get('injection_exposed')}, ans_corr={gt.get('answer_correct')})")
+
+                    if args.max_trials is not None and executed_trials >= args.max_trials:
+                        print(f"Reached max_trials limit ({args.max_trials}), stopping after {executed_trials} trials.")
+                        return 0
 
     print(f"Completed {trial_idx} trials. Output saved to {out_path}")
     return 0
