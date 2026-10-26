@@ -56,6 +56,7 @@ OS_LAYER = HERE / "os_layer"
 SENSOR_BIN = OS_LAYER / "sensor"
 SECCOMP_BIN = OS_LAYER / "seccomp_filter"
 ENFORCER_BIN = OS_LAYER / "landlock_enforcer"
+EVAL_WORLD_PY = HERE / "eval_world.py"
 RUNTIME_FILES = ("agent_shim.py", "llm_agent.py")
 REPO_ROOT = HERE.parents[3]
 
@@ -87,6 +88,9 @@ class TaskSpec:
     oracle_allowed: list[str] = field(default_factory=list)
     condition: str | None = None
     tools_schema: list[dict[str, Any]] | None = None
+    decoys: list[dict[str, Any]] = field(default_factory=list)
+    canary: str = ""
+    use_eval_world: bool = False
 
     @classmethod
     def from_file(cls, path: str | Path) -> "TaskSpec":
@@ -293,6 +297,8 @@ class LaunchResult:
     shim_result: dict[str, Any] | None
     model_inputs: list[dict[str, Any]]
     aborted: str | None = None
+    fs_diff: dict[str, Any] | None = None
+    audit_sink_requests: list[dict[str, Any]] = field(default_factory=list)
 
 
 class TaskLauncher:
@@ -437,8 +443,13 @@ class TaskLauncher:
         rpc.start()
         self.live["rpc"] = rpc
 
+        cond = (spec.condition or "").split("_")[0]
+        is_direct = cond in ("A", "D")
+        needs_enforcer = cond in ("C", "D") or (not cond)
+        proxy_for_landlock = proxy_port if cond != "D" else None
+
         # Sandbox spec compiled from the boundary
-        spec_rules = compile_landlock_rules(boundary, ws, proxy_port, runtime_dir=ws / "runtime")
+        spec_rules = compile_landlock_rules(boundary, ws, proxy_for_landlock, runtime_dir=ws / "runtime")
         if self.test_hooks.get("rules_override") == "allow_workspace_read":
             # TEST ONLY: simulate a mis-compiled ruleset to exercise the unprevented-OUTSIDE freeze.
             spec_rules["rules"].append({"path": str(ws.resolve()), "access": ["read_file", "read_dir"]})
@@ -446,6 +457,7 @@ class TaskLauncher:
         (control / "rules_compile_report.json").write_text(json.dumps(spec_rules["_compile_report"], indent=1))
 
         interpreter = os.path.realpath(sys.executable)
+        seccomp_baseline = cgroup_ctl.own_seccomp_filter_count()
         enforcer_mode = self.test_hooks.get("enforcer_mode", "enforce" if mode == EnforcementMode.ENFORCE else "observe")
         enforcer_args = [str(ENFORCER_BIN), "--rules", str(rules_path), "--mode", enforcer_mode]
         if self.test_hooks.get("simulate_unshare_fail"):
@@ -467,12 +479,20 @@ class TaskLauncher:
             "command_timeout": spec.command_timeout_s,
             "model": llm_model,
             "tools_schema": spec.tools_schema,
+            "condition": cond,
+            "client_mode": "direct" if is_direct else "broker",
         }
         task_bytes = json.dumps(shim_task).encode()
         if len(task_bytes) > 60000:
             raise ValueError("task spec too large for pipe hand-off")
         os.write(task_w, task_bytes)
         os.close(task_w)
+
+        if not needs_enforcer:
+            synth = json.dumps({"isolation_level": "world_unshared_ns", "enforcer": "none", "landlock_applied": False, "seccomp_filters": seccomp_baseline}).encode()
+            os.write(status_w, synth)
+            os.close(status_w)
+            status_w = -1
 
         unit = f"agtask-{task_id}"
         self.live["unit"] = unit
@@ -486,19 +506,40 @@ class TaskLauncher:
             f"GOVERNANCE_RESULT_FD={result_w}",
             f"GOVERNANCE_BROKER_SOCK={ws / BROKER_SOCKET_NAME}",
         ]
-        chain = [str(SENSOR_BIN), "--events-fd", str(events_w), "--gate-fd", str(gate_r), "--",
-                 str(SECCOMP_BIN), *enforcer_args, "--status-fd", str(status_w), "--",
-                 interpreter, "-E", "-s", "-B", str(ws / "runtime" / "agent_shim.py")]
+
+        world_cmd = []
+        if spec.use_eval_world or bool(spec.decoys) or cond in ("A", "B", "C", "D"):
+            world_cmd = [
+                interpreter, "-E", "-s", "-B", str(EVAL_WORLD_PY),
+                "--workspace", str(ws),
+                "--canary", spec.canary or "NO_CANARY",
+                "--decoys", json.dumps(spec.decoys),
+                "--sink-log", str(control / "audit_sink.jsonl"),
+                "--fs-diff-out", str(control / "fs_diff.json"),
+                "--condition", cond or "C",
+                "--abort-file", str(control / "eval_world_abort.txt"),
+                "--",
+            ]
+
+        sensor_chain = [str(SENSOR_BIN), "--events-fd", str(events_w), "--gate-fd", str(gate_r), "--"]
+        sandbox_chain = []
+        if needs_enforcer:
+            sandbox_chain = [str(SECCOMP_BIN), *enforcer_args, "--status-fd", str(status_w), "--"]
+        shim_chain = [interpreter, "-E", "-s", "-B", str(ws / "runtime" / "agent_shim.py")]
+
+        chain = [*world_cmd, *sensor_chain, *sandbox_chain, *shim_chain]
         cmd = ["systemd-run", "--user", "--scope", "--quiet", f"--unit={unit}", "--", *env_args, *chain]
 
         launcher_cg = cgroup_ctl.read_proc_cgroup(os.getpid())
-        seccomp_baseline = cgroup_ctl.own_seccomp_filter_count()
         stdout_f = open(control / "sandbox_stdout.log", "wb")
         stderr_f = open(control / "sandbox_stderr.log", "wb")
+        pass_fds = (token_r, task_r, result_w, events_w, gate_r) if status_w == -1 else (token_r, task_r, result_w, events_w, gate_r, status_w)
         proc = subprocess.Popen(cmd, cwd=str(ws), stdout=stdout_f, stderr=stderr_f, stdin=subprocess.DEVNULL,
-                                pass_fds=(token_r, task_r, result_w, events_w, gate_r, status_w))
-        for fd in (token_r, task_r, result_w, events_w, gate_r, status_w):
+                                pass_fds=pass_fds)
+        for fd in (token_r, task_r, result_w, events_w, gate_r):
             os.close(fd)
+        if status_w != -1:
+            os.close(status_w)
         self.live["scope_pid"] = proc.pid
 
         # Correlator + readers
@@ -552,7 +593,11 @@ class TaskLauncher:
             while correlator.root_pid is None and time.monotonic() < deadline and proc.poll() is None:
                 time.sleep(0.01)
             if correlator.root_pid is None or cgroup_ctl.read_proc_cgroup(correlator.root_pid) != cg:
-                aborted = "sensor_child_not_in_task_cgroup"
+                abort_file = control / "eval_world_abort.txt"
+                if abort_file.exists():
+                    aborted = abort_file.read_text(encoding="utf-8").strip()
+                else:
+                    aborted = "sensor_child_not_in_task_cgroup"
                 raise RuntimeError(aborted)
             self.storage.save_task_cgroup(task_id, cg, unit, proc.pid)
             self.live.update({"cgroup": cg, "sensor_pid": correlator.sensor_pid, "root_pid": correlator.root_pid})
@@ -717,6 +762,25 @@ class TaskLauncher:
         receipt_path = self.receipts_dir / f"{task_id}.json"
         receipt_path.write_text(json.dumps(receipt, indent=1, default=str), encoding="utf-8")
 
+        fs_diff = None
+        diff_file = control / "fs_diff.json"
+        if diff_file.exists():
+            try:
+                fs_diff = json.loads(diff_file.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+        sink_requests = []
+        sink_log_file = control / "audit_sink.jsonl"
+        if sink_log_file.exists():
+            for line in sink_log_file.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line:
+                    try:
+                        sink_requests.append(json.loads(line))
+                    except Exception:
+                        pass
+
         return LaunchResult(
             task_id=task_id,
             workspace=ws,
@@ -726,6 +790,8 @@ class TaskLauncher:
             shim_result=shim_result,
             model_inputs=rpc.llm_requests[-1] if rpc.llm_requests else [],
             aborted=aborted,
+            fs_diff=fs_diff,
+            audit_sink_requests=sink_requests,
         )
 
 

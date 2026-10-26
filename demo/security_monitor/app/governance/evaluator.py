@@ -81,6 +81,29 @@ class BoundaryEvaluator:
         mode_str = "files.write" if is_write else "files.read"
         rel_lower = rel_str.lower()
 
+        # For reads: files in files_write, and the task's own output/ directory, are allowed
+        if not is_write:
+            if rel_str.startswith("output/") or rel_str == "output":
+                return EvaluationResult(
+                    verdict=EventVerdict.INSIDE,
+                    risk_tier=RiskTier.LOW,
+                    rule_matched="matched task output directory read access",
+                )
+            for pattern in boundary.files_write:
+                pat_clean = pattern.replace("\\", "/").lower()
+                if not any(c in pat_clean for c in ["*", "?", "["]) and rel_lower == pat_clean:
+                    return EvaluationResult(
+                        verdict=EventVerdict.INSIDE,
+                        risk_tier=RiskTier.LOW,
+                        rule_matched=f"matched explicitly allowed files_write target readable: {pattern}",
+                    )
+                if fnmatch.fnmatch(rel_lower, pat_clean):
+                    return EvaluationResult(
+                        verdict=EventVerdict.INSIDE,
+                        risk_tier=RiskTier.LOW,
+                        rule_matched=f"matched allowed files_write pattern readable: {pattern}",
+                    )
+
         # 3. Check for exact non-wildcard match in allowed list (explicit human grants)
         for pattern in allowed_list:
             pat_clean = pattern.replace("\\", "/").lower()

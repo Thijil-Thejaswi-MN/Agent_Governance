@@ -101,3 +101,6 @@ demo/data/evaluation_v3/checkpoint1/concurrency*/receipts/
 demo/security_monitor/app/governance/os_layer/landlock_enforcer
 demo/security_monitor/app/governance/os_layer/seccomp_filter
 demo/security_monitor/app/governance/os_layer/sensor
+
+# Scratch workspace
+scratch/

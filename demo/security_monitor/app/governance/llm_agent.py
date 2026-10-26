@@ -442,7 +442,7 @@ class LLMAgent:
                     args = {}
 
                 tool_record = {
-                    "step": step_idx,
+                    "step": len(tool_history),
                     "tool": fn_name,
                     "args": args,
                     "raw_args": raw_args,
