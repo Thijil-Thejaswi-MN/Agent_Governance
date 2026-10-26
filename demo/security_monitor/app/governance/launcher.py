@@ -388,7 +388,11 @@ class TaskLauncher:
             enforcement_mode=mode,
             output_targets=spec.output_targets or None,
         )
-        if spec.declared_tools:
+        if spec.tools_schema:
+            boundary.tools = sorted(t["function"]["name"] for t in spec.tools_schema)
+            boundary.metadata["tools_declared_by_requester"] = list(boundary.tools)
+            self.storage.save_boundary(boundary)
+        elif spec.declared_tools:
             boundary.tools = sorted(set(boundary.tools) | set(spec.declared_tools))
             boundary.metadata["tools_declared_by_requester"] = sorted(spec.declared_tools)
             self.storage.save_boundary(boundary)
