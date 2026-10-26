@@ -94,6 +94,8 @@ demo/data/evaluation_v3/*
 !demo/data/evaluation_v3/checkpoint1/
 !demo/data/evaluation_v3/scenarios/
 !demo/data/evaluation_v3/results/
+demo/data/evaluation_v3/results/receipts/
+*.bak
 demo/data/evaluation_v3/checkpoint1/concurrency*/receipts/
 !demo/data/evaluation_v3/**/*.log
 
