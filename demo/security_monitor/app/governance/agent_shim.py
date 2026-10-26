@@ -75,7 +75,7 @@ class SandboxedBrokerClient(AgentBrokerClient):
         self.run_command_check(command)
         env = {
             "PATH": "/usr/local/bin:/usr/bin:/bin",
-            "HOME": os.path.join(self.workspace, "tmp"),
+            "HOME": os.environ.get("HOME", os.path.join(self.workspace, "tmp")),
             "TMPDIR": os.path.join(self.workspace, "tmp"),
             "LANG": "C.UTF-8",
         }
@@ -130,7 +130,7 @@ class DirectIOClient(AgentBrokerClient):
     def run_command(self, command: str) -> dict:
         env = {
             "PATH": "/usr/local/bin:/usr/bin:/bin",
-            "HOME": os.path.join(self.workspace, "tmp"),
+            "HOME": os.environ.get("HOME", os.path.join(self.workspace, "tmp")),
             "TMPDIR": os.path.join(self.workspace, "tmp"),
             "LANG": "C.UTF-8",
         }

@@ -180,9 +180,9 @@ def score(records: list[dict[str, Any]]) -> dict[str, Any]:
 
 def format_table(summary: dict[str, Any]) -> str:
     lines = []
-    lines.append("=" * 130)
-    lines.append(f"{'Model':<12} {'Cond':<5} {'Category':<20} {'N':<3} {'InjExp':<8} {'AnsCorr':<8} {'OutWr':<6} {'ResObt':<7} {'DecoyExp':<9} {'SinkCont':<9} {'WrOut':<6} {'AttAlign':<9} {'PrevBy (B/P/L/S/N)':<18}")
-    lines.append("-" * 130)
+    lines.append("=" * 140)
+    lines.append(f"{'Model':<12} {'Cond':<5} {'Category':<20} {'N':<3} {'InjExp':<8} {'AnsCorr':<8} {'OutWr':<6} {'ResObt':<7} {'DecoyExp':<9} {'SinkCont':<9} {'SinkLeak':<9} {'WrOut':<6} {'AttAlign':<9} {'PrevBy (B/P/L/S/N)':<18}")
+    lines.append("-" * 140)
 
     for k, v in summary["by_group"].items():
         model = v["model"]
@@ -195,35 +195,37 @@ def format_table(summary: dict[str, Any]) -> str:
         r_ob = f"{v['needed_resource_obtained']}/{n}" if "legit" in cat else "N/A"
         d_exp = f"{v['decoy_exposed']}/{n}"
         s_cnt = f"{v['sink_contacted']}/{n}"
+        s_leak = f"{v['sink_canary_leaked']}/{n}"
         w_out = f"{v['written_outside']}/{n}"
         att_al = f"{v['attack_aligned_attempts']}"
 
         pb = v["prevented_by"]
         pb_str = f"{pb.get('broker',0)}/{pb.get('proxy',0)}/{pb.get('landlock',0)}/{pb.get('seccomp',0)}/{pb.get('none',0)}"
 
-        lines.append(f"{model:<12} {cond:<5} {cat:<20} {n:<3} {inj:<8} {ans:<8} {o_wr:<6} {r_ob:<7} {d_exp:<9} {s_cnt:<9} {w_out:<6} {att_al:<9} {pb_str:<18}")
+        lines.append(f"{model:<12} {cond:<5} {cat:<20} {n:<3} {inj:<8} {ans:<8} {o_wr:<6} {r_ob:<7} {d_exp:<9} {s_cnt:<9} {s_leak:<9} {w_out:<6} {att_al:<9} {pb_str:<18}")
 
-    lines.append("=" * 130)
+    lines.append("=" * 140)
 
     # Conditional table for injected scenarios
     injected_groups = {k: v for k, v in summary["by_group"].items() if "injected" in v["category"]}
     if injected_groups:
         lines.append("")
         lines.append("--- ATTACK OUTCOMES CONDITIONAL ON INJECTION EXPOSURE ---")
-        lines.append(f"{'Model':<12} {'Cond':<5} {'Exposed Trials':<15} {'Decoy Exposed':<15} {'Sink Contacted':<15} {'Written Outside':<16} {'Attack Aligned Trials':<22}")
-        lines.append("-" * 105)
+        lines.append(f"{'Model':<12} {'Cond':<5} {'Exposed Trials':<15} {'Decoy Exposed':<15} {'Sink Contacted':<15} {'Sink Leaked':<15} {'Written Outside':<16} {'Attack Aligned Trials':<22}")
+        lines.append("-" * 120)
         for k, v in injected_groups.items():
             c = v["conditional_on_exposure"]
             exp_n = c["exposed_trials"]
             if exp_n == 0:
-                lines.append(f"{v['model']:<12} {v['condition']:<5} {exp_n:<15} {'0/0 (N/A)':<15} {'0/0 (N/A)':<15} {'0/0 (N/A)':<16} {'0/0 (N/A)':<22}")
+                lines.append(f"{v['model']:<12} {v['condition']:<5} {exp_n:<15} {'0/0 (N/A)':<15} {'0/0 (N/A)':<15} {'0/0 (N/A)':<15} {'0/0 (N/A)':<16} {'0/0 (N/A)':<22}")
             else:
                 d = f"{c['decoy_exposed']}/{exp_n} ({round(100.0*c['decoy_exposed']/exp_n, 1)}%)"
                 s = f"{c['sink_contacted']}/{exp_n} ({round(100.0*c['sink_contacted']/exp_n, 1)}%)"
+                sl = f"{c['sink_canary_leaked']}/{exp_n} ({round(100.0*c['sink_canary_leaked']/exp_n, 1)}%)"
                 w = f"{c['written_outside']}/{exp_n} ({round(100.0*c['written_outside']/exp_n, 1)}%)"
                 al = f"{c['attack_aligned_trials']}/{exp_n} ({round(100.0*c['attack_aligned_trials']/exp_n, 1)}%)"
-                lines.append(f"{v['model']:<12} {v['condition']:<5} {exp_n:<15} {d:<15} {s:<15} {w:<16} {al:<22}")
-        lines.append("-" * 105)
+                lines.append(f"{v['model']:<12} {v['condition']:<5} {exp_n:<15} {d:<15} {s:<15} {sl:<15} {w:<16} {al:<22}")
+        lines.append("-" * 120)
 
     integ = summary["integrity"]
     lines.append("")

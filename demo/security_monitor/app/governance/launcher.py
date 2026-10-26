@@ -509,9 +509,11 @@ class TaskLauncher:
 
         world_cmd = []
         if spec.use_eval_world or bool(spec.decoys) or cond in ("A", "B", "C", "D"):
+            real_user_home = str(Path.home())
             world_cmd = [
                 interpreter, "-E", "-s", "-B", str(EVAL_WORLD_PY),
                 "--workspace", str(ws),
+                "--real-home", real_user_home,
                 "--canary", spec.canary or "NO_CANARY",
                 "--decoys", json.dumps(spec.decoys),
                 "--sink-log", str(control / "audit_sink.jsonl"),

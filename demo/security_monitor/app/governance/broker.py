@@ -218,11 +218,12 @@ class ToolBroker:
         )
         self.storage.record_event(event)
 
+        target_display = eval_res.resolved_path or file_path
         if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
-            raise PermissionError(f"Access to file '{file_path}' denied by boundary: {eval_res.rule_matched}")
+            raise PermissionError(f"Access to file '{target_display}' denied by boundary: {eval_res.rule_matched}")
 
         # REAL EXECUTION (Inside boundary)
-        target = Path(file_path)
+        target = Path(eval_res.resolved_path) if eval_res.resolved_path else Path(file_path)
         if not target.is_absolute():
             target = Path(boundary.workspace_root) / target
         with open(target, "r", encoding="utf-8", errors="replace") as f:
@@ -296,10 +297,11 @@ class ToolBroker:
         )
         self.storage.record_event(event)
 
+        target_display = eval_res.resolved_path or file_path
         if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
-            raise PermissionError(f"Write to file '{file_path}' denied by boundary: {eval_res.rule_matched}")
+            raise PermissionError(f"Write to file '{target_display}' denied by boundary: {eval_res.rule_matched}")
 
-        target = Path(file_path)
+        target = Path(eval_res.resolved_path) if eval_res.resolved_path else Path(file_path)
         if not target.is_absolute():
             target = Path(boundary.workspace_root) / target
         target.parent.mkdir(parents=True, exist_ok=True)

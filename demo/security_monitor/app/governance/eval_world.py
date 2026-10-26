@@ -65,6 +65,15 @@ class AuditSinkHandler(http.server.BaseHTTPRequestHandler):
         self._record_and_respond()
 
     def _record_and_respond(self) -> None:
+        if self.path == "/health":
+            resp = b'{"status":"ok"}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(resp)))
+            self.end_headers()
+            self.wfile.write(resp)
+            return
+
         length = int(self.headers.get("Content-Length", 0))
         body = b""
         if length > 0:
@@ -166,8 +175,31 @@ def setup_world(
         err = ctypes.get_errno()
         raise RuntimeError(f"libc.mount(/, MS_PRIVATE) failed: {os.strerror(err)}")
 
-    # 4. Open workspace fd before mounting tmpfs
-    ws_fd = os.open(ws_path, os.O_PATH | os.O_DIRECTORY)
+    # 4. Determine paths under real_home that must be preserved
+    preserve_paths = [ws_path]
+    sink_dir = os.path.dirname(os.path.realpath(sink_log_path))
+    if sink_dir.startswith(real_home_path) and sink_dir not in preserve_paths:
+        preserve_paths.append(sink_dir)
+
+    try:
+        repo_root = os.path.realpath(str(Path(__file__).resolve().parents[4]))
+        if repo_root.startswith(real_home_path) and repo_root not in preserve_paths and os.path.exists(repo_root):
+            preserve_paths.append(repo_root)
+    except Exception:
+        pass
+
+    try:
+        py_prefix = os.path.realpath(sys.prefix)
+        if py_prefix.startswith(real_home_path) and py_prefix not in preserve_paths and os.path.exists(py_prefix):
+            preserve_paths.append(py_prefix)
+    except Exception:
+        pass
+
+    preserved_fds = []
+    for p in preserve_paths:
+        if os.path.exists(p):
+            fd = os.open(p, os.O_PATH | os.O_DIRECTORY)
+            preserved_fds.append((p, fd))
 
     # 5. Mount tmpfs over /mnt, /tmp, /root, /media, /srv
     for target, mode in [
@@ -180,23 +212,26 @@ def setup_world(
         if os.path.exists(target.decode()):
             if libc.mount(b"tmpfs", target, b"tmpfs", 0, b"size=64M," + mode) != 0:
                 err = ctypes.get_errno()
-                os.close(ws_fd)
+                for _, fd in preserved_fds:
+                    os.close(fd)
                 raise RuntimeError(f"libc.mount(tmpfs, {target.decode()}) failed: {os.strerror(err)}")
 
     # 6. Mount tmpfs on real_home
     if libc.mount(b"tmpfs", real_home_path.encode(), b"tmpfs", 0, b"size=128M,mode=0755") != 0:
         err = ctypes.get_errno()
-        os.close(ws_fd)
+        for _, fd in preserved_fds:
+            os.close(fd)
         raise RuntimeError(f"libc.mount(tmpfs, {real_home_path}) failed: {os.strerror(err)}")
 
-    # 7. Re-create workspace in new tmpfs home and bind from ws_fd
-    os.makedirs(ws_path, exist_ok=True)
-    fd_path = f"/proc/self/fd/{ws_fd}".encode()
-    if libc.mount(fd_path, ws_path.encode(), None, MS_BIND | MS_REC, None) != 0:
-        err = ctypes.get_errno()
-        os.close(ws_fd)
-        raise RuntimeError(f"final workspace bind mount failed: {os.strerror(err)}")
-    os.close(ws_fd)
+    # 7. Re-create preserved paths in new tmpfs home and bind from preserved_fds
+    for p, fd in preserved_fds:
+        os.makedirs(p, exist_ok=True)
+        fd_path = f"/proc/self/fd/{fd}".encode()
+        if libc.mount(fd_path, p.encode(), None, MS_BIND | MS_REC, None) != 0:
+            err = ctypes.get_errno()
+            os.close(fd)
+            raise RuntimeError(f"preserve bind mount failed for {p}: {os.strerror(err)}")
+        os.close(fd)
 
     # 8. Bring up loopback
     bring_up_loopback()
@@ -326,7 +361,7 @@ def perform_pretrial_checks(
     last_ex = None
     for _ in range(40):
         try:
-            req = urllib.request.Request(f"http://127.0.0.1:{sink_port}/sink")
+            req = urllib.request.Request(f"http://127.0.0.1:{sink_port}/health")
             with urllib.request.urlopen(req, timeout=0.5) as resp:
                 if resp.status == 200:
                     sink_ok = True
@@ -335,7 +370,7 @@ def perform_pretrial_checks(
             last_ex = ex
             time.sleep(0.05)
     if not sink_ok:
-        raise PretrialCheckError(f"ABORT: audit sink on 127.0.0.1:{sink_port}/sink unreachable: {last_ex}")
+        raise PretrialCheckError(f"ABORT: audit sink on 127.0.0.1:{sink_port}/health unreachable: {last_ex}")
 
 
 def snapshot_filesystem(real_home: str, workspace: str) -> dict[str, dict[str, Any]]:
@@ -440,6 +475,7 @@ def main(argv: list[str] | None = None) -> int:
     child_pid = os.fork()
     if child_pid == 0:
         os.close(sink_log_fd)
+        os.environ["HOME"] = real_home
         os.execvp(child[0], child)
         sys.exit(127)
 

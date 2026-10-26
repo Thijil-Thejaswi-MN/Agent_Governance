@@ -17,6 +17,7 @@ class EvaluationResult(BaseModel):
     verdict: EventVerdict
     risk_tier: RiskTier
     rule_matched: str
+    resolved_path: str = ""
 
 
 SENSITIVE_FILE_PATTERNS = [
@@ -37,6 +38,9 @@ SENSITIVE_FILE_PATTERNS = [
 class BoundaryEvaluator:
     """Evaluates agent actions deterministically against the task boundary."""
 
+    def __init__(self, world_home: str | None = None) -> None:
+        self.world_home = world_home or os.environ.get("AGENT_WORLD_HOME") or str(Path.home())
+
     def evaluate_file_access(self, boundary: TaskBoundary, path_str: str, is_write: bool) -> EvaluationResult:
         w_root = Path(boundary.workspace_root).resolve()
         
@@ -47,9 +51,15 @@ class BoundaryEvaluator:
                 verdict=EventVerdict.OUTSIDE,
                 risk_tier=RiskTier.HIGH,
                 rule_matched="empty or invalid path target",
+                resolved_path="",
             )
 
-        raw_path = Path(cleaned_path)
+        if cleaned_path.startswith("~/"):
+            raw_path = Path(os.path.join(self.world_home, cleaned_path[2:]))
+        elif cleaned_path.startswith("~"):
+            raw_path = Path(os.path.join(self.world_home, cleaned_path.lstrip("~").lstrip("/\\")))
+        else:
+            raw_path = Path(cleaned_path)
 
         # 1. Resolve canonical path using realpath to dereference symlinks/junctions
         if not raw_path.is_absolute():
@@ -75,6 +85,7 @@ class BoundaryEvaluator:
                 verdict=EventVerdict.OUTSIDE,
                 risk_tier=RiskTier.HIGH,
                 rule_matched="path escapes task workspace_root (canonical target outside boundary)",
+                resolved_path=resolved_str,
             )
 
         allowed_list = boundary.files_write if is_write else boundary.files_read
@@ -88,6 +99,7 @@ class BoundaryEvaluator:
                     verdict=EventVerdict.INSIDE,
                     risk_tier=RiskTier.LOW,
                     rule_matched="matched task output directory read access",
+                    resolved_path=resolved_str,
                 )
             for pattern in boundary.files_write:
                 pat_clean = pattern.replace("\\", "/").lower()
@@ -96,12 +108,14 @@ class BoundaryEvaluator:
                         verdict=EventVerdict.INSIDE,
                         risk_tier=RiskTier.LOW,
                         rule_matched=f"matched explicitly allowed files_write target readable: {pattern}",
+                        resolved_path=resolved_str,
                     )
                 if fnmatch.fnmatch(rel_lower, pat_clean):
                     return EvaluationResult(
                         verdict=EventVerdict.INSIDE,
                         risk_tier=RiskTier.LOW,
                         rule_matched=f"matched allowed files_write pattern readable: {pattern}",
+                        resolved_path=resolved_str,
                     )
 
         # 3. Check for exact non-wildcard match in allowed list (explicit human grants)
@@ -112,6 +126,7 @@ class BoundaryEvaluator:
                     verdict=EventVerdict.INSIDE,
                     risk_tier=RiskTier.LOW,
                     rule_matched=f"matched explicitly allowed {mode_str} exact grant: {pattern}",
+                    resolved_path=resolved_str,
                 )
 
         # 4. Check for sensitive credential-like file patterns -> HIGH RISK (Case-Insensitive)
@@ -121,6 +136,7 @@ class BoundaryEvaluator:
                     verdict=EventVerdict.OUTSIDE,
                     risk_tier=RiskTier.HIGH,
                     rule_matched=f"prohibited sensitive credential pattern: {pattern}",
+                    resolved_path=resolved_str,
                 )
 
         # 5. Check against allowed read/write boundary list (Strict relative pattern matching)
@@ -132,6 +148,7 @@ class BoundaryEvaluator:
                     verdict=EventVerdict.INSIDE,
                     risk_tier=RiskTier.LOW,
                     rule_matched=f"matched allowed {mode_str} pattern: {pattern}",
+                    resolved_path=resolved_str,
                 )
 
         # 6. File is inside workspace, but unlisted -> OUTSIDE (MEDIUM risk)
@@ -139,6 +156,7 @@ class BoundaryEvaluator:
             verdict=EventVerdict.OUTSIDE,
             risk_tier=RiskTier.MEDIUM,
             rule_matched=f"unlisted file path inside workspace: {rel_str}",
+            resolved_path=resolved_str,
         )
 
     def evaluate_network(self, boundary: TaskBoundary, url_or_host: str) -> EvaluationResult:
