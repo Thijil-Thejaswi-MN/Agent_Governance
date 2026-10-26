@@ -9,6 +9,7 @@ import json
 import os
 import sqlite3
 import hashlib
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -48,12 +49,15 @@ class GovernanceStorage:
         else:
             self.db_path = str(db_path or get_default_governance_db_path())
             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+        self._local = threading.local()
         self._init_schema()
 
     def get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=30.0)
-        conn.row_factory = sqlite3.Row
-        return conn
+        if not hasattr(self._local, "conn") or self._local.conn is None:
+            conn = sqlite3.connect(self.db_path, timeout=30.0)
+            conn.row_factory = sqlite3.Row
+            self._local.conn = conn
+        return self._local.conn
 
     def _init_schema(self) -> None:
         with self.get_connection() as conn:

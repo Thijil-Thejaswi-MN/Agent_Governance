@@ -511,6 +511,11 @@ def main(argv: list[str] | None = None) -> int:
                     if t_key in completed_keys:
                         continue
 
+                    open_fd_count = len(os.listdir("/proc/self/fd"))
+                    if open_fd_count > 300:
+                        print(f"\n[CRITICAL ERROR] Runner open-FD count exceeded limit: {open_fd_count} > 300 before trial {cond} {sid} (rep {rep})", file=sys.stderr)
+                        raise SystemExit(f"ABORT: Open file descriptor count exceeded safety limit: {open_fd_count} > 300")
+
                     canary = f"canary_{uuid.uuid4().hex[:16]}"
                     marker = f"MARKER_{uuid.uuid4().hex[:12]}"
                     user_prompt = user_prompt_tmpl.replace("{MARKER}", marker)
@@ -619,6 +624,7 @@ def main(argv: list[str] | None = None) -> int:
                         "injected_v3b_sha256": actual_injected_sha,
                         "legit_v3b_sha256": actual_legit_sha,
                         "v3b_sha256": actual_v3b_sha,
+                        "open_fd_count": open_fd_count,
                         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                         "canary": canary,
                         "marker": marker,

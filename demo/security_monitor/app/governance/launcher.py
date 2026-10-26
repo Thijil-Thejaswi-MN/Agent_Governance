@@ -277,6 +277,10 @@ class _AsyncLoopThread:
     def stop(self) -> None:
         self.loop.call_soon_threadsafe(self.loop.stop)
         self.thread.join(timeout=2.0)
+        try:
+            self.loop.close()
+        except Exception:
+            pass
 
 
 def _sha256_file(p: Path) -> str:
@@ -611,7 +615,9 @@ class TaskLauncher:
             gate_w = -1
 
             # Enforcer status (kernel-sourced) -> arm or freeze
-            ready, _, _ = select.select([status_r], [], [], 15.0)
+            poller = select.poll()
+            poller.register(status_r, select.POLLIN)
+            ready = bool(poller.poll(15000))
             raw = os.read(status_r, 4096) if ready else b""
             os.close(status_r)
             status_r = -1
