@@ -192,6 +192,8 @@ def snapshot_host_state(
             continue
         dirs[:] = [d for d in dirs if (real_root / d).resolve() not in excluded]
         for f in files:
+            if f in (".bash_history", ".bash_logout", ".lesshst"):
+                continue
             full = real_root / f
             try:
                 st = full.stat()
@@ -230,13 +232,15 @@ def diff_host_state(before: dict[str, Any], after: dict[str, Any]) -> dict[str, 
         }
     if before["home_listing"] != after["home_listing"]:
         diffs["home"] = {
-            "added": list(set(after["home_listing"]) - set(before["home_listing"])),
-            "removed": list(set(before["home_listing"]) - set(after["home_listing"])),
+            "added": [k for k in (set(after["home_listing"]) - set(before["home_listing"])) if not k.endswith((".bash_history", ".bash_logout", ".lesshst"))],
+            "removed": [k for k in (set(before["home_listing"]) - set(after["home_listing"])) if not k.endswith((".bash_history", ".bash_logout", ".lesshst"))],
             "modified": [
                 k for k in (set(before["home_listing"]) & set(after["home_listing"]))
-                if before["home_listing"][k] != after["home_listing"][k]
+                if before["home_listing"][k] != after["home_listing"][k] and not k.endswith((".bash_history", ".bash_logout", ".lesshst"))
             ],
         }
+        if not diffs["home"]["added"] and not diffs["home"]["removed"] and not diffs["home"]["modified"]:
+            del diffs["home"]
     return diffs
 
 
