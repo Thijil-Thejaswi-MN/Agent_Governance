@@ -36,7 +36,30 @@ from demo.security_monitor.app.governance.models import EnforcementMode
 from demo.security_monitor.app.governance.storage import GovernanceStorage
 
 OLLAMA_URL = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434")
-EXPECTED_V3B_SHA256 = "48595aa2a1aad9602e6473272c32fbcde7aec199a253a5eaab9ffb2cae32ce4d"
+EXPECTED_INJECTED_V3B_SHA256 = "48595aa2a1aad9602e6473272c32fbcde7aec199a253a5eaab9ffb2cae32ce4d"
+EXPECTED_LEGIT_V3B_SHA256 = "76e37a1e6b0a89bec513805f35d905808fd86d1bf2948fb3a969ee1efc031286"
+EXPECTED_V3B_SHA256 = EXPECTED_INJECTED_V3B_SHA256
+
+M5_EXPECTED_DIGESTS = {
+    "llama3.1:8b": "46e0c10c039e0191",
+    "qwen2.5:7b": "845dbda0ea48ed74",
+}
+
+
+def get_git_dirty(cwd: Path) -> bool:
+    try:
+        res = subprocess.run(["git", "status", "--porcelain"], cwd=cwd, capture_output=True, text=True, check=True)
+        lines = [
+            l for l in res.stdout.splitlines()
+            if l.strip() and not any(l[3:].strip().startswith(p) for p in (
+                "demo/data/evaluation_v3/results/",
+                "demo/data/evaluation_v3/receipts/",
+                "demo/data/evaluation_v3/pilot",
+            ))
+        ]
+        return bool(lines)
+    except Exception:
+        return True
 
 
 def get_git_commit(cwd: Path) -> str:
@@ -431,15 +454,29 @@ def main(argv: list[str] | None = None) -> int:
     git_commit = get_git_commit(repo_root)
     model_digest = get_model_digest(args.model)
 
-    # Verify SHA256 of v3b scenario file
-    v3b_path = repo_root / "demo/data/evaluation_v3/scenarios/injected_indirect_v3b.jsonl"
-    actual_v3b_sha = "unknown"
-    if v3b_path.exists():
-        actual_v3b_sha = hashlib.sha256(v3b_path.read_bytes()).hexdigest()
-        assert actual_v3b_sha == EXPECTED_V3B_SHA256, f"v3b SHA256 mismatch: {actual_v3b_sha} != {EXPECTED_V3B_SHA256}"
-        print(f"✓ Verified injected_indirect_v3b.jsonl SHA256: {actual_v3b_sha}")
-    else:
-        print("WARNING: injected_indirect_v3b.jsonl not found", file=sys.stderr)
+    is_dirty = get_git_dirty(repo_root)
+    assert not is_dirty, f"Working tree must be clean and committed before evaluation run! (is_dirty={is_dirty})"
+
+    # Verify SHA256 of scenario files
+    injected_path = repo_root / "demo/data/evaluation_v3/scenarios/injected_indirect_v3b.jsonl"
+    legit_path = repo_root / "demo/data/evaluation_v3/scenarios/legit_v3b.jsonl"
+    assert injected_path.exists(), f"injected scenario file not found: {injected_path}"
+    assert legit_path.exists(), f"legit scenario file not found: {legit_path}"
+
+    actual_injected_sha = hashlib.sha256(injected_path.read_bytes()).hexdigest()
+    assert actual_injected_sha == EXPECTED_INJECTED_V3B_SHA256, f"injected_indirect_v3b SHA256 mismatch: {actual_injected_sha} != {EXPECTED_INJECTED_V3B_SHA256}"
+    print(f"✓ Verified injected_indirect_v3b.jsonl SHA256: {actual_injected_sha}")
+
+    actual_legit_sha = hashlib.sha256(legit_path.read_bytes()).hexdigest()
+    assert actual_legit_sha == EXPECTED_LEGIT_V3B_SHA256, f"legit_v3b.jsonl SHA256 mismatch: {actual_legit_sha} != {EXPECTED_LEGIT_V3B_SHA256}"
+    print(f"✓ Verified legit_v3b.jsonl SHA256: {actual_legit_sha}")
+    actual_v3b_sha = actual_injected_sha
+
+    # Verify model digest matches reference
+    if args.model in M5_EXPECTED_DIGESTS:
+        exp_prefix = M5_EXPECTED_DIGESTS[args.model]
+        assert model_digest.startswith(exp_prefix), f"Model digest mismatch for {args.model}: {model_digest} does not start with {exp_prefix}"
+        print(f"✓ Verified model digest for {args.model}: {model_digest[:16]}")
 
     print(f"Evaluator v3 started: {len(scenarios)} scenarios, conditions {conditions}, repeats={args.repeats}, commit={git_commit[:8]}, model={args.model} ({model_digest[:12]})")
 
@@ -498,6 +535,7 @@ def main(argv: list[str] | None = None) -> int:
                     )
 
                     allowed_repo_prefixes = [
+                        "demo/data/evaluation_v3/results/",
                         "demo/data/evaluation_v3/receipts/",
                         "demo/data/evaluation_v3/pilot",
                     ]
@@ -507,6 +545,12 @@ def main(argv: list[str] | None = None) -> int:
                             allowed_repo_prefixes.append(out_rel)
                         except Exception:
                             allowed_repo_prefixes.append(args.output)
+                    if args.receipts_dir:
+                        try:
+                            rc_rel = str(Path(args.receipts_dir).resolve().relative_to(repo_root)).replace(chr(92), "/")
+                            allowed_repo_prefixes.append(rc_rel)
+                        except Exception:
+                            allowed_repo_prefixes.append(args.receipts_dir)
 
                     before_host_state = snapshot_host_state(allowed_repo_prefixes=allowed_repo_prefixes)
                     t0 = time.time()
@@ -520,9 +564,16 @@ def main(argv: list[str] | None = None) -> int:
                             break
                         except Exception as ex:
                             err_msg = str(ex)
-                            if attempt < 2 and ("500" in err_msg or "502" in err_msg or "503" in err_msg or "connection" in err_msg.lower()):
+                            is_server_err = any(k in err_msg.lower() for k in (
+                                "500", "502", "503", "504", "connect", "refused", "timeout", "remote disconnected", "reset by peer"
+                            ))
+                            if attempt < 2 and is_server_err:
                                 time.sleep(2.0 * (attempt + 1))
                                 continue
+                            if is_server_err:
+                                print(f"\n[CRITICAL ERROR] Ollama server failed repeatedly on trial {cond} {sid} (rep {rep}): {err_msg}", file=sys.stderr)
+                                print("Pausing runner for operator intervention.", file=sys.stderr)
+                                sys.exit(3)
                             trial_error = f"{type(ex).__name__}: {ex}"
                             break
 
@@ -564,6 +615,9 @@ def main(argv: list[str] | None = None) -> int:
                         "model": args.model,
                         "model_digest": model_digest,
                         "git_commit": git_commit,
+                        "is_dirty": is_dirty,
+                        "injected_v3b_sha256": actual_injected_sha,
+                        "legit_v3b_sha256": actual_legit_sha,
                         "v3b_sha256": actual_v3b_sha,
                         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                         "canary": canary,
