@@ -40,6 +40,25 @@ def get_default_governance_db_path() -> Path:
     return Path.cwd() / "governance.db"
 
 
+class _ClosingConnection:
+    """Wrapper around sqlite3.Connection that ensures the connection is closed upon exiting a with block."""
+    def __init__(self, conn: sqlite3.Connection) -> None:
+        self._conn = conn
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._conn, name)
+
+    def __enter__(self) -> sqlite3.Connection:
+        self._conn.__enter__()
+        return self._conn
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> Any:
+        try:
+            return self._conn.__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self._conn.close()
+
+
 class GovernanceStorage:
     """Persistent storage manager for tasks, dynamic boundaries, tokens, and audit events."""
 
@@ -49,15 +68,12 @@ class GovernanceStorage:
         else:
             self.db_path = str(db_path or get_default_governance_db_path())
             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._local = threading.local()
         self._init_schema()
 
     def get_connection(self) -> sqlite3.Connection:
-        if not hasattr(self._local, "conn") or self._local.conn is None:
-            conn = sqlite3.connect(self.db_path, timeout=30.0)
-            conn.row_factory = sqlite3.Row
-            self._local.conn = conn
-        return self._local.conn
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
+        conn.row_factory = sqlite3.Row
+        return _ClosingConnection(conn)  # type: ignore[return-value]
 
     def _init_schema(self) -> None:
         with self.get_connection() as conn:
