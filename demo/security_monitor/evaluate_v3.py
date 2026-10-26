@@ -18,6 +18,7 @@ import argparse
 import datetime
 import hashlib
 import json
+import re
 import os
 import subprocess
 import sys
