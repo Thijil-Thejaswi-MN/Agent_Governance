@@ -247,3 +247,105 @@ class TestDecoyContainmentAndResolution:
         assert (real_home / "projects" / "archive" / "q3_private_notes.txt").exists()
         assert not (ws_tmp / "projects" / "archive" / "q3_private_notes.txt").exists()
 
+
+
+class TestBrokerHostContainment:
+    def test_observe_mode_refuses_read_and_write_outside_workspace(self, tmp_path: Path) -> None:
+        """Proves that ToolBroker in OBSERVE mode refuses to read or write any path outside workspace."""
+        from demo.security_monitor.app.governance.broker import ToolBroker
+        from demo.security_monitor.app.governance.models import TaskBoundary, EnforcementMode
+        from demo.security_monitor.app.governance.storage import GovernanceStorage
+        import pytest
+
+        ws = tmp_path / "workspace"
+        ws.mkdir()
+        outside_dir = tmp_path / "outside_host"
+        outside_dir.mkdir()
+        outside_target = outside_dir / "secret.txt"
+
+        db_path = tmp_path / "gov.db"
+        storage = GovernanceStorage(str(db_path))
+        broker = ToolBroker(storage)
+
+        token = "tok_test_observe_containment"
+        boundary = TaskBoundary(
+            task_id="task_obs_01",
+            agent_id="agent_obs_01",
+            workspace_root=str(ws),
+            enforcement_mode=EnforcementMode.OBSERVE,
+            files_read=["input/data.txt"],
+            files_write=["output/result.txt"],
+            tools=["read_file", "write_file"],
+        )
+        storage.save_boundary(boundary)
+        storage.save_token(token, "task_obs_01", "agent_obs_01")
+
+        # 1. Attempt write_file outside workspace in OBSERVE mode
+        with pytest.raises(PermissionError, match=r"denied \(observe: host path not executed\)"):
+            broker.write_file(token, str(outside_target), "hazardous write")
+
+        assert not outside_target.exists(), "Broker must NOT create/write the file on the host!"
+
+        # 2. Attempt read_file outside workspace in OBSERVE mode
+        outside_target.write_text("pre-existing secret")
+        with pytest.raises(PermissionError, match=r"denied \(observe: host path not executed\)"):
+            broker.read_file(token, str(outside_target))
+
+        # 3. Verify violation was recorded in storage
+        events = storage.get_events_for_task("task_obs_01")
+        assert len(events) >= 2
+        assert any(e.verdict.value == "OUTSIDE" for e in events)
+
+
+class TestReadOnlyWorldMounts:
+    def test_condition_a_world_ro_mounts_prevent_writes(self) -> None:
+        """Proves that inside the evaluation world in condition A (unrestricted),
+        repo root, venv, and .control are mounted read-only, preventing any writes."""
+        import subprocess
+        import sys
+        import tempfile
+        import os
+
+        repo_dir = Path(__file__).resolve().parents[3]
+        eval_world_py = repo_dir / "demo" / "security_monitor" / "app" / "governance" / "eval_world.py"
+        ws = tempfile.mkdtemp(dir="/home/thiji/agent_workspaces")
+        control_base = "/home/thiji/agent_workspaces/.control"
+        os.makedirs(control_base, exist_ok=True)
+        task_control = tempfile.mkdtemp(dir=control_base)
+        sink_log = os.path.join(task_control, "audit_sink.jsonl")
+        fs_diff = os.path.join(task_control, "fs_diff.json")
+
+        child_script = f"""
+import os, sys
+repo_root = '{repo_dir}'
+venv_root = sys.prefix
+control_base = '{control_base}'
+task_control = '{task_control}'
+
+for target, name in [(repo_root, 'repo'), (venv_root, 'venv'), (control_base, 'control_base'), (task_control, 'task_control')]:
+    try:
+        with open(os.path.join(target, 'should_fail_write.txt'), 'w') as f:
+            f.write('fail')
+        sys.exit(10)
+    except OSError:
+        pass  # Expected read-only file system
+
+# Task workspace must be writable
+with open('write_ok.txt', 'w') as f:
+    f.write('ok')
+sys.exit(0)
+"""
+        cmd = [
+            sys.executable, "-E", "-s", "-B", str(eval_world_py),
+            "--workspace", ws,
+            "--real-home", "/home/thiji",
+            "--canary", "test_canary_ro",
+            "--decoys", "[]",
+            "--sink-log", sink_log,
+            "--fs-diff-out", fs_diff,
+            "--condition", "A",
+            "--",
+            sys.executable, "-c", child_script
+        ]
+        res = subprocess.run(cmd, cwd=ws, capture_output=True, text=True)
+        assert res.returncode == 0, f"Condition A world RO test failed: code={res.returncode}\nstdout={res.stdout}\nstderr={res.stderr}"

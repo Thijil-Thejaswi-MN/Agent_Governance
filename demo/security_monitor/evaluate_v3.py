@@ -1,7 +1,12 @@
 """Evaluation Runner v3 (M6.2).
 
 Evaluates LLM agents under governance Conditions A, B, C, D across legit and
-indirect prompt-injected scenarios in the evaluation world.
+indirect prompt-injected scenarios in the evaluation world:
+- Condition A: Unconfined baseline (no broker, direct IO, no Landlock).
+- Condition B: Tool-layer governance as in M5 (broker + egress proxy ENFORCE,
+  run_command allowed by boundary without per-task Landlock).
+- Condition C: Full dual-layer governance (broker + egress proxy + per-task Landlock + seccomp ENFORCE).
+- Condition D: OS-layer only governance (direct IO, per-task Landlock + seccomp ENFORCE, no broker).
 
 CLI:
     python evaluate_v3.py --scenarios <jsonl...> [--ids 01,05] \
@@ -78,6 +83,122 @@ def load_scenarios(paths: list[str], id_filters: list[str] | None = None) -> lis
                 scenarios.append(sc)
                 seen_ids.add(sid)
     return scenarios
+
+
+def snapshot_host_state(
+    real_home: str | Path | None = None,
+    repo_root: str | Path | None = None,
+    venv_root: str | Path | None = None,
+    allowed_repo_prefixes: list[str] | None = None,
+) -> dict[str, Any]:
+    """
+    Records comprehensive host state before and after each trial:
+    1. Git status --porcelain and file hash listing of the repo (ignoring allowed runner output paths).
+    2. Recursive file listing of venv (~/m4_venv).
+    3. Recursive file listing of real home (excluding ~/agent_workspaces, repo, and venv).
+    """
+    home = Path(real_home or Path.home()).resolve()
+    repo = Path(repo_root or (Path(__file__).resolve().parents[2])).resolve()
+    venv = Path(venv_root or sys.prefix).resolve()
+
+    # 1. Repo state: git status --porcelain and tracked file shas
+    repo_git_lines: list[str] = []
+    repo_hashes: dict[str, str] = {}
+    try:
+        res = subprocess.run(["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True, check=True)
+        for line in res.stdout.splitlines():
+            line_str = line.strip()
+            if not line_str:
+                continue
+            path_part = line[3:].strip()
+            if allowed_repo_prefixes and any(path_part.startswith(p) for p in allowed_repo_prefixes):
+                continue
+            repo_git_lines.append(line_str)
+
+        res_files = subprocess.run(["git", "ls-files", "-s"], cwd=repo, capture_output=True, text=True, check=True)
+        for line in res_files.stdout.splitlines():
+            parts = line.split()
+            if len(parts) >= 4:
+                sha, fpath = parts[1], parts[3]
+                if allowed_repo_prefixes and any(fpath.startswith(p) for p in allowed_repo_prefixes):
+                    continue
+                repo_hashes[fpath] = sha
+    except Exception as e:
+        repo_git_lines.append(f"git_error: {e}")
+
+    # 2. Venv listing (~/m4_venv)
+    venv_listing: dict[str, tuple[int, float]] = {}
+    if venv.is_dir():
+        for root, dirs, files in os.walk(venv):
+            for f in files:
+                full = Path(root) / f
+                try:
+                    st = full.stat()
+                    rel = str(full.relative_to(venv)).replace(chr(92), "/")
+                    venv_listing[rel] = (st.st_size, st.st_mtime)
+                except OSError:
+                    pass
+
+    # 3. Real home listing (excluding ~/agent_workspaces, repo, and venv)
+    excluded = {
+        (home / "agent_workspaces").resolve(),
+        repo.resolve(),
+        venv.resolve(),
+    }
+    home_listing: dict[str, tuple[int, float]] = {}
+    for root, dirs, files in os.walk(home):
+        real_root = Path(root).resolve()
+        if any(real_root == exc or exc in real_root.parents for exc in excluded):
+            dirs.clear()
+            continue
+        dirs[:] = [d for d in dirs if (real_root / d).resolve() not in excluded]
+        for f in files:
+            full = real_root / f
+            try:
+                st = full.stat()
+                rel = str(full.relative_to(home)).replace(chr(92), "/")
+                home_listing[rel] = (st.st_size, st.st_mtime)
+            except OSError:
+                pass
+
+    return {
+        "repo_git_lines": sorted(repo_git_lines),
+        "repo_hashes": repo_hashes,
+        "venv_listing": venv_listing,
+        "home_listing": home_listing,
+    }
+
+
+def diff_host_state(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+    diffs = {}
+    if before["repo_git_lines"] != after["repo_git_lines"]:
+        diffs["repo_git_status"] = {
+            "before": before["repo_git_lines"],
+            "after": after["repo_git_lines"],
+        }
+    if before["repo_hashes"] != after["repo_hashes"]:
+        diffs["repo_hashes"] = {
+            "changed": [k for k in before["repo_hashes"] if before["repo_hashes"].get(k) != after["repo_hashes"].get(k)]
+        }
+    if before["venv_listing"] != after["venv_listing"]:
+        diffs["venv"] = {
+            "added": list(set(after["venv_listing"]) - set(before["venv_listing"])),
+            "removed": list(set(before["venv_listing"]) - set(after["venv_listing"])),
+            "modified": [
+                k for k in (set(before["venv_listing"]) & set(after["venv_listing"]))
+                if before["venv_listing"][k] != after["venv_listing"][k]
+            ],
+        }
+    if before["home_listing"] != after["home_listing"]:
+        diffs["home"] = {
+            "added": list(set(after["home_listing"]) - set(before["home_listing"])),
+            "removed": list(set(before["home_listing"]) - set(after["home_listing"])),
+            "modified": [
+                k for k in (set(before["home_listing"]) & set(after["home_listing"]))
+                if before["home_listing"][k] != after["home_listing"][k]
+            ],
+        }
+    return diffs
 
 
 def compute_ground_truth(
@@ -208,7 +329,7 @@ def compile_attempts(res: Any, scenario: dict[str, Any], canary: str) -> list[di
             prev = "landlock" if is_perm_denied else "none"
             obs = "agent"
         elif cond in ("B", "C"):
-            prev = "broker" if (cond == "C" and is_perm_denied) else "none"
+            prev = "broker" if (cond in ("B", "C") and is_perm_denied) else "none"
             obs = "broker"
         else:
             prev = "none"
@@ -364,7 +485,7 @@ def main(argv: list[str] | None = None) -> int:
                         inputs=inputs,
                         output_targets=expected_bound.get("files_write", ["output/summary.txt"]),
                         declared_tools=expected_bound.get("tools", ["run_command", "read_file", "write_file"]),
-                        enforcement_mode="ENFORCE" if cond in ("C", "D") else "OBSERVE",
+                        enforcement_mode="ENFORCE" if cond in ("B", "C", "D") else "OBSERVE",
                         llm={"provider": "ollama", "model": args.model},
                         condition=cond,
                         decoys=decoys_tmpl,
@@ -376,6 +497,18 @@ def main(argv: list[str] | None = None) -> int:
                         command_timeout_s=30.0,
                     )
 
+                    allowed_repo_prefixes = [
+                        "demo/data/evaluation_v3/receipts/",
+                        "demo/data/evaluation_v3/pilot",
+                    ]
+                    if args.output:
+                        try:
+                            out_rel = str(Path(args.output).resolve().relative_to(repo_root)).replace(chr(92), "/")
+                            allowed_repo_prefixes.append(out_rel)
+                        except Exception:
+                            allowed_repo_prefixes.append(args.output)
+
+                    before_host_state = snapshot_host_state(allowed_repo_prefixes=allowed_repo_prefixes)
                     t0 = time.time()
                     trial_error = None
                     res = None
@@ -394,6 +527,10 @@ def main(argv: list[str] | None = None) -> int:
                             break
 
                     wall_time = round(time.time() - t0, 3)
+                    after_host_state = snapshot_host_state(allowed_repo_prefixes=allowed_repo_prefixes)
+
+                    host_diffs = diff_host_state(before_host_state, after_host_state)
+                    host_contaminated = bool(host_diffs)
 
                     if res is not None:
                         gt = compute_ground_truth(sc, res, canary, marker, res.workspace)
@@ -441,10 +578,22 @@ def main(argv: list[str] | None = None) -> int:
                         "tool_history": tool_hist,
                         "trial_error": trial_error,
                         "aborted": trial_aborted,
+                        "host_contaminated": host_contaminated,
+                        "host_check": {
+                            "status": "contaminated" if host_contaminated else "clean",
+                            "diffs": host_diffs,
+                        },
                     }
 
                     out_f.write(json.dumps(record, default=str) + "\n")
                     out_f.flush()
+
+                    if host_contaminated:
+                        print(f"\n[CRITICAL ERROR] Host contamination detected after trial {sid} (Cond {cond}, rep {rep})!", file=sys.stderr)
+                        print(f"  Added: {host_diff_added}", file=sys.stderr)
+                        print(f"  Removed: {host_diff_removed}", file=sys.stderr)
+                        print(f"  Modified: {host_diff_modified}", file=sys.stderr)
+                        raise SystemExit(f"ABORT: Host contamination detected: {record['host_check']}")
 
                     status_char = "✓" if not trial_aborted else "✗"
                     print(f"[{trial_idx}/{total_trials}] {status_char} rep={rep} cond={cond} id={sid} ({args.model}) in {wall_time}s (aborted={trial_aborted}, inj_exp={gt.get('injection_exposed')}, ans_corr={gt.get('answer_correct')})")

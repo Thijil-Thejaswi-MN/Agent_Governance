@@ -36,9 +36,28 @@ from typing import Any
 MS_REC = 0x4000
 MS_PRIVATE = 0x40000
 MS_BIND = 0x1000
+MS_REMOUNT = 0x20
+MS_RDONLY = 0x01
 MNT_DETACH = 2
 
 libc = ctypes.CDLL(None, use_errno=True)
+
+
+def make_mount_read_only(target_path: str) -> None:
+    """Remounts a bind mount read-only using mount_setattr (Linux 5.12+) or mount(MS_REMOUNT|MS_RDONLY)."""
+    target_bytes = target_path.encode()
+    SYS_mount_setattr = 442
+    AT_FDCWD = -100
+    MOUNT_ATTR_RDONLY = 0x00000001
+    AT_RECURSIVE = 0x8000
+    attr = struct.pack("QQQQ", MOUNT_ATTR_RDONLY, 0, 0, 0)
+    ret = libc.syscall(SYS_mount_setattr, AT_FDCWD, target_bytes, AT_RECURSIVE, attr, ctypes.c_size_t(len(attr)))
+    if ret == 0:
+        return
+    ret = libc.mount(None, target_bytes, None, MS_BIND | MS_REMOUNT | MS_RDONLY | MS_REC, None)
+    if ret != 0:
+        err = ctypes.get_errno()
+        raise RuntimeError(f"make_mount_read_only({target_path}) failed: {os.strerror(err)}")
 
 
 class PretrialCheckError(RuntimeError):
@@ -176,15 +195,18 @@ def setup_world(
         raise RuntimeError(f"libc.mount(/, MS_PRIVATE) failed: {os.strerror(err)}")
 
     # 4. Determine paths under real_home that must be preserved
+    preserve_paths_ro = set()
     preserve_paths = [ws_path]
     sink_dir = os.path.dirname(os.path.realpath(sink_log_path))
     if sink_dir.startswith(real_home_path) and sink_dir not in preserve_paths:
         preserve_paths.append(sink_dir)
+        preserve_paths_ro.add(sink_dir)
 
     try:
         repo_root = os.path.realpath(str(Path(__file__).resolve().parents[4]))
         if repo_root.startswith(real_home_path) and repo_root not in preserve_paths and os.path.exists(repo_root):
             preserve_paths.append(repo_root)
+            preserve_paths_ro.add(repo_root)
     except Exception:
         pass
 
@@ -192,6 +214,7 @@ def setup_world(
         py_prefix = os.path.realpath(sys.prefix)
         if py_prefix.startswith(real_home_path) and py_prefix not in preserve_paths and os.path.exists(py_prefix):
             preserve_paths.append(py_prefix)
+            preserve_paths_ro.add(py_prefix)
     except Exception:
         pass
 
@@ -224,6 +247,12 @@ def setup_world(
         raise RuntimeError(f"libc.mount(tmpfs, {real_home_path}) failed: {os.strerror(err)}")
 
     # 7. Re-create preserved paths in new tmpfs home and bind from preserved_fds
+    control_base = os.path.dirname(sink_dir)
+    if control_base.startswith(real_home_path):
+        os.makedirs(control_base, exist_ok=True)
+        if libc.mount(control_base.encode(), control_base.encode(), None, MS_BIND, None) == 0:
+            preserve_paths_ro.add(control_base)
+
     for p, fd in preserved_fds:
         os.makedirs(p, exist_ok=True)
         fd_path = f"/proc/self/fd/{fd}".encode()
@@ -232,6 +261,11 @@ def setup_world(
             os.close(fd)
             raise RuntimeError(f"preserve bind mount failed for {p}: {os.strerror(err)}")
         os.close(fd)
+        if p in preserve_paths_ro:
+            make_mount_read_only(p)
+
+    if control_base in preserve_paths_ro:
+        make_mount_read_only(control_base)
 
     # 8. Bring up loopback
     bring_up_loopback()
@@ -378,12 +412,43 @@ def snapshot_filesystem(real_home: str, workspace: str) -> dict[str, dict[str, A
     ws_real = os.path.realpath(workspace)
     home_real = os.path.realpath(real_home)
 
+    excluded_prefixes = [ws_real]
+    ws_parent = os.path.dirname(ws_real)
+    control_dir = os.path.join(ws_parent, ".control")
+    if os.path.exists(control_dir):
+        excluded_prefixes.append(os.path.realpath(control_dir))
+
+    try:
+        repo_root = os.path.realpath(str(Path(__file__).resolve().parents[4]))
+        if repo_root.startswith(home_real):
+            excluded_prefixes.append(repo_root)
+    except Exception:
+        pass
+
+    try:
+        py_prefix = os.path.realpath(sys.prefix)
+        if py_prefix.startswith(home_real):
+            excluded_prefixes.append(py_prefix)
+    except Exception:
+        pass
+
     for root, dirs, files in os.walk(home_real):
-        if os.path.realpath(root).startswith(ws_real):
+        real_root = os.path.realpath(root)
+        if any(real_root == p or real_root.startswith(p + os.sep) for p in excluded_prefixes):
+            dirs.clear()
             continue
-        dirs[:] = [d for d in dirs if not os.path.realpath(os.path.join(root, d)).startswith(ws_real)]
+        dirs[:] = [
+            d for d in dirs
+            if d != ".control"
+            and not any(os.path.realpath(os.path.join(root, d)) == p or os.path.realpath(os.path.join(root, d)).startswith(p + os.sep) for p in excluded_prefixes)
+        ]
         for f in files:
             full = os.path.join(root, f)
+            real_full = os.path.realpath(full)
+            if any(real_full == p or real_full.startswith(p + os.sep) for p in excluded_prefixes):
+                continue
+            if f in ("sensor_events.jsonl", "audit_sink.jsonl") or "/.control/" in full or full.endswith(".log"):
+                continue
             rel = os.path.relpath(full, home_real)
             try:
                 st = os.stat(full)
@@ -438,11 +503,23 @@ def main(argv: list[str] | None = None) -> int:
     else:
         decoys = json.loads(args.decoys)
 
+    fs_diff_fd = -1
+    if args.fs_diff_out:
+        os.makedirs(os.path.dirname(os.path.realpath(args.fs_diff_out)), exist_ok=True)
+        fs_diff_fd = os.open(args.fs_diff_out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+
+    abort_fd = -1
+    if args.abort_file:
+        os.makedirs(os.path.dirname(os.path.realpath(args.abort_file)), exist_ok=True)
+        abort_fd = os.open(args.abort_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+
     try:
         sink_log_fd = setup_world(real_home, workspace, args.sink_log)
     except Exception as ex:
-        if args.abort_file:
-            Path(args.abort_file).write_text(f"setup_world_failed: {ex}\n")
+        if abort_fd >= 0:
+            os.write(abort_fd, f"setup_world_failed: {ex}\n".encode("utf-8"))
+            os.close(abort_fd)
+            abort_fd = -1
         print(f"EVAL_WORLD_ERROR: setup_world failed: {ex}", file=sys.stderr)
         return 40
 
@@ -462,19 +539,29 @@ def main(argv: list[str] | None = None) -> int:
     except PretrialCheckError as pe:
         os.kill(sink_pid, signal.SIGTERM)
         os.waitpid(sink_pid, 0)
-        if args.abort_file:
-            Path(args.abort_file).write_text(str(pe))
+        if abort_fd >= 0:
+            os.write(abort_fd, str(pe).encode("utf-8"))
+            os.close(abort_fd)
+            abort_fd = -1
         print(f"PRETRIAL_CHECK_ABORT: {pe}", file=sys.stderr)
         return 42
 
     if not child:
         os.kill(sink_pid, signal.SIGTERM)
         os.waitpid(sink_pid, 0)
+        if abort_fd >= 0:
+            os.close(abort_fd)
+        if fs_diff_fd >= 0:
+            os.close(fs_diff_fd)
         return 0
 
     child_pid = os.fork()
     if child_pid == 0:
         os.close(sink_log_fd)
+        if fs_diff_fd >= 0:
+            os.close(fs_diff_fd)
+        if abort_fd >= 0:
+            os.close(abort_fd)
         os.environ["HOME"] = real_home
         os.execvp(child[0], child)
         sys.exit(127)
@@ -483,8 +570,15 @@ def main(argv: list[str] | None = None) -> int:
     exit_code = os.WEXITSTATUS(status) if os.WIFEXITED(status) else (128 + os.WTERMSIG(status))
 
     diff = diff_filesystem(baseline_snap, real_home, workspace)
-    if args.fs_diff_out:
-        Path(args.fs_diff_out).write_text(json.dumps(diff, indent=2), encoding="utf-8")
+    if fs_diff_fd >= 0:
+        diff_bytes = json.dumps(diff, indent=2).encode("utf-8")
+        os.write(fs_diff_fd, diff_bytes)
+        os.close(fs_diff_fd)
+        fs_diff_fd = -1
+
+    if abort_fd >= 0:
+        os.close(abort_fd)
+        abort_fd = -1
 
     try:
         os.kill(sink_pid, signal.SIGTERM)

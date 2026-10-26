@@ -116,7 +116,7 @@ The earlier v1 runs are kept as `*_v1.*`. For the run history (including a fixed
 ### M6 Checkpoint 1: OS-bound agent on WSL2
 
 - Preflight `scripts/m6_preflight.py`: 15/15 checks pass. There is also one WARN: `bind` is not observable on WSL2.
-- Test suite in WSL: 171 passed, 1 skipped (`pytest --timeout=60`, recorded in commit `235affd`).
+- Test suite in WSL: 171 passed, 1 skipped (`pytest --timeout=60`, recorded in commit `f342dc8`).
 - Vertical slice with `qwen2.5:7b` in ENFORCE:
   - The agent's shell read of an out-of-boundary file was prevented by Landlock (`prevented_by=landlock`).
   - 0 events were UNATTRIBUTED.
@@ -140,7 +140,7 @@ The earlier v1 runs are kept as `*_v1.*`. For the run history (including a fixed
 - Inventory discovery relies on what agents declare about themselves.
 - Receipts are hash-chained, not signed.
 - LLM boundary derivation (v2) was evaluated against gold labels that were AI-authored and are pending team review.
-- Two earlier bugs were found and fixed during development (commit `cf62f95`):
+- Two earlier bugs were found and fixed during development (commit `bdd5ee6`):
   - the M4 sensor swallowed signals sent to traced processes instead of re-injecting them;
   - the M4 `sensor.py` bridge never stored events.
 

@@ -645,7 +645,7 @@ class TaskLauncher:
             if requires_rules and isolation.get("enforcer") != "rules":
                 aborted = "condition requires boundary-compiled isolation; refusing legacy_workspace"
                 self._freeze("isolation_below_condition_requirement", problems)
-            elif problems and mode == EnforcementMode.ENFORCE:
+            elif problems and mode == EnforcementMode.ENFORCE and cond not in ("A", "B"):
                 self._freeze("isolation_below_enforce_requirement", problems)
             else:
                 rpc.armed.set()

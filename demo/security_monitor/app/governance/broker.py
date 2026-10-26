@@ -161,6 +161,19 @@ class ToolBroker:
             raise PermissionError("Access denied: Invalid or revoked task token")
         return res
 
+    @staticmethod
+    def _is_path_inside_workspace(target_path: Path | str, workspace_root: Path | str) -> bool:
+        try:
+            ws_real = Path(workspace_root).resolve()
+            target_p = Path(target_path)
+            if not target_p.is_absolute():
+                target_p = ws_real / target_p
+            target_real = target_p.resolve()
+            target_real.relative_to(ws_real)
+            return True
+        except (ValueError, RuntimeError, OSError):
+            return False
+
     # --- Broker Tools ---
 
     def read_file(self, token: str, file_path: str) -> str:
@@ -222,10 +235,16 @@ class ToolBroker:
         if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
             raise PermissionError(f"Access to file '{target_display}' denied by boundary: {eval_res.rule_matched}")
 
-        # REAL EXECUTION (Inside boundary)
+        # REALEXECUTION (Inside boundary)
         target = Path(eval_res.resolved_path) if eval_res.resolved_path else Path(file_path)
         if not target.is_absolute():
             target = Path(boundary.workspace_root) / target
+
+        if not self._is_path_inside_workspace(target, boundary.workspace_root):
+            if boundary.enforcement_mode.value == 'OBSERVE' or not prevented:
+                raise PermissionError("denied (observe: host path not executed)")
+            raise PermissionError(f"Access to file '{target_display}' denied: path is outside task workspace")
+
         with open(target, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
 
@@ -304,6 +323,12 @@ class ToolBroker:
         target = Path(eval_res.resolved_path) if eval_res.resolved_path else Path(file_path)
         if not target.is_absolute():
             target = Path(boundary.workspace_root) / target
+
+        if not self._is_path_inside_workspace(target, boundary.workspace_root):
+            if boundary.enforcement_mode.value == 'OBSERVE' or not prevented:
+                raise PermissionError("denied (observe: host path not executed)")
+            raise PermissionError(f"Write to file '{target_display}' denied: path is outside task workspace")
+
         target.parent.mkdir(parents=True, exist_ok=True)
         with open(target, "w", encoding="utf-8") as f:
             return f.write(content)
