@@ -264,7 +264,7 @@ The rebuilt Governance Console (`demo/security_monitor/app/dashboard_v2`) provid
 
 - **Operator Token**: Mutating decision operations (`POST /api/governance/expansions/{id}/approve`, `/deny`, and `/tasks/{id}/grant`) require an operator authorization token supplied via `Authorization: Bearer <token>` or `X-Operator-Token: <token>`. Configure this by setting the `GOVERNANCE_OPERATOR_TOKEN` environment variable. If unset, mutating endpoints refuse with HTTP 403.
 - **Security Scope Note**: Single-token bearer authentication is a minimal step intended for controlled and local deployments. Production deployments with Enterprise SSO, role-based access control (RBAC), and mutual TLS represent planned future work.
-- **Third-Party UI Components**: Components in pp/dashboard_v2/src/components/reactbits/ (AuroraBg, SpotlightCard, CountUpMetric, ShinyTextHeader, AnimatedListFeed) are inspired by React Bits (https://reactbits.dev) and distributed under the MIT + Commons Clause license.
+- **Third-Party UI Components**: Components in demo/security_monitor/app/dashboard_v2/src/components/reactbits/ (AuroraBg, SpotlightCard, CountUpMetric, ShinyTextHeader, AnimatedListFeed) are hand-written, inspired by React Bits (no React Bits source included).
 
 ## Repository map
 

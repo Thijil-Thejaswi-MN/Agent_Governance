@@ -1,0 +1,114 @@
+"""Playwright test verifying that EvaluationPage dynamically renders values from results_summary.json.
+
+Intercepts /dashboard/results_summary.json (or **/results_summary.json) with altered values
+and asserts that the page renders the altered values without hard-typed fallbacks.
+"""
+from __future__ import annotations
+
+import json
+import pytest
+
+try:
+    from playwright.sync_api import Page, expect
+    HAS_PLAYWRIGHT = True
+except ImportError:
+    HAS_PLAYWRIGHT = False
+
+pytestmark = pytest.mark.skipif(not HAS_PLAYWRIGHT, reason="playwright not installed")
+
+
+def test_evaluation_page_intercepts_altered_summary(page: Page):
+    base_url = "http://127.0.0.1:8000"
+
+    altered_summary = {
+        "generated_at": "2026-10-27T19:00:00+00:00",
+        "evaluation_label": "Altered Test Evaluation Benchmark 999",
+        "model": "altered-model:99b",
+        "harm_injected": {
+            "A": {"exposed": 29, "total": 35, "rate": 0.828, "ratio": "29/35"},
+            "B": {"exposed": 3, "total": 35, "rate": 0.085, "ratio": "3/35"},
+            "C": {"exposed": 1, "total": 35, "rate": 0.028, "ratio": "1/35"},
+            "D": {"exposed": 0, "total": 35, "rate": 0.0, "ratio": "0/35"},
+        },
+        "shell_attacks_succeeded": {
+            "B": {"succeeded": 7, "total": 7, "ratio": "7 of 7"},
+            "C": {"succeeded": 2, "total": 11, "ratio": "2 of 11"},
+        },
+        "utility_anticipated_correct": {
+            "A": {"correct": 28, "total": 35, "rate": 0.8, "ratio": "28/35"},
+            "C": {"correct": 33, "total": 35, "rate": 0.94, "ratio": "33/35"},
+        },
+        "expansion_chain_unanticipated_c": {
+            "denied_before_request": 30,
+            "requested": 25,
+            "granted": 20,
+            "delivered_read_ok": 18,
+            "total": 30,
+            "chain": [30, 25, 20, 18],
+            "chain_str": "30 / 25 / 20 / 18",
+            "steps": [
+                {"name": "Probe Denied (EACCES)", "count": 30, "total": 30},
+                {"name": "Expansion Requested", "count": 25, "total": 30},
+                {"name": "Expansion Approved", "count": 20, "total": 30},
+                {"name": "Delivered File Read", "count": 18, "total": 30},
+            ],
+        },
+        "timings_and_timeouts": {
+            "A": {"mean_s": 99, "total_trials": 35, "timeouts": 5, "timeout_ratio": "5/35"},
+            "B": {"mean_s": 88, "total_trials": 35, "timeouts": 4, "timeout_ratio": "4/35"},
+            "C": {"mean_s": 77, "total_trials": 35, "timeouts": 3, "timeout_ratio": "3/35"},
+            "D": {"mean_s": 66, "total_trials": 35, "timeouts": 2, "timeout_ratio": "2/35"},
+        },
+        "limitations": [
+            "Custom intercepted verification rule for empirical evaluation integrity.",
+        ],
+    }
+
+    def handle_route(route):
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(altered_summary),
+        )
+
+    # Intercept any request matching results_summary.json
+    page.route("**/results_summary.json*", handle_route)
+
+    # Navigate to the Evaluation page
+    page.goto(f"{base_url}/dashboard/evaluation")
+
+    # Assert heading is present
+    expect(page.locator("h1")).to_contain_text("Empirical Evaluation Benchmarks")
+
+    # Assert altered evaluation label is rendered
+    expect(page.locator("body")).to_contain_text("Altered Test Evaluation Benchmark 999")
+
+    # Assert altered Harm Injected values are rendered (29/35, 3/35, 1/35)
+    expect(page.locator("body")).to_contain_text("29/35")
+    expect(page.locator("body")).to_contain_text("3/35")
+    expect(page.locator("body")).to_contain_text("1/35")
+
+    # Assert condition labels are strictly formatted
+    expect(page.locator("body")).to_contain_text('A "No governance"')
+    expect(page.locator("body")).to_contain_text('B "Tool layer only"')
+    expect(page.locator("body")).to_contain_text('C "Tool + OS layer"')
+    expect(page.locator("body")).to_contain_text('D "Per-task container"')
+
+    # Assert altered shell attack outcomes are rendered (7 of 7, 2 of 11)
+    expect(page.locator("body")).to_contain_text("7 of 7")
+    expect(page.locator("body")).to_contain_text("2 of 11")
+
+    # Assert altered expansion steps are rendered (30/30, 25/30, 20/30, 18/30)
+    expect(page.locator("body")).to_contain_text("30/30")
+    expect(page.locator("body")).to_contain_text("25/30")
+    expect(page.locator("body")).to_contain_text("20/30")
+    expect(page.locator("body")).to_contain_text("18/30")
+
+    # Assert altered trial durations are rendered (99s, 88s, 77s, 66s)
+    expect(page.locator("body")).to_contain_text("99s")
+    expect(page.locator("body")).to_contain_text("88s")
+    expect(page.locator("body")).to_contain_text("77s")
+    expect(page.locator("body")).to_contain_text("66s")
+
+    # Assert altered limitations list item is rendered
+    expect(page.locator("body")).to_contain_text("Custom intercepted verification rule for empirical evaluation integrity.")

@@ -142,7 +142,7 @@ export const TasksPage: React.FC = () => {
                     <span className="text-xs font-mono text-slate-400 bg-slate-100 dark:bg-slate-800/60 px-2 py-0.5 rounded-md">
                       agent: {t.agent_id}
                     </span>
-                    {(t.agent_id.includes('demo') || t.agent_id.includes('slice') || t.agent_id.includes('scripted')) && (
+                    {(t.llm_provider === 'scripted' || t.llm_provider === 'scripted_mock') && (
                       <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30">
                         Scripted demo
                       </span>

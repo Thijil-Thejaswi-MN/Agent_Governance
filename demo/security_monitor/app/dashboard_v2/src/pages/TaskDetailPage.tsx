@@ -185,7 +185,7 @@ export const TaskDetailPage: React.FC = () => {
               <span className="text-xs font-mono text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
                 agent: {task.agent_id}
               </span>
-              {(task.agent_id.includes('demo') || task.agent_id.includes('slice') || task.agent_id.includes('scripted') || receiptRes?.receipt?.extra?.llm_provider === 'scripted_mock') && (
+              {(task.llm_provider === 'scripted' || task.llm_provider === 'scripted_mock' || receiptRes?.receipt?.extra?.llm_provider === 'scripted' || receiptRes?.receipt?.extra?.llm_provider === 'scripted_mock') && (
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30">
                   Scripted demo
                 </span>

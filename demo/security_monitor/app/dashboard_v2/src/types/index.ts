@@ -19,6 +19,8 @@ export interface TaskRecord {
   actions_outside: number;
   prevented_count: number;
   compliance_pct: number;
+  llm_provider?: string;
+  os_denials_count?: number;
 }
 
 export interface TaskBoundary {
@@ -110,7 +112,7 @@ export interface ResultsSummary {
     chain_str: string;
     steps?: Array<{ name: string; count: number; total: number }>;
   };
-  timings_and_timeouts: Record<string, { mean_s: number; median_s: number; total_trials: number; timeouts: number }>;
+  timings_and_timeouts: Record<string, { mean_s?: number; median_s?: number; total_trials?: number; timeouts?: number; timeout_ratio?: string }>;
   limitations: string[];
 }
 

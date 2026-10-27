@@ -154,35 +154,140 @@ async def get_auth_status() -> dict[str, Any]:
     }
 
 
+def _extract_os_receipt_events(task_id: str) -> list[dict[str, Any]]:
+    """Extracts deduplicated OS-layer entries from the task receipt, defaulting prevented to False."""
+    receipts_dir = get_receipt_dir()
+    r_file = receipts_dir / f"{task_id}.json"
+    if not r_file.exists():
+        alt_file = Path(__file__).resolve().parents[3] / "data" / "evaluation_v3" / "checkpoint1" / "receipts" / f"{task_id}.json"
+        if alt_file.exists():
+            r_file = alt_file
+        else:
+            return []
+
+    try:
+        with open(r_file, encoding="utf-8") as f:
+            r_data = json.load(f)
+    except Exception:
+        return []
+
+    os_events: list[dict[str, Any]] = []
+    seen_indices: set[int] = set()
+    for o in r_data.get("outside_events", []):
+        obs = [str(x).lower() for x in o.get("observed_by", [])]
+        prev_by = str(o.get("prevented_by", "")).lower()
+        src = str(o.get("source", "")).upper()
+
+        # Take ONLY OS entries (observed_by sensor / prevented_by landlock or seccomp)
+        is_os = ("os_sensor" in obs or "sensor" in obs or prev_by in ("landlock", "seccomp") or src == "OS_SENSOR")
+        if not is_os:
+            continue
+
+        idx = o.get("index")
+        if idx is not None:
+            if idx in seen_indices:
+                continue
+            seen_indices.add(idx)
+
+        # Default prevented to False (never True) when the field is missing
+        prevented = bool(o.get("prevented", False))
+
+        entry = dict(o)
+        entry["prevented"] = prevented
+        os_events.append(entry)
+
+    return os_events
+
+
+def _extract_llm_provider(task: Any, task_id: str) -> str:
+    receipts_dir = get_receipt_dir()
+    r_file = receipts_dir / f"{task_id}.json"
+    if not r_file.exists():
+        alt_file = Path(__file__).resolve().parents[3] / "data" / "evaluation_v3" / "checkpoint1" / "receipts" / f"{task_id}.json"
+        if alt_file.exists():
+            r_file = alt_file
+    if r_file.exists():
+        try:
+            with open(r_file, encoding="utf-8") as f:
+                r_data = json.load(f)
+            p = r_data.get("extra", {}).get("llm_provider") or r_data.get("llm_provider")
+            if p:
+                return str(p)
+        except Exception:
+            pass
+    if hasattr(task, "extra") and isinstance(task.extra, dict):
+        p = task.extra.get("llm_provider")
+        if p:
+            return str(p)
+    return "ollama"
+
+
+def _build_unified_task_events(task_id: str, storage_events: list[Any]) -> list[dict[str, Any]]:
+    events = [e.model_dump() for e in storage_events]
+    os_receipt = _extract_os_receipt_events(task_id)
+    existing_targets = {e.get("target") for e in events if e.get("target")}
+
+    for idx, o in enumerate(os_receipt):
+        target = o.get("target")
+        if target and target in existing_targets:
+            continue
+        idx_val = o.get("index", idx)
+        events.append({
+            "event_id": f"evt_os_receipt_{task_id[:8]}_{idx_val:03d}",
+            "timestamp": o.get("timestamp", ""),
+            "source": o.get("source", "OS_SENSOR"),
+            "task_id": task_id,
+            "agent_id": "os_process",
+            "pid": None,
+            "kind": o.get("kind", "file_read"),
+            "target": target or "",
+            "details": {"syscall": o.get("syscall"), "result": o.get("result")},
+            "verdict": "OUTSIDE",
+            "risk_tier": o.get("risk_tier", "MEDIUM"),
+            "action_taken": o.get("action_taken", "LOG"),
+            "prevented": bool(o.get("prevented", False)),
+            "rule_matched": o.get("rule_matched", "OS Landlock boundary enforcement"),
+            "boundary_version": 1,
+            "channel": o.get("channel", "shell"),
+            "prevented_by": o.get("prevented_by", "landlock"),
+        })
+    return events
+
+
+def _compute_task_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(events)
+    inside = sum(1 for e in events if str(e.get("verdict", "")).endswith("INSIDE"))
+    prevented = sum(1 for e in events if e.get("prevented"))
+    actions_outside = total - inside
+    compliance_pct = round((inside / total * 100), 1) if total > 0 else 100.0
+    os_denials = sum(
+        1 for e in events
+        if e.get("prevented") and (
+            e.get("source") == "OS_SENSOR"
+            or str(e.get("details", {}).get("prevented_by", "")).lower() in ("landlock", "seccomp")
+            or str(e.get("prevented_by", "")).lower() in ("landlock", "seccomp")
+        )
+    )
+    return {
+        "total_actions": total,
+        "actions_inside": inside,
+        "actions_outside": actions_outside,
+        "prevented_count": prevented,
+        "os_denials_count": os_denials,
+        "compliance_pct": compliance_pct,
+    }
+
+
 @governance_router.get("/tasks")
 async def list_tasks() -> list[dict[str, Any]]:
     storage = get_storage()
     tasks = storage.list_tasks()
     output = []
-    receipts_dir = get_receipt_dir()
     for t in tasks:
-        events = storage.get_events_for_task(t.task_id)
-        total = len(events)
-        inside = sum(1 for e in events if e.verdict == "INSIDE")
-        prevented = sum(1 for e in events if e.prevented)
-        actions_outside = total - inside
-
-        # Count OS-layer denials (Landlock EACCES, etc.) recorded in receipt
-        r_file = receipts_dir / f"{t.task_id}.json"
-        if r_file.exists():
-            try:
-                with open(r_file) as f:
-                    r_data = json.load(f)
-                r_outs = r_data.get("outside_events", [])
-                for o in r_outs:
-                    if o.get("prevented") or o.get("result") == "EACCES" or o.get("prevented_by") in ("landlock", "seccomp"):
-                        prevented += 1
-                        actions_outside += 1
-                        total += 1
-            except Exception:
-                pass
-
-        compliance_pct = round((inside / total * 100), 1) if total > 0 else 100.0
+        storage_events = storage.get_events_for_task(t.task_id)
+        evts = _build_unified_task_events(t.task_id, storage_events)
+        summary = _compute_task_summary(evts)
+        llm_provider = _extract_llm_provider(t, t.task_id)
 
         output.append({
             "task_id": t.task_id,
@@ -194,11 +299,13 @@ async def list_tasks() -> list[dict[str, Any]]:
             "created_at": t.created_at,
             "started_at": t.started_at,
             "completed_at": t.completed_at,
-            "total_actions": total,
-            "actions_inside": inside,
-            "actions_outside": actions_outside,
-            "prevented_count": prevented,
-            "compliance_pct": compliance_pct,
+            "total_actions": summary["total_actions"],
+            "actions_inside": summary["actions_inside"],
+            "actions_outside": summary["actions_outside"],
+            "prevented_count": summary["prevented_count"],
+            "os_denials_count": summary["os_denials_count"],
+            "compliance_pct": summary["compliance_pct"],
+            "llm_provider": llm_provider,
         })
     return output
 
@@ -225,77 +332,26 @@ async def get_task_detail(task_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Task not found")
 
     boundary = storage.get_boundary(task_id)
-    events = storage.get_events_for_task(task_id)
-    total = len(events)
-    inside = sum(1 for e in events if e.verdict == "INSIDE")
-    prevented = sum(1 for e in events if e.prevented)
-    actions_outside = total - inside
+    storage_events = storage.get_events_for_task(task_id)
+    evts = _build_unified_task_events(task_id, storage_events)
+    summary = _compute_task_summary(evts)
+    llm_provider = _extract_llm_provider(task, task_id)
 
-    # Count OS-layer denials (Landlock EACCES, etc.) recorded in receipt
-    r_file = get_receipt_dir() / f"{task_id}.json"
-    if r_file.exists():
-        try:
-            with open(r_file) as f:
-                r_data = json.load(f)
-            r_outs = r_data.get("outside_events", [])
-            for o in r_outs:
-                if o.get("prevented") or o.get("result") == "EACCES" or o.get("prevented_by") in ("landlock", "seccomp"):
-                    prevented += 1
-                    actions_outside += 1
-                    total += 1
-        except Exception:
-            pass
-
-    compliance_pct = round((inside / total * 100), 1) if total > 0 else 100.0
+    task_dict = task.model_dump()
+    task_dict["llm_provider"] = llm_provider
 
     return {
-        "task": task.model_dump(),
+        "task": task_dict,
         "boundary": boundary.model_dump() if boundary else None,
-        "summary": {
-            "total_actions": total,
-            "actions_inside": inside,
-            "actions_outside": actions_outside,
-            "prevented_count": prevented,
-            "compliance_pct": compliance_pct,
-        },
+        "summary": summary,
+        "llm_provider": llm_provider,
     }
 
 
 @governance_router.get("/tasks/{task_id}/events")
 async def get_task_events(task_id: str) -> list[dict[str, Any]]:
-    events = [e.model_dump() for e in get_storage().get_events_for_task(task_id)]
-    # Append any OS-layer denials from receipt
-    r_file = get_receipt_dir() / f"{task_id}.json"
-    if r_file.exists():
-        try:
-            with open(r_file) as f:
-                r_data = json.load(f)
-            r_outs = r_data.get("outside_events", [])
-            existing_targets = {e.get("target") for e in events}
-            for idx, o in enumerate(r_outs):
-                if o.get("target") not in existing_targets:
-                    events.append({
-                        "event_id": f"evt_os_receipt_{task_id[:8]}_{idx:03d}",
-                        "timestamp": o.get("timestamp", ""),
-                        "source": o.get("source", "OS_SENSOR"),
-                        "task_id": task_id,
-                        "agent_id": "os_process",
-                        "pid": None,
-                        "kind": o.get("kind", "file_read"),
-                        "target": o.get("target", ""),
-                        "details": {"syscall": o.get("syscall"), "result": o.get("result")},
-                        "verdict": "OUTSIDE",
-                        "risk_tier": o.get("risk_tier", "MEDIUM"),
-                        "action_taken": o.get("action_taken", "LOG"),
-                        "prevented": bool(o.get("prevented", True)),
-                        "rule_matched": o.get("rule_matched", "OS Landlock boundary enforcement"),
-                        "boundary_version": 1,
-                        "channel": o.get("channel", "shell"),
-                        "prevented_by": o.get("prevented_by", "landlock"),
-                    })
-        except Exception:
-            pass
-    return events
+    storage_events = get_storage().get_events_for_task(task_id)
+    return _build_unified_task_events(task_id, storage_events)
 
 
 @governance_router.get("/tasks/{task_id}/receipt")
