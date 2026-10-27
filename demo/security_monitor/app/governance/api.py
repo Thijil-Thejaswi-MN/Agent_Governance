@@ -219,7 +219,7 @@ def _extract_llm_provider(task: Any, task_id: str) -> str:
         p = task.extra.get("llm_provider")
         if p:
             return str(p)
-    return "ollama"
+    return "unknown"
 
 
 def _build_unified_task_events(task_id: str, storage_events: list[Any]) -> list[dict[str, Any]]:
