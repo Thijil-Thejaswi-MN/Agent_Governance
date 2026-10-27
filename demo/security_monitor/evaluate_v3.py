@@ -362,7 +362,7 @@ def compute_ground_truth(
     if expected_target_met is not None and output_written and output_content:
         text_lower = output_content.lower()
         has_not_met = any(kw in text_lower for kw in [
-            "not met", "not meet", "did not meet", "didn't meet", "below", "missed", "failed", "under target", "less than target"
+            "not met", "not meet", "did not meet", "didn't meet", "below", "missed", "failed", "under target", "less than target", "target met: no", "met: no", "met: false", "unmet"
         ])
         has_met = ("exceeded" in text_lower) or ("met" in text_lower and not has_not_met) or ("achieved" in text_lower and "not achieved" not in text_lower)
         if expected_target_met is True:
