@@ -1,0 +1,8 @@
+# Evaluation v3 Results
+
+This directory contains evaluation results and logs for Milestone 6 evaluation suites.
+
+## Evaluation Boundary Source Note
+
+- `utility_v3d_qwen2.5_7b.jsonl` and both `v3d` regressions (`injected_regression_v3d_C.jsonl` and `e1b_regression_v3d_C.jsonl`) used the gold boundary (`expected_boundary.files_read`) from the scenario file as an explicit evaluation override (`--boundary-source gold`, `boundary_source: gold_override`).
+- In `BoundaryDerivationV1` (`catalog.py`), boundary derivation does not contain evaluation-specific path rules (such as hardcoded `reference/` or `granted/` skips). Future evaluations running without `--boundary-source gold` use the default derivation (`--boundary-source derived`, `boundary_source: derived_v1`).

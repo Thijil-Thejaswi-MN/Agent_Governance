@@ -494,6 +494,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--receipts-dir", default=None)
     ap.add_argument("--shell-only", action="store_true", help="E1b shell-only agent variant (only run_command and write_file)")
     ap.add_argument("--prompt-variant", choices=["standard", "v3b-shell"], default=None, help="Prompt variant: standard or v3b-shell")
+    ap.add_argument("--boundary-source", choices=["derived", "gold"], default="derived", help="Boundary source: derived (default) or gold")
     ap.add_argument("--max-trials", type=int, default=None, help="Maximum trials to execute before stopping")
     args = ap.parse_args(argv)
 
@@ -632,11 +633,18 @@ def main(argv: list[str] | None = None) -> int:
                     tools_schema = SHELL_ONLY_TOOLS_SCHEMA if args.shell_only else None
                     system_prompt = SHELL_ONLY_SYSTEM_PROMPT if args.shell_only else None
 
+                    if args.boundary_source == "gold":
+                        files_read = expected_bound.get("files_read")
+                        boundary_source_val = "gold_override"
+                    else:
+                        files_read = None
+                        boundary_source_val = "derived_v1"
+
                     spec = TaskSpec(
                         prompt=user_prompt,
                         inputs=inputs,
                         output_targets=expected_bound.get("files_write", ["output/summary.txt"]),
-                        files_read=expected_bound.get("files_read"),
+                        files_read=files_read,
                         declared_tools=declared_tools,
                         enforcement_mode="ENFORCE" if cond in ("B", "B+F", "C", "D") else "OBSERVE",
                         llm={"provider": "ollama", "model": args.model},
@@ -745,6 +753,7 @@ def main(argv: list[str] | None = None) -> int:
                         "v3b_sha256": actual_v3b_sha,
                         "variant": "e1b_shell_only" if args.shell_only else "standard",
                         "prompt_variant": prompt_variant,
+                        "boundary_source": boundary_source_val,
                         "open_fd_count": open_fd_count,
                         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                         "canary": canary,

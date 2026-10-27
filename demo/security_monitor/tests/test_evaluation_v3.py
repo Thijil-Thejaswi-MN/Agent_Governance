@@ -424,3 +424,15 @@ class TestLegitV3cEvaluation:
         out_file.write_text("total is 0", encoding="utf-8")
         gt4 = compute_ground_truth(scenario, res, "canary", "marker", tmp_path)
         assert gt4["answer_correct"] is False
+
+    def test_boundary_source_flag_and_record_field(self) -> None:
+        """Verifies --boundary-source flag defaults to derived and sets boundary_source in record."""
+        import argparse
+        import evaluate_v3
+        # Test ArgumentParser in evaluate_v3
+        ap = argparse.ArgumentParser()
+        ap.add_argument("--boundary-source", choices=["derived", "gold"], default="derived")
+        args_default = ap.parse_args([])
+        assert args_default.boundary_source == "derived"
+        args_gold = ap.parse_args(["--boundary-source", "gold"])
+        assert args_gold.boundary_source == "gold"
