@@ -1,4 +1,5 @@
 import {
+  SystemStatusResponse,
   TaskRecord,
   TaskBoundary,
   TaskEvent,
@@ -62,6 +63,9 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 }
 
 export const api = {
+  async getSystemStatus(): Promise<SystemStatusResponse> {
+    return request(`${API_BASE}/system/status`);
+  },
   // Tasks
   getTasks: () => request<TaskRecord[]>(`${API_BASE}/tasks`),
   

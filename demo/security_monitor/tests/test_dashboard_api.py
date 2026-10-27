@@ -517,3 +517,17 @@ def test_agent_monitoring_and_policy_mode_controls(client):
 
 
 
+
+
+def test_governance_system_status(client):
+    """Tests GET /api/governance/system/status reports Landlock, seccomp, cgroups and sensor."""
+    resp = client.get("/api/governance/system/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "status" in data
+    assert "landlock_abi" in data
+    assert "seccomp_available" in data
+    assert "cgroup_v2" in data
+    assert "sensor_mode" in data
+    assert isinstance(data["landlock_abi"], int)
+    assert isinstance(data["seccomp_available"], bool)

@@ -131,13 +131,16 @@ export const ActivityPage: React.FC = () => {
         <AnimatedListFeed className="space-y-2.5">
           {filtered.map((ev, i) => {
             const isBlocked = ev.verdict === 'OUTSIDE' || ev.prevented;
+            const isApproval = ev.kind === 'request_access' || ev.action_taken === 'EXPAND' || (ev.details && ev.details.expansion_requested);
             return (
               <div
                 key={i}
                 className={`p-3.5 rounded-xl border transition-all ${
                   isBlocked
                     ? 'border-rose-500/50 bg-rose-500/10 dark:bg-rose-950/30 shadow-sm animate-pulse-fast'
-                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-surface-cardDark'
+                    : isApproval
+                    ? 'border-amber-500/50 bg-amber-500/10 dark:bg-amber-950/30 shadow-sm animate-pulse-fast'
+                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-surface-cardDark hover:border-slate-300 dark:hover:border-slate-700'
                 }`}
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">

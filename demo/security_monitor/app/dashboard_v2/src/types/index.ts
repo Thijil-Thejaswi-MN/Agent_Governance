@@ -122,3 +122,13 @@ export interface AgentInventoryItem {
   last_seen?: string;
   reputation_score?: number;
 }
+
+
+export interface SystemStatusResponse {
+  status: 'healthy' | 'partial' | 'unsupported';
+  landlock_abi: number;
+  seccomp_available: boolean;
+  cgroup_v2: boolean;
+  sensor_mode: string;
+  enforcing: boolean;
+}

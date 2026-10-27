@@ -166,7 +166,7 @@ export const TaskDetailPage: React.FC = () => {
       {/* Header & Back link */}
       <div>
         <Link
-          to="/dashboard/tasks"
+          to="/tasks"
           className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-cyan-500 dark:hover:text-cyan-400 transition-colors mb-3"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
@@ -518,7 +518,7 @@ export const TaskDetailPage: React.FC = () => {
                   Task Receipt v0 (Hash-Chained)
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Cryptographically hash-chained audit record per task. Recomputed via SHA-256.
+                  Hash-chained audit record per task. Recomputed via SHA-256.
                 </p>
               </div>
             </div>

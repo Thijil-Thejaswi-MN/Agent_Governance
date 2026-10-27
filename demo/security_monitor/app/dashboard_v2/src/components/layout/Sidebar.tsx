@@ -28,13 +28,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onMobileClose,
 }) => {
   const navItems = [
-    { to: '/dashboard', label: 'Overview', icon: LayoutDashboard, exact: true },
-    { to: '/dashboard/tasks', label: 'Tasks', icon: ListTodo },
-    { to: '/dashboard/agents', label: 'Agents', icon: Bot },
-    { to: '/dashboard/activity', label: 'Live Activity', icon: Activity },
-    { to: '/dashboard/approvals', label: 'Approvals', icon: CheckCircle2 },
-    { to: '/dashboard/evaluation', label: 'Evaluation', icon: BarChart3 },
-    { to: '/dashboard/architecture', label: 'Architecture', icon: Network },
+    { to: '/', label: 'Overview', icon: LayoutDashboard, exact: true },
+    { to: '/tasks', label: 'Tasks', icon: ListTodo },
+    { to: '/agents', label: 'Agents', icon: Bot },
+    { to: '/activity', label: 'Live Activity', icon: Activity },
+    { to: '/approvals', label: 'Approvals', icon: CheckCircle2 },
+    { to: '/evaluation', label: 'Evaluation', icon: BarChart3 },
+    { to: '/architecture', label: 'Architecture', icon: Network },
   ];
 
   const content = (
@@ -58,7 +58,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
         <button
           onClick={onToggle}
-          className="hidden md:flex p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors"
+          className="hidden md:flex p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors active:scale-95"
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
@@ -76,7 +76,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               end={item.exact}
               onClick={onMobileClose}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-150 ${
+                `flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-150 active:scale-[0.98] ${
                   isActive
                     ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-semibold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'

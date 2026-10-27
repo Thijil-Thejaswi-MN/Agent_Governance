@@ -1,5 +1,5 @@
 // Inspired by React Bits (https://reactbits.dev) CountUp - MIT + Commons Clause License
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 
 interface CountUpProps {
   to: number;
@@ -13,22 +13,41 @@ interface CountUpProps {
 
 export const CountUpMetric: React.FC<CountUpProps> = ({
   to,
-  from = 0,
-  duration = 1.2,
+  from,
+  duration = 1.0,
   decimals = 0,
   className = '',
   suffix = '',
   prefix = '',
 }) => {
-  const [value, setValue] = useState(from);
+  const [value, setValue] = useState<number>(from !== undefined ? from : to);
+  const prevValueRef = useRef<number>(from !== undefined ? from : to);
+  const isFirstRender = useRef(true);
 
   useEffect(() => {
     // Respect prefers-reduced-motion
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       setValue(to);
+      prevValueRef.current = to;
       return;
     }
 
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      if (from === undefined || from === to) {
+        setValue(to);
+        prevValueRef.current = to;
+        return;
+      }
+    }
+
+    // Only animate if value actually changed
+    if (to === prevValueRef.current) {
+      return;
+    }
+
+    const startVal = prevValueRef.current;
+    const endVal = to;
     let startTime: number | null = null;
     let animationFrameId: number;
 
@@ -37,13 +56,14 @@ export const CountUpMetric: React.FC<CountUpProps> = ({
       const progress = Math.min((timestamp - startTime) / (duration * 1000), 1);
       // Ease out cubic
       const easedProgress = 1 - Math.pow(1 - progress, 3);
-      const current = from + (to - from) * easedProgress;
+      const current = startVal + (endVal - startVal) * easedProgress;
       setValue(current);
 
       if (progress < 1) {
         animationFrameId = requestAnimationFrame(step);
       } else {
-        setValue(to);
+        setValue(endVal);
+        prevValueRef.current = endVal;
       }
     };
 

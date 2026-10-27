@@ -129,7 +129,7 @@ export const TasksPage: React.FC = () => {
           {filteredTasks.map(t => (
             <Link
               key={t.task_id}
-              to={`/dashboard/tasks/${t.task_id}`}
+              to={`/tasks/${t.task_id}`}
               className="block p-5 rounded-2xl bg-white dark:bg-surface-cardDark border border-slate-200 dark:border-slate-800/80 hover:border-cyan-500/50 dark:hover:border-cyan-500/50 hover:shadow-md transition-all group"
             >
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

@@ -14,7 +14,7 @@ export const ShinyTextHeader: React.FC<ShinyTextProps> = ({
 }) => {
   return (
     <span
-      className={`inline-block bg-[linear-gradient(110deg,#93c5fd,45%,#ffffff,55%,#93c5fd)] dark:bg-[linear-gradient(110deg,#38bdf8,45%,#ffffff,55%,#38bdf8)] bg-[length:200%_100%] bg-clip-text text-transparent animate-shimmer font-semibold ${className}`}
+      className={`inline-block bg-[linear-gradient(110deg,#0f172a,45%,#0284c7,55%,#0f172a)] dark:bg-[linear-gradient(110deg,#38bdf8,45%,#ffffff,55%,#38bdf8)] bg-[length:200%_100%] bg-clip-text text-transparent animate-shimmer font-semibold ${className}`}
       style={{ animationDuration: `${speed}s` }}
     >
       {text}
