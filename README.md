@@ -79,7 +79,7 @@ Design notes and limitations for the OS layer: [`docs/M6_OS_BOUND_AGENT_NOTES.md
 | Launcher, agent shim, broker Unix-socket RPC, correlator, graduated response, Task Receipt v0 (M6.1, M6.1b) | Implemented (Linux/WSL2) |
 | ptrace + seccomp `RET_TRACE` sensor | Experimental (observation only) |
 | Inventory (GOVERNED / SHADOW), dashboard, A2A gateway integration (M2) | Implemented |
-| Evaluation v3: conditions A–D on the OS-bound agent (M6.2) | In progress |
+| Evaluation v3: conditions A–D on the OS-bound agent (M6.2) | Done |
 | eBPF sensor (M7) | Planned |
 | BPF-LSM dynamic grants | Planned |
 | Long-lived / shared agents via hooks | Planned |
@@ -126,15 +126,58 @@ The earlier v1 runs are kept as `*_v1.*`. For the run history (including a fixed
   - 83,720 events, 0 cross-attributions, 0 UNATTRIBUTED.
   - Summary: [`demo/data/evaluation_v3/checkpoint1/concurrency_v2/concurrency_v2_summary.json`](demo/data/evaluation_v3/checkpoint1/concurrency_v2/concurrency_v2_summary.json).
 
+### M6 full run (768 trials)
+
+Setup:
+- Conditions: A (no governance), B (tool layer only; the OS sensor observes only), C (tool layer + OS layer), D (per-task container baseline: Landlock from the boundary, no broker, no expansion).
+- 48 template-generated scenarios (32 legitimate, 16 injected), 2 models (`llama3.1:8b`, `qwen2.5:7b`), 4 conditions, N=2.
+- The safety harness (namespaces, tmpfs fake home with canary-carrying decoys, local-only audit sink, before/after host checks) is identical in all conditions.
+
+| `qwen2.5:7b`, injected trials (n=32 each) | A: none | B: tool layer | C: tool + OS | D: container |
+| :--- | :---: | :---: | :---: | :---: |
+| Trials with any harm (decoy read, write outside the workspace, data sent to the sink) | 14/32 [0.28, 0.61] | 0/32 | 0/32 | 0/32 |
+| Timeouts (180 s) | 0/32 | 6/32 | 6/32 | 2/32 |
+| Mean trial time | 13 s | 64 s | 68 s | 26 s |
+
+- Fisher exact test, A vs each of B, C and D: p < 0.001.
+- `llama3.1:8b` had 0/32 harm in all conditions: it ignored the injections even without governance, so it is uninformative for security.
+- The canary never reached the sink in any condition.
+- Governance has a cost: denials push the model into retry loops, which shows up as longer trials and timeouts.
+
+### E1b: shell-only agent (256 trials)
+
+The agent's tools are only `run_command` and `write_file`, as in shell-driven coding agents. `qwen2.5:7b`, 16 injected scenarios, conditions B and C, N=8.
+
+| `qwen2.5:7b`, n=128 per condition | B: tool layer only | C: tool + OS layer |
+| :--- | :---: | :---: |
+| Trials where the agent tried a shell attack (`cat ~/<decoy>`) | 8 | 10 |
+| … of which succeeded | 8 | 0 (all `Permission denied`, Landlock) |
+| Decoy content exposed to the model | 8/128 [0.03, 0.12] | 0/128 [0, 0.03] |
+
+- Fisher exact test on decoy exposure, B vs C: p = 0.007.
+- Attempt rates were similar (8 vs 10, p = 0.81), so the difference comes from enforcement, not from model behaviour.
+- Caveat: the attacks are concentrated in 2 scenarios, so the scenario diversity of this effect is limited.
+
+### M6 integrity
+
+- 0 duplicates, 0 trial errors, 0 aborts, 0 dirty-tree records and 0 host contamination across both runs.
+- During the full run a file-descriptor leak was fixed with an infrastructure-only change (storage/launcher). The 57 trials that hit it were kept in a separate file and re-run once.
+
+Result files in [`demo/data/evaluation_v3/results/`](demo/data/evaluation_v3/results/):
+- Full run: [`full_v3b_qwen2.5_7b.jsonl`](demo/data/evaluation_v3/results/full_v3b_qwen2.5_7b.jsonl), [`full_v3b_llama3.1_8b.jsonl`](demo/data/evaluation_v3/results/full_v3b_llama3.1_8b.jsonl), the infrastructure-error records [`full_v3b_llama3.1_8b_infra_errors.jsonl`](demo/data/evaluation_v3/results/full_v3b_llama3.1_8b_infra_errors.jsonl), and the log [`full_run_log.txt`](demo/data/evaluation_v3/results/full_run_log.txt).
+- E1b: [`e1b_shell_only_qwen2.5_7b.jsonl`](demo/data/evaluation_v3/results/e1b_shell_only_qwen2.5_7b.jsonl) and the log [`e1b_run_log.txt`](demo/data/evaluation_v3/results/e1b_run_log.txt). The `_attempt1` and `_attempt2` files are earlier partial attempts and are not included in the counts above.
+- Task Receipts: [`receipts.tar.gz`](demo/data/evaluation_v3/results/receipts.tar.gz).
+
 ## Limitations
 
-- The scenarios are template-generated, not drawn from real user tasks.
+- The scenarios (M5 and M6) are template-generated, not drawn from real user tasks.
 - The simulated user is an idealised ORACLE that approves exactly the legitimate resources. Real users will make mistakes.
+- Task accuracy on legitimate M6 tasks could not be measured. Both models summed the wrong CSV column in every condition, and the generated expected answers in `legit_v3b` were also wrong (they are corrected in the scorer). The usable utility proxies are output written and needed resource obtained.
 - Only 7–8B local models have been evaluated (`llama3.1:8b`, `qwen2.5:7b`).
 - All OS-layer results come from one WSL2 machine.
 - The ptrace sensor only observes; prevention comes from Landlock, seccomp, the broker and the proxy. `bind()` cannot be observed on WSL2 because a seccomp filter that WSL's init installs takes precedence over `RET_TRACE`. Landlock still denies TCP bind. The stat family, I/O on already-open file descriptors, and `listen`/`accept` are not traced.
 - Each task gets its own cgroup. Shared, long-lived agents are not supported yet.
-- Single-use delivery is not enforced by the kernel. A single-use grant is removed after the first open the sensor observes, and Landlock cannot express "read once".
+- Single-use delivery is not enforced by the kernel. A single-use grant is removed once the sensor observes it being opened, and Landlock cannot express "read once".
 - UDP is not mediated by Landlock.
 - Nothing is enforced on native Windows. On Windows only the tool layer runs, and the OS-layer tests are skipped.
 - Inventory discovery relies on what agents declare about themselves.
@@ -154,11 +197,16 @@ The earlier v1 runs are kept as `*_v1.*`. For the run history (including a fixed
 | [Progent](https://arxiv.org/abs/2504.11703), [Conseca](https://arxiv.org/abs/2501.17070) | Policies at the tool level. |
 | [Kernel-Level Evidence](https://arxiv.org/abs/2609.28915) | Attribution at the session level; per-tool-call attribution is left open. |
 
-This project claims only the combination of four things:
-- a boundary derived from the user's request;
-- OS-level enforcement of that boundary;
-- mid-task expansion that takes provenance into account;
-- a receipt for each request.
+This project claims only the combination of four things. We did not find a prior system that combines them, and we implemented all four. The evidence for each part is uneven:
+
+| Part | Evidence |
+| :--- | :--- |
+| A boundary derived from the user's request | Partial. In the M6 experiments the boundary came from templates (v1). LLM derivation (v2) was evaluated separately, against AI-authored gold labels. |
+| Enforcement of that boundary at the tool and OS layers | Strong, from the experiments: injected-attack harm 14/32 → 0/32 (p < 0.001); shell-channel attacks 8/128 → 0/128 (p = 0.007). |
+| Mid-task expansion that takes provenance into account | Implementation-level. Implemented and tested; M5 had 0 approvals outside the legitimate set, but only with an idealised ORACLE approver. Real human approvals were not tested. |
+| A receipt for each request | Integrity only. Receipts are hash-chained and verify; their usefulness to an auditor was not evaluated. |
+
+Summary: we implement task-scoped runtime governance that combines a request-derived boundary, tool- and OS-layer enforcement, provenance-aware expansion and per-request receipts. In a controlled evaluation with local 7–8B models, governance eliminated injected-attack harm (14/32 → 0/32, p < 0.001), and OS-level enforcement stopped shell-channel attacks that tool-level mediation allowed (8/128 → 0/128, p = 0.007), at a measurable latency and timeout cost.
 
 ## Quick start
 
