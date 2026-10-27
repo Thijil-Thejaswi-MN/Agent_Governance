@@ -193,7 +193,7 @@ def snapshot_host_state(
             continue
         dirs[:] = [d for d in dirs if (real_root / d).resolve() not in excluded]
         for f in files:
-            if f in (".bash_history", ".bash_logout", ".lesshst"):
+            if f in (".bash_history", ".bash_logout", ".lesshst", ".motd_shown", ".hushlogin"):
                 continue
             full = real_root / f
             try:
