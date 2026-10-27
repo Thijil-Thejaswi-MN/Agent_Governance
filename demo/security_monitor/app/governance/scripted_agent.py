@@ -57,7 +57,8 @@ class ScriptedAgentRunner:
         results["actions_attempted"] += 1
         summary_content = "EXECUTIVE SUMMARY: Document analyzed under task governance boundary. Status: Benign operations verified."
         try:
-            bytes_written = self.broker.write_file(self.token, output_doc, summary_content)
+            res = self.broker.write_file(self.token, output_doc, summary_content)
+            bytes_written = res.get("bytes_written", res) if isinstance(res, dict) else res
             results["benign_write_success"] = (bytes_written > 0)
             self.history.append({"action": "write_file", "target": output_doc, "status": "SUCCESS", "bytes_written": bytes_written})
         except PermissionError as e:

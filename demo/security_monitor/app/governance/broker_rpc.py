@@ -288,6 +288,23 @@ class BrokerRPCServer:
         rtype = _str_param(p, "resource_type", 64)
         target = _str_param(p, "resource_target")
         just = _str_param(p, "justification", 2000)
+
+        # Repeated request for already-granted path returns granted=True with same delivered path without error
+        if self.delivery is not None and rtype == "file_read":
+            rel = target.replace("\\", "/").lstrip("./")
+            if rel.startswith("granted/"):
+                rel = rel[len("granted/"):]
+            dst = self.delivery.granted / rel
+            if dst.is_file():
+                deliv = self.delivery.deliver(self.task_id, rtype, target, True)
+                return {
+                    "granted": True,
+                    "status": "Already granted",
+                    "resource_type": rtype,
+                    "resource_target": target,
+                    "delivery": deliv,
+                }
+
         res = self.broker.request_access(token, rtype, target, just)
         if self.delivery is not None:
             res["delivery"] = self.delivery.deliver(self.task_id, rtype, target, bool(res.get("granted")))

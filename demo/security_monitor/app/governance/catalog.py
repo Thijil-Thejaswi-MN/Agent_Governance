@@ -213,10 +213,6 @@ class BoundaryDerivationV1:
             if f_lower.startswith("output/") or base_lower in ["summary.txt", "summary.md", "output.txt", "research_notes.txt"]:
                 files_write.append(f_norm if "/" in f_norm else f"output/{basename}")
                 files_write.append(basename)
-            elif f_lower.startswith("reference/") or f_lower.startswith("granted/"):
-                # Reference files are out-of-boundary targets requiring dynamic expansion;
-                # granted files are delivered post-approval. Never include in initial files_read.
-                continue
             else:
                 # Explicit input file mentioned in user request
                 if "/" in f_norm:

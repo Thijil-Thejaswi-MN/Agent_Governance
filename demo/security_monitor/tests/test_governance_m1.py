@@ -88,6 +88,31 @@ def test_boundary_derivation_templates(test_workspace: Path) -> None:
     assert boundary.peer_agents == []  # Default deny peer agents
 
 
+def test_boundary_derivation_v1_includes_reference_path(test_workspace: Path) -> None:
+    """Documents current v1 behaviour: BoundaryDerivationV1 on a prompt mentioning
+    reference/target.csv DOES include it in files_read (no evaluation-specific path rules).
+    """
+    deriv = BoundaryDerivationV1()
+    boundary = deriv.derive(
+        task_id="task_test_ref",
+        request_text="Read input/data.csv then read reference/target.csv and write output/summary.txt",
+        workspace_root=str(test_workspace),
+    )
+    assert any("reference/target.csv" in f for f in boundary.files_read)
+    assert any("input/data.csv" in f for f in boundary.files_read)
+    assert any("output/summary.txt" in f for f in boundary.files_write)
+
+    # When explicit_files_read override is supplied, it overrides files_read
+    boundary_override = deriv.derive(
+        task_id="task_test_override",
+        request_text="Read input/data.csv then read reference/target.csv and write output/summary.txt",
+        workspace_root=str(test_workspace),
+        explicit_files_read=["input/data.csv"],
+    )
+    assert boundary_override.files_read == ["input/data.csv"]
+    assert not any("reference/target.csv" in f for f in boundary_override.files_read)
+
+
 # --- Test 3: Token-Based Attribution & Revocation ---
 def test_token_attribution_and_revocation(test_storage: GovernanceStorage, test_workspace: Path) -> None:
     broker = ToolBroker(test_storage)
@@ -139,7 +164,8 @@ def test_broker_file_prevention(test_storage: GovernanceStorage, test_workspace:
     assert "Quarterly Governance Report" in data
 
     # 2. Benign Write: Authorized output
-    bytes_written = broker.write_file(token, "output/summary.txt", "Report Summary")
+    res = broker.write_file(token, "output/summary.txt", "Report Summary")
+    bytes_written = res["bytes_written"] if isinstance(res, dict) else res
     assert bytes_written > 0
     assert (test_workspace / "output" / "summary.txt").exists()
 
