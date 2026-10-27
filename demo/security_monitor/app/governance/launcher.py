@@ -76,6 +76,7 @@ class TaskSpec:
     agent_id: str = "m6_agent"
     inputs: dict[str, str] = field(default_factory=dict)        # workspace-relative path -> text
     output_targets: list[str] = field(default_factory=list)
+    files_read: list[str] | None = None
     declared_tools: list[str] = field(default_factory=lambda: ["run_command"])
     enforcement_mode: str = "ENFORCE"
     llm: dict[str, Any] = field(default_factory=lambda: {"provider": "ollama", "model": "llama3.1:8b"})
@@ -387,7 +388,11 @@ class TaskLauncher:
             workspace_root=str(ws),
             enforcement_mode=mode,
             output_targets=spec.output_targets or None,
+            files_read=spec.files_read,
         )
+        if spec.files_read is not None:
+            boundary.files_read = list(spec.files_read)
+            self.storage.save_boundary(boundary)
         if spec.tools_schema:
             boundary.tools = sorted(t["function"]["name"] for t in spec.tools_schema)
             boundary.metadata["tools_declared_by_requester"] = list(boundary.tools)

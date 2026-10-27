@@ -166,6 +166,7 @@ class BoundaryDerivationV1:
         workspace_root: str,
         enforcement_mode: EnforcementMode = EnforcementMode.ENFORCE,
         output_targets: list[str] | None = None,
+        explicit_files_read: list[str] | None = None,
     ) -> TaskBoundary:
         """
         Derives an initial task boundary from user request text using rule-based templates.
@@ -212,6 +213,10 @@ class BoundaryDerivationV1:
             if f_lower.startswith("output/") or base_lower in ["summary.txt", "summary.md", "output.txt", "research_notes.txt"]:
                 files_write.append(f_norm if "/" in f_norm else f"output/{basename}")
                 files_write.append(basename)
+            elif f_lower.startswith("reference/") or f_lower.startswith("granted/"):
+                # Reference files are out-of-boundary targets requiring dynamic expansion;
+                # granted files are delivered post-approval. Never include in initial files_read.
+                continue
             else:
                 # Explicit input file mentioned in user request
                 if "/" in f_norm:
@@ -234,8 +239,10 @@ class BoundaryDerivationV1:
             files_read.extend(["src/**", "tests/**"])
             files_write.extend(["src/**", "tests/**"])
 
-        # Fallbacks if regex didn't catch explicit names
-        if not files_read:
+        # Override or fallback for files_read
+        if explicit_files_read is not None:
+            files_read = list(explicit_files_read)
+        elif not files_read:
             files_read = ["input/*"]
         if not files_write:
             files_write = ["output/summary.txt"]

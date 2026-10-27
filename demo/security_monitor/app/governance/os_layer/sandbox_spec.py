@@ -27,6 +27,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -112,6 +113,14 @@ def compile_landlock_rules(
         add(p, ["read_file", "write_file"], optional=not os.path.exists(p))
     for p in extra_ro_paths or []:
         add(p, RO_DIR if os.path.isdir(p) else RO_FILE, why="extra_ro")
+
+    # Interpreter and runtime virtualenv (if outside /usr system paths)
+    interp = os.path.realpath(sys.executable)
+    if not any(interp.startswith(p) for p in SYSTEM_RX_PATHS):
+        add(interp, RX if os.path.isdir(interp) else ["execute", "read_file"], why="runtime_interpreter")
+        venv_prefix = getattr(sys, "base_prefix", None) or getattr(sys, "prefix", None)
+        if venv_prefix and venv_prefix != "/usr" and os.path.exists(venv_prefix):
+            add(venv_prefix, RO_DIR, why="runtime_venv")
 
     tmp_dir = root / "tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)

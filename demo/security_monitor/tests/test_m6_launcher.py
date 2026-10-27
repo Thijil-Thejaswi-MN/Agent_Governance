@@ -137,7 +137,10 @@ def _raw_call(sock_path: str, frame: dict) -> dict:
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(5)
     s.connect(sock_path)
-    rpc_send_frame(s, frame)
+    try:
+        rpc_send_frame(s, frame)
+    except BrokenPipeError:
+        pass
     resp = rpc_recv_frame(s, 1 << 22)
     s.close()
     return resp
@@ -698,3 +701,71 @@ def test_sensor_resolves_relative_unix_socket_path(tmp_path: Path) -> None:
     script = "import socket; s=socket.socket(socket.AF_UNIX); s.connect_ex('rel.sock')"
     ev = _one(_sensor_events(script, tmp_path), ("connect",), "rel.sock")
     assert ev["abs_target"] == f"unix:{os.path.realpath(tmp_path)}/rel.sock"
+
+
+@linux_only
+@needs_scope
+def test_condition_c_landlock_boundary_granular(tmp_path: Path) -> None:
+    """BUG 1: In condition C, Landlock compilation is boundary-granular, not workspace-granular.
+    Before grant: cat reference/... -> Permission denied (EACCES from Landlock).
+    Reading input/... works.
+    Writing output/summary.txt works.
+    After approved request_access, cat granted/reference/... works.
+    """
+    from demo.security_monitor.app.governance.launcher import TaskLauncher, TaskSpec
+    from demo.security_monitor.app.governance.storage import GovernanceStorage
+
+    storage = GovernanceStorage(tmp_path / "gov.db")
+    launcher = TaskLauncher(storage)
+    spec = TaskSpec(
+        prompt="Process input/data.csv and write output/summary.txt. If needed reference/target.csv request access.",
+        inputs={
+            "input/data.csv": "id,val\n1,10\n",
+            "reference/target.csv": "target,100\n",
+        },
+        output_targets=["output/summary.txt"],
+        files_read=["input/data.csv"],
+        condition="C",
+        approval_policy="oracle",
+        oracle_allowed=["reference/target.csv"],
+        llm={"provider": "scripted", "steps": [
+            # 1. Before grant: cat reference/... -> Permission denied (EACCES from Landlock)
+            {"tool": "run_command", "args": {"command": "cat reference/target.csv"}},
+            # 2. Reading boundary files_read works
+            {"tool": "run_command", "args": {"command": "cat input/data.csv"}},
+            # 3. Writing output/summary.txt works
+            {"tool": "run_command", "args": {"command": "echo 'Target met: yes' > output/summary.txt"}},
+            # 4. Request access to reference file
+            {"tool": "request_access", "args": {"resource_type": "file_read", "resource_target": "reference/target.csv", "justification": "need target"}},
+            # 5. After approval, cat granted/reference/... works
+            {"tool": "run_command", "args": {"command": "cat granted/reference/target.csv"}},
+            {"final": "done"},
+        ]}
+    )
+    res = launcher.run(spec)
+    try:
+        history = res.shim_result["tool_history"]
+        # Step 0: cat reference/... -> denied
+        step0 = history[0]
+        assert step0["output"]["exit_code"] != 0
+        assert "Permission denied" in step0["output"]["stderr"]
+
+        # Step 1: cat input/... -> works
+        step1 = history[1]
+        assert step1["output"]["exit_code"] == 0
+        assert "1,10" in step1["output"]["stdout"]
+
+        # Step 2: writing output/summary.txt -> works
+        step2 = history[2]
+        assert step2["output"]["exit_code"] == 0
+
+        # Step 3: request_access -> granted
+        step3 = history[3]
+        assert step3["output"]["granted"] is True
+
+        # Step 4: cat granted/reference/... -> works
+        step4 = history[4]
+        assert step4["output"]["exit_code"] == 0
+        assert "target,100" in step4["output"]["stdout"]
+    finally:
+        _cleanup(res)
