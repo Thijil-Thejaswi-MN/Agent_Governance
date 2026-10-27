@@ -1,22 +1,24 @@
 """Governance Dashboard and Operations REST API (F12).
 
 Provides live task monitoring, boundary inspection, agent inventory querying,
-compliance summaries, and expansion decision endpoints.
+compliance summaries, expansion decision endpoints, and receipt verification.
 All data is derived from real stored records in governance.db.
 """
 from __future__ import annotations
 
+import json
+import os
+from pathlib import Path
 from typing import Any
-from fastapi import APIRouter, HTTPException, Query
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from .models import EnforcementMode, TaskLifecycle, TaskBoundary, TaskRecord
-from .storage import GovernanceStorage
-from pathlib import Path
-import os
+from .expansion import ExpansionService
 from .intake import TaskIntakeService
 from .inventory import AgentInventoryService
-from .expansion import ExpansionService
+from .models import EnforcementMode, TaskBoundary, TaskLifecycle, TaskRecord
+from .storage import GovernanceStorage
 
 governance_router = APIRouter()
 _default_storage = GovernanceStorage()
@@ -53,11 +55,55 @@ def get_expansion_service() -> ExpansionService:
     return _default_expansion
 
 
+def verify_operator_token(
+    authorization: str | None = Header(None),
+    x_operator_token: str | None = Header(None),
+) -> str:
+    """Verifies operator authorization token for high-privilege operations.
+
+    Checked on POST /expansions/{id}/approve, /deny, and /tasks/{id}/grant.
+    Refuses with 403 if GOVERNANCE_OPERATOR_TOKEN is unset in environment.
+    Refuses with 401 if the supplied token does not match.
+    """
+    expected = os.getenv("GOVERNANCE_OPERATOR_TOKEN")
+    if not expected:
+        raise HTTPException(
+            status_code=403,
+            detail="Operator token is not configured on the server. Set GOVERNANCE_OPERATOR_TOKEN environment variable to enable operator decisions.",
+        )
+
+    token = None
+    if authorization:
+        parts = authorization.split()
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            token = parts[1]
+        else:
+            token = authorization
+    elif x_operator_token:
+        token = x_operator_token
+
+    if not token or token != expected:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or missing operator token.",
+        )
+    return token
+
+
 class SubmitTaskRequest(BaseModel):
     request_text: str
     agent_id: str
     workspace_root: str = "demo/data/demo_workspace"
     enforcement_mode: EnforcementMode = EnforcementMode.ENFORCE
+
+
+@governance_router.get("/auth/status")
+async def get_auth_status() -> dict[str, Any]:
+    """Returns whether operator token authentication is configured."""
+    return {
+        "operator_token_configured": bool(os.getenv("GOVERNANCE_OPERATOR_TOKEN")),
+        "auth_header_supported": ["Authorization: Bearer <token>", "X-Operator-Token: <token>"],
+    }
 
 
 @governance_router.get("/tasks")
@@ -136,6 +182,76 @@ async def get_task_detail(task_id: str) -> dict[str, Any]:
 async def get_task_events(task_id: str) -> list[dict[str, Any]]:
     events = get_storage().get_events_for_task(task_id)
     return [e.model_dump() for e in events]
+
+
+@governance_router.get("/tasks/{task_id}/receipt")
+async def get_task_receipt(task_id: str) -> dict[str, Any]:
+    """Retrieves and cryptographically recomputes hash chain verification for a task receipt."""
+    storage = get_storage()
+    task = storage.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    candidate_paths = [
+        Path.home() / "agent_workspaces" / "receipts" / f"{task_id}.json",
+        Path("/home/thiji/agent_workspaces/receipts") / f"{task_id}.json",
+        Path(__file__).resolve().parents[3] / "data" / "evaluation_v3" / "checkpoint1" / "receipts" / f"{task_id}.json",
+    ]
+
+    receipt_data = None
+    receipt_file = None
+    for cp in candidate_paths:
+        if cp.is_file():
+            try:
+                receipt_data = json.loads(cp.read_text(encoding="utf-8"))
+                receipt_file = str(cp)
+                break
+            except Exception:
+                pass
+
+    if receipt_data is None:
+        boundary = storage.get_boundary(task_id)
+        if boundary:
+            from .receipt import build_receipt
+            receipt_data = build_receipt(
+                task=task,
+                initial_boundary=boundary,
+                requester=task.agent_id,
+                storage=storage,
+                os_records=[],
+                deliveries=[],
+                sensor_status={"status": "synthetic_view"},
+                isolation={},
+                freeze_events=[],
+                termination={"status": task.status.value},
+                wall_time_s=0.0,
+                os_identity=None,
+            )
+
+    if receipt_data is None:
+        raise HTTPException(status_code=404, detail="Receipt not found for task")
+
+    from .receipt import verify_chain
+    events = receipt_data.get("events", [])
+    ok, final, msg = verify_chain(events)
+    verified = ok
+    verification_msg = msg
+    if ok:
+        hc = receipt_data.get("hash_chain", {})
+        if hc.get("count") != len(events):
+            verified = False
+            verification_msg = f"count mismatch: chain says {hc.get('count')}, list has {len(events)}"
+        elif hc.get("final_hash") != final:
+            verified = False
+            verification_msg = "final_hash mismatch"
+
+    return {
+        "task_id": task_id,
+        "receipt": receipt_data,
+        "verified": verified,
+        "verification_message": verification_msg,
+        "receipt_file": receipt_file,
+    }
 
 
 @governance_router.get("/inventory")
@@ -223,7 +339,11 @@ async def request_expansion_and_wait(payload: ExpansionSubmission) -> dict[str, 
 
 
 @governance_router.post("/expansions/{request_id}/approve")
-async def approve_expansion(request_id: str, payload: ExpansionDecision) -> dict[str, Any]:
+async def approve_expansion(
+    request_id: str,
+    payload: ExpansionDecision,
+    _token: str = Depends(verify_operator_token),
+) -> dict[str, Any]:
     try:
         new_boundary = get_expansion_service().approve_request(
             request_id=request_id,
@@ -243,7 +363,11 @@ async def approve_expansion(request_id: str, payload: ExpansionDecision) -> dict
 
 
 @governance_router.post("/expansions/{request_id}/deny")
-async def deny_expansion(request_id: str, payload: ExpansionDecision) -> dict[str, Any]:
+async def deny_expansion(
+    request_id: str,
+    payload: ExpansionDecision,
+    _token: str = Depends(verify_operator_token),
+) -> dict[str, Any]:
     try:
         get_expansion_service().deny_request(
             request_id=request_id,
@@ -267,7 +391,11 @@ class ProactiveGrantRequest(BaseModel):
 
 
 @governance_router.post("/tasks/{task_id}/grant")
-async def grant_resource_proactively(task_id: str, payload: ProactiveGrantRequest) -> dict[str, Any]:
+async def grant_resource_proactively(
+    task_id: str,
+    payload: ProactiveGrantRequest,
+    _token: str = Depends(verify_operator_token),
+) -> dict[str, Any]:
     """Allows a human operator to proactively grant a resource (including HIGH risk) from the dashboard."""
     try:
         new_boundary = get_expansion_service().grant_resource_proactively(
@@ -286,4 +414,3 @@ async def grant_resource_proactively(task_id: str, payload: ProactiveGrantReques
         raise HTTPException(status_code=403, detail=str(pe))
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
-

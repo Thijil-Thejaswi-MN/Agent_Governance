@@ -258,6 +258,14 @@ python scripts/verify_receipt.py ~/agent_workspaces/receipts/<task_id>.json
 
 The launcher prints a JSON summary that includes `task_id` and the receipt path. By default, workspaces and receipts go under `~/agent_workspaces`; to change that, use `--workspace-base` and `--receipts-dir`.
 
+### Governance Console v2 & Operator Authentication
+
+The rebuilt Governance Console (`demo/security_monitor/app/dashboard_v2`) provides real-time task inspection, boundary visualization, event timelines, and expansion approvals. The legacy dashboard remains reachable at `/legacy-dashboard`.
+
+- **Operator Token**: Mutating decision operations (`POST /api/governance/expansions/{id}/approve`, `/deny`, and `/tasks/{id}/grant`) require an operator authorization token supplied via `Authorization: Bearer <token>` or `X-Operator-Token: <token>`. Configure this by setting the `GOVERNANCE_OPERATOR_TOKEN` environment variable. If unset, mutating endpoints refuse with HTTP 403.
+- **Security Scope Note**: Single-token bearer authentication is a minimal step intended for controlled and local deployments. Production deployments with Enterprise SSO, role-based access control (RBAC), and mutual TLS represent planned future work.
+- **Third-Party UI Components**: React Bits components (source included under `app/dashboard_v2/src/components/reactbits/`) are distributed under the MIT + Commons Clause license.
+
 ## Repository map
 
 ```text

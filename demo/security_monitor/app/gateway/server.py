@@ -2602,11 +2602,15 @@ def create_app(
 
     # --- Mount Static Dashboard Frontend ---
     dashboard_dir = Path(__file__).resolve().parent.parent / "dashboard"
-    if dashboard_dir.is_dir():
-        app.mount("/static/dashboard", StaticFiles(directory=str(dashboard_dir)), name="dashboard_static")
+    dashboard_v2_dist = Path(__file__).resolve().parent.parent / "dashboard_v2" / "dist"
 
-        @app.get("/dashboard", response_class=FileResponse)
-        async def serve_dashboard():
+    if dashboard_dir.is_dir():
+        # Keep old dashboard reachable at /legacy-dashboard (do not delete it)
+        app.mount("/static/dashboard", StaticFiles(directory=str(dashboard_dir)), name="dashboard_static")
+        app.mount("/static/legacy_dashboard", StaticFiles(directory=str(dashboard_dir)), name="legacy_dashboard_static")
+
+        @app.get("/legacy-dashboard", response_class=FileResponse)
+        async def serve_legacy_dashboard():
             return FileResponse(
                 str(dashboard_dir / "index.html"),
                 headers={
@@ -2616,9 +2620,42 @@ def create_app(
                 },
             )
 
-        @app.get("/", response_class=RedirectResponse)
-        async def root_redirect():
-            return RedirectResponse(url="/dashboard")
+    # Mount v2 built static files and SPA fallback
+    if dashboard_v2_dist.is_dir():
+        if (dashboard_v2_dist / "assets").is_dir():
+            app.mount("/dashboard/assets", StaticFiles(directory=str(dashboard_v2_dist / "assets")), name="dashboard_v2_assets")
+            app.mount("/assets", StaticFiles(directory=str(dashboard_v2_dist / "assets")), name="v2_assets_root")
+
+        @app.get("/dashboard", response_class=FileResponse)
+        @app.get("/dashboard/{full_path:path}", response_class=FileResponse)
+        async def serve_dashboard_v2(full_path: str = ""):
+            if full_path:
+                target = dashboard_v2_dist / full_path
+                if target.is_file():
+                    return FileResponse(str(target))
+            return FileResponse(
+                str(dashboard_v2_dist / "index.html"),
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                },
+            )
+    elif dashboard_dir.is_dir():
+        @app.get("/dashboard", response_class=FileResponse)
+        async def serve_dashboard_fallback():
+            return FileResponse(
+                str(dashboard_dir / "index.html"),
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                },
+            )
+
+    @app.get("/", response_class=RedirectResponse)
+    async def root_redirect():
+        return RedirectResponse(url="/dashboard")
 
     # Include Governance Layer API
     from ..governance.api import governance_router
@@ -2628,3 +2665,9 @@ def create_app(
 
 
 app = create_app()
+
+if __name__ == "__main__":
+    import uvicorn
+    host = os.getenv("GATEWAY_HOST", "127.0.0.1")
+    port = int(os.getenv("GATEWAY_PORT", "8000"))
+    uvicorn.run("demo.security_monitor.app.gateway.server:app", host=host, port=port, reload=False)

@@ -1,0 +1,123 @@
+export type TaskLifecycle = 'CREATED' | 'RUNNING' | 'ACTIVE' | 'COMPLETED' | 'FAILED' | 'TERMINATED' | 'FROZEN';
+export type EnforcementMode = 'OBSERVE' | 'ENFORCE';
+export type EventVerdict = 'INSIDE' | 'OUTSIDE' | 'AMBIGUOUS' | 'UNATTRIBUTED';
+export type RiskTier = 'LOW' | 'MEDIUM' | 'HIGH';
+export type ExpansionStatus = 'PENDING' | 'APPROVED' | 'DENIED' | 'AUTO_APPROVED';
+
+export interface TaskRecord {
+  task_id: string;
+  request_text: string;
+  request_hash?: string;
+  agent_id: string;
+  workspace_root: string;
+  status: TaskLifecycle;
+  created_at: string;
+  started_at?: string;
+  completed_at?: string;
+  total_actions: number;
+  actions_inside: number;
+  actions_outside: number;
+  prevented_count: number;
+  compliance_pct: number;
+}
+
+export interface TaskBoundary {
+  task_id: string;
+  workspace_root: string;
+  files_read: string[];
+  files_write: string[];
+  tools: string[];
+  network_hosts?: string[];
+  peer_agents?: string[];
+  version?: number;
+}
+
+export interface TaskEvent {
+  event_id?: string;
+  task_id: string;
+  timestamp: string;
+  source: string;
+  kind: string;
+  target?: string;
+  verdict: EventVerdict;
+  risk_tier?: RiskTier;
+  action_taken?: string;
+  prevented: boolean;
+  prevented_by?: string;
+  rule_matched?: string;
+  channel?: string;
+  observed_by?: string[];
+  details?: Record<string, any>;
+  syscall?: string;
+  seq?: number;
+}
+
+export interface ExpansionItem {
+  request_id: string;
+  task_id: string;
+  agent_id: string;
+  resource_type: string;
+  resource_target: string;
+  baseline_risk_tier: RiskTier;
+  effective_risk_tier: RiskTier;
+  justification: string;
+  status: ExpansionStatus;
+  created_at: string;
+  decided_at?: string;
+  decided_by?: string;
+  denial_reason?: string;
+  provenance_escalation?: boolean;
+}
+
+export interface TaskReceipt {
+  task_id: string;
+  version?: string;
+  events?: TaskEvent[];
+  hash_chain?: {
+    count: number;
+    final_hash: string;
+  };
+  event_counts?: {
+    by_verdict?: Record<string, number>;
+  };
+  [key: string]: any;
+}
+
+export interface ReceiptResponse {
+  task_id: string;
+  receipt: TaskReceipt;
+  verified: boolean;
+  verification_message: string;
+  receipt_file?: string;
+}
+
+export interface ResultsSummary {
+  generated_at: string;
+  evaluation_label: string;
+  model: string;
+  harm_injected: Record<string, { exposed: number; total: number; rate: number; ratio: string }>;
+  shell_only_decoy_exposure: Record<string, { exposed: number; total: number; rate: number; ratio: string }>;
+  shell_attacks_succeeded: Record<string, { succeeded: number; total: number; ratio: string }>;
+  utility_anticipated_correct: Record<string, { correct: number; total: number; rate: number; ratio: string }>;
+  expansion_chain_unanticipated_c: {
+    denied_before_request: number;
+    requested: number;
+    granted: number;
+    delivered_read_ok: number;
+    total: number;
+    chain: number[];
+    chain_str: string;
+    steps?: Array<{ name: string; count: number; total: number }>;
+  };
+  timings_and_timeouts: Record<string, { mean_s: number; median_s: number; total_trials: number; timeouts: number }>;
+  limitations: string[];
+}
+
+export interface AgentInventoryItem {
+  agent_id: string;
+  declared_role?: string;
+  status: 'GOVERNED' | 'SHADOW';
+  active_task_id?: string;
+  last_seen?: string;
+  reputation_score?: number;
+}
