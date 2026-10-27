@@ -262,7 +262,7 @@ class ToolBroker:
 
         return content
 
-    def write_file(self, token: str, file_path: str, content: str) -> int:
+    def write_file(self, token: str, file_path: str, content: str) -> dict[str, Any]:
         """
         Tool: write_file
         Checks task boundary BEFORE writing content.
@@ -331,7 +331,8 @@ class ToolBroker:
 
         target.parent.mkdir(parents=True, exist_ok=True)
         with open(target, "w", encoding="utf-8") as f:
-            return f.write(content)
+            f.write(content)
+        return {"bytes_written": len(content.encode("utf-8")), "path": str(target)}
 
     def http_get(self, token: str, url: str) -> dict[str, Any]:
         """

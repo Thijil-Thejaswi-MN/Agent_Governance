@@ -832,3 +832,38 @@ def test_condition_c_granted_file_read_and_duplicate_request(tmp_path: Path) -> 
         assert step3["output"]["delivery"]["delivered_path"] == "granted/reference/target.csv"
     finally:
         _cleanup(res)
+
+
+def test_write_file_result_shape_identical_a_and_c(tmp_path: Path) -> None:
+    """BUG 3: DirectClient (condition A) and ToolBroker (condition C)
+    return identical dict shapes: {"bytes_written": int, "path": str}.
+    """
+    from demo.security_monitor.app.governance.agent_shim import DirectClient, DirectIOClient
+    from demo.security_monitor.app.governance.broker import ToolBroker
+    from demo.security_monitor.app.governance.intake import TaskIntakeService
+    from demo.security_monitor.app.governance.storage import GovernanceStorage
+
+    ws_a = tmp_path / "ws_a"
+    (ws_a / "output").mkdir(parents=True)
+    direct_client = DirectClient(workspace=str(ws_a), command_timeout=10.0)
+    res_a = direct_client.write_file("output/summary.txt", "hello world")
+
+    ws_c = tmp_path / "ws_c"
+    (ws_c / "output").mkdir(parents=True)
+    storage = GovernanceStorage(tmp_path / "gov.db")
+    task, b = TaskIntakeService(storage).submit_task(
+        request_text="Write output/summary.txt",
+        agent_id="test_agent",
+        workspace_root=str(ws_c),
+        output_targets=["output/summary.txt"],
+    )
+    storage.save_token("tok_c", task.task_id, task.agent_id)
+    broker = ToolBroker(storage)
+    res_c = broker.write_file("tok_c", "output/summary.txt", "hello world")
+
+    assert isinstance(res_a, dict)
+    assert isinstance(res_c, dict)
+    assert set(res_a.keys()) == set(res_c.keys()) == {"bytes_written", "path"}
+    assert res_a["bytes_written"] == res_c["bytes_written"] == 11
+    assert res_a["path"].endswith("output/summary.txt")
+    assert res_c["path"].endswith("output/summary.txt")
