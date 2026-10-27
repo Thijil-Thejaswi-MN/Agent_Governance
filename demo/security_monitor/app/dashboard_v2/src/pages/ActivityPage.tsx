@@ -37,7 +37,7 @@ export const ActivityPage: React.FC = () => {
             }
           }
           const merged = Array.from(map.values());
-          // Ensure strictly newest first
+          // Ensure strictly newest order
           merged.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
           return merged;
         });

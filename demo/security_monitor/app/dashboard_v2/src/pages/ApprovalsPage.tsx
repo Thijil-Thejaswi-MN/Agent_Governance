@@ -231,7 +231,7 @@ export const ApprovalsPage: React.FC = () => {
                     </div>
                     <div className="text-slate-600 dark:text-slate-400 font-mono text-[11px]">
                       <span className="text-slate-400">Scope: </span>
-                      {e.single_use ? 'Single-use grant (revoked after first access)' : 'Expiring at task end'}
+                      {e.single_use ? 'Single-use grant (revoked after initial access)' : 'Expiring at task end'}
                     </div>
                   </div>
                 </div>

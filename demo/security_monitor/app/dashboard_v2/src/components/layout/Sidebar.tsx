@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import {
+  Play,
   LayoutDashboard,
   ListTodo,
   Bot,
@@ -28,6 +29,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onMobileClose,
 }) => {
   const navItems = [
+    { to: '/run', label: 'Run', icon: Play },
     { to: '/', label: 'Overview', icon: LayoutDashboard, exact: true },
     { to: '/tasks', label: 'Tasks', icon: ListTodo },
     { to: '/agents', label: 'Agents', icon: Bot },

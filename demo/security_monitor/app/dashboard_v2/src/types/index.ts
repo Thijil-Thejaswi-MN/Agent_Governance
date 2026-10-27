@@ -157,3 +157,64 @@ export interface SystemStatusResponse {
   sensor_mode: string;
   enforcing: boolean;
 }
+
+
+export interface TaskStep {
+  task_id: string;
+  step_number: number;
+  timestamp: string;
+  kind: string;
+  layer: string;
+  verdict: string;
+  summary: string;
+  detail: string;
+  source_label: string;
+}
+
+export interface RunPreset {
+  id: string;
+  name: string;
+  description: string;
+  prompt: string;
+  files: Record<string, string>;
+}
+
+export interface BoundaryPreviewResponse {
+  active_version: string;
+  boundary_v1: {
+    files_read: string[];
+    files_write: string[];
+    tools: string[];
+    hosts: string[];
+    peer_agents?: string[];
+  };
+  boundary_v2: {
+    files_read: string[];
+    files_write: string[];
+    tools: string[];
+    hosts: string[];
+    peer_agents?: string[];
+    requires_user_review?: boolean;
+  } | null;
+  explanation: string;
+}
+
+export interface RunOutputFile {
+  path: string;
+  name: string;
+  size: number;
+  content: string;
+  truncated: boolean;
+}
+
+export interface RunModelsResponse {
+  models: string[];
+  default: string;
+  scripted_available: boolean;
+}
+
+export interface ActiveRunInfo {
+  active: boolean;
+  task_id: string | null;
+  elapsed_seconds: number;
+}

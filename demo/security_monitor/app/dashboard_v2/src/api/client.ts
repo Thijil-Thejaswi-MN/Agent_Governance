@@ -6,7 +6,13 @@ import {
   ExpansionItem,
   ReceiptResponse,
   ResultsSummary,
-  AgentInventoryItem
+  AgentInventoryItem,
+  TaskStep,
+  RunPreset,
+  BoundaryPreviewResponse,
+  RunOutputFile,
+  RunModelsResponse,
+  ActiveRunInfo,
 } from '../types';
 
 const API_BASE = '/api/governance';
@@ -134,4 +140,29 @@ export const api = {
     } catch {}
     return fetch('./results_summary.json').then(r => r.json());
   },
+
+  // Run Execution
+  getRunPresets: () => request<RunPreset[]>(`${API_BASE}/run/presets`),
+  getRunModels: () => request<RunModelsResponse>(`${API_BASE}/run/models`),
+  getActiveRun: () => request<ActiveRunInfo>(`${API_BASE}/run/active`),
+  previewRun: (payload: { prompt: string; preset?: string; files?: Record<string, string> }) =>
+    request<BoundaryPreviewResponse>(`${API_BASE}/run/preview`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  startRun: (payload: { prompt: string; preset?: string; model?: string; files?: Record<string, string> }) =>
+    request<{ task_id: string; status: string; message: string }>(`${API_BASE}/run`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  stopRun: (taskId: string) =>
+    request<{ task_id: string; status: string; message: string }>(`${API_BASE}/run/${taskId}/stop`, {
+      method: 'POST',
+    }),
+  getRunSteps: (taskId: string, after: number = 0) =>
+    request<TaskStep[]>(`${API_BASE}/run/${taskId}/steps?after=${after}`),
+  getRunOutput: (taskId: string) =>
+    request<{ task_id: string; files: RunOutputFile[] }>(`${API_BASE}/run/${taskId}/output`),
+  getRunStreamUrl: (taskId: string) => `${API_BASE}/run/${taskId}/stream`,
+
 };

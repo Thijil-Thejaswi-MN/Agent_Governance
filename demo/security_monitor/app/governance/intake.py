@@ -37,12 +37,14 @@ class TaskIntakeService:
         enforcement_mode: EnforcementMode = EnforcementMode.ENFORCE,
         output_targets: list[str] | None = None,
         files_read: list[str] | None = None,
+        task_id: str | None = None,
     ) -> tuple[TaskRecord, TaskBoundary]:
         """
         Creates a new task record, derives its initial execution boundary contract,
         and persists them.
         """
-        task_id = f"task_{uuid.uuid4().hex[:12]}"
+        if not task_id:
+            task_id = f"task_{uuid.uuid4().hex[:12]}"
         req_hash = hashlib.sha256(request_text.encode("utf-8")).hexdigest()
         now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
 

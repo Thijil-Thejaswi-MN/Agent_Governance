@@ -14,8 +14,17 @@ from pathlib import Path
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+import asyncio
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+
+from .run_manager import (
+    PRESETS,
+    fetch_available_models,
+    get_run_manager,
+    preview_run_boundary,
+)
 
 from .expansion import ExpansionService
 from .intake import TaskIntakeService
@@ -763,3 +772,212 @@ async def grant_resource_proactively(
         raise HTTPException(status_code=403, detail=str(pe))
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
+
+
+# ---------------------------------------------------------------------------
+# Run Page Endpoints (Interactive UI Task Execution)
+# ---------------------------------------------------------------------------
+
+class RunPreviewRequest(BaseModel):
+    prompt: str
+    preset: str | None = None
+    files: dict[str, str] = Field(default_factory=dict)
+
+
+class RunStartRequest(BaseModel):
+    prompt: str
+    preset: str | None = None
+    model: str = "qwen2.5:7b"
+    files: dict[str, str] = Field(default_factory=dict)
+
+
+@governance_router.get("/run/models")
+async def get_run_models() -> dict[str, Any]:
+    """Lists available local models from Ollama."""
+    return fetch_available_models()
+
+
+@governance_router.get("/run/presets")
+async def get_run_presets() -> list[dict[str, Any]]:
+    """Returns task presets with prompt and synthetic input files."""
+    return [
+        {
+            "id": p["id"],
+            "name": p["name"],
+            "description": p["description"],
+            "prompt": p["prompt"],
+            "files": p["files"],
+        }
+        for p in PRESETS.values()
+    ]
+
+
+@governance_router.get("/run/active")
+async def get_active_run_status() -> dict[str, Any]:
+    """Returns active task status."""
+    return get_run_manager().get_active_info()
+
+
+@governance_router.post("/run/preview")
+async def preview_task_run(req: RunPreviewRequest) -> dict[str, Any]:
+    """Derives boundary from prompt without starting task execution."""
+    try:
+        return preview_run_boundary(
+            prompt=req.prompt,
+            preset_id=req.preset,
+            files=req.files,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Preview derivation failed: {e}")
+
+
+@governance_router.post("/run")
+async def start_governed_task_run(
+    req: RunStartRequest,
+    _token: str = Depends(verify_operator_token),
+) -> dict[str, Any]:
+    """Starts a governed agent task inside isolated Condition C evaluation sandbox.
+
+    Requires operator token. Rejects concurrent runs with 409.
+    Validates input files (under input/, <= 50 KB, text-only).
+    """
+    storage = get_storage()
+    manager = get_run_manager()
+
+    try:
+        task_id = manager.start_run(
+            prompt=req.prompt,
+            storage=storage,
+            preset_id=req.preset,
+            model=req.model,
+            files=req.files,
+        )
+        return {
+            "task_id": task_id,
+            "status": "preparing",
+            "message": "Task execution initiated under Condition C sandbox.",
+        }
+    except ValueError as ve:
+        raise HTTPException(status_code=422, detail=str(ve))
+    except RuntimeError as re:
+        raise HTTPException(status_code=409, detail=str(re))
+
+
+@governance_router.post("/run/{task_id}/stop")
+async def stop_governed_task_run(
+    task_id: str,
+    _token: str = Depends(verify_operator_token),
+) -> dict[str, Any]:
+    """Terminates active task cgroup and records termination reason in receipt.
+
+    Requires operator token.
+    """
+    manager = get_run_manager()
+    try:
+        manager.stop_run(task_id)
+        return {
+            "task_id": task_id,
+            "status": "stopped",
+            "message": "Task cgroup termination initiated by operator.",
+        }
+    except RuntimeError as re:
+        raise HTTPException(status_code=400, detail=str(re))
+
+
+@governance_router.get("/run/{task_id}/stream")
+async def stream_task_steps(task_id: str, request: Request) -> StreamingResponse:
+    """Server-Sent Events stream: replays stored steps, then pushes live updates."""
+    storage = get_storage()
+    queue = storage.subscribe_task_steps(task_id)
+
+    async def event_generator():
+        try:
+            stored = storage.get_task_steps(task_id, after_step=0)
+            last_step = 0
+            for s in stored:
+                last_step = max(last_step, s.get("step_number", 0))
+                payload = json.dumps(s)
+                yield f"data: {payload}\n\n"
+
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    step = await asyncio.wait_for(queue.get(), timeout=1.0)
+                    step_num = step.get("step_number", 0)
+                    if step_num > last_step:
+                        last_step = step_num
+                        payload = json.dumps(step)
+                        yield f"data: {payload}\n\n"
+
+                    if step.get("kind") in ("receipt", "finished", "termination") and queue.empty():
+                        break
+                except asyncio.TimeoutError:
+                    t = storage.get_task(task_id)
+                    if t and t.status in (TaskLifecycle.COMPLETED, TaskLifecycle.TERMINATED, TaskLifecycle.FAILED):
+                        remaining = storage.get_task_steps(task_id, after_step=last_step)
+                        for s in remaining:
+                            last_step = max(last_step, s.get("step_number", 0))
+                            payload = json.dumps(s)
+                            yield f"data: {payload}\n\n"
+                        break
+                    yield ": keep-alive\n\n"
+        finally:
+            storage.unsubscribe_task_steps(task_id, queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@governance_router.get("/run/{task_id}/steps")
+async def get_task_steps_poll(task_id: str, after: int = 0) -> list[dict[str, Any]]:
+    """Polling fallback for live task steps."""
+    storage = get_storage()
+    return storage.get_task_steps(task_id, after_step=after)
+
+
+@governance_router.get("/run/{task_id}/output")
+async def get_task_output_files(task_id: str) -> dict[str, Any]:
+    """Reads output files produced in workspace output/ directory."""
+    storage = get_storage()
+    task = storage.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    ws_root = task.workspace_root
+    out_dir = Path(ws_root) / "output"
+    files = []
+    if out_dir.is_dir():
+        for p in sorted(out_dir.glob("**/*")):
+            if p.is_file():
+                try:
+                    rel = str(p.relative_to(Path(ws_root))).replace("\\", "/")
+                except ValueError:
+                    rel = p.name
+                size = p.stat().st_size
+                try:
+                    raw = p.read_bytes()
+                    content = raw[:20000].decode("utf-8", "replace")
+                    truncated = len(raw) > 20000
+                except Exception:
+                    content = "[Binary or unreadable content]"
+                    truncated = False
+                files.append({
+                    "path": rel,
+                    "name": p.name,
+                    "size": size,
+                    "content": content,
+                    "truncated": truncated,
+                })
+
+    return {
+        "task_id": task_id,
+        "files": files,
+    }

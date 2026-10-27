@@ -5,6 +5,7 @@ import { AuthProvider } from './context/AuthContext';
 import { AppLayout } from './components/layout/AppLayout';
 
 // Route-level code splitting via React.lazy
+const RunPage = React.lazy(() => import('./pages/RunPage').then(m => ({ default: m.RunPage })));
 const OverviewPage = React.lazy(() => import('./pages/OverviewPage').then(m => ({ default: m.OverviewPage })));
 const TasksPage = React.lazy(() => import('./pages/TasksPage').then(m => ({ default: m.TasksPage })));
 const TaskDetailPage = React.lazy(() => import('./pages/TaskDetailPage').then(m => ({ default: m.TaskDetailPage })));
@@ -30,6 +31,7 @@ export const App: React.FC = () => {
         <BrowserRouter basename="/dashboard">
           <Routes>
             <Route element={<AppLayout />}>
+              <Route path="run" element={<Suspense fallback={<PageLoader />}><RunPage /></Suspense>} />
               <Route index element={<Suspense fallback={<PageLoader />}><OverviewPage /></Suspense>} />
               <Route path="tasks" element={<Suspense fallback={<PageLoader />}><TasksPage /></Suspense>} />
               <Route path="tasks/:taskId" element={<Suspense fallback={<PageLoader />}><TaskDetailPage /></Suspense>} />

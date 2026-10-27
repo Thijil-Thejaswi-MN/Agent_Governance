@@ -48,7 +48,7 @@ from .models import EnforcementMode, ExpansionStatus, TaskLifecycle
 from .os_layer import cgroup_ctl
 from .os_layer.sandbox_spec import BROKER_SOCKET_NAME, compile_landlock_rules, write_rules_file
 from .proxy import EgressProxyServer
-from .receipt import build_receipt
+from .receipt import build_receipt, verify_chain
 from .storage import GovernanceStorage
 
 HERE = Path(__file__).resolve().parent
@@ -72,6 +72,7 @@ def default_workspace_base() -> Path:
 @dataclass
 class TaskSpec:
     prompt: str
+    task_id: str | None = None
     requester: str = "local_user"
     agent_id: str = "m6_agent"
     inputs: dict[str, str] = field(default_factory=dict)        # workspace-relative path -> text
@@ -393,9 +394,33 @@ class TaskLauncher:
     def _kill(self, reason: str) -> None:
         cg = self.live.get("cgroup")
         method = cgroup_ctl.kill_all(cg, self.live.get("unit")) if cg else "no_cgroup"
+        proc = self.live.get("proc")
+        if proc and proc.poll() is None:
+            try:
+                proc.kill()
+            except OSError:
+                pass
         if not self.termination:
             self.termination = {"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                                 "reason": reason, "method": method}
+
+    def stop(self, reason: str = "operator_stop") -> None:
+        """Terminates the task cgroup and marks the termination reason."""
+        self._kill(reason)
+        task_id = self.live.get("task_id")
+        if task_id:
+            try:
+                self.storage.record_task_step(
+                    task_id,
+                    kind="termination",
+                    layer="cgroup",
+                    verdict="TERMINATE",
+                    summary=f"Task execution halted ({reason})",
+                    detail=f"Cgroup termination initiated by operator with reason: {reason}",
+                    source_label="enforced",
+                )
+            except Exception:
+                pass
 
     # --- main ---
     def run(self, spec: TaskSpec) -> LaunchResult:
@@ -417,6 +442,7 @@ class TaskLauncher:
             enforcement_mode=mode,
             output_targets=spec.output_targets or None,
             files_read=spec.files_read,
+            task_id=spec.task_id,
         )
         if spec.files_read is not None:
             boundary.files_read = list(spec.files_read)
@@ -431,6 +457,16 @@ class TaskLauncher:
             self.storage.save_boundary(boundary)
         initial_boundary = boundary.model_copy(deep=True)
         task_id = task.task_id
+        self.live["task_id"] = task_id
+        self.storage.record_task_step(
+            task_id,
+            kind="phase",
+            layer="intake",
+            verdict="ALLOW",
+            summary=f"Boundary derived from request ({len(boundary.files_read)} read, {len(boundary.files_write)} write targets)",
+            detail=f"Files read: {boundary.files_read}\nFiles write: {boundary.files_write}\nTools: {boundary.tools}\nHosts: {boundary.network}",
+            source_label="enforced",
+        )
 
         # 2. Workspace (+ control dir the sandbox cannot see)
         for d in ("input", "output", "scratch", "granted", "tmp", "runtime"):
@@ -498,6 +534,18 @@ class TaskLauncher:
 
         # Sandbox spec compiled from the boundary
         spec_rules = compile_landlock_rules(boundary, ws, proxy_for_landlock, runtime_dir=ws / "runtime")
+        rules_list = spec_rules.get("rules", []) if isinstance(spec_rules, dict) else getattr(spec_rules, "rules", [])
+        net_restr = spec_rules.get("net_restricted") if isinstance(spec_rules, dict) else getattr(spec_rules, "net_restricted", None)
+        scoped = spec_rules.get("scoped") if isinstance(spec_rules, dict) else getattr(spec_rules, "scoped", None)
+        self.storage.record_task_step(
+            task_id,
+            kind="phase",
+            layer="os_layer",
+            verdict="ALLOW",
+            summary=f"Compiled Landlock sandbox rules ({cond or 'C'} condition)",
+            detail=f"Rules compiled: {len(rules_list)}, net_restricted={net_restr}, scoped={scoped}",
+            source_label="enforced",
+        )
         if self.test_hooks.get("rules_override") == "allow_workspace_read":
             # TEST ONLY: simulate a mis-compiled ruleset to exercise the unprevented-OUTSIDE freeze.
             spec_rules["rules"].append({"path": str(ws.resolve()), "access": ["read_file", "read_dir"]})
@@ -591,6 +639,7 @@ class TaskLauncher:
         if status_w != -1:
             os.close(status_w)
         self.live["scope_pid"] = proc.pid
+        self.live["proc"] = proc
 
         # Correlator + readers
         current_boundary = {"b": boundary}
@@ -656,6 +705,15 @@ class TaskLauncher:
             self.storage.save_task_cgroup(task_id, cg, unit, proc.pid)
             self.live.update({"cgroup": cg, "sensor_pid": correlator.sensor_pid, "root_pid": correlator.root_pid})
             rpc.expected_cgroup = cg
+            self.storage.record_task_step(
+                task_id,
+                kind="phase",
+                layer="launcher",
+                verdict="ALLOW",
+                summary=f"Agent process launched inside cgroup scope {unit}",
+                detail=f"cgroup: {cg}\nScope PID: {proc.pid}",
+                source_label="enforced",
+            )
 
             # Release the gate: the agent chain may now exec.
             os.write(gate_w, b"1")
@@ -817,6 +875,100 @@ class TaskLauncher:
         self.receipts_dir.mkdir(parents=True, exist_ok=True)
         receipt_path = self.receipts_dir / f"{task_id}.json"
         receipt_path.write_text(json.dumps(receipt, indent=1, default=str), encoding="utf-8")
+
+        # Record sensor block steps
+        for rec in correlator.records:
+            if rec.get("verdict") in ("OUTSIDE", "AMBIGUOUS") or rec.get("prevented"):
+                layer_lbl = rec.get("prevented_by") or "landlock"
+                if layer_lbl not in ("landlock", "seccomp"):
+                    layer_lbl = "landlock"
+                self.storage.record_task_step(
+                    task_id,
+                    kind="sensor",
+                    layer=layer_lbl,
+                    verdict="BLOCK_ACTION",
+                    summary=f"{layer_lbl.capitalize()} blocked {rec.get('kind')} on {rec.get('target')}",
+                    detail=f"Target: {rec.get('target')}\nSyscall: {rec.get('syscall')}\nRule: {rec.get('rule_matched')}",
+                    source_label="enforced",
+                )
+
+        # Record command output reported by shim
+        if shim_result and "tool_history" in shim_result:
+            for th in shim_result["tool_history"]:
+                if th.get("tool") == "run_command":
+                    r = th.get("result", {})
+                    out_text = (r.get("stdout", "") + "\n" + r.get("stderr", "")).strip()
+                    cmd_name = th.get("args", {}).get("command", "")
+                    self.storage.record_task_step(
+                        task_id,
+                        kind="tool",
+                        layer="broker",
+                        verdict="ALLOW" if r.get("exit_code") == 0 else "BLOCK_ACTION",
+                        summary=f"Command output reported: {cmd_name[:60]}",
+                        detail=out_text[:2000] if out_text else f"exit_code={r.get('exit_code')}",
+                        source_label="reported by the in-sandbox shim",
+                    )
+
+        # Record output files written
+        out_dir = ws / "output"
+        if out_dir.exists():
+            for ofile in sorted(out_dir.glob("*")):
+                if ofile.is_file():
+                    try:
+                        content_txt = ofile.read_text(encoding="utf-8", errors="replace")
+                    except Exception:
+                        content_txt = f"<binary {ofile.stat().st_size} bytes>"
+                    self.storage.record_task_step(
+                        task_id,
+                        kind="output",
+                        layer="broker",
+                        verdict="ALLOW",
+                        summary=f"Output file written: output/{ofile.name}",
+                        detail=content_txt[:2000],
+                        source_label="enforced",
+                    )
+
+        # Record termination step
+        term_reason = self.termination.get("reason", "agent_exited")
+        self.storage.record_task_step(
+            task_id,
+            kind="termination",
+            layer="launcher",
+            verdict="ALLOW" if term_reason in ("agent_exited", "success") else "BLOCK_ACTION",
+            summary=f"Task lifecycle termination: {term_reason}",
+            detail=f"Reason: {term_reason}\nMethod: {self.termination.get('method', 'default')}",
+            source_label="enforced",
+        )
+
+        # Verify receipt & record receipt step
+        try:
+            ok, final_h, msg = verify_chain(receipt.get("events", []))
+            verify_ok = ok and receipt.get("hash_chain", {}).get("final_hash") == final_h
+        except Exception as e:
+            verify_ok = False
+            msg = str(e)
+
+        final_hash_str = receipt.get("hash_chain", {}).get("final_hash", "")
+        self.storage.record_task_step(
+            task_id,
+            kind="receipt",
+            layer="receipt",
+            verdict="ALLOW",
+            summary=f"Task receipt written and verified (final_hash={final_hash_str[:16]}...)",
+            detail=f"Receipt: {receipt_path}\nVerified: {verify_ok}\nEvents: {receipt.get('hash_chain', {}).get('count', 0)}",
+            source_label="enforced",
+        )
+
+        # Record final phase step
+        self.storage.record_task_step(
+            task_id,
+            kind="phase",
+            layer="launcher",
+            verdict="ALLOW",
+            summary="Task execution finished",
+            detail=f"Final status: {t.status.value if t else 'TERMINATED'}",
+            source_label="enforced",
+        )
 
         fs_diff = None
         diff_file = control / "fs_diff.json"
