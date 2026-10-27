@@ -113,13 +113,45 @@ class ToolBroker:
             justification=justification,
             timeout_seconds=timeout_seconds,
         )
-        task_id, _ = self._authenticate(token)
+        task_id, agent_id = self._authenticate(token)
         reqs = self.storage.list_expansion_requests(task_id=task_id)
         latest_req = reqs[-1] if reqs else None
 
         base_risk = latest_req.baseline_risk_tier.value if latest_req and hasattr(latest_req.baseline_risk_tier, "value") else "LOW"
         eff_risk = latest_req.effective_risk_tier.value if latest_req and hasattr(latest_req.effective_risk_tier, "value") else "LOW"
         escalated = bool(latest_req.escalated_by_provenance) if latest_req else False
+
+        # Emit audit event for request_access
+        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        try:
+            bnd = self.storage.get_boundary(task_id)
+            bnd_ver = bnd.version if bnd else None
+        except Exception:
+            bnd_ver = None
+
+        eff_risk_tier = latest_req.effective_risk_tier if latest_req and hasattr(latest_req, "effective_risk_tier") else RiskTier.LOW
+        ev = GovernanceEvent(
+            event_id=self._generate_event_id(),
+            timestamp=now_utc,
+            source=EventSource.TOOL_BROKER,
+            task_id=task_id,
+            agent_id=agent_id,
+            kind="request_access",
+            target=resource_target,
+            details={
+                "resource_type": resource_type,
+                "status": status_or_reason,
+                "granted": granted,
+                "justification": justification,
+            },
+            verdict=EventVerdict.INSIDE if granted else EventVerdict.OUTSIDE,
+            risk_tier=eff_risk_tier,
+            action_taken=TaskAction.ALLOW if granted else TaskAction.BLOCK_ACTION,
+            prevented=not granted,
+            rule_matched=status_or_reason,
+            boundary_version=bnd_ver,
+        )
+        self.storage.record_event(ev)
 
         return {
             "granted": granted,

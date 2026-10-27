@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .llm_agent import RPC_MAX_REQUEST_BYTES, rpc_recv_frame, rpc_send_frame
-from .models import EventSource, EventVerdict, GovernanceEvent, RiskTier, TaskAction
+from .models import EventSource, EventVerdict, ExpansionRequest, ExpansionStatus, GovernanceEvent, RiskTier, TaskAction
 
 AGENT_ENDPOINTS = (
     "read_file",
@@ -289,21 +289,113 @@ class BrokerRPCServer:
         target = _str_param(p, "resource_target")
         just = _str_param(p, "justification", 2000)
 
-        # Repeated request for already-granted path returns granted=True with same delivered path without error
+        # 1. Reject targets containing ".." or absolute paths before any lookup
+        is_repeat_granted = False
+        deliv = None
+        prev_req = None
+
         if self.delivery is not None and rtype == "file_read":
-            rel = target.replace("\\", "/").lstrip("./")
-            if rel.startswith("granted/"):
-                rel = rel[len("granted/"):]
-            dst = self.delivery.granted / rel
-            if dst.is_file():
-                deliv = self.delivery.deliver(self.task_id, rtype, target, True)
-                return {
-                    "granted": True,
-                    "status": "Already granted",
+            raw = target.strip().replace("\\", "/")
+            parts = [part for part in raw.split("/") if part]
+            has_traversal = (
+                ".." in parts
+                or raw.startswith("/")
+                or (len(parts) > 0 and len(parts[0]) == 2 and parts[0][1] == ":")
+            )
+
+            if not has_traversal:
+                rel = raw
+                if rel.startswith("granted/"):
+                    rel = rel[len("granted/"):]
+                rel = rel.lstrip("./")
+
+                try:
+                    granted_dir = self.delivery.granted.resolve()
+                    dst = (self.delivery.granted / rel).resolve()
+                    # Resolve and require the path to stay strictly inside granted/
+                    dst.relative_to(granted_dir)
+                    path_inside_granted = True
+                except (ValueError, Exception):
+                    path_inside_granted = False
+
+                if path_inside_granted and dst.is_file():
+                    prev_req = self.delivery._latest_request(self.task_id, rtype, target)
+                    if prev_req and prev_req.status == ExpansionStatus.APPROVED:
+                        candidate_deliv = self.delivery.deliver(self.task_id, rtype, target, True)
+                        # 2. Only return granted=True if deliver() returned type == "file_copy"
+                        if candidate_deliv.get("type") == "file_copy":
+                            is_repeat_granted = True
+                            deliv = candidate_deliv
+
+        if is_repeat_granted and prev_req is not None and deliv is not None:
+            # 3. Still record the repeat request (broker/storage audit event, e.g. status "duplicate_of:<request_id>") so it appears in the receipt
+            now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            dup_req_id = f"exp_req_dup_{uuid.uuid4().hex[:8]}"
+            dup_req = ExpansionRequest(
+                request_id=dup_req_id,
+                task_id=self.task_id,
+                agent_id=prev_req.agent_id,
+                resource_type=rtype,
+                resource_target=target,
+                justification=just,
+                baseline_risk_tier=prev_req.baseline_risk_tier,
+                effective_risk_tier=prev_req.effective_risk_tier,
+                escalated_by_provenance=prev_req.escalated_by_provenance,
+                status=ExpansionStatus.APPROVED,
+                created_at=now_utc,
+                resolved_at=now_utc,
+                resolved_by=f"duplicate_of:{prev_req.request_id}",
+                single_use=False,
+                used_count=prev_req.used_count + 1,
+                timeout_seconds=0.0,
+            )
+            self.broker.storage.save_expansion_request(dup_req)
+
+            try:
+                bnd = self.broker.storage.get_boundary(self.task_id)
+                bnd_ver = bnd.version if bnd else None
+            except Exception:
+                bnd_ver = None
+
+            ev_id = self.broker._generate_event_id() if hasattr(self.broker, "_generate_event_id") else f"gov_ev_{uuid.uuid4().hex[:12]}"
+            ev = GovernanceEvent(
+                event_id=ev_id,
+                timestamp=now_utc,
+                source=EventSource.TOOL_BROKER,
+                task_id=self.task_id,
+                agent_id=prev_req.agent_id,
+                kind="request_access",
+                target=target,
+                details={
                     "resource_type": rtype,
-                    "resource_target": target,
-                    "delivery": deliv,
-                }
+                    "justification": just,
+                    "status": f"duplicate_of:{prev_req.request_id}",
+                    "granted": True,
+                },
+                verdict=EventVerdict.INSIDE,
+                risk_tier=prev_req.effective_risk_tier,
+                action_taken=TaskAction.ALLOW,
+                prevented=False,
+                rule_matched=f"duplicate_of:{prev_req.request_id}",
+                boundary_version=bnd_ver,
+            )
+            self.broker.storage.record_event(ev)
+
+            deliv_dup = dict(deliv)
+            deliv_dup["request_id"] = dup_req_id
+
+            return {
+                "granted": True,
+                "status": f"duplicate_of:{prev_req.request_id}",
+                "resource_type": rtype,
+                "resource_target": target,
+                "baseline_risk": prev_req.baseline_risk_tier.value,
+                "effective_risk": prev_req.effective_risk_tier.value,
+                "baseline_risk_tier": prev_req.baseline_risk_tier.value,
+                "effective_risk_tier": prev_req.effective_risk_tier.value,
+                "escalated_by_provenance": prev_req.escalated_by_provenance,
+                "delivery": deliv_dup,
+            }
 
         res = self.broker.request_access(token, rtype, target, just)
         if self.delivery is not None:

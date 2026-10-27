@@ -867,3 +867,106 @@ def test_write_file_result_shape_identical_a_and_c(tmp_path: Path) -> None:
     assert res_a["bytes_written"] == res_c["bytes_written"] == 11
     assert res_a["path"].endswith("output/summary.txt")
     assert res_c["path"].endswith("output/summary.txt")
+
+
+@linux_only
+@needs_scope
+def test_request_access_traversal_rejection_and_duplicate_audit(tmp_path: Path) -> None:
+    """Verifies that:
+    1. Targets containing '..' or absolute paths ('../input/data.csv' and '/etc/passwd')
+       are rejected (granted=False, delivery.type='none') and audited in storage and receipt.
+    2. A genuine repeat request of an approved target returns granted=True, same delivered_path,
+       and exactly two audit entries in expansion requests and receipt.
+    """
+    from demo.security_monitor.app.governance.launcher import TaskLauncher, TaskSpec
+    from demo.security_monitor.app.governance.storage import GovernanceStorage
+    from demo.security_monitor.app.governance.models import ExpansionStatus
+
+    storage = GovernanceStorage(tmp_path / "gov.db")
+    launcher = TaskLauncher(storage)
+    spec = TaskSpec(
+        prompt="Process input/data.csv and write output/summary.txt.",
+        inputs={
+            "input/data.csv": "id,val\n1,10\n",
+            "reference/target.csv": "target,100\n",
+        },
+        output_targets=["output/summary.txt"],
+        files_read=["input/data.csv"],
+        condition="C",
+        approval_policy="oracle",
+        oracle_allowed=["reference/target.csv"],
+        llm={"provider": "scripted", "steps": [
+            # 1. Genuine request for reference file (approved by oracle)
+            {"tool": "request_access", "args": {"resource_type": "file_read", "resource_target": "reference/target.csv", "justification": "need target"}},
+            # 2. Path traversal attack with '..'
+            {"tool": "request_access", "args": {"resource_type": "file_read", "resource_target": "../input/data.csv", "justification": "try traversal"}},
+            # 3. Absolute path attack
+            {"tool": "request_access", "args": {"resource_type": "file_read", "resource_target": "/etc/passwd", "justification": "try root file"}},
+            # 4. Genuine repeat request of the approved target
+            {"tool": "request_access", "args": {"resource_type": "file_read", "resource_target": "reference/target.csv", "justification": "repeat target"}},
+            {"final": "done"},
+        ]}
+    )
+    res = launcher.run(spec)
+    try:
+        history = res.shim_result["tool_history"]
+        assert len(history) == 4
+
+        # 1. First genuine request -> granted=True, file_copy
+        s0 = history[0]["output"]
+        assert s0["granted"] is True
+        assert s0["delivery"]["type"] == "file_copy"
+        assert s0["delivery"]["delivered_path"] == "granted/reference/target.csv"
+
+        # 2. Path traversal attempt -> granted=False, not_approved
+        s1 = history[1]["output"]
+        assert s1["granted"] is False
+        assert s1["delivery"]["type"] == "none"
+
+        # 3. Absolute path attempt -> granted=False, not_approved
+        s2 = history[2]["output"]
+        assert s2["granted"] is False
+        assert s2["delivery"]["type"] == "none"
+
+        # 4. Genuine repeat request -> granted=True, same delivered_path
+        s3 = history[3]["output"]
+        assert s3["granted"] is True
+        assert s3["delivery"]["type"] == "file_copy"
+        assert s3["delivery"]["delivered_path"] == "granted/reference/target.csv"
+        assert "duplicate_of" in s3["status"]
+
+        # Audit verification: check expansion requests in storage
+        exp_reqs = storage.list_expansion_requests(task_id=res.task_id)
+        # reference/target.csv has exactly 2 audit entries (both approved)
+        ref_reqs = [r for r in exp_reqs if r.resource_target == "reference/target.csv"]
+        assert len(ref_reqs) == 2
+        assert ref_reqs[0].status == ExpansionStatus.APPROVED
+        assert ref_reqs[1].status == ExpansionStatus.APPROVED
+        # list_expansion_requests orders by created_at DESC, so newest (duplicate) is index 0
+        ref_reqs_by_time = sorted(ref_reqs, key=lambda r: r.created_at)
+        assert ref_reqs_by_time[1].resolved_by.startswith("duplicate_of:")
+
+        # ../input/data.csv is audited as DENIED
+        traversal_reqs = [r for r in exp_reqs if r.resource_target == "../input/data.csv"]
+        assert len(traversal_reqs) == 1
+        assert traversal_reqs[0].status == ExpansionStatus.DENIED
+
+        # /etc/passwd is audited as DENIED
+        abs_reqs = [r for r in exp_reqs if r.resource_target == "/etc/passwd"]
+        assert len(abs_reqs) == 1
+        assert abs_reqs[0].status == ExpansionStatus.DENIED
+
+        # Receipt verification: expansions in receipt matches all 4 audited requests
+        receipt_expansions = res.receipt.get("expansions", [])
+        assert len(receipt_expansions) == 4
+        resources = [e["resource"] for e in receipt_expansions]
+        assert resources.count("reference/target.csv") == 2
+        assert resources.count("../input/data.csv") == 1
+        assert resources.count("/etc/passwd") == 1
+
+        decisions = {e["resource"]: e["decision"] for e in receipt_expansions}
+        assert decisions["../input/data.csv"] == "DENIED"
+        assert decisions["/etc/passwd"] == "DENIED"
+        assert decisions["reference/target.csv"] == "APPROVED"
+    finally:
+        _cleanup(res)

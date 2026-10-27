@@ -154,8 +154,9 @@ class ExpansionDelivery:
         self._lock = threading.Lock()
 
     def _latest_request(self, task_id: str, rtype: str, target: str) -> Any:
+        t_clean = target[len("granted/"):] if target.startswith("granted/") else target
         reqs = [r for r in self.storage.list_expansion_requests(task_id=task_id)
-                if r.resource_type == rtype and r.resource_target == target]
+                if r.resource_type == rtype and (r.resource_target == target or r.resource_target == t_clean)]
         return reqs[-1] if reqs else None
 
     def deliver(self, task_id: str, rtype: str, target: str, granted: bool) -> dict[str, Any]:
@@ -171,10 +172,28 @@ class ExpansionDelivery:
         if not granted or req is None or req.status != ExpansionStatus.APPROVED:
             rec.update({"type": "none", "reason": "not_approved"})
         elif rtype == "file_read":
-            rel = target.replace("\\", "/").lstrip("./")
+            raw = target.strip().replace("\\", "/")
+            parts = [p for p in raw.split("/") if p]
+            if ".." in parts or raw.startswith("/") or (len(parts) > 0 and len(parts[0]) == 2 and parts[0][1] == ":"):
+                rec.update({"type": "none", "reason": "invalid_or_traversal_target"})
+                with self._lock:
+                    self.records.append(rec)
+                return rec
+
+            rel = raw
             if rel.startswith("granted/"):
                 rel = rel[len("granted/"):]
-            dst = self.granted / rel
+            rel = rel.lstrip("./")
+
+            try:
+                dst = (self.granted / rel).resolve()
+                dst.relative_to(self.granted.resolve())
+            except (ValueError, Exception):
+                rec.update({"type": "none", "reason": "target_escapes_granted_directory"})
+                with self._lock:
+                    self.records.append(rec)
+                return rec
+
             if dst.is_file():
                 # Already delivered: reuse safely without chmod overwrite crash
                 rec.update({"type": "file_copy", "delivered_path": f"granted/{rel}",
@@ -184,7 +203,7 @@ class ExpansionDelivery:
                 src = (self.ws / rel)
                 try:
                     real = Path(os.path.realpath(src))
-                    real.relative_to(self.ws)
+                    real.relative_to(self.ws.resolve())
                     ok = real.is_file() and not str(real).startswith(str(self.granted))
                 except ValueError:
                     ok = False
