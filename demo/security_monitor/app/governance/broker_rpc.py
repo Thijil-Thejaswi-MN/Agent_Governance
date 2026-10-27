@@ -397,7 +397,11 @@ class BrokerRPCServer:
                 "delivery": deliv_dup,
             }
 
-        res = self.broker.request_access(token, rtype, target, just)
+        timeout_s = getattr(self.broker, "default_approval_timeout", None)
+        if timeout_s is not None:
+            res = self.broker.request_access(token, rtype, target, just, timeout_seconds=timeout_s)
+        else:
+            res = self.broker.request_access(token, rtype, target, just)
         if self.delivery is not None:
             res["delivery"] = self.delivery.deliver(self.task_id, rtype, target, bool(res.get("granted")))
         return res

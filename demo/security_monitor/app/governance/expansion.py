@@ -366,7 +366,7 @@ class ExpansionService:
 
         return req
 
-    def approve_request(self, request_id: str, approved_by: str) -> TaskBoundary:
+    def approve_request(self, request_id: str, approved_by: str, reason: str = "") -> TaskBoundary:
         """
         Approves a pending expansion request and applies version N+1 to the task boundary.
         STRICTLY PROHIBITS AGENT SELF-APPROVAL.
@@ -390,6 +390,8 @@ class ExpansionService:
         req.status = ExpansionStatus.APPROVED
         req.resolved_by = approved_by
         req.resolved_at = now_utc
+        if reason:
+            req.reason = reason
         self.storage.save_expansion_request(req)
 
         return self._apply_boundary_expansion(req)
@@ -404,6 +406,7 @@ class ExpansionService:
         req.status = ExpansionStatus.DENIED
         req.resolved_by = denied_by
         req.resolved_at = now_utc
+        req.reason = reason
         self.storage.save_expansion_request(req)
 
     def _apply_boundary_expansion(self, req: ExpansionRequest) -> TaskBoundary:

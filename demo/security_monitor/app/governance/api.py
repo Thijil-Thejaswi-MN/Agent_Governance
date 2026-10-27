@@ -7,12 +7,13 @@ All data is derived from real stored records in governance.db.
 from __future__ import annotations
 
 import json
+import hashlib
 import hmac
 import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from .expansion import ExpansionService
@@ -278,6 +279,52 @@ def _compute_task_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+@governance_router.get("/events")
+async def list_all_events(
+    since: str | None = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+) -> dict[str, Any]:
+    storage = get_storage()
+    tasks = storage.list_tasks()
+    all_events: list[dict[str, Any]] = []
+    seen_ids = set()
+
+    for t in tasks:
+        storage_events = storage.get_events_for_task(t.task_id)
+        evts = _build_unified_task_events(t.task_id, storage_events)
+        for e in evts:
+            eid = e.get("event_id")
+            if eid and eid not in seen_ids:
+                seen_ids.add(eid)
+                all_events.append(e)
+
+    # Sort newest first by timestamp and event_id
+    all_events.sort(key=lambda x: (x.get("timestamp") or "", x.get("event_id") or ""), reverse=True)
+
+    def event_key(e: dict[str, Any]) -> str:
+        return f"{e.get('timestamp') or ''}|{e.get('event_id') or ''}"
+
+    if since:
+        if "|" in since:
+            since_ts, since_id = since.split("|", 1)
+            filtered = [
+                e for e in all_events
+                if (e.get("timestamp") or "", e.get("event_id") or "") > (since_ts, since_id)
+            ]
+        else:
+            filtered = [e for e in all_events if (e.get("timestamp") or "") > since]
+        all_events = filtered
+
+    limited = all_events[:limit]
+    newest_cursor = event_key(limited[0]) if limited else (since or "")
+
+    return {
+        "events": limited,
+        "cursor": newest_cursor,
+        "total": len(limited),
+    }
+
+
 @governance_router.get("/tasks")
 async def list_tasks() -> list[dict[str, Any]]:
     storage = get_storage()
@@ -408,6 +455,11 @@ async def get_task_receipt(task_id: str) -> dict[str, Any]:
             verified = False
             verification_msg = "final_hash mismatch"
 
+    file_sha256 = None
+    if receipt_file and Path(receipt_file).is_file():
+        file_sha256 = hashlib.sha256(Path(receipt_file).read_bytes()).hexdigest()
+    final_hash = receipt_data.get("hash_chain", {}).get("final_hash")
+
     return {
         "task_id": task_id,
         "available": True,
@@ -415,7 +467,46 @@ async def get_task_receipt(task_id: str) -> dict[str, Any]:
         "verified": verified,
         "verification_message": verification_msg,
         "receipt_file": receipt_file,
+        "file_sha256": file_sha256,
+        "final_hash": final_hash,
     }
+
+
+@governance_router.get("/tasks/{task_id}/receipt/raw")
+async def get_task_receipt_raw(task_id: str) -> Response:
+    storage = get_storage()
+    task = storage.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    receipts_dir_env = os.getenv("RECEIPTS_DIR")
+    if receipts_dir_env:
+        receipts_dir = Path(receipts_dir_env)
+    else:
+        receipts_dir = Path.home() / "agent_workspaces" / "receipts"
+
+    candidate_paths = [
+        receipts_dir / f"{task_id}.json",
+        Path(__file__).resolve().parents[3] / "data" / "evaluation_v3" / "checkpoint1" / "receipts" / f"{task_id}.json",
+    ]
+
+    raw_bytes = None
+    for cp in candidate_paths:
+        if cp.is_file():
+            try:
+                raw_bytes = cp.read_bytes()
+                break
+            except Exception:
+                pass
+
+    if raw_bytes is None:
+        raise HTTPException(status_code=404, detail="No stored receipt file found")
+
+    return Response(
+        content=raw_bytes,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{task_id}_receipt.json"'},
+    )
 
 
 @governance_router.get("/inventory")
@@ -451,8 +542,17 @@ class ExpansionSubmission(BaseModel):
 
 
 class ExpansionDecision(BaseModel):
-    decided_by: str  # Must not be the requesting agent
+    decided_by: str = "operator"  # Ignored by server, kept for client compatibility
     reason: str = ""
+
+
+def _enrich_expansion_dict(e: Any, storage: Any) -> dict[str, Any]:
+    d = e.model_dump()
+    task = storage.get_task(e.task_id)
+    d["task_request_text"] = task.request_text if task else ""
+    prov_records = storage.get_provenance_for_task(e.task_id)
+    d["prior_untrusted_reads"] = [p.model_dump() for p in prov_records]
+    return d
 
 
 @governance_router.get("/expansions")
@@ -460,8 +560,18 @@ async def list_expansions(
     task_id: str | None = Query(None),
     status: str | None = Query(None),
 ) -> list[dict[str, Any]]:
-    expansions = get_storage().list_expansion_requests(task_id=task_id, status=status)
-    return [e.model_dump() for e in expansions]
+    storage = get_storage()
+    expansions = storage.list_expansion_requests(task_id=task_id, status=status)
+    return [_enrich_expansion_dict(e, storage) for e in expansions]
+
+
+@governance_router.get("/expansions/{request_id}")
+async def get_expansion(request_id: str) -> dict[str, Any]:
+    storage = get_storage()
+    req = storage.get_expansion_request(request_id)
+    if not req:
+        raise HTTPException(status_code=404, detail="Expansion request not found")
+    return _enrich_expansion_dict(req, storage)
 
 
 @governance_router.post("/expansions/request")
@@ -509,9 +619,12 @@ async def approve_expansion(
     _token: str = Depends(verify_operator_token),
 ) -> dict[str, Any]:
     try:
+        operator_name = os.getenv("GOVERNANCE_OPERATOR_NAME", "operator")
+        approver = f"operator:{operator_name}"
         new_boundary = get_expansion_service().approve_request(
             request_id=request_id,
-            approved_by=payload.decided_by,
+            approved_by=approver,
+            reason=payload.reason,
         )
         req = get_storage().get_expansion_request(request_id)
         return {
@@ -532,11 +645,15 @@ async def deny_expansion(
     payload: ExpansionDecision,
     _token: str = Depends(verify_operator_token),
 ) -> dict[str, Any]:
+    if not payload.reason or not payload.reason.strip():
+        raise HTTPException(status_code=422, detail="A reason is required to deny an expansion request.")
     try:
+        operator_name = os.getenv("GOVERNANCE_OPERATOR_NAME", "operator")
+        denier = f"operator:{operator_name}"
         get_expansion_service().deny_request(
             request_id=request_id,
-            denied_by=payload.decided_by,
-            reason=payload.reason,
+            denied_by=denier,
+            reason=payload.reason.strip(),
         )
         req = get_storage().get_expansion_request(request_id)
         return {

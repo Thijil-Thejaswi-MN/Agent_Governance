@@ -85,7 +85,8 @@ class TaskSpec:
     timeout_s: float = 900.0
     command_timeout_s: float = 60.0
     freeze_timeout_s: float = 5.0
-    approval_policy: str = "deny"                                # "deny" | "oracle"
+    approval_policy: str = "deny"                                # "deny" | "oracle" | "operator"
+    approval_timeout_s: float = 120.0
     oracle_allowed: list[str] = field(default_factory=list)
     condition: str | None = None
     tools_schema: list[dict[str, Any]] | None = None
@@ -455,14 +456,18 @@ class TaskLauncher:
         proxy = EgressProxyServer(self.storage, host="127.0.0.1", port=0)
         proxy_port = aloop.run(proxy.start())
 
-        def hook(req: Any) -> bool:
-            if spec.approval_policy == "oracle":
-                return req.resource_target in spec.oracle_allowed
-            return False
+        if spec.approval_policy == "operator":
+            hook = None
+        else:
+            def hook(req: Any) -> bool:
+                if spec.approval_policy == "oracle":
+                    return req.resource_target in spec.oracle_allowed
+                return False
 
         expansion = ExpansionService(self.storage, provenance_enabled=True, user_approval_hook=hook,
                                      simulated_user_policy=spec.approval_policy)
         broker = ToolBroker(self.storage, expansion_service=expansion)
+        broker.default_approval_timeout = float(spec.approval_timeout_s)
         broker.http_fetcher = proxy_http_fetcher(proxy_port)  # type: ignore[attr-defined]
         llm_cfg = dict(spec.llm)
         provider_label = llm_cfg.get("provider", "ollama")
@@ -479,7 +484,8 @@ class TaskLauncher:
 
         delivery = ExpansionDelivery(ws, self.storage)
         rpc = BrokerRPCServer(broker, ws / BROKER_SOCKET_NAME, task_id, llm_model=llm_model, llm_options=llm_options,
-                              delivery=delivery, cgroup_reader=cgroup_ctl.read_proc_cgroup)
+                              delivery=delivery, cgroup_reader=cgroup_ctl.read_proc_cgroup,
+                              call_timeout=max(float(spec.approval_timeout_s) + 30.0, 120.0))
         rpc.start()
         self.live["rpc"] = rpc
 

@@ -163,7 +163,8 @@ class GovernanceStorage:
                     resolved_by TEXT,
                     single_use INTEGER NOT NULL DEFAULT 0,
                     used_count INTEGER NOT NULL DEFAULT 0,
-                    timeout_seconds REAL NOT NULL DEFAULT 5.0
+                    timeout_seconds REAL NOT NULL DEFAULT 5.0,
+                    reason TEXT
                 )
             """)
 
@@ -181,6 +182,11 @@ class GovernanceStorage:
             """)
             try:
                 cursor.execute("ALTER TABLE governance_provenance ADD COLUMN content_snippet TEXT")
+            except Exception:
+                pass
+
+            try:
+                cursor.execute("ALTER TABLE governance_expansions ADD COLUMN reason TEXT")
             except Exception:
                 pass
 
@@ -506,13 +512,14 @@ class GovernanceStorage:
                     request_id, task_id, agent_id, resource_type, resource_target,
                     justification, baseline_risk_tier, effective_risk_tier,
                     escalated_by_provenance, status, created_at, resolved_at,
-                    resolved_by, single_use, used_count, timeout_seconds
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    resolved_by, single_use, used_count, timeout_seconds, reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(request_id) DO UPDATE SET
                     status=excluded.status,
                     resolved_at=coalesce(excluded.resolved_at, governance_expansions.resolved_at),
                     resolved_by=coalesce(excluded.resolved_by, governance_expansions.resolved_by),
-                    used_count=excluded.used_count
+                    used_count=excluded.used_count,
+                    reason=coalesce(excluded.reason, governance_expansions.reason)
                 """,
                 (
                     req.request_id,
@@ -531,6 +538,7 @@ class GovernanceStorage:
                     1 if req.single_use else 0,
                     req.used_count,
                     req.timeout_seconds,
+                    req.reason,
                 ),
             )
             conn.commit()
@@ -607,4 +615,5 @@ class GovernanceStorage:
             single_use=bool(r["single_use"]),
             used_count=r["used_count"],
             timeout_seconds=float(r["timeout_seconds"]),
+            reason=r["reason"] if "reason" in r.keys() else None,
         )
