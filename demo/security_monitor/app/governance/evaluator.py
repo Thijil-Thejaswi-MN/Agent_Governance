@@ -92,13 +92,20 @@ class BoundaryEvaluator:
         mode_str = "files.write" if is_write else "files.read"
         rel_lower = rel_str.lower()
 
-        # For reads: files in files_write, and the task's own output/ directory, are allowed
+        # For reads: files in files_write, task output/, and granted/ directories are allowed
         if not is_write:
             if rel_str.startswith("output/") or rel_str == "output":
                 return EvaluationResult(
                     verdict=EventVerdict.INSIDE,
                     risk_tier=RiskTier.LOW,
                     rule_matched="matched task output directory read access",
+                    resolved_path=resolved_str,
+                )
+            if rel_str.startswith("granted/") or rel_str == "granted":
+                return EvaluationResult(
+                    verdict=EventVerdict.INSIDE,
+                    risk_tier=RiskTier.LOW,
+                    rule_matched="matched granted directory read access",
                     resolved_path=resolved_str,
                 )
             for pattern in boundary.files_write:

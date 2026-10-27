@@ -274,8 +274,17 @@ class ExpansionService:
         if not task:
             raise ValueError(f"Task '{task_id}' not found.")
 
-        # 2. Determine Baseline Risk Tier using structural rules and sensitive patterns
+        # Check if already approved for this task (duplicate request)
         target_norm = resource_target.strip().replace("\\", "/").lower()
+        for prev in self.storage.list_expansion_requests(task_id=task_id):
+            if (
+                prev.resource_type == resource_type
+                and prev.resource_target.strip().replace("\\", "/").lower() == target_norm
+                and prev.status == ExpansionStatus.APPROVED
+            ):
+                return prev
+
+        # 2. Determine Baseline Risk Tier using structural rules and sensitive patterns
         baseline_tier = self.classify_resource_risk(resource_type, resource_target)
 
         # 3. Check if explicitly anticipated by user original request text

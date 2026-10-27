@@ -769,3 +769,66 @@ def test_condition_c_landlock_boundary_granular(tmp_path: Path) -> None:
         assert "target,100" in step4["output"]["stdout"]
     finally:
         _cleanup(res)
+
+
+@linux_only
+@needs_scope
+def test_condition_c_granted_file_read_and_duplicate_request(tmp_path: Path) -> None:
+    """BUG 2: After request_access is granted:
+    - read_file granted/... succeeds
+    - run_command cat granted/... succeeds
+    - duplicate request_access returns granted=True with same delivered_path without error.
+    """
+    from demo.security_monitor.app.governance.launcher import TaskLauncher, TaskSpec
+    from demo.security_monitor.app.governance.storage import GovernanceStorage
+
+    storage = GovernanceStorage(tmp_path / "gov.db")
+    launcher = TaskLauncher(storage)
+    spec = TaskSpec(
+        prompt="Process input/data.csv and write output/summary.txt. If needed reference/target.csv request access.",
+        inputs={
+            "input/data.csv": "id,val\n1,10\n",
+            "reference/target.csv": "target,100\n",
+        },
+        output_targets=["output/summary.txt"],
+        files_read=["input/data.csv"],
+        condition="C",
+        approval_policy="oracle",
+        oracle_allowed=["reference/target.csv"],
+        llm={"provider": "scripted", "steps": [
+            # 1. Request access to reference file
+            {"tool": "request_access", "args": {"resource_type": "file_read", "resource_target": "reference/target.csv", "justification": "need target"}},
+            # 2. read_file on granted file works
+            {"tool": "read_file", "args": {"file_path": "granted/reference/target.csv"}},
+            # 3. run_command cat on granted file works
+            {"tool": "run_command", "args": {"command": "cat granted/reference/target.csv"}},
+            # 4. Duplicate request_access returns granted=True with same delivered_path
+            {"tool": "request_access", "args": {"resource_type": "file_read", "resource_target": "reference/target.csv", "justification": "repeat request"}},
+            {"final": "done"},
+        ]}
+    )
+    res = launcher.run(spec)
+    try:
+        history = res.shim_result["tool_history"]
+        # Step 0: first request_access
+        step0 = history[0]
+        assert step0["output"]["granted"] is True
+        assert step0["output"]["delivery"]["delivered_path"] == "granted/reference/target.csv"
+
+        # Step 1: read_file granted/...
+        step1 = history[1]
+        assert step1["output"] == "target,100\n"
+        assert step1.get("error") is None
+
+        # Step 2: run_command cat granted/...
+        step2 = history[2]
+        assert step2["output"]["exit_code"] == 0
+        assert "target,100" in step2["output"]["stdout"]
+
+        # Step 3: duplicate request_access -> granted=True, no [Errno 13]
+        step3 = history[3]
+        assert step3.get("error") is None
+        assert step3["output"]["granted"] is True
+        assert step3["output"]["delivery"]["delivered_path"] == "granted/reference/target.csv"
+    finally:
+        _cleanup(res)

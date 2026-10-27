@@ -172,23 +172,31 @@ class ExpansionDelivery:
             rec.update({"type": "none", "reason": "not_approved"})
         elif rtype == "file_read":
             rel = target.replace("\\", "/").lstrip("./")
-            src = (self.ws / rel)
-            try:
-                real = Path(os.path.realpath(src))
-                real.relative_to(self.ws)
-                ok = real.is_file() and not str(real).startswith(str(self.granted))
-            except ValueError:
-                ok = False
-            if not ok:
-                rec.update({"type": "none", "reason": "source_missing_or_outside_workspace"})
-            else:
-                dst = self.granted / rel
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(real, dst)
-                os.chmod(dst, 0o444)
+            if rel.startswith("granted/"):
+                rel = rel[len("granted/"):]
+            dst = self.granted / rel
+            if dst.is_file():
+                # Already delivered: reuse safely without chmod overwrite crash
                 rec.update({"type": "file_copy", "delivered_path": f"granted/{rel}",
                             "content_sha256": hashlib.sha256(dst.read_bytes()).hexdigest(),
                             "removed_at": None, "removed_reason": None})
+            else:
+                src = (self.ws / rel)
+                try:
+                    real = Path(os.path.realpath(src))
+                    real.relative_to(self.ws)
+                    ok = real.is_file() and not str(real).startswith(str(self.granted))
+                except ValueError:
+                    ok = False
+                if not ok:
+                    rec.update({"type": "none", "reason": "source_missing_or_outside_workspace"})
+                else:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(real, dst)
+                    os.chmod(dst, 0o444)
+                    rec.update({"type": "file_copy", "delivered_path": f"granted/{rel}",
+                                "content_sha256": hashlib.sha256(dst.read_bytes()).hexdigest(),
+                                "removed_at": None, "removed_reason": None})
         elif rtype == "network":
             rec.update({"type": "proxy_allowlist", "note": "boundary network list updated; egress proxy enforces per task"})
         else:
