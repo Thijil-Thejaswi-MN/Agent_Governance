@@ -17,9 +17,11 @@ import {
 import { api } from '../api/client';
 import { TaskRecord, ResultsSummary, AgentInventoryItem, ExpansionItem } from '../types';
 import { SpotlightCard } from '../components/reactbits/SpotlightCard';
-import { CountUp } from '../components/reactbits/CountUp';
-import { ShinyText } from '../components/reactbits/ShinyText';
-import { Aurora } from '../components/reactbits/Aurora';
+import { CountUpMetric } from '../components/reactbits/CountUpMetric';
+import { ShinyTextHeader } from '../components/reactbits/ShinyTextHeader';
+
+// Lazy-load WebGL background for fast initial paint
+const AuroraBg = React.lazy(() => import('../components/reactbits/AuroraBg').then(m => ({ default: m.AuroraBg })));
 import { Badge } from '../components/common/Badge';
 
 export const OverviewPage: React.FC = () => {
@@ -92,7 +94,7 @@ export const OverviewPage: React.FC = () => {
     <div className="space-y-10 animate-in fade-in duration-300">
       {/* Hero Section */}
       <div className="relative rounded-3xl p-8 md:p-12 overflow-hidden border border-slate-200 dark:border-slate-800 bg-gradient-to-b from-white to-slate-50 dark:from-surface-cardDark dark:to-surface-bgDark shadow-sm">
-        <Aurora speed={0.7} />
+        <React.Suspense fallback={null}><AuroraBg speed={0.7} /></React.Suspense>
 
         <div className="relative z-10 max-w-3xl space-y-4">
           <Badge variant="cyan" size="md">
@@ -101,7 +103,7 @@ export const OverviewPage: React.FC = () => {
 
           <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-[1.15]">
             Bind AI Agent Capabilities to the{' '}
-            <ShinyText text="Specific User Request" speed={3.5} />
+            <ShinyTextHeader text="Specific User Request" speed={3.5} />
           </h1>
 
           <p className="text-sm md:text-base text-slate-600 dark:text-slate-300 leading-relaxed font-normal">
@@ -146,7 +148,7 @@ export const OverviewPage: React.FC = () => {
               <Clock className="w-4 h-4 text-cyan-500" />
             </div>
             <div className="text-3xl font-extrabold text-slate-900 dark:text-white font-mono">
-              <CountUp to={activeTasks} />
+              <CountUpMetric to={activeTasks} />
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
               Governed execution sessions in memory or cgroups
@@ -160,7 +162,7 @@ export const OverviewPage: React.FC = () => {
               <ShieldAlert className="w-4 h-4 text-rose-500" />
             </div>
             <div className="text-3xl font-extrabold text-rose-600 dark:text-rose-400 font-mono">
-              <CountUp to={totalPrevented} />
+              <CountUpMetric to={totalPrevented} />
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
               Out-of-boundary broker & OS sandbox denials
@@ -174,7 +176,7 @@ export const OverviewPage: React.FC = () => {
               <AlertOctagon className="w-4 h-4 text-amber-500" />
             </div>
             <div className="text-3xl font-extrabold text-amber-600 dark:text-amber-400 font-mono">
-              <CountUp to={pendingApprovals} />
+              <CountUpMetric to={pendingApprovals} />
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
               Resource expansions awaiting operator review
@@ -188,7 +190,7 @@ export const OverviewPage: React.FC = () => {
               <Bot className="w-4 h-4 text-indigo-500" />
             </div>
             <div className="text-3xl font-extrabold text-slate-900 dark:text-white font-mono">
-              <CountUp to={totalGovernedAgents} />
+              <CountUpMetric to={totalGovernedAgents} />
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
               Discovered agents tracked in inventory

@@ -1,3 +1,4 @@
+// Inspired by React Bits (https://reactbits.dev) AnimatedList - MIT + Commons Clause License
 import React from 'react';
 import { motion } from 'framer-motion';
 
@@ -7,7 +8,7 @@ interface AnimatedListProps {
   delay?: number;
 }
 
-export const AnimatedList: React.FC<AnimatedListProps> = ({
+export const AnimatedListFeed: React.FC<AnimatedListProps> = ({
   children,
   className = '',
   delay = 0.05,

@@ -2626,15 +2626,23 @@ def create_app(
             app.mount("/dashboard/assets", StaticFiles(directory=str(dashboard_v2_dist / "assets")), name="dashboard_v2_assets")
             app.mount("/assets", StaticFiles(directory=str(dashboard_v2_dist / "assets")), name="v2_assets_root")
 
+        dist_resolved = dashboard_v2_dist.resolve()
+
         @app.get("/dashboard", response_class=FileResponse)
         @app.get("/dashboard/{full_path:path}", response_class=FileResponse)
         async def serve_dashboard_v2(full_path: str = ""):
             if full_path:
-                target = dashboard_v2_dist / full_path
-                if target.is_file():
-                    return FileResponse(str(target))
+                try:
+                    clean_path = full_path.lstrip("/")
+                    target = (dist_resolved / clean_path).resolve()
+                    # Strictly require resolved target to be inside dist directory
+                    target.relative_to(dist_resolved)
+                    if target.is_file():
+                        return FileResponse(str(target))
+                except (ValueError, RuntimeError):
+                    pass
             return FileResponse(
-                str(dashboard_v2_dist / "index.html"),
+                str(dist_resolved / "index.html"),
                 headers={
                     "Cache-Control": "no-cache, no-store, must-revalidate",
                     "Pragma": "no-cache",

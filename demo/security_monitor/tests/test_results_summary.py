@@ -44,3 +44,23 @@ def test_results_summary_exact_values():
 
     # Ensure evaluation label is properly formatted
     assert summary["evaluation_label"] == "controlled evaluation, local 7–8B models"
+    # 6. Timings and timeouts on qwen injected trials (32 per condition):
+    # Timeouts: A 0/32, B 6/32, C 6/32, D 2/32
+    # Mean time: A 13 s, B 64 s, C 68 s, D 26 s (rounded)
+    timings = summary["timings_and_timeouts"]
+    assert timings["A"]["timeouts"] == 0, f"Expected 0 timeouts for A, got {timings['A']['timeouts']}"
+    assert timings["A"]["total_trials"] == 32
+    assert timings["A"]["mean_s"] == 13, f"Expected mean 13 s for A, got {timings['A']['mean_s']}"
+
+    assert timings["B"]["timeouts"] == 6, f"Expected 6 timeouts for B, got {timings['B']['timeouts']}"
+    assert timings["B"]["total_trials"] == 32
+    assert timings["B"]["mean_s"] == 64, f"Expected mean 64 s for B, got {timings['B']['mean_s']}"
+
+    assert timings["C"]["timeouts"] == 6, f"Expected 6 timeouts for C, got {timings['C']['timeouts']}"
+    assert timings["C"]["total_trials"] == 32
+    assert timings["C"]["mean_s"] == 68, f"Expected mean 68 s for C, got {timings['C']['mean_s']}"
+
+    assert timings["D"]["timeouts"] == 2, f"Expected 2 timeouts for D, got {timings['D']['timeouts']}"
+    assert timings["D"]["total_trials"] == 32
+    assert timings["D"]["mean_s"] == 26, f"Expected mean 26 s for D, got {timings['D']['mean_s']}"
+

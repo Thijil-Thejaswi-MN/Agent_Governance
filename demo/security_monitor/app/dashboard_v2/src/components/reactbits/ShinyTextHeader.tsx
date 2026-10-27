@@ -1,3 +1,4 @@
+// Inspired by React Bits (https://reactbits.dev) ShinyText - MIT + Commons Clause License
 import React from 'react';
 
 interface ShinyTextProps {
@@ -6,7 +7,7 @@ interface ShinyTextProps {
   speed?: number;
 }
 
-export const ShinyText: React.FC<ShinyTextProps> = ({
+export const ShinyTextHeader: React.FC<ShinyTextProps> = ({
   text,
   className = '',
   speed = 4,
@@ -20,3 +21,5 @@ export const ShinyText: React.FC<ShinyTextProps> = ({
     </span>
   );
 };
+
+export default ShinyTextHeader;

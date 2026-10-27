@@ -74,6 +74,9 @@ experiments/phase0_enforcement/workspace/
 
 # Ephemeral demo data and workspaces
 demo/data/*
+!demo/data/demo_tasks/
+!demo/data/demo_tasks/*.json
+ui_review/
 !demo/data/evaluation_v2/
 !demo/data/overhead_benchmark_results.json
 !demo/data/boundary_derivation_gold.json

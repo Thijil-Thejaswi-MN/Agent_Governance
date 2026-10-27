@@ -7,6 +7,7 @@ All data is derived from real stored records in governance.db.
 from __future__ import annotations
 
 import json
+import hmac
 import os
 from pathlib import Path
 from typing import Any
@@ -82,7 +83,7 @@ def verify_operator_token(
     elif x_operator_token:
         token = x_operator_token
 
-    if not token or token != expected:
+    if not token or not hmac.compare_digest(token, expected):
         raise HTTPException(
             status_code=401,
             detail="Invalid or missing operator token.",
@@ -186,15 +187,20 @@ async def get_task_events(task_id: str) -> list[dict[str, Any]]:
 
 @governance_router.get("/tasks/{task_id}/receipt")
 async def get_task_receipt(task_id: str) -> dict[str, Any]:
-    """Retrieves and cryptographically recomputes hash chain verification for a task receipt."""
+    """Retrieves and cryptographically recomputes hash chain verification for a stored task receipt."""
     storage = get_storage()
     task = storage.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    receipts_dir_env = os.getenv("RECEIPTS_DIR")
+    if receipts_dir_env:
+        receipts_dir = Path(receipts_dir_env)
+    else:
+        receipts_dir = Path.home() / "agent_workspaces" / "receipts"
+
     candidate_paths = [
-        Path.home() / "agent_workspaces" / "receipts" / f"{task_id}.json",
-        Path("/home/thiji/agent_workspaces/receipts") / f"{task_id}.json",
+        receipts_dir / f"{task_id}.json",
         Path(__file__).resolve().parents[3] / "data" / "evaluation_v3" / "checkpoint1" / "receipts" / f"{task_id}.json",
     ]
 
@@ -210,26 +216,14 @@ async def get_task_receipt(task_id: str) -> dict[str, Any]:
                 pass
 
     if receipt_data is None:
-        boundary = storage.get_boundary(task_id)
-        if boundary:
-            from .receipt import build_receipt
-            receipt_data = build_receipt(
-                task=task,
-                initial_boundary=boundary,
-                requester=task.agent_id,
-                storage=storage,
-                os_records=[],
-                deliveries=[],
-                sensor_status={"status": "synthetic_view"},
-                isolation={},
-                freeze_events=[],
-                termination={"status": task.status.value},
-                wall_time_s=0.0,
-                os_identity=None,
-            )
-
-    if receipt_data is None:
-        raise HTTPException(status_code=404, detail="Receipt not found for task")
+        return {
+            "task_id": task_id,
+            "available": False,
+            "verified": False,
+            "verification_message": "No stored receipt",
+            "receipt": None,
+            "receipt_file": None,
+        }
 
     from .receipt import verify_chain
     events = receipt_data.get("events", [])
@@ -247,6 +241,7 @@ async def get_task_receipt(task_id: str) -> dict[str, Any]:
 
     return {
         "task_id": task_id,
+        "available": True,
         "receipt": receipt_data,
         "verified": verified,
         "verification_message": verification_msg,

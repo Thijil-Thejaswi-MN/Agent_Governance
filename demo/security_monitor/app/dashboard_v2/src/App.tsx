@@ -1,16 +1,27 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { AppLayout } from './components/layout/AppLayout';
-import { OverviewPage } from './pages/OverviewPage';
-import { TasksPage } from './pages/TasksPage';
-import { TaskDetailPage } from './pages/TaskDetailPage';
-import { AgentsPage } from './pages/AgentsPage';
-import { ActivityPage } from './pages/ActivityPage';
-import { ApprovalsPage } from './pages/ApprovalsPage';
-import { EvaluationPage } from './pages/EvaluationPage';
-import { ArchitecturePage } from './pages/ArchitecturePage';
+
+// Route-level code splitting via React.lazy
+const OverviewPage = React.lazy(() => import('./pages/OverviewPage').then(m => ({ default: m.OverviewPage })));
+const TasksPage = React.lazy(() => import('./pages/TasksPage').then(m => ({ default: m.TasksPage })));
+const TaskDetailPage = React.lazy(() => import('./pages/TaskDetailPage').then(m => ({ default: m.TaskDetailPage })));
+const AgentsPage = React.lazy(() => import('./pages/AgentsPage').then(m => ({ default: m.AgentsPage })));
+const ActivityPage = React.lazy(() => import('./pages/ActivityPage').then(m => ({ default: m.ActivityPage })));
+const ApprovalsPage = React.lazy(() => import('./pages/ApprovalsPage').then(m => ({ default: m.ApprovalsPage })));
+const EvaluationPage = React.lazy(() => import('./pages/EvaluationPage').then(m => ({ default: m.EvaluationPage })));
+const ArchitecturePage = React.lazy(() => import('./pages/ArchitecturePage').then(m => ({ default: m.ArchitecturePage })));
+
+const PageLoader: React.FC = () => (
+  <div className="flex items-center justify-center min-h-[350px] text-slate-400 font-mono text-xs">
+    <div className="flex items-center gap-2">
+      <div className="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-ping" />
+      <span>Loading view telemetry...</span>
+    </div>
+  </div>
+);
 
 export const App: React.FC = () => {
   return (
@@ -19,14 +30,14 @@ export const App: React.FC = () => {
         <BrowserRouter basename="/dashboard">
           <Routes>
             <Route element={<AppLayout />}>
-              <Route index element={<OverviewPage />} />
-              <Route path="tasks" element={<TasksPage />} />
-              <Route path="tasks/:taskId" element={<TaskDetailPage />} />
-              <Route path="agents" element={<AgentsPage />} />
-              <Route path="activity" element={<ActivityPage />} />
-              <Route path="approvals" element={<ApprovalsPage />} />
-              <Route path="evaluation" element={<EvaluationPage />} />
-              <Route path="architecture" element={<ArchitecturePage />} />
+              <Route index element={<Suspense fallback={<PageLoader />}><OverviewPage /></Suspense>} />
+              <Route path="tasks" element={<Suspense fallback={<PageLoader />}><TasksPage /></Suspense>} />
+              <Route path="tasks/:taskId" element={<Suspense fallback={<PageLoader />}><TaskDetailPage /></Suspense>} />
+              <Route path="agents" element={<Suspense fallback={<PageLoader />}><AgentsPage /></Suspense>} />
+              <Route path="activity" element={<Suspense fallback={<PageLoader />}><ActivityPage /></Suspense>} />
+              <Route path="approvals" element={<Suspense fallback={<PageLoader />}><ApprovalsPage /></Suspense>} />
+              <Route path="evaluation" element={<Suspense fallback={<PageLoader />}><EvaluationPage /></Suspense>} />
+              <Route path="architecture" element={<Suspense fallback={<PageLoader />}><ArchitecturePage /></Suspense>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-27T10:47:59.159374+00:00",
+  "generated_at": "2026-10-27T12:22:22.847731+00:00",
   "evaluation_label": "controlled evaluation, local 7\u20138B models",
   "model": "qwen2.5:7b",
   "harm_injected": {
@@ -106,28 +106,36 @@
   },
   "timings_and_timeouts": {
     "A": {
-      "mean_s": 14.85,
-      "median_s": 11.83,
-      "total_trials": 96,
-      "timeouts": 1
+      "mean_s": 13,
+      "mean_s_exact": 13.26,
+      "median_s": 13.64,
+      "total_trials": 32,
+      "timeouts": 0,
+      "timeout_ratio": "0/32"
     },
     "B": {
-      "mean_s": 39.8,
-      "median_s": 22.94,
-      "total_trials": 96,
-      "timeouts": 7
+      "mean_s": 64,
+      "mean_s_exact": 63.89,
+      "median_s": 38.34,
+      "total_trials": 32,
+      "timeouts": 6,
+      "timeout_ratio": "6/32"
     },
     "C": {
-      "mean_s": 44.54,
-      "median_s": 32.29,
-      "total_trials": 96,
-      "timeouts": 7
+      "mean_s": 68,
+      "mean_s_exact": 67.81,
+      "median_s": 49.8,
+      "total_trials": 32,
+      "timeouts": 6,
+      "timeout_ratio": "6/32"
     },
     "D": {
-      "mean_s": 20.71,
-      "median_s": 12.49,
-      "total_trials": 96,
-      "timeouts": 4
+      "mean_s": 26,
+      "mean_s_exact": 25.9,
+      "median_s": 15.35,
+      "total_trials": 32,
+      "timeouts": 2,
+      "timeout_ratio": "2/32"
     }
   },
   "limitations": [

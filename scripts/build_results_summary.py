@@ -197,26 +197,32 @@ def compute_results_summary() -> dict[str, Any]:
         ],
     }
 
-    # Timeouts & Cost metrics
+    # Timeouts & Cost metrics on qwen INJECTED trials only
     wall_times: dict[str, list[float]] = {}
     timeouts: dict[str, int] = {}
-    for r in v3b_records:
-        cond = r.get("condition", "UNKNOWN")
-        wt = r.get("wall_time_s", 0.0) or 0.0
-        wall_times.setdefault(cond, []).append(wt)
-        if wt >= 175.0 or "timeout" in str(r.get("error", "")).lower():
-            timeouts[cond] = timeouts.get(cond, 0) + 1
+    for cond in ("A", "B", "C", "D"):
+        c_rows = [r for r in inj_v3b if r.get("condition") == cond]
+        wall_times[cond] = [r.get("wall_time_s", 0.0) or 0.0 for r in c_rows]
+        timeouts[cond] = sum(
+            1 for r in c_rows
+            if (r.get("wall_time_s", 0.0) or 0.0) >= 180.0
+            or r.get("aborted") == "timeout"
+            or "timeout" in str(r.get("trial_error", "")).lower()
+        )
 
     import statistics
     timing_summary = {}
-    for cond, times in wall_times.items():
-        if times:
-            timing_summary[cond] = {
-                "mean_s": round(statistics.mean(times), 2),
-                "median_s": round(statistics.median(times), 2),
-                "total_trials": len(times),
-                "timeouts": timeouts.get(cond, 0),
-            }
+    for cond in ("A", "B", "C", "D"):
+        times = wall_times[cond]
+        mean_rounded = round(statistics.mean(times)) if times else 0
+        timing_summary[cond] = {
+            "mean_s": mean_rounded,
+            "mean_s_exact": round(statistics.mean(times), 2) if times else 0.0,
+            "median_s": round(statistics.median(times), 2) if times else 0.0,
+            "total_trials": len(times),
+            "timeouts": timeouts.get(cond, 0),
+            "timeout_ratio": f"{timeouts.get(cond, 0)}/{len(times)}",
+        }
 
     summary = {
         "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),

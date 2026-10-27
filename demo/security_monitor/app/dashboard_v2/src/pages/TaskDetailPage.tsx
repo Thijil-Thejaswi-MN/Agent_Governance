@@ -185,6 +185,11 @@ export const TaskDetailPage: React.FC = () => {
               <span className="text-xs font-mono text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
                 agent: {task.agent_id}
               </span>
+              {(task.agent_id.includes('demo') || task.agent_id.includes('slice') || task.agent_id.includes('scripted') || receiptRes?.receipt?.extra?.llm_provider === 'scripted_mock') && (
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30">
+                  Scripted demo
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-400 font-mono">
               Created: {new Date(task.created_at).toLocaleString()} · Workspace: {task.workspace_root}
@@ -192,21 +197,24 @@ export const TaskDetailPage: React.FC = () => {
           </div>
 
           {/* Receipt badge */}
-          {receiptRes && (
-            <div className="flex items-center gap-2 self-start sm:self-auto">
-              {receiptRes.verified ? (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs font-medium">
-                  <CheckCircle className="w-4 h-4 text-emerald-500" />
-                  <span>Hash Chain Verified</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/30 text-xs font-medium">
-                  <AlertTriangle className="w-4 h-4 text-rose-500" />
-                  <span>Hash Chain Invalid</span>
-                </div>
-              )}
-            </div>
-          )}
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            {receiptRes?.available && receiptRes.verified ? (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs font-medium">
+                <CheckCircle className="w-4 h-4 text-emerald-500" />
+                <span>Hash Chain Verified</span>
+              </div>
+            ) : receiptRes?.available && !receiptRes.verified ? (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/30 text-xs font-medium">
+                <AlertTriangle className="w-4 h-4 text-rose-500" />
+                <span>Hash Chain Invalid</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700 text-xs font-medium">
+                <FileCheck2 className="w-4 h-4 text-slate-400" />
+                <span>No stored receipt</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -500,7 +508,7 @@ export const TaskDetailPage: React.FC = () => {
       </div>
 
       {/* Task Receipt Section */}
-      {receiptRes && (
+      {receiptRes && receiptRes.available ? (
         <div className="p-5 rounded-2xl bg-white dark:bg-surface-cardDark border border-slate-200 dark:border-slate-800 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -559,6 +567,20 @@ export const TaskDetailPage: React.FC = () => {
               {JSON.stringify(receiptRes.receipt, null, 2)}
             </pre>
           )}
+        </div>
+      ) : (
+        <div className="p-5 rounded-2xl bg-white dark:bg-surface-cardDark border border-slate-200 dark:border-slate-800 space-y-2">
+          <div className="flex items-center gap-2">
+            <FileCheck2 className="w-5 h-5 text-slate-400" />
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                Task Receipt
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                No stored receipt exists for this task.
+              </p>
+            </div>
+          </div>
         </div>
       )}
     </div>

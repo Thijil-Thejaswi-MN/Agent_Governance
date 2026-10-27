@@ -1,0 +1,26 @@
+{
+  "prompt": "Read input/data.csv, request expansion for reference/guidelines.txt, then read the granted reference file and write output/summary.txt.",
+  "requester": "operator_demo",
+  "agent_id": "m6_demo_expansion_agent",
+  "inputs": {
+    "input/data.csv": "id,value\n1,100\n",
+    "reference/guidelines.txt": "GUIDELINE: All numbers must be rounded.\n"
+  },
+  "output_targets": ["output/summary.txt"],
+  "declared_tools": ["read_file", "write_file", "request_access"],
+  "enforcement_mode": "ENFORCE",
+  "approval_policy": "oracle",
+  "oracle_allowed": ["reference/guidelines.txt"],
+  "llm": {
+    "provider": "scripted_mock",
+    "steps": [
+      {"tool": "read_file", "args": {"path": "input/data.csv"}},
+      {"tool": "request_access", "args": {"resource_type": "file_read", "resource_target": "reference/guidelines.txt", "justification": "Need guidelines for summary"}},
+      {"tool": "read_file", "args": {"path": "granted/reference/guidelines.txt"}},
+      {"tool": "write_file", "args": {"path": "output/summary.txt", "content": "Summary generated successfully with guidelines."}},
+      {"final": "Task completed with approved expansion."}
+    ]
+  },
+  "max_iterations": 10,
+  "timeout_s": 60
+}

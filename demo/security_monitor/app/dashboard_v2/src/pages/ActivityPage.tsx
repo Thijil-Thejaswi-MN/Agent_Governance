@@ -4,7 +4,7 @@ import { api } from '../api/client';
 import { TaskEvent } from '../types';
 import { Badge } from '../components/common/Badge';
 import { EmptyState } from '../components/common/EmptyState';
-import { AnimatedList } from '../components/reactbits/AnimatedList';
+import { AnimatedListFeed } from '../components/reactbits/AnimatedListFeed';
 
 export const ActivityPage: React.FC = () => {
   const [events, setEvents] = useState<TaskEvent[]>([]);
@@ -128,7 +128,7 @@ export const ActivityPage: React.FC = () => {
           description="No telemetry events match your selected filters."
         />
       ) : (
-        <AnimatedList className="space-y-2.5">
+        <AnimatedListFeed className="space-y-2.5">
           {filtered.map((ev, i) => {
             const isBlocked = ev.verdict === 'OUTSIDE' || ev.prevented;
             return (
@@ -170,7 +170,7 @@ export const ActivityPage: React.FC = () => {
               </div>
             );
           })}
-        </AnimatedList>
+        </AnimatedListFeed>
       )}
     </div>
   );

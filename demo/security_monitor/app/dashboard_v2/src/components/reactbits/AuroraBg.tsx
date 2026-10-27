@@ -1,3 +1,4 @@
+// Inspired by React Bits (https://reactbits.dev) Aurora background - MIT + Commons Clause License
 import React, { useEffect, useRef } from 'react';
 
 interface AuroraProps {
@@ -5,7 +6,7 @@ interface AuroraProps {
   speed?: number;
 }
 
-export const Aurora: React.FC<AuroraProps> = ({
+export const AuroraBg: React.FC<AuroraProps> = ({
   className = '',
   speed = 0.8,
 }) => {
@@ -144,3 +145,5 @@ export const Aurora: React.FC<AuroraProps> = ({
     />
   );
 };
+
+export default AuroraBg;

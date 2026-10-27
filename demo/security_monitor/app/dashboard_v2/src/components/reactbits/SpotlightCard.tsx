@@ -1,3 +1,4 @@
+// Inspired by React Bits (https://reactbits.dev) SpotlightCard - MIT + Commons Clause License
 import React, { useRef, useState, useEffect } from 'react';
 
 interface SpotlightCardProps extends React.HTMLAttributes<HTMLDivElement> {

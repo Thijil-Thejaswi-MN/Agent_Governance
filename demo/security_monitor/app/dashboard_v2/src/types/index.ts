@@ -85,10 +85,11 @@ export interface TaskReceipt {
 
 export interface ReceiptResponse {
   task_id: string;
-  receipt: TaskReceipt;
+  available?: boolean;
+  receipt: TaskReceipt | null;
   verified: boolean;
   verification_message: string;
-  receipt_file?: string;
+  receipt_file?: string | null;
 }
 
 export interface ResultsSummary {

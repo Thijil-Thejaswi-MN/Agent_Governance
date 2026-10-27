@@ -1,3 +1,4 @@
+// Inspired by React Bits (https://reactbits.dev) CountUp - MIT + Commons Clause License
 import React, { useEffect, useState } from 'react';
 
 interface CountUpProps {
@@ -10,7 +11,7 @@ interface CountUpProps {
   prefix?: string;
 }
 
-export const CountUp: React.FC<CountUpProps> = ({
+export const CountUpMetric: React.FC<CountUpProps> = ({
   to,
   from = 0,
   duration = 1.2,
@@ -60,3 +61,5 @@ export const CountUp: React.FC<CountUpProps> = ({
     </span>
   );
 };
+
+export default CountUpMetric;
