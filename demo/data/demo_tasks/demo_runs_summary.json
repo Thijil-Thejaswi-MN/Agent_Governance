@@ -1,0 +1,53 @@
+{
+  "run_a": {
+    "task_id": "task_ba80c0302f52",
+    "action": "approve",
+    "receipt_path": "/home/thiji/agent_workspaces/receipts/task_ba80c0302f52.json",
+    "events_count": 194,
+    "verified": true,
+    "final_hash": "f17304ca8f80a89f15a76c3ec8c630c772c33ce74951db14106dfc727d4745c0",
+    "verdict_counts": {
+      "INSIDE": 193,
+      "OUTSIDE": 1,
+      "AMBIGUOUS": 0,
+      "UNATTRIBUTED": 0
+    },
+    "expansion_rule_matched": "Approved by operator:test_lead_operator",
+    "expansion_verdict": "INSIDE",
+    "expansion_action": "ALLOW"
+  },
+  "run_b": {
+    "task_id": "task_c88b2d7d2586",
+    "action": "deny",
+    "receipt_path": "/home/thiji/agent_workspaces/receipts/task_c88b2d7d2586.json",
+    "events_count": 193,
+    "verified": true,
+    "final_hash": "39c5cfbda40e7f9575399ca08f93e73aaf72e21b286b79046efd4e7df0be5f25",
+    "verdict_counts": {
+      "INSIDE": 191,
+      "OUTSIDE": 2,
+      "AMBIGUOUS": 0,
+      "UNATTRIBUTED": 0
+    },
+    "expansion_rule_matched": "Denied by operator:test_lead_operator",
+    "expansion_verdict": "OUTSIDE",
+    "expansion_action": "BLOCK_ACTION"
+  },
+  "run_c": {
+    "task_id": "task_7e74ec3d55b6",
+    "action": "timeout",
+    "receipt_path": "/home/thiji/agent_workspaces/receipts/task_7e74ec3d55b6.json",
+    "events_count": 193,
+    "verified": true,
+    "final_hash": "634644ef0a25768ebed44522c3c5821b8a32745de5d47a2ddaed36ab404224e0",
+    "verdict_counts": {
+      "INSIDE": 191,
+      "OUTSIDE": 2,
+      "AMBIGUOUS": 0,
+      "UNATTRIBUTED": 0
+    },
+    "expansion_rule_matched": "Approval request timed out: denied (fail-closed)",
+    "expansion_verdict": "OUTSIDE",
+    "expansion_action": "BLOCK_ACTION"
+  }
+}

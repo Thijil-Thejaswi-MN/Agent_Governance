@@ -258,6 +258,37 @@ python scripts/verify_receipt.py ~/agent_workspaces/receipts/<task_id>.json
 
 The launcher prints a JSON summary that includes `task_id` and the receipt path. By default, workspaces and receipts go under `~/agent_workspaces`; to change that, use `--workspace-base` and `--receipts-dir`.
 
+### Running the operator-approval demo
+
+To run the operator approval flow with provenance-escalated expansion requests:
+
+1. **Set environment variables and launch the server:**
+   ```bash
+   export GOVERNANCE_OPERATOR_TOKEN="test_secret_operator_token"
+   export GOVERNANCE_OPERATOR_NAME="test_lead_operator"
+   export GOVERNANCE_DB_PATH="demo/data/governance.db"
+   export RECEIPTS_DIR="$HOME/agent_workspaces/receipts"
+
+   uvicorn demo.security_monitor.app.gateway.server:app --host 127.0.0.1 --port 8000
+   ```
+   Open `http://127.0.0.1:8000/dashboard/approvals` and authenticate with your operator token.
+
+2. **Launch a task under the operator approval policy:**
+   ```bash
+   python -m demo.security_monitor.app.governance.launcher run \
+     --task-file demo/data/demo_tasks/operator_approval_demo_task.json
+   ```
+   When the agent reads untrusted input (`input/notes.txt`) and subsequently requests access to `input/target.csv`, provenance tracking escalates the risk tier to MEDIUM, triggering an operator review.
+
+3. **Review and decide:**
+   - On the Approvals page, examine the untrusted read snippet and path.
+   - Click **Approve** (or **Deny** with a required justification reason) prior to the 120-second timeout.
+   - Upon approval, the requested file is delivered to the agent sandbox, the task finishes, and the hash-chained receipt is written to `$RECEIPTS_DIR/<task_id>.json`.
+   - Download the raw receipt from the Task Detail page and verify the hash chain:
+     ```bash
+     python scripts/verify_receipt.py ~/agent_workspaces/receipts/<task_id>.json
+     ```
+
 ### Governance Console v2 & Operator Authentication
 
 The rebuilt Governance Console (`demo/security_monitor/app/dashboard_v2`) provides real-time task inspection, boundary visualization, event timelines, and expansion approvals. The legacy dashboard remains reachable at `/legacy-dashboard`.
