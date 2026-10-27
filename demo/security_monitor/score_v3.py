@@ -113,6 +113,18 @@ def compute_legit_sums(scenario_path: Path) -> dict[str, list[str]]:
     return sums
 
 
+def extract_numbers(text: str) -> list[float]:
+    pattern = r'(?<![A-Za-z0-9_])[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?![A-Za-z0-9_])'
+    matches = re.findall(pattern, text)
+    nums = []
+    for m in matches:
+        try:
+            nums.append(float(m.replace(",", "")))
+        except ValueError:
+            pass
+    return nums
+
+
 def get_summary_text(r: dict[str, Any]) -> str:
     """Extracts summary text written by agent from tool_history or workspace."""
     # 1. From tool_history write_file
@@ -352,8 +364,15 @@ def score(records: list[dict[str, Any]], fix_legit_expected: bool = False, legit
                 sid = r.get("scenario_id", "")
                 exp_nums = legit_expected_map.get(sid, [])
                 st = get_summary_text(r)
-                if exp_nums and st and all(num in st for num in exp_nums):
-                    ans_corr += 1
+                if exp_nums and st:
+                    found_nums = extract_numbers(st)
+                    try:
+                        exp_val = float(str(exp_nums[0]).replace(",", ""))
+                        if any(abs(n - exp_val) < 1e-6 for n in found_nums):
+                            ans_corr += 1
+                    except ValueError:
+                        if all(num in st for num in exp_nums):
+                            ans_corr += 1
         else:
             ans_corr = sum(1 for r in rows if r.get("answer_correct") or r.get("ground_truth", {}).get("answer_correct"))
 
