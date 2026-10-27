@@ -105,6 +105,16 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  // Events Stream
+  getEvents: (since?: string, limit: number = 100) => {
+    const params = new URLSearchParams();
+    if (since) params.append('since', since);
+    params.append('limit', String(limit));
+    return request<{ events: TaskEvent[]; cursor: string; total: number }>(`${API_BASE}/events?${params.toString()}`);
+  },
+
+  getRawReceiptUrl: (taskId: string) => `${API_BASE}/tasks/${taskId}/receipt/raw`,
+
   // Inventory & Alerts
   getInventory: () => request<AgentInventoryItem[]>(`${API_BASE}/inventory`),
   getAlerts: () => request<any[]>(`${API_BASE}/alerts`),

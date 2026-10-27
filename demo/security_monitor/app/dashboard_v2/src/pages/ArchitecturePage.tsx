@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layers, Cpu, Shield, Lock, FileCheck2, ArrowDown, ArrowRight } from 'lucide-react';
+import { Layers, Cpu, Shield, Lock, FileCheck2, ArrowDown, ArrowRight, Eye, UserCheck, Terminal } from 'lucide-react';
 
 export const ArchitecturePage: React.FC = () => {
   return (
@@ -13,8 +13,45 @@ export const ArchitecturePage: React.FC = () => {
         </p>
       </div>
 
+      {/* Experimental Conditions Compared */}
+      <div className="p-6 rounded-3xl bg-white dark:bg-surface-cardDark border border-slate-200 dark:border-slate-800 space-y-4">
+        <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+          <Layers className="w-4 h-4 text-cyan-500" />
+          <span>Governance Isolation Conditions</span>
+        </h2>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          The system evaluates four distinct isolation conditions under identical task workloads:
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 space-y-1.5">
+            <span className="font-mono text-xs font-bold text-slate-500 block">Condition A</span>
+            <span className="font-semibold text-slate-900 dark:text-white text-sm block">No governance</span>
+            <p className="text-slate-500 text-[11px]">Direct execution without tool mediation or OS confinement.</p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 space-y-1.5">
+            <span className="font-mono text-xs font-bold text-cyan-500 block">Condition B</span>
+            <span className="font-semibold text-slate-900 dark:text-white text-sm block">Tool layer only</span>
+            <p className="text-slate-500 text-[11px]">Tool mediation and broker checks without OS sandboxing.</p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-indigo-500/30 bg-indigo-500/5 space-y-1.5">
+            <span className="font-mono text-xs font-bold text-indigo-500 block">Condition C</span>
+            <span className="font-semibold text-slate-900 dark:text-white text-sm block">Tool + OS layer</span>
+            <p className="text-slate-500 text-[11px]">Tool mediation combined with Landlock, seccomp, and observation sensor.</p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 space-y-1.5">
+            <span className="font-mono text-xs font-bold text-purple-500 block">Condition D</span>
+            <span className="font-semibold text-slate-900 dark:text-white text-sm block">Per-task container</span>
+            <p className="text-slate-500 text-[11px]">Full container boundary isolation per task invocation.</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Runtime Architecture Flow */}
       <div className="p-8 rounded-3xl bg-white dark:bg-surface-cardDark border border-slate-200 dark:border-slate-800 space-y-8">
-        {/* Flow Diagram */}
         <div className="flex flex-col items-center space-y-6 max-w-2xl mx-auto">
           {/* User Request */}
           <div className="w-full p-4 rounded-xl border border-cyan-500/30 bg-cyan-500/5 text-center">
@@ -27,8 +64,8 @@ export const ArchitecturePage: React.FC = () => {
           {/* Intake & Boundary Derivation */}
           <div className="w-full p-4 rounded-xl border border-indigo-500/30 bg-indigo-500/5 text-center">
             <span className="font-mono text-xs font-bold text-indigo-500 uppercase block">Derivation</span>
-            <span className="text-sm font-semibold text-slate-900 dark:text-white">Task-Scoped Boundary Derivation (v1 Templates)</span>
-            <p className="text-xs text-slate-500 mt-1">Derives allowable files, permitted tools, network endpoints</p>
+            <span className="text-sm font-semibold text-slate-900 dark:text-white">Task-Scoped Boundary Derivation</span>
+            <p className="text-xs text-slate-500 mt-1">Derives allowable files, permitted tools, and network egress rules</p>
           </div>
 
           <ArrowDown className="w-5 h-5 text-slate-400" />
@@ -40,14 +77,18 @@ export const ArchitecturePage: React.FC = () => {
               <span className="text-[11px] font-mono text-slate-400">cgroup v2 scope</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
               <div className="p-3 rounded-lg bg-white/60 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
                 <span className="text-blue-500 font-bold block mb-1">Landlock LSM</span>
-                <span>Restricts kernel file openat/read/write to derived paths and read-only granted/</span>
+                <span>Restricts kernel filesystem access to derived paths and pre-authorized granted/ directory</span>
               </div>
               <div className="p-3 rounded-lg bg-white/60 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
                 <span className="text-blue-500 font-bold block mb-1">Seccomp Filter</span>
                 <span>Restricts syscalls, mounts, raw sockets, and prevents sandbox escapes</span>
+              </div>
+              <div className="p-3 rounded-lg bg-white/60 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
+                <span className="text-amber-500 font-bold block mb-1">Observation Sensor</span>
+                <span>Observation-only sensor tracing child process lifecycle and syscall telemetry</span>
               </div>
             </div>
 
@@ -69,10 +110,55 @@ export const ArchitecturePage: React.FC = () => {
             </div>
             <div className="p-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 text-center">
               <span className="font-mono text-xs font-bold text-emerald-500 uppercase block">Audit & Chain</span>
-              <span className="text-sm font-semibold text-slate-900 dark:text-white">Task Receipt v0</span>
-              <p className="text-xs text-slate-500 mt-1">SHA-256 hash-chained log of allowed & blocked actions</p>
+              <span className="text-sm font-semibold text-slate-900 dark:text-white">Task Receipt</span>
+              <p className="text-xs text-slate-500 mt-1">SHA-256 hash-chained log of allowed and denied actions</p>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Verified Claims & Approval Policies */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="p-6 rounded-2xl bg-white dark:bg-surface-cardDark border border-slate-200 dark:border-slate-800 space-y-3">
+          <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <Shield className="w-4 h-4 text-emerald-500" />
+            <span>Verified Architectural Properties</span>
+          </h3>
+          <ul className="space-y-2 text-xs text-slate-600 dark:text-slate-300">
+            <li className="flex items-start gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
+              <span><strong>Hash-Chained Receipts:</strong> Receipts are cryptographically linked using a sequential SHA-256 hash chain verified by replaying each event digest against genesis.</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
+              <span><strong>Observation-Only Sensor:</strong> The background telemetry sensor operates strictly for runtime observation; enforcement barriers are enforced directly by the Linux kernel via Landlock and seccomp.</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
+              <span><strong>Exact Resource Boundaries:</strong> Boundaries require exact path matches; wildcards are strictly rejected during compilation and runtime requests.</span>
+            </li>
+          </ul>
+        </div>
+
+        <div className="p-6 rounded-2xl bg-white dark:bg-surface-cardDark border border-slate-200 dark:border-slate-800 space-y-3">
+          <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <UserCheck className="w-4 h-4 text-cyan-500" />
+            <span>Dynamic Approval Policies</span>
+          </h3>
+          <ul className="space-y-2 text-xs text-slate-600 dark:text-slate-300">
+            <li className="flex items-start gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 mt-1.5 shrink-0" />
+              <span><strong>Oracle Approval Path (Evaluation):</strong> In empirical benchmark trials, an automated oracle decides boundary expansion requests deterministically based on test specifications.</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 mt-1.5 shrink-0" />
+              <span><strong>Operator Approval Path (Console):</strong> In interactive operations and demos, requests remain PENDING until an authenticated human operator reviews provenance and decides via the dashboard.</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 mt-1.5 shrink-0" />
+              <span><strong>Fail-Closed Timeouts:</strong> When operator requests remain undecided upon reaching the configured timeout, they fail closed to DENY automatically.</span>
+            </li>
+          </ul>
         </div>
       </div>
     </div>

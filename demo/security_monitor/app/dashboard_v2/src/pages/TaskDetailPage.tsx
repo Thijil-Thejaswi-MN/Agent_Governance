@@ -20,6 +20,7 @@ import {
   ExternalLink,
   Copy,
   Check,
+  Download,
 } from 'lucide-react';
 import { api } from '../api/client';
 import { TaskRecord, TaskBoundary, TaskEvent, ExpansionItem, ReceiptResponse } from '../types';
@@ -524,6 +525,15 @@ export const TaskDetailPage: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2">
+              <a
+                href={`/api/governance/tasks/${taskId}/receipt/raw`}
+                download={`${taskId}_receipt.json`}
+                id="download-receipt-btn"
+                className="px-3 py-1.5 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download receipt (JSON)</span>
+              </a>
               <button
                 onClick={copyReceiptToClipboard}
                 className="p-1.5 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 rounded-lg transition-colors flex items-center gap-1"
@@ -541,7 +551,7 @@ export const TaskDetailPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200/80 dark:border-slate-800 font-mono text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3.5 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200/80 dark:border-slate-800 font-mono text-xs">
             <div>
               <span className="text-slate-400 block text-[11px]">HASH CHAIN STATUS</span>
               <span className={`font-bold ${receiptRes.verified ? 'text-emerald-500' : 'text-rose-500'}`}>
@@ -556,10 +566,20 @@ export const TaskDetailPage: React.FC = () => {
             </div>
             <div className="truncate">
               <span className="text-slate-400 block text-[11px]">FINAL HASH</span>
-              <span className="font-bold text-slate-800 dark:text-slate-200 truncate block" title={receiptRes.receipt?.hash_chain?.final_hash}>
-                {receiptRes.receipt?.hash_chain?.final_hash ? `${receiptRes.receipt.hash_chain.final_hash.slice(0, 16)}...` : 'N/A'}
+              <span className="font-bold text-slate-800 dark:text-slate-200 truncate block" title={receiptRes.final_hash || receiptRes.receipt?.hash_chain?.final_hash}>
+                {(receiptRes.final_hash || receiptRes.receipt?.hash_chain?.final_hash) ? `${(receiptRes.final_hash || receiptRes.receipt?.hash_chain?.final_hash)?.slice(0, 16)}...` : 'N/A'}
               </span>
             </div>
+            <div className="truncate">
+              <span className="text-slate-400 block text-[11px]">FILE SHA-256</span>
+              <span className="font-bold text-slate-800 dark:text-slate-200 truncate block" title={receiptRes.file_sha256 || 'N/A'}>
+                {receiptRes.file_sha256 ? `${receiptRes.file_sha256.slice(0, 16)}...` : 'N/A'}
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400 px-1">
+            <span>Check with <code className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-700 dark:text-slate-300">scripts/verify_receipt.py</code></span>
+            {receiptRes.receipt_file && <span className="truncate max-w-xs">{receiptRes.receipt_file}</span>}
           </div>
 
           {showReceiptJson && (

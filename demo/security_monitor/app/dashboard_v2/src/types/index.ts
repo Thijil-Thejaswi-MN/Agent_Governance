@@ -37,6 +37,7 @@ export interface TaskBoundary {
 export interface TaskEvent {
   event_id?: string;
   task_id: string;
+  agent_id?: string;
   timestamp: string;
   source: string;
   kind: string;
@@ -54,6 +55,17 @@ export interface TaskEvent {
   seq?: number;
 }
 
+export interface UntrustedRead {
+  task_id: string;
+  agent_id?: string;
+  timestamp: string;
+  source_type: string;
+  source_target: string;
+  content_hash: string;
+  content_len: number;
+  content_snippet?: string;
+}
+
 export interface ExpansionItem {
   request_id: string;
   task_id: string;
@@ -65,10 +77,18 @@ export interface ExpansionItem {
   justification: string;
   status: ExpansionStatus;
   created_at: string;
+  resolved_at?: string;
+  resolved_by?: string;
   decided_at?: string;
   decided_by?: string;
   denial_reason?: string;
+  reason?: string;
+  single_use?: boolean;
+  timeout_seconds?: number;
+  escalated_by_provenance?: boolean;
   provenance_escalation?: boolean;
+  task_request_text?: string;
+  prior_untrusted_reads?: UntrustedRead[];
 }
 
 export interface TaskReceipt {
@@ -92,6 +112,8 @@ export interface ReceiptResponse {
   verified: boolean;
   verification_message: string;
   receipt_file?: string | null;
+  file_sha256?: string | null;
+  final_hash?: string | null;
 }
 
 export interface ResultsSummary {
