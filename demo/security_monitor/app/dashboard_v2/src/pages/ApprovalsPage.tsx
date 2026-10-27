@@ -251,10 +251,21 @@ export const ApprovalsPage: React.FC = () => {
                         {e.prior_untrusted_reads.map((pr, idx) => (
                           <div
                             key={idx}
-                            className="p-2 rounded bg-white/70 dark:bg-slate-900/80 border border-amber-500/20 font-mono text-[11px] space-y-1"
+                            className={`p-2 rounded font-mono text-[11px] space-y-1 ${
+                              pr.linked
+                                ? 'bg-amber-500/20 border-2 border-amber-500/60 dark:bg-amber-950/40 dark:border-amber-500/60'
+                                : 'bg-white/70 dark:bg-slate-900/80 border border-amber-500/20'
+                            }`}
                           >
-                            <div className="text-slate-700 dark:text-slate-200 font-bold">
-                              Source file: {pr.source_target}
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="text-slate-700 dark:text-slate-200 font-bold">
+                                Source file: {pr.source_target}
+                              </div>
+                              {pr.linked && (
+                                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40 shrink-0">
+                                  this read mentions the requested resource
+                                </span>
+                              )}
                             </div>
                             {pr.content_snippet && (
                               <div className="text-slate-500 dark:text-slate-400 truncate text-[10px]">

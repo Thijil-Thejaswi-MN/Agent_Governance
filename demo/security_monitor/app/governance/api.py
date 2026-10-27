@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import os
 from pathlib import Path
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
@@ -279,6 +280,10 @@ def _compute_task_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def event_key(e: dict[str, Any]) -> str:
+    return f"{e.get('timestamp') or ''}|{e.get('event_id') or ''}"
+
+
 @governance_router.get("/events")
 async def list_all_events(
     since: str | None = Query(None),
@@ -298,31 +303,42 @@ async def list_all_events(
                 seen_ids.add(eid)
                 all_events.append(e)
 
-    # Sort newest first by timestamp and event_id
-    all_events.sort(key=lambda x: (x.get("timestamp") or "", x.get("event_id") or ""), reverse=True)
-
-    def event_key(e: dict[str, Any]) -> str:
-        return f"{e.get('timestamp') or ''}|{e.get('event_id') or ''}"
-
-    if since:
-        if "|" in since:
+    if since is not None:
+        if since == "":
+            newer_events = list(all_events)
+        elif "|" in since:
             since_ts, since_id = since.split("|", 1)
-            filtered = [
+            newer_events = [
                 e for e in all_events
                 if (e.get("timestamp") or "", e.get("event_id") or "") > (since_ts, since_id)
             ]
         else:
-            filtered = [e for e in all_events if (e.get("timestamp") or "") > since]
-        all_events = filtered
+            newer_events = [e for e in all_events if (e.get("timestamp") or "") > since]
 
-    limited = all_events[:limit]
-    newest_cursor = event_key(limited[0]) if limited else (since or "")
+        # Sort ascending (oldest to newest)
+        newer_events.sort(key=lambda x: (x.get("timestamp") or "", x.get("event_id") or ""))
 
-    return {
-        "events": limited,
-        "cursor": newest_cursor,
-        "total": len(limited),
-    }
+        # When more than limit events are newer than since, return the OLDEST limit of them (ascending)
+        # and set the cursor to the last one returned, so polling never skips events.
+        limited = newer_events[:limit]
+        new_cursor = event_key(limited[-1]) if limited else since
+
+        return {
+            "events": limited,
+            "cursor": new_cursor,
+            "total": len(limited),
+        }
+    else:
+        # Initial poll (since is None): return newest first up to limit
+        all_events.sort(key=lambda x: (x.get("timestamp") or "", x.get("event_id") or ""), reverse=True)
+        limited = all_events[:limit]
+        newest_cursor = event_key(limited[0]) if limited else ""
+
+        return {
+            "events": limited,
+            "cursor": newest_cursor,
+            "total": len(limited),
+        }
 
 
 @governance_router.get("/tasks")
@@ -546,12 +562,64 @@ class ExpansionDecision(BaseModel):
     reason: str = ""
 
 
+def _parse_iso_ts(ts: Any) -> datetime | None:
+    if not ts:
+        return None
+    if isinstance(ts, datetime):
+        return ts
+    try:
+        s = str(ts).strip()
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        return datetime.fromisoformat(s)
+    except Exception:
+        return None
+
+
 def _enrich_expansion_dict(e: Any, storage: Any) -> dict[str, Any]:
     d = e.model_dump()
     task = storage.get_task(e.task_id)
     d["task_request_text"] = task.request_text if task else ""
     prov_records = storage.get_provenance_for_task(e.task_id)
-    d["prior_untrusted_reads"] = [p.model_dump() for p in prov_records]
+
+    req_dt = _parse_iso_ts(getattr(e, "created_at", None))
+    req_created_str = str(getattr(e, "created_at", "") or "")
+
+    target_norm = (getattr(e, "resource_target", "") or "").strip().lower()
+    needle_path = target_norm
+    needle_name = Path(target_norm).name.lower() if target_norm else ""
+    resource_type = getattr(e, "resource_type", "")
+    host_part = target_norm.split(":")[0] if ":" in target_norm else target_norm
+
+    prior_reads = []
+    for p in prov_records:
+        p_dt = _parse_iso_ts(getattr(p, "timestamp", None))
+        p_ts_str = str(getattr(p, "timestamp", "") or "")
+
+        # Include only provenance reads with timestamp < the request's created_at
+        if req_dt and p_dt:
+            if not (p_dt < req_dt):
+                continue
+        elif not (p_ts_str < req_created_str):
+            continue
+
+        p_dict = p.model_dump()
+        snippet = (getattr(p, "content_snippet", "") or "").lower()
+
+        # Mark each read linked: true if its snippet contains the requested path or file name
+        # (same rule as content_linked escalation)
+        is_linked = bool(
+            snippet
+            and (
+                (needle_path and needle_path in snippet)
+                or (needle_name and needle_name in snippet)
+                or (resource_type == "network" and host_part in snippet)
+            )
+        )
+        p_dict["linked"] = is_linked
+        prior_reads.append(p_dict)
+
+    d["prior_untrusted_reads"] = prior_reads
     return d
 
 

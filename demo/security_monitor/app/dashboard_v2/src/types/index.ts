@@ -64,6 +64,7 @@ export interface UntrustedRead {
   content_hash: string;
   content_len: number;
   content_snippet?: string;
+  linked?: boolean;
 }
 
 export interface ExpansionItem {

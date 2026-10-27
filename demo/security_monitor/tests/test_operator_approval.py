@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 
 from app.gateway.server import create_app
 from app.governance.models import (
+    ExpansionRequest,
     ExpansionStatus,
     GovernanceEvent,
     ProvenanceRecord,
@@ -494,3 +495,188 @@ def test_events_stream_cursor_newest_first_and_limits(test_env):
     resp_all = client.get("/api/governance/events?limit=100")
     assert resp_all.status_code == 200
     assert len(resp_all.json()["events"]) == 7  # 3 from task1 + 4 from task2
+
+
+def test_provenance_reads_filtered_by_timestamp_and_linked_marking(test_env):
+    storage: GovernanceStorage = test_env["storage"]
+    client: TestClient = test_env["client"]
+
+    task_id = "task_prov_time_filter"
+    req_id = "exp_prov_time_filter"
+
+    task = TaskRecord(
+        task_id=task_id,
+        request_text="Process secret records",
+        request_hash="hash_prov_time",
+        agent_id="agent_prov",
+        workspace_root="/tmp/ws_prov_time",
+        status=TaskLifecycle.ACTIVE,
+        created_at="2026-10-27T10:00:00Z",
+    )
+    storage.save_task(task)
+
+    # 1. Read before request that mentions target.csv -> must be included with linked=True
+    pr_before_linked = ProvenanceRecord(
+        task_id=task_id,
+        timestamp="2026-10-27T10:01:00Z",
+        source_type="file_read",
+        source_target="input/notes.txt",
+        content_hash="h1",
+        content_len=50,
+        content_snippet="Notice: Please inspect target.csv in input directory",
+    )
+    storage.record_provenance(pr_before_linked)
+
+    # 2. Read before request that does NOT mention target.csv -> must be included with linked=False
+    pr_before_unlinked = ProvenanceRecord(
+        task_id=task_id,
+        timestamp="2026-10-27T10:02:00Z",
+        source_type="file_read",
+        source_target="input/guidelines.txt",
+        content_hash="h2",
+        content_len=40,
+        content_snippet="General guidelines without target mention",
+    )
+    storage.record_provenance(pr_before_unlinked)
+
+    # 3. Expansion request created at 10:05:00Z
+    req = ExpansionRequest(
+        request_id=req_id,
+        task_id=task_id,
+        agent_id="agent_prov",
+        resource_type="file_read",
+        resource_target="input/target.csv",
+        justification="Need target.csv",
+        baseline_risk_tier=RiskTier.LOW,
+        effective_risk_tier=RiskTier.MEDIUM,
+        escalated_by_provenance=True,
+        status=ExpansionStatus.PENDING,
+        created_at="2026-10-27T10:05:00Z",
+    )
+    storage.save_expansion_request(req)
+
+    # 4. Read after request created at 10:08:00Z -> must be EXCLUDED from prior_untrusted_reads
+    pr_after = ProvenanceRecord(
+        task_id=task_id,
+        timestamp="2026-10-27T10:08:00Z",
+        source_type="file_read",
+        source_target="input/later_note.txt",
+        content_hash="h3",
+        content_len=60,
+        content_snippet="Mentioning target.csv but read after request creation",
+    )
+    storage.record_provenance(pr_after)
+
+    # Fetch enriched expansion
+    resp = client.get(f"/api/governance/expansions/{req_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    prior_reads = data["prior_untrusted_reads"]
+    # Must only contain the 2 reads before the request
+    assert len(prior_reads) == 2, f"Expected 2 reads, got {len(prior_reads)}"
+
+    targets = [p["source_target"] for p in prior_reads]
+    assert "input/notes.txt" in targets
+    assert "input/guidelines.txt" in targets
+    assert "input/later_note.txt" not in targets
+
+    # Check linked flag
+    read_linked = next(p for p in prior_reads if p["source_target"] == "input/notes.txt")
+    assert read_linked["linked"] is True
+
+    read_unlinked = next(p for p in prior_reads if p["source_target"] == "input/guidelines.txt")
+    assert read_unlinked["linked"] is False
+
+
+def test_events_cursor_ascending_pagination_over_multiple_polls(test_env):
+    storage: GovernanceStorage = test_env["storage"]
+    client: TestClient = test_env["client"]
+
+    task_id = "task_pagination_test"
+    task = TaskRecord(
+        task_id=task_id,
+        request_text="Pagination test task",
+        request_hash="hash_pag",
+        agent_id="agent_pag",
+        workspace_root="/tmp/ws_pag",
+        status=TaskLifecycle.ACTIVE,
+        created_at="2026-10-27T11:00:00Z",
+    )
+    storage.save_task(task)
+
+    # Seed baseline event so initial cursor is established
+    storage.record_event(GovernanceEvent(
+        event_id="evt_baseline_0",
+        timestamp="2026-10-27T11:00:00Z",
+        source="TOOL_BROKER",
+        task_id=task_id,
+        agent_id="agent_pag",
+        kind="file_read",
+        target="input/init.txt",
+        verdict="INSIDE",
+        risk_tier=RiskTier.LOW,
+        action_taken="ALLOW",
+        prevented=False,
+        rule_matched="allowed",
+    ))
+
+    # Get baseline cursor before adding our 5 test events
+    init_resp = client.get("/api/governance/events?limit=100")
+    assert init_resp.status_code == 200
+    baseline_cursor = init_resp.json()["cursor"]
+    assert "evt_baseline_0" in baseline_cursor
+
+    # Seed 5 new events with chronological timestamps
+    event_ids = [f"evt_poll_{i}" for i in range(1, 6)]
+    for i, eid in enumerate(event_ids, 1):
+        storage.record_event(GovernanceEvent(
+            event_id=eid,
+            timestamp=f"2026-10-27T11:0{i}:00Z",
+            source="TOOL_BROKER",
+            task_id=task_id,
+            agent_id="agent_pag",
+            kind="file_read",
+            target=f"input/doc_{i}.txt",
+            verdict="INSIDE",
+            risk_tier=RiskTier.LOW,
+            action_taken="ALLOW",
+            prevented=False,
+            rule_matched="allowed",
+        ))
+
+    # Poll 1 with limit=2: should return oldest 2 events (evt_poll_1, evt_poll_2)
+    resp1 = client.get(f"/api/governance/events?since={baseline_cursor}&limit=2")
+    assert resp1.status_code == 200
+    d1 = resp1.json()
+    assert len(d1["events"]) == 2
+    assert d1["events"][0]["event_id"] == "evt_poll_1"
+    assert d1["events"][1]["event_id"] == "evt_poll_2"
+    cursor1 = d1["cursor"]
+    assert "evt_poll_2" in cursor1
+
+    # Poll 2 with limit=2: should return next 2 oldest events (evt_poll_3, evt_poll_4)
+    resp2 = client.get(f"/api/governance/events?since={cursor1}&limit=2")
+    assert resp2.status_code == 200
+    d2 = resp2.json()
+    assert len(d2["events"]) == 2
+    assert d2["events"][0]["event_id"] == "evt_poll_3"
+    assert d2["events"][1]["event_id"] == "evt_poll_4"
+    cursor2 = d2["cursor"]
+    assert "evt_poll_4" in cursor2
+
+    # Poll 3 with limit=2: should return remaining 1 event (evt_poll_5)
+    resp3 = client.get(f"/api/governance/events?since={cursor2}&limit=2")
+    assert resp3.status_code == 200
+    d3 = resp3.json()
+    assert len(d3["events"]) == 1
+    assert d3["events"][0]["event_id"] == "evt_poll_5"
+    cursor3 = d3["cursor"]
+    assert "evt_poll_5" in cursor3
+
+    # Poll 4 with limit=2: no new events, cursor unchanged
+    resp4 = client.get(f"/api/governance/events?since={cursor3}&limit=2")
+    assert resp4.status_code == 200
+    d4 = resp4.json()
+    assert len(d4["events"]) == 0
+    assert d4["cursor"] == cursor3
