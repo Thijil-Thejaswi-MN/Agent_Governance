@@ -16,11 +16,17 @@ try:
 except ImportError:
     HAS_PLAYWRIGHT = False
 
-pytestmark = pytest.mark.skipif(not HAS_PLAYWRIGHT, reason="playwright not installed")
+from demo.security_monitor.tests.playwright_server import sign_in
+
+pytestmark = [
+    pytest.mark.playwright,
+    pytest.mark.skipif(not HAS_PLAYWRIGHT, reason="playwright not installed (pip install -r demo/security_monitor/requirements-ui-test.txt)"),
+]
 
 
-def test_sidebar_navigation_and_reload(page: Page):
-    base_url = "http://127.0.0.1:8000"
+def test_sidebar_navigation_and_reload(page: Page, console_server):
+    base_url = console_server.url
+    sign_in(page, console_server)
 
     # 1. Start at /dashboard
     page.goto(f"{base_url}/dashboard")

@@ -259,7 +259,7 @@ def test_receipt_endpoint_both_cases(auth_test_env):
             os.environ.pop("RECEIPTS_DIR", None)
 
 
-def test_dashboard_path_traversal_raw_socket(auth_test_env):
+def test_dashboard_path_traversal_raw_socket(auth_test_env, monkeypatch):
     """Raw TCP socket test to confirm path traversal is blocked and strictly contained.
 
     Tests:
@@ -270,7 +270,12 @@ def test_dashboard_path_traversal_raw_socket(auth_test_env):
     """
     import uvicorn
 
-    app = auth_test_env["app"]
+    # Stand-in console build (same serving code path; does not need npm).
+    dist = auth_test_env["tmp_path"] / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<!doctype html><html><div id=root></div></html>")
+    monkeypatch.setenv("GOVERNANCE_CONSOLE_DIST", str(dist))
+    app = create_app(governance_storage=auth_test_env["storage"])
 
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))

@@ -1,0 +1,8 @@
+# Browser tests (demo/security_monitor/tests/test_playwright_*.py), on top of requirements.txt.
+# After installing, fetch the browser once:
+#   python -m playwright install chromium            (add --with-deps on a fresh Linux / CI host)
+# The tests start their own server; the console must be built first
+# (npm ci && npm run build in demo/security_monitor/app/dashboard_v2).
+playwright==1.64.1
+pytest-playwright==0.10.0
+pytest-timeout==2.4.0

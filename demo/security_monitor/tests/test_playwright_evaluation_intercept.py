@@ -14,11 +14,17 @@ try:
 except ImportError:
     HAS_PLAYWRIGHT = False
 
-pytestmark = pytest.mark.skipif(not HAS_PLAYWRIGHT, reason="playwright not installed")
+from demo.security_monitor.tests.playwright_server import sign_in
+
+pytestmark = [
+    pytest.mark.playwright,
+    pytest.mark.skipif(not HAS_PLAYWRIGHT, reason="playwright not installed (pip install -r demo/security_monitor/requirements-ui-test.txt)"),
+]
 
 
-def test_evaluation_page_intercepts_altered_summary(page: Page):
-    base_url = "http://127.0.0.1:8000"
+def test_evaluation_page_intercepts_altered_summary(page: Page, console_server):
+    base_url = console_server.url
+    sign_in(page, console_server)
 
     altered_summary = {
         "generated_at": "2026-10-27T19:00:00+00:00",

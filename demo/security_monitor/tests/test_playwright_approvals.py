@@ -2,16 +2,16 @@
 
 Verifies:
 1. Seed a pending request with provenance escalation.
-2. Clicking Approve without a token opens the Operator Authentication modal, leaving the request PENDING.
-3. Supplying the token and approving updates the status to APPROVED and moves the card to Resolved Decisions.
+2. Without signing in, the Approvals page shows the "sign in" state and none of the
+   request data (reads need the token header or a session cookie); the request stays PENDING.
+3. Signing in through the token modal shows the card; approving updates the status to
+   APPROVED and moves the card to Resolved Decisions.
 4. The approver recorded is operator:<GOVERNANCE_OPERATOR_NAME>.
 """
 from __future__ import annotations
 
-import os
 import time
 import pytest
-from pathlib import Path
 
 try:
     from playwright.sync_api import Page, expect
@@ -30,13 +30,15 @@ from demo.security_monitor.app.governance.models import (
 )
 from demo.security_monitor.app.governance.storage import GovernanceStorage
 
-pytestmark = pytest.mark.skipif(not HAS_PLAYWRIGHT, reason="playwright not installed")
+pytestmark = [
+    pytest.mark.playwright,
+    pytest.mark.skipif(not HAS_PLAYWRIGHT, reason="playwright not installed (pip install -r demo/security_monitor/requirements-ui-test.txt)"),
+]
 
 
-def test_approvals_flow_with_and_without_token(page: Page):
-    base_url = "http://127.0.0.1:8000"
-    db_path = Path("/home/thiji/Agent_Governance/demo/data/governance.db")
-    storage = GovernanceStorage(db_path)
+def test_approvals_flow_with_and_without_token(page: Page, console_server):
+    base_url = console_server.url
+    storage = GovernanceStorage(console_server.db_path)
 
     task_id = f"task_pw_appr_{int(time.time())}"
     req_id = f"exp_pw_{int(time.time())}"
@@ -92,39 +94,35 @@ def test_approvals_flow_with_and_without_token(page: Page):
     )
     storage.save_expansion_request(req)
 
-    # 4. Navigate to Approvals page
+    # 4. Navigate to Approvals page without signing in
     page.goto(f"{base_url}/dashboard/approvals")
-    # Clear sessionStorage to ensure starting without operator token
     page.evaluate("sessionStorage.clear()")
     page.reload()
 
-    # 5. Assert card is present with untrusted provenance warning
+    # 5. Sign-in state, and none of the request data is shown
+    expect(page.locator("#sign-in-required")).to_be_visible()
+    expect(page.locator(f"#approval-card-{req_id}")).to_have_count(0)
+    expect(page.locator("body")).not_to_contain_text("input/quarterly_revenue.csv")
+    current_db_req = storage.get_expansion_request(req_id)
+    assert current_db_req is not None
+    assert current_db_req.status == ExpansionStatus.PENDING
+
+    # 6. Sign in through the modal (POST /auth/session)
+    page.locator("#sign-in-btn").click()
+    modal = page.locator('div[role="dialog"]')
+    expect(modal).to_be_visible()
+    expect(modal.locator("#operator-auth-title")).to_contain_text("Operator Authentication")
+    modal.locator("#operator-token-input").fill(console_server.token)
+    modal.locator("#operator-signin-btn").click()
+    expect(modal).not_to_be_visible()
+
+    # 7. Card is present with untrusted provenance warning
     card = page.locator(f"#approval-card-{req_id}")
     expect(card).to_be_visible()
     expect(card).to_contain_text("Requested after reading untrusted content")
     expect(card).to_contain_text("agent's justification (untrusted)")
     expect(card).to_contain_text("input/quarterly_revenue.csv")
-
-    # 6. Click Approve WITHOUT token -> Modal should appear, status stays PENDING
     approve_btn = page.locator(f"#approve-btn-{req_id}")
-    approve_btn.click()
-
-    modal = page.locator('div[role="dialog"]')
-    expect(modal).to_be_visible()
-    expect(modal.locator("#operator-auth-title")).to_contain_text("Operator Authentication")
-
-    # Verify request is STILL pending in DB
-    current_db_req = storage.get_expansion_request(req_id)
-    assert current_db_req is not None
-    assert current_db_req.status == ExpansionStatus.PENDING
-
-    # 7. Enter token into modal and save
-    token_input = modal.locator("#operator-token-input")
-    token_input.fill("test_secret_operator_token")
-    modal.locator('button:has-text("Save Operator Token")').click()
-
-    # Modal should close
-    expect(modal).not_to_be_visible()
 
     # 8. Now click Approve with token
     approve_btn.click()
