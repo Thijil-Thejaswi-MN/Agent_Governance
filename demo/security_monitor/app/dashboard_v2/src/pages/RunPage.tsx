@@ -53,6 +53,10 @@ const STATUS_LABELS: Record<string, string> = {
   timed_out: 'Timed out',
 };
 
+// The launcher records this once the agent is released from the sensor gate; before it the
+// run is still preparing (intake, workspace, sandbox) and a stop means the agent never starts.
+const isAgentLaunchStep = (s: TaskStep) => s.layer === 'launcher' && s.summary.startsWith('Agent process launched');
+
 const TASK_STATUS_TO_STATE: Record<string, string> = {
   COMPLETED: 'completed',
   FAILED: 'failed',
@@ -241,7 +245,7 @@ export const RunPage: React.FC = () => {
 
       const active = await api.getActiveRun();
       if (active.active && active.task_id === taskId) {
-        setExecutionStatus(s => (s === 'preparing' && polled.length > 0 ? 'running' : s));
+        if (polled.some(isAgentLaunchStep)) setExecutionStatus(s => (s === 'preparing' ? 'running' : s));
         return false;
       }
       try {
@@ -310,7 +314,7 @@ export const RunPage: React.FC = () => {
         }
         return [...prev, step].sort((a, b) => a.step_number - b.step_number);
       });
-      setExecutionStatus(s => (s === 'preparing' ? 'running' : s));
+      if (isAgentLaunchStep(step)) setExecutionStatus(s => (s === 'preparing' ? 'running' : s));
       trackExpansion(taskId, step);
     };
 
@@ -1208,7 +1212,11 @@ export const RunPage: React.FC = () => {
                       Hash-chained Task Receipt
                     </span>
                     <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono font-medium">
-                      {receiptData.verified ? 'Verified (SHA-256 hash chain intact)' : 'Unverified / Chain mismatch'}
+                      {receiptData.available === false
+                        ? 'No stored receipt found'
+                        : receiptData.verified
+                        ? 'Verified (SHA-256 hash chain intact)'
+                        : `Hash chain does not verify: ${receiptData.verification_message || 'mismatch'}`}
                     </span>
                   </div>
                 </div>
