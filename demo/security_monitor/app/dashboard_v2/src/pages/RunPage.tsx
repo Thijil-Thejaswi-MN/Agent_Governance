@@ -35,6 +35,31 @@ import {
   ExpansionItem,
 } from '../types';
 
+// No step for this long (or a stream error) -> stop trusting the stream and read stored state.
+const STREAM_STALL_MS = 20000;
+const POLL_INTERVAL_MS = 2000;
+
+const TERMINAL_STATES = ['completed', 'stopped', 'failed', 'timed_out'];
+
+const STATUS_LABELS: Record<string, string> = {
+  idle: 'Idle',
+  preparing: 'Preparing sandbox',
+  running: 'Running',
+  waiting_approval: 'Waiting for Approval',
+  stopping: 'Stopping',
+  completed: 'Completed',
+  stopped: 'Stopped',
+  failed: 'Failed',
+  timed_out: 'Timed out',
+};
+
+const TASK_STATUS_TO_STATE: Record<string, string> = {
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+  TERMINATED: 'stopped',
+  EXPIRED: 'timed_out',
+};
+
 export const RunPage: React.FC = () => {
   const { hasToken, openAuthModal } = useAuth();
 
@@ -63,6 +88,10 @@ export const RunPage: React.FC = () => {
   const [steps, setSteps] = useState<TaskStep[]>([]);
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorProblems, setErrorProblems] = useState<string[]>([]);
+  const [endReason, setEndReason] = useState<string | null>(null);
+  const [streamNote, setStreamNote] = useState<string | null>(null);
+  const [stopNote, setStopNote] = useState<string | null>(null);
   const [expandedSteps, setExpandedSteps] = useState<Record<number, boolean>>({});
 
   // End-of-run data
@@ -76,8 +105,8 @@ export const RunPage: React.FC = () => {
   const [showDenyInput, setShowDenyInput] = useState<boolean>(false);
   const [now, setNow] = useState<number>(Date.now());
 
-  const eventSourceRef = useRef<EventSource | null>(null);
   const timerRef = useRef<any>(null);
+  const concludedRef = useRef<string | null>(null);
 
   // Load presets & models on mount
   useEffect(() => {
@@ -174,71 +203,139 @@ export const RunPage: React.FC = () => {
     };
   }, [isRunning]);
 
-  // Connect to SSE stream whenever activeTaskId is set
-  useEffect(() => {
-    if (!activeTaskId) return;
+  // Ends the run in the UI exactly once, with the server-reported terminal state.
+  const concludeRun = (taskId: string, state: string, reason: string) => {
+    if (concludedRef.current === taskId) return;
+    concludedRef.current = taskId;
+    setExecutionStatus(TERMINAL_STATES.includes(state) ? state : 'failed');
+    setEndReason(reason || null);
+    setIsRunning(false);
+    setPendingExpansion(null);
+    loadRunConcludedData(taskId);
+  };
 
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-    }
-
-    const sseUrl = api.getRunStreamUrl(activeTaskId);
-    const es = new EventSource(sseUrl);
-    eventSourceRef.current = es;
-
-    es.onmessage = (event) => {
-      try {
-        const step: TaskStep = JSON.parse(event.data);
-        setSteps(prev => {
-          if (prev.some(s => s.step_number === step.step_number)) {
-            return prev;
-          }
-          const updated = [...prev, step].sort((a, b) => a.step_number - b.step_number);
-          return updated;
-        });
-
-        // Track lifecycle transitions
-        if (step.kind === 'expansion' && step.verdict === 'PENDING') {
-          setExecutionStatus('waiting_approval');
-          loadPendingExpansion(activeTaskId);
-        } else if (step.kind === 'expansion' && step.verdict !== 'PENDING') {
-          setExecutionStatus('running');
-          setPendingExpansion(null);
-        } else if (step.kind === 'termination' || step.summary.toLowerCase().includes('terminated')) {
-          setExecutionStatus('stopped');
-          setIsRunning(false);
-          loadRunConcludedData(activeTaskId);
-        } else if (step.kind === 'receipt' || step.kind === 'finished' || step.summary.toLowerCase().includes('finished')) {
-          setExecutionStatus('finished');
-          setIsRunning(false);
-          loadRunConcludedData(activeTaskId);
-        }
-      } catch (err) {
-        // Heartbeat or comment
-      }
-    };
-
-    es.onerror = () => {
-      // Re-poll fallback if SSE encounters transport error
-      pollStepsFallback(activeTaskId);
-    };
-
-    return () => {
-      es.close();
-      eventSourceRef.current = null;
-    };
-  }, [activeTaskId]);
-
-  const pollStepsFallback = async (taskId: string) => {
-    try {
-      const polled = await api.getRunSteps(taskId, 0);
-      if (polled && polled.length > 0) {
-        setSteps(polled);
-      }
-    } catch {
-      // ignore
+  const trackExpansion = (taskId: string, step: TaskStep) => {
+    if (step.kind !== 'expansion') return;
+    if (step.verdict === 'PENDING') {
+      setExecutionStatus('waiting_approval');
+      loadPendingExpansion(taskId);
+    } else {
+      setExecutionStatus(s => (s === 'waiting_approval' ? 'running' : s));
+      setPendingExpansion(null);
     }
   };
+
+  // Reads stored steps + task status and shows the real state. Returns true once terminal.
+  const reconcileFromStorage = async (taskId: string): Promise<boolean> => {
+    try {
+      const polled = await api.getRunSteps(taskId, 0);
+      setSteps(polled);
+      const finished = polled.find(s => s.kind === 'finished');
+      if (finished) {
+        concludeRun(taskId, finished.verdict.toLowerCase(), finished.detail);
+        return true;
+      }
+      const lastExpansion = [...polled].reverse().find(s => s.kind === 'expansion');
+      if (lastExpansion) trackExpansion(taskId, lastExpansion);
+
+      const active = await api.getActiveRun();
+      if (active.active && active.task_id === taskId) {
+        setExecutionStatus(s => (s === 'preparing' && polled.length > 0 ? 'running' : s));
+        return false;
+      }
+      try {
+        const detail = await api.getTaskDetail(taskId);
+        const state = TASK_STATUS_TO_STATE[detail.task.status];
+        if (state) {
+          concludeRun(taskId, state, `task status ${detail.task.status}`);
+          return true;
+        }
+      } catch {
+        // no task record: fall through
+      }
+      concludeRun(taskId, 'failed', 'The run is no longer active and ended without a terminal event.');
+      return true;
+    } catch (err: any) {
+      setStreamNote(`Could not read run state: ${err.message || err}`);
+      return err?.status === 401;
+    }
+  };
+
+  // Connect to SSE stream whenever activeTaskId is set; fall back to stored state when it stalls.
+  useEffect(() => {
+    if (!activeTaskId) return;
+    const taskId = activeTaskId;
+    let ended = false;
+    let watchdog: ReturnType<typeof setTimeout> | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+    const es = new EventSource(api.getRunStreamUrl(taskId), { withCredentials: true });
+
+    const startFallback = (note: string) => {
+      if (ended || pollTimer) return;
+      es.close();
+      if (watchdog) clearTimeout(watchdog);
+      setStreamNote(note);
+      const tick = async () => {
+        if (ended) return;
+        if (await reconcileFromStorage(taskId)) {
+          ended = true;
+          if (pollTimer) clearInterval(pollTimer);
+        }
+      };
+      pollTimer = setInterval(tick, POLL_INTERVAL_MS);
+      tick();
+    };
+
+    const armWatchdog = () => {
+      if (watchdog) clearTimeout(watchdog);
+      watchdog = setTimeout(
+        () => startFallback(`No update from the live stream for ${STREAM_STALL_MS / 1000} s; showing stored state.`),
+        STREAM_STALL_MS,
+      );
+    };
+
+    es.onmessage = (event) => {
+      armWatchdog();
+      let step: TaskStep;
+      try {
+        step = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      setSteps(prev => {
+        if (prev.some(s => s.step_number === step.step_number)) {
+          return prev;
+        }
+        return [...prev, step].sort((a, b) => a.step_number - b.step_number);
+      });
+      setExecutionStatus(s => (s === 'preparing' ? 'running' : s));
+      trackExpansion(taskId, step);
+    };
+
+    es.addEventListener('end', (event) => {
+      ended = true;
+      es.close();
+      if (watchdog) clearTimeout(watchdog);
+      try {
+        const data = JSON.parse((event as MessageEvent).data);
+        concludeRun(taskId, data.state, data.reason);
+      } catch {
+        concludeRun(taskId, 'failed', 'Malformed end event');
+      }
+    });
+
+    es.onerror = () => startFallback('Live stream interrupted; showing stored state.');
+
+    armWatchdog();
+
+    return () => {
+      ended = true;
+      es.close();
+      if (watchdog) clearTimeout(watchdog);
+      if (pollTimer) clearInterval(pollTimer);
+    };
+  }, [activeTaskId]);
 
   const loadPendingExpansion = async (taskId: string) => {
     try {
@@ -308,6 +405,7 @@ export const RunPage: React.FC = () => {
   // Start Run
   const handleStartRun = async () => {
     setErrorMessage(null);
+    setErrorProblems([]);
     if (!prompt.trim()) {
       setErrorMessage('Please enter a task request.');
       return;
@@ -322,7 +420,11 @@ export const RunPage: React.FC = () => {
     setOutputFiles([]);
     setReceiptData(null);
     setPendingExpansion(null);
+    setEndReason(null);
+    setStreamNote(null);
+    setStopNote(null);
     setElapsedSeconds(0);
+    setActiveTaskId(null);
     setIsRunning(true);
     setExecutionStatus('preparing');
 
@@ -334,16 +436,18 @@ export const RunPage: React.FC = () => {
         files,
       });
 
+      concludedRef.current = null;
       setActiveTaskId(res.task_id);
-      setExecutionStatus('running');
     } catch (err: any) {
+      // Nothing was started: stay idle and show why.
       setIsRunning(false);
-      setExecutionStatus('failed');
+      setExecutionStatus('idle');
       setErrorMessage(err.message || 'Failed to start run.');
+      setErrorProblems(err.problems || []);
     }
   };
 
-  // Stop Run
+  // Stop Run: the stream's end event (or the stored state) reports when it has really stopped.
   const handleStopRun = async () => {
     if (!activeTaskId) return;
     if (!hasToken) {
@@ -352,10 +456,9 @@ export const RunPage: React.FC = () => {
     }
 
     try {
-      await api.stopRun(activeTaskId);
-      setExecutionStatus('stopped');
-      setIsRunning(false);
-      loadRunConcludedData(activeTaskId);
+      const res = await api.stopRun(activeTaskId);
+      setExecutionStatus('stopping');
+      setStopNote(res.killed ? 'Task cgroup killed.' : 'Cancelled before the agent started.');
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to stop task cgroup.');
     }
@@ -701,9 +804,22 @@ export const RunPage: React.FC = () => {
 
           {/* Error notice */}
           {errorMessage && (
-            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs font-medium flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0" />
-              <span>{errorMessage}</span>
+            <div
+              id="run-error"
+              role="alert"
+              className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 text-xs font-medium flex items-start gap-2"
+            >
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <div>{errorMessage}</div>
+                {errorProblems.length > 0 && (
+                  <ul className="list-disc pl-4 font-mono text-[11px] font-normal">
+                    {errorProblems.map(p => (
+                      <li key={p}>{p}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
           )}
 
@@ -722,10 +838,11 @@ export const RunPage: React.FC = () => {
               <button
                 id="stop-run-btn"
                 onClick={handleStopRun}
-                className="w-full py-3.5 px-4 rounded-xl font-bold text-sm bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/25 transition-all flex items-center justify-center gap-2 active:scale-[0.99]"
+                disabled={!activeTaskId || executionStatus === 'stopping'}
+                className="w-full py-3.5 px-4 rounded-xl font-bold text-sm bg-rose-600 hover:bg-rose-500 disabled:opacity-60 disabled:cursor-not-allowed text-white shadow-lg shadow-rose-600/25 transition-all flex items-center justify-center gap-2 active:scale-[0.99]"
               >
                 <Square className="w-4 h-4 fill-white" />
-                <span>Halt Task Execution (Cgroup Kill)</span>
+                <span>{executionStatus === 'stopping' ? 'Stopping…' : 'Stop Run (cancel or cgroup kill)'}</span>
               </button>
             )}
           </div>
@@ -743,10 +860,12 @@ export const RunPage: React.FC = () => {
                 className={`w-3 h-3 rounded-full ${
                   isRunning
                     ? 'bg-cyan-500 animate-ping'
-                    : executionStatus === 'finished'
+                    : executionStatus === 'completed'
                     ? 'bg-emerald-500'
-                    : executionStatus === 'stopped'
+                    : executionStatus === 'stopped' || executionStatus === 'failed'
                     ? 'bg-rose-500'
+                    : executionStatus === 'timed_out'
+                    ? 'bg-amber-500'
                     : 'bg-slate-400'
                 }`}
               />
@@ -754,15 +873,18 @@ export const RunPage: React.FC = () => {
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
                   Status
                 </span>
-                <span className="text-sm font-bold uppercase tracking-tight font-mono text-slate-900 dark:text-white">
-                  {executionStatus === 'finished'
-                    ? 'Finished'
-                    : executionStatus === 'waiting_approval'
-                    ? 'Waiting for Approval'
-                    : executionStatus === 'stopped'
-                    ? 'Halted'
-                    : executionStatus}
+                <span
+                  id="run-status"
+                  data-state={executionStatus}
+                  className="text-sm font-bold uppercase tracking-tight font-mono text-slate-900 dark:text-white"
+                >
+                  {STATUS_LABELS[executionStatus] || executionStatus}
                 </span>
+                {(endReason || stopNote) && (
+                  <span id="run-end-reason" className="block text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                    {endReason || stopNote}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -931,6 +1053,12 @@ export const RunPage: React.FC = () => {
                 {steps.length} total events
               </span>
             </div>
+
+            {streamNote && (
+              <div id="stream-note" className="text-[11px] font-mono text-amber-600 dark:text-amber-400">
+                {streamNote}
+              </div>
+            )}
 
             {steps.length === 0 ? (
               <div className="py-12 text-center text-xs text-slate-400 italic">

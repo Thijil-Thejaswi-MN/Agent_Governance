@@ -52,16 +52,25 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
   if (!res.ok) {
     let errorDetail = `Request failed: HTTP ${res.status}`;
+    let problems: string[] = [];
     try {
       const errJson = await res.json();
-      if (errJson && errJson.detail) {
-        errorDetail = errJson.detail;
+      const detail = errJson?.detail;
+      if (typeof detail === 'string') {
+        errorDetail = detail;
+      } else if (Array.isArray(detail)) {
+        // FastAPI request-validation errors
+        errorDetail = detail.map((d: any) => d?.msg || JSON.stringify(d)).join('; ');
+      } else if (detail && typeof detail === 'object') {
+        errorDetail = detail.message || errorDetail;
+        problems = Array.isArray(detail.problems) ? detail.problems : [];
       }
     } catch {
       // ignore json parse error
     }
     const err = new Error(errorDetail);
     (err as any).status = res.status;
+    (err as any).problems = problems;
     throw err;
   }
 
@@ -156,7 +165,7 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   stopRun: (taskId: string) =>
-    request<{ task_id: string; status: string; message: string }>(`${API_BASE}/run/${taskId}/stop`, {
+    request<{ task_id: string; status: string; message: string; killed: boolean; cancelled_before_start: boolean }>(`${API_BASE}/run/${taskId}/stop`, {
       method: 'POST',
     }),
   getRunSteps: (taskId: string, after: number = 0) =>
