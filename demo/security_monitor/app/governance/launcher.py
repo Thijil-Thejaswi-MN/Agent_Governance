@@ -344,6 +344,7 @@ class TaskLauncher:
         workspace_base: Path | None = None,
         receipts_dir: Path | None = None,
         test_hooks: dict[str, Any] | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> None:
         self.storage = storage
         self.workspace_base = (workspace_base or default_workspace_base()).resolve()
@@ -354,6 +355,12 @@ class TaskLauncher:
         self.termination: dict[str, Any] = {}
         self._frozen = threading.Event()
         self.live: dict[str, Any] = {}  # exposed for tests (sensor pid, cgroup, rpc server)
+        # Owned by the caller (ActiveRunManager) so that run() can never reset it: a stop
+        # requested before or during preparation must survive until the next checkpoint.
+        self.cancel_event = cancel_event or threading.Event()
+        # Serialises "release the agent gate" against cancel(): either the agent starts
+        # and cancel() kills its cgroup, or cancel() wins and the agent never starts.
+        self._gate_lock = threading.Lock()
 
     # --- preconditions (fail closed) ---
     @staticmethod
@@ -361,12 +368,44 @@ class TaskLauncher:
         problems = []
         if sys.platform != "linux":
             problems.append("launcher requires Linux (WSL2)")
+            return problems
         for b in (SENSOR_BIN, SECCOMP_BIN, ENFORCER_BIN):
             if not os.access(b, os.X_OK):
                 problems.append(f"missing binary {b} (run make in os_layer/)")
         if not shutil.which("systemd-run"):
             problems.append("systemd-run not found")
+        else:
+            try:
+                r = subprocess.run(["systemctl", "--user", "is-system-running"],
+                                   capture_output=True, text=True, timeout=5.0)
+                state = r.stdout.strip()
+            except (OSError, subprocess.TimeoutExpired) as e:
+                state = f"unavailable ({e})"
+            if state not in ("running", "degraded"):
+                problems.append(f"systemd --user manager not available (state: {state or 'unknown'})")
+        from .os_layer.landlock import get_landlock_abi
+        abi = get_landlock_abi()
+        if abi < 1:
+            problems.append("Landlock not supported by this kernel")
+        if not (cgroup_ctl.CGROUP_ROOT / "cgroup.controllers").exists():
+            problems.append("cgroup v2 unified hierarchy not mounted at /sys/fs/cgroup")
         return problems
+
+    # --- cancellation ---
+    def cancel(self, reason: str = "operator_stop") -> dict[str, bool]:
+        """Requests a stop at any point of the run, including during preparation.
+
+        Sets the cancel event (checked by run() before intake, before the workspace,
+        right before the agent starts, and as soon as the cgroup exists). If the task
+        cgroup already exists it is killed immediately.
+        """
+        with self._gate_lock:
+            self.cancel_event.set()
+            started = bool(self.live.get("agent_started"))
+            has_cgroup = bool(self.live.get("cgroup"))
+        if has_cgroup:
+            self.stop(reason)
+        return {"killed": has_cgroup, "cancelled_before_start": not started}
 
     # --- freeze / kill ---
     def _freeze(self, reason: str, detail: Any = None) -> None:
@@ -422,6 +461,97 @@ class TaskLauncher:
             except Exception:
                 pass
 
+    def _record_receipt_step(self, task_id: str, receipt: dict[str, Any], receipt_path: Path) -> None:
+        try:
+            ok, final_h, msg = verify_chain(receipt.get("events", []))
+            verify_ok = ok and receipt.get("hash_chain", {}).get("final_hash") == final_h
+        except Exception as e:
+            verify_ok = False
+            msg = str(e)
+
+        final_hash_str = receipt.get("hash_chain", {}).get("final_hash", "")
+        self.storage.record_task_step(
+            task_id,
+            kind="receipt",
+            layer="receipt",
+            verdict="ALLOW",
+            summary=f"Task receipt written and verified (final_hash={final_hash_str[:16]}...)",
+            detail=f"Receipt: {receipt_path}\nVerified: {verify_ok}\nEvents: {receipt.get('hash_chain', {}).get('count', 0)}",
+            source_label="enforced",
+        )
+
+    def _finish_cancelled(
+        self,
+        spec: TaskSpec,
+        t0: float,
+        stage: str,
+        task: Any = None,
+        initial_boundary: Any = None,
+        ws: Path | None = None,
+        control: Path | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> LaunchResult:
+        """Ends a run that was stopped before the agent process started.
+
+        Termination is operator_stop. If intake already created the task, the task is
+        marked TERMINATED and a receipt is written (no OS events: no sandbox ran).
+        """
+        self.termination = {"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                            "reason": "operator_stop", "method": "cancelled_before_agent_start",
+                            "stage": stage}
+        aborted = "cancelled_by_operator_before_agent_start"
+        task_id = task.task_id if task else spec.task_id
+        receipt: dict[str, Any] = {}
+        receipt_path: Path | None = None
+        if task is not None:
+            t = self.storage.get_task(task.task_id) or task
+            t.status = TaskLifecycle.TERMINATED
+            t.completed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            self.storage.save_task(t)
+            receipt = build_receipt(
+                task=t,
+                initial_boundary=initial_boundary,
+                requester=spec.requester,
+                storage=self.storage,
+                os_records=[],
+                deliveries=[],
+                sensor_status={"binary": str(SENSOR_BIN.name), "mode": "observation_only", "ran": False,
+                               "exit_trailer_seen": False, "exited_early": False, "events_observed": 0},
+                isolation={"isolation_level": None, "note": "sandbox not started (cancelled by operator)"},
+                freeze_events=[],
+                termination=self.termination,
+                wall_time_s=time.monotonic() - t0,
+                os_identity=None,
+                condition=spec.condition,
+                extra={"aborted": aborted, **(extra or {})},
+            )
+            self.receipts_dir.mkdir(parents=True, exist_ok=True)
+            receipt_path = self.receipts_dir / f"{t.task_id}.json"
+            receipt_path.write_text(json.dumps(receipt, indent=1, default=str), encoding="utf-8")
+        if task_id:
+            self.storage.record_task_step(
+                task_id,
+                kind="termination",
+                layer="launcher",
+                verdict="BLOCK_ACTION",
+                summary="Task lifecycle termination: operator_stop",
+                detail=f"Reason: operator_stop\nMethod: cancelled_before_agent_start\nStage: {stage}\n"
+                       "The agent process was never started.",
+                source_label="enforced",
+            )
+            if receipt_path is not None:
+                self._record_receipt_step(task_id, receipt, receipt_path)
+        return LaunchResult(
+            task_id=task_id or "",
+            workspace=ws or self.workspace_base,
+            control_dir=control or self.workspace_base / ".control",
+            receipt_path=receipt_path,
+            receipt=receipt,
+            shim_result=None,
+            model_inputs=[],
+            aborted=aborted,
+        )
+
     # --- main ---
     def run(self, spec: TaskSpec) -> LaunchResult:
         t0 = time.monotonic()
@@ -431,6 +561,10 @@ class TaskLauncher:
         if problems:
             raise RuntimeError("launcher prerequisites failed (fail closed): " + "; ".join(problems))
         mode = EnforcementMode(spec.enforcement_mode)
+
+        # Cancellation checkpoint 1: before intake (no task, nothing to receipt).
+        if self.cancel_event.is_set():
+            return self._finish_cancelled(spec, t0, stage="before_intake")
 
         # 1. Intake: task + boundary
         ws = self.workspace_base / f"ws_{uuid.uuid4().hex[:12]}"
@@ -467,6 +601,11 @@ class TaskLauncher:
             detail=f"Files read: {boundary.files_read}\nFiles write: {boundary.files_write}\nTools: {boundary.tools}\nHosts: {boundary.network}",
             source_label="enforced",
         )
+
+        # Cancellation checkpoint 2: before the workspace and sandbox exist.
+        if self.cancel_event.is_set():
+            return self._finish_cancelled(spec, t0, stage="before_workspace", task=task,
+                                          initial_boundary=initial_boundary, ws=ws)
 
         # 2. Workspace (+ control dir the sandbox cannot see)
         for d in ("input", "output", "scratch", "granted", "tmp", "runtime"):
@@ -551,6 +690,23 @@ class TaskLauncher:
             spec_rules["rules"].append({"path": str(ws.resolve()), "access": ["read_file", "read_dir"]})
         rules_path = write_rules_file(spec_rules, control / "rules.json")
         (control / "rules_compile_report.json").write_text(json.dumps(spec_rules["_compile_report"], indent=1))
+
+        # Cancellation checkpoint 3: right before the agent process chain is started.
+        hook_fn = self.test_hooks.get("before_agent_start")
+        if hook_fn:
+            hook_fn(self)
+        if self.cancel_event.is_set():
+            rpc.stop()
+            try:
+                aloop.run(proxy.stop())
+            except Exception:
+                pass
+            aloop.stop()
+            self.storage.revoke_token(token)
+            return self._finish_cancelled(spec, t0, stage="before_agent_start", task=task,
+                                          initial_boundary=initial_boundary, ws=ws, control=control,
+                                          extra={"landlock_rules_sha256": _sha256_file(rules_path),
+                                                 "runtime_code_sha256": runtime_hashes})
 
         interpreter = os.path.realpath(sys.executable)
         seccomp_baseline = cgroup_ctl.own_seccomp_filter_count()
@@ -715,10 +871,18 @@ class TaskLauncher:
                 source_label="enforced",
             )
 
-            # Release the gate: the agent chain may now exec.
-            os.write(gate_w, b"1")
-            os.close(gate_w)
-            gate_w = -1
+            # Cancellation checkpoint 4: the cgroup exists but the agent is still held at the
+            # sensor gate. Under the gate lock, either cancel() already ran (kill now, the
+            # agent never starts) or the gate is released and cancel() will kill the cgroup.
+            with self._gate_lock:
+                if self.cancel_event.is_set():
+                    self._kill("operator_stop")
+                    raise RuntimeError("cancelled_by_operator_before_agent_start")
+                # Release the gate: the agent chain may now exec.
+                os.write(gate_w, b"1")
+                os.close(gate_w)
+                gate_w = -1
+                self.live["agent_started"] = True
 
             # Enforcer status (kernel-sourced) -> arm or freeze
             poller = select.poll()
@@ -766,7 +930,9 @@ class TaskLauncher:
             hard_deadline = time.monotonic() + spec.timeout_s
             frozen_at: float | None = None
             while proc.poll() is None:
-                if self._frozen.is_set():
+                if self.cancel_event.is_set() and not self.termination:
+                    self._kill("operator_stop")
+                elif self._frozen.is_set():
                     frozen_at = frozen_at or time.monotonic()
                     if time.monotonic() - frozen_at >= spec.freeze_timeout_s:
                         self._kill("frozen_then_killed_after_timeout")
@@ -940,24 +1106,7 @@ class TaskLauncher:
             source_label="enforced",
         )
 
-        # Verify receipt & record receipt step
-        try:
-            ok, final_h, msg = verify_chain(receipt.get("events", []))
-            verify_ok = ok and receipt.get("hash_chain", {}).get("final_hash") == final_h
-        except Exception as e:
-            verify_ok = False
-            msg = str(e)
-
-        final_hash_str = receipt.get("hash_chain", {}).get("final_hash", "")
-        self.storage.record_task_step(
-            task_id,
-            kind="receipt",
-            layer="receipt",
-            verdict="ALLOW",
-            summary=f"Task receipt written and verified (final_hash={final_hash_str[:16]}...)",
-            detail=f"Receipt: {receipt_path}\nVerified: {verify_ok}\nEvents: {receipt.get('hash_chain', {}).get('count', 0)}",
-            source_label="enforced",
-        )
+        self._record_receipt_step(task_id, receipt, receipt_path)
 
         # Record final phase step
         self.storage.record_task_step(

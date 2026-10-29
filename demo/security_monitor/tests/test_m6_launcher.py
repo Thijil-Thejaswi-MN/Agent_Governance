@@ -33,14 +33,7 @@ ROOT = Path(__file__).resolve().parents[3]
 OS_LAYER = ROOT / "demo" / "security_monitor" / "app" / "governance" / "os_layer"
 
 
-def _have_systemd_user() -> bool:
-    if not IS_LINUX or not shutil.which("systemd-run"):
-        return False
-    r = subprocess.run(["systemctl", "--user", "is-system-running"], capture_output=True, text=True)
-    return r.stdout.strip() in ("running", "degraded")
-
-
-needs_scope = pytest.mark.skipif(not _have_systemd_user(), reason="needs systemd --user and systemd-run --scope")
+needs_scope = pytest.mark.os_layer  # skip reason comes from conftest (TaskLauncher.check_prerequisites)
 
 
 # ---------------------------------------------------------------------------

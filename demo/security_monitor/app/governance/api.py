@@ -20,7 +20,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from .run_manager import (
+    HOST_REQUIREMENT,
     PRESETS,
+    RunPrerequisitesError,
     fetch_available_models,
     get_run_manager,
     preview_run_boundary,
@@ -859,6 +861,8 @@ async def start_governed_task_run(
         }
     except ValueError as ve:
         raise HTTPException(status_code=422, detail=str(ve))
+    except RunPrerequisitesError as pe:
+        raise HTTPException(status_code=503, detail={"message": HOST_REQUIREMENT, "problems": pe.problems})
     except RuntimeError as re:
         raise HTTPException(status_code=409, detail=str(re))
 
@@ -868,59 +872,80 @@ async def stop_governed_task_run(
     task_id: str,
     _token: str = Depends(verify_operator_token),
 ) -> dict[str, Any]:
-    """Terminates active task cgroup and records termination reason in receipt.
+    """Stops the active run at any stage (also during sandbox preparation).
 
-    Requires operator token.
+    Requires operator token. If the task cgroup exists it is killed; otherwise the
+    run is cancelled at its next checkpoint and the agent never starts.
     """
     manager = get_run_manager()
     try:
-        manager.stop_run(task_id)
+        result = manager.stop_run(task_id)
         return {
             "task_id": task_id,
-            "status": "stopped",
-            "message": "Task cgroup termination initiated by operator.",
+            "status": "stopping",
+            "killed": result["killed"],
+            "cancelled_before_start": result["cancelled_before_start"],
+            "message": ("Task cgroup killed by operator." if result["killed"]
+                        else "Run cancelled by operator before the agent started."),
         }
     except RuntimeError as re:
         raise HTTPException(status_code=400, detail=str(re))
 
 
+_TERMINAL_STATUS_STATE = {
+    TaskLifecycle.COMPLETED: "completed",
+    TaskLifecycle.FAILED: "failed",
+    TaskLifecycle.TERMINATED: "stopped",
+    TaskLifecycle.EXPIRED: "timed_out",
+}
+
+
+def _sse_end(task_id: str, state: str, reason: str) -> str:
+    return "event: end\ndata: " + json.dumps({"task_id": task_id, "state": state, "reason": reason}) + "\n\n"
+
+
 @governance_router.get("/run/{task_id}/stream")
 async def stream_task_steps(task_id: str, request: Request) -> StreamingResponse:
-    """Server-Sent Events stream: replays stored steps, then pushes live updates."""
+    """Server-Sent Events stream: replays stored steps, then live ones.
+
+    Always ends with an `end` event whose state is completed, stopped, failed or
+    timed_out. The run's own terminal event is its 'finished' step; for runs that
+    are not executing here (e.g. CLI launches) the stored task status decides.
+    Steps are re-read from the database on every wake-up, so the stream does not
+    depend on the launcher sharing this storage instance's subscriber queue.
+    """
     storage = get_storage()
     queue = storage.subscribe_task_steps(task_id)
 
     async def event_generator():
+        last_step = 0
         try:
-            stored = storage.get_task_steps(task_id, after_step=0)
-            last_step = 0
-            for s in stored:
-                last_step = max(last_step, s.get("step_number", 0))
-                payload = json.dumps(s)
-                yield f"data: {payload}\n\n"
-
             while True:
-                if await request.is_disconnected():
-                    break
-                try:
-                    step = await asyncio.wait_for(queue.get(), timeout=1.0)
-                    step_num = step.get("step_number", 0)
-                    if step_num > last_step:
-                        last_step = step_num
-                        payload = json.dumps(step)
-                        yield f"data: {payload}\n\n"
+                for s in storage.get_task_steps(task_id, after_step=last_step):
+                    last_step = max(last_step, s.get("step_number", 0))
+                    yield f"data: {json.dumps(s)}\n\n"
+                    if s.get("kind") == "finished":
+                        yield _sse_end(task_id, str(s.get("verdict", "")).lower(), s.get("detail") or "")
+                        return
 
-                    if step.get("kind") in ("receipt", "finished", "termination") and queue.empty():
-                        break
-                except asyncio.TimeoutError:
+                if get_run_manager().get_active_info().get("task_id") != task_id:
                     t = storage.get_task(task_id)
-                    if t and t.status in (TaskLifecycle.COMPLETED, TaskLifecycle.TERMINATED, TaskLifecycle.FAILED):
-                        remaining = storage.get_task_steps(task_id, after_step=last_step)
-                        for s in remaining:
+                    if t is None:
+                        yield _sse_end(task_id, "failed", "no such task and no active run")
+                        return
+                    if t.status in _TERMINAL_STATUS_STATE:
+                        # One more read: the launcher may have written its last steps.
+                        for s in storage.get_task_steps(task_id, after_step=last_step):
                             last_step = max(last_step, s.get("step_number", 0))
-                            payload = json.dumps(s)
-                            yield f"data: {payload}\n\n"
-                        break
+                            yield f"data: {json.dumps(s)}\n\n"
+                        yield _sse_end(task_id, _TERMINAL_STATUS_STATE[t.status], f"task status {t.status.value}")
+                        return
+
+                if await request.is_disconnected():
+                    return
+                try:
+                    await asyncio.wait_for(queue.get(), timeout=1.0)
+                except asyncio.TimeoutError:
                     yield ": keep-alive\n\n"
         finally:
             storage.unsubscribe_task_steps(task_id, queue)

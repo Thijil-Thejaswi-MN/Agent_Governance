@@ -10,6 +10,8 @@ Enforces:
 """
 from __future__ import annotations
 
+import datetime
+import hashlib
 import json
 import logging
 import os
@@ -23,7 +25,7 @@ from typing import Any
 
 from .catalog import BoundaryDerivationV1, ServiceCatalog
 from .launcher import TaskLauncher, TaskSpec
-from .models import EnforcementMode
+from .models import EnforcementMode, TaskLifecycle, TaskRecord
 from .storage import GovernanceStorage
 
 logger = logging.getLogger(__name__)
@@ -251,6 +253,64 @@ def preview_run_boundary(
     }
 
 
+HOST_REQUIREMENT = "OS-layer execution needs Linux/WSL2 with systemd --user, Landlock and cgroup v2"
+
+
+class RunPrerequisitesError(RuntimeError):
+    """The host cannot run governed tasks; no run was accepted."""
+
+    def __init__(self, problems: list[str]) -> None:
+        super().__init__(f"{HOST_REQUIREMENT}: " + "; ".join(problems))
+        self.problems = problems
+
+
+def classify_run_outcome(launcher: TaskLauncher, storage: GovernanceStorage, task_id: str) -> tuple[str, str]:
+    """Maps a finished launcher run to the terminal state shown on the Run page.
+
+    completed: the agent process exited on its own (the task status says whether it
+               succeeded); stopped: halted by the operator or killed by governance
+               (freeze -> kill); timed_out: the task hit its hard deadline.
+    """
+    reason = str((launcher.termination or {}).get("reason", ""))
+    if reason == "operator_stop" or launcher.cancel_event.is_set():
+        return "stopped", "operator_stop"
+    if reason == "task_timeout":
+        return "timed_out", reason
+    t = storage.get_task(task_id)
+    status = t.status.value if t else "UNKNOWN"
+    if reason in ("", "agent_exited"):
+        return "completed", f"agent_exited (task status {status})"
+    return "stopped", f"{reason} (task status {status})"
+
+
+def _record_run_failure(storage: GovernanceStorage, spec: TaskSpec, error: str) -> None:
+    """Terminal FAILED step + FAILED task record for a run whose launcher raised."""
+    task_id = spec.task_id or ""
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    t = storage.get_task(task_id)
+    if t is None:
+        t = TaskRecord(
+            task_id=task_id,
+            request_text=spec.prompt,
+            request_hash=hashlib.sha256(spec.prompt.encode("utf-8")).hexdigest(),
+            agent_id=spec.agent_id,
+            workspace_root="",
+            created_at=now,
+        )
+    t.status = TaskLifecycle.FAILED
+    t.completed_at = now
+    storage.save_task(t)
+    storage.record_task_step(
+        task_id,
+        kind="termination",
+        layer="launcher",
+        verdict="FAILED",
+        summary=f"Run failed: {error.splitlines()[0][:200] if error else 'unknown error'}",
+        detail=error[:2000],
+        source_label="enforced",
+    )
+
+
 class ActiveRunManager:
     """Coordinates single active run lifecycle and safe background execution."""
 
@@ -261,16 +321,21 @@ class ActiveRunManager:
         self._active_thread: threading.Thread | None = None
         self._active_spec: TaskSpec | None = None
         self._start_time: float | None = None
+        self._cancel_event: threading.Event | None = None
+
+    def _clear_slot(self) -> None:
+        self._active_task_id = None
+        self._active_launcher = None
+        self._active_thread = None
+        self._active_spec = None
+        self._start_time = None
+        self._cancel_event = None
 
     def is_active(self) -> bool:
         with self._lock:
             if self._active_thread is not None and self._active_thread.is_alive():
                 return True
-            self._active_task_id = None
-            self._active_launcher = None
-            self._active_thread = None
-            self._active_spec = None
-            self._start_time = None
+            self._clear_slot()
             return False
 
     def get_active_info(self) -> dict[str, Any]:
@@ -291,6 +356,7 @@ class ActiveRunManager:
         model: str = "qwen2.5:7b",
         files: dict[str, str] | None = None,
         workspace_base: Path | None = None,
+        launcher_hooks: dict[str, Any] | None = None,
     ) -> str:
         with self._lock:
             if self._active_thread is not None and self._active_thread.is_alive():
@@ -304,6 +370,12 @@ class ActiveRunManager:
                 combined_files.update(files)
 
             sanitized_inputs = sanitize_input_files(combined_files)
+
+            # Fail closed before accepting the run: no task id, no thread, no slot.
+            problems = TaskLauncher.check_prerequisites()
+            if problems:
+                raise RunPrerequisitesError(problems)
+
             task_id = f"task_{uuid.uuid4().hex[:12]}"
 
             is_scripted = (model.strip().lower() == "scripted")
@@ -347,17 +419,44 @@ class ActiveRunManager:
                 canary=canary,
             )
 
-            launcher = TaskLauncher(storage, workspace_base=workspace_base)
+            cancel_event = threading.Event()
+            launcher = TaskLauncher(storage, workspace_base=workspace_base, test_hooks=launcher_hooks,
+                                    cancel_event=cancel_event)
             self._active_task_id = task_id
             self._active_launcher = launcher
             self._active_spec = spec
             self._start_time = time.monotonic()
+            self._cancel_event = cancel_event
 
             def _run_worker() -> None:
+                outcome, reason = "failed", ""
                 try:
                     launcher.run(spec)
+                    outcome, reason = classify_run_outcome(launcher, storage, task_id)
                 except Exception as ex:
                     logger.error("Run %s failed during execution: %s", task_id, ex, exc_info=True)
+                    reason = f"{type(ex).__name__}: {ex}"
+                    try:
+                        _record_run_failure(storage, spec, reason)
+                    except Exception:
+                        logger.exception("Could not record failure of run %s", task_id)
+                finally:
+                    # The 'finished' step is the run's terminal event (the SSE stream ends on it).
+                    try:
+                        storage.record_task_step(
+                            task_id,
+                            kind="finished",
+                            layer="launcher",
+                            verdict=outcome.upper(),
+                            summary=f"Run ended: {outcome}",
+                            detail=reason,
+                            source_label="enforced",
+                        )
+                    except Exception:
+                        logger.exception("Could not record terminal step of run %s", task_id)
+                    with self._lock:
+                        if self._active_task_id == task_id:
+                            self._clear_slot()
 
             t = threading.Thread(target=_run_worker, name=f"launcher-{task_id}", daemon=True)
             self._active_thread = t
@@ -365,16 +464,21 @@ class ActiveRunManager:
 
             return task_id
 
-    def stop_run(self, task_id: str) -> bool:
+    def stop_run(self, task_id: str) -> dict[str, bool]:
+        """Stops the active run at any stage.
+
+        Returns {"killed": a task cgroup was killed, "cancelled_before_start": the agent
+        process had not started (it will not start)}.
+        """
         with self._lock:
             if not (self._active_thread is not None and self._active_thread.is_alive()):
                 raise RuntimeError("No task is currently active.")
             if self._active_task_id != task_id:
                 raise RuntimeError(f"Task '{task_id}' is not the currently active task.")
-
-            if self._active_launcher:
-                self._active_launcher.stop(reason="operator_stop")
-            return True
+            launcher = self._active_launcher
+        if launcher is None:
+            raise RuntimeError("No task is currently active.")
+        return launcher.cancel(reason="operator_stop")
 
 
 _global_run_manager = ActiveRunManager()

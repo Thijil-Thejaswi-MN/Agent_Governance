@@ -212,7 +212,8 @@ def test_input_files_validation_rejects_bad_paths_and_oversized(test_env):
     assert resp6.status_code == 422
 
 
-def test_run_always_uses_condition_c_with_isolation(test_env):
+def test_run_always_uses_condition_c_with_isolation(test_env, monkeypatch):
+    monkeypatch.setattr(TaskLauncher, "check_prerequisites", staticmethod(lambda: []))
     storage: GovernanceStorage = test_env["storage"]
     tmp_path: Path = test_env["tmp_path"]
     mgr = ActiveRunManager()
