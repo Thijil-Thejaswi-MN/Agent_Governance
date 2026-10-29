@@ -4,10 +4,11 @@ from typing import Any
 from pathlib import Path
 import httpx
 from fastapi import FastAPI, Request, Response, Query
-from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 import json
+import logging
 import os
 import sys
 import urllib.parse
@@ -28,6 +29,41 @@ def get_evaluation_data_dir() -> Path:
         if (parent / "demo" / "data" / "evaluation").is_dir():
             return parent / "demo" / "data" / "evaluation"
     return Path.cwd() / "evaluation_data"
+
+
+logger = logging.getLogger(__name__)
+
+CONSOLE_NOT_BUILT_HTML = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Console not built</title>
+<style>
+  :root { color-scheme: light dark; --bg: #f8fafc; --fg: #0f172a; --muted: #475569; --card: #ffffff; --line: #e2e8f0; --accent: #0891b2; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0b1120; --fg: #e2e8f0; --muted: #94a3b8; --card: #111827; --line: #1f2937; --accent: #22d3ee; } }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--fg);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 16px; box-sizing: border-box; }
+  main { max-width: 34rem; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 28px; }
+  h1 { font-size: 1.25rem; margin: 0 0 8px; }
+  p { color: var(--muted); margin: 8px 0; }
+  pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main id="console-not-built">
+  <h1>Console not built &mdash; run <code>npm ci &amp;&amp; npm run build</code> in <code>dashboard_v2</code></h1>
+  <p>The Governance Console is a Vite build that is not committed to the repository. From the repository root:</p>
+  <pre>cd demo/security_monitor/app/dashboard_v2
+npm ci
+npm run build</pre>
+  <p>Then restart the server and reload this page.</p>
+  <p>The previous dashboard is still available at <a href="/legacy-dashboard">/legacy-dashboard</a>.</p>
+</main>
+</body>
+</html>
+"""
 
 
 def resolve_bind_host(argv: list[str] | None = None) -> str:
@@ -2619,7 +2655,9 @@ def create_app(
 
     # --- Mount Static Dashboard Frontend ---
     dashboard_dir = Path(__file__).resolve().parent.parent / "dashboard"
-    dashboard_v2_dist = Path(__file__).resolve().parent.parent / "dashboard_v2" / "dist"
+    dashboard_v2_dist = Path(
+        os.getenv("GOVERNANCE_CONSOLE_DIST") or Path(__file__).resolve().parent.parent / "dashboard_v2" / "dist"
+    )
 
     if dashboard_dir.is_dir():
         # Keep old dashboard reachable at /legacy-dashboard (do not delete it)
@@ -2638,7 +2676,7 @@ def create_app(
             )
 
     # Mount v2 built static files and SPA fallback
-    if dashboard_v2_dist.is_dir():
+    if (dashboard_v2_dist / "index.html").is_file():
         if (dashboard_v2_dist / "assets").is_dir():
             app.mount("/dashboard/assets", StaticFiles(directory=str(dashboard_v2_dist / "assets")), name="dashboard_v2_assets")
             app.mount("/assets", StaticFiles(directory=str(dashboard_v2_dist / "assets")), name="v2_assets_root")
@@ -2666,17 +2704,19 @@ def create_app(
                     "Expires": "0",
                 },
             )
-    elif dashboard_dir.is_dir():
-        @app.get("/dashboard", response_class=FileResponse)
-        async def serve_dashboard_fallback():
-            return FileResponse(
-                str(dashboard_dir / "index.html"),
-                headers={
-                    "Cache-Control": "no-cache, no-store, must-revalidate",
-                    "Pragma": "no-cache",
-                    "Expires": "0",
-                },
-            )
+    else:
+        # Do not silently fall back to the legacy UI: say what is missing.
+        logger.warning(
+            "Governance Console not built: %s/index.html is missing. Run `npm ci && npm run build` in "
+            "demo/security_monitor/app/dashboard_v2. /dashboard serves a 'console not built' page; "
+            "the legacy UI stays at /legacy-dashboard.",
+            dashboard_v2_dist,
+        )
+
+        @app.get("/dashboard", response_class=HTMLResponse)
+        @app.get("/dashboard/{full_path:path}", response_class=HTMLResponse)
+        async def serve_console_not_built(full_path: str = ""):
+            return HTMLResponse(CONSOLE_NOT_BUILT_HTML, status_code=503, headers={"Cache-Control": "no-store"})
 
     @app.get("/", response_class=RedirectResponse)
     async def root_redirect():

@@ -19,8 +19,13 @@ def client():
     return TestClient(app)
 
 
-def test_dashboard_static_page(client):
-    """Verify /dashboard serves the HTML single-page dashboard."""
+def test_dashboard_static_page(tmp_path, monkeypatch):
+    """Verify /dashboard serves the built single-page console (a stand-in build, so this does not need npm)."""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html><title>A2A Security Operations & Governance Console</title></html>")
+    monkeypatch.setenv("GOVERNANCE_CONSOLE_DIST", str(dist))
+    client = TestClient(create_app())
     resp = client.get("/dashboard")
     assert resp.status_code == 200
     assert "text/html" in resp.headers.get("content-type", "")
