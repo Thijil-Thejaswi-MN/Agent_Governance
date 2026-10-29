@@ -214,7 +214,7 @@ def test_input_files_validation_rejects_bad_paths_and_oversized(test_env):
 
 
 def test_run_always_uses_condition_c_with_isolation(test_env, monkeypatch):
-    monkeypatch.setattr(TaskLauncher, "check_prerequisites", staticmethod(lambda: []))
+    monkeypatch.setattr(TaskLauncher, "check_condition_c_support", staticmethod(lambda: []))
     storage: GovernanceStorage = test_env["storage"]
     tmp_path: Path = test_env["tmp_path"]
     mgr = ActiveRunManager()

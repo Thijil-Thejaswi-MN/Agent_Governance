@@ -82,7 +82,7 @@ def _read_sse(client: TestClient, task_id: str) -> tuple[list[dict], dict | None
 
 def test_start_refused_with_503_when_prerequisites_fail(env, monkeypatch):
     problems = ["launcher requires Linux (WSL2)"]
-    monkeypatch.setattr(TaskLauncher, "check_prerequisites", staticmethod(lambda: list(problems)))
+    monkeypatch.setattr(TaskLauncher, "check_condition_c_support", staticmethod(lambda: list(problems)))
 
     resp = env["client"].post("/api/governance/run", json=RUN_BODY, headers=HEADERS)
 
@@ -99,7 +99,7 @@ def test_start_refused_with_503_when_prerequisites_fail(env, monkeypatch):
 
 def test_launcher_raising_mid_run_records_failed_terminal_step_and_frees_slot(env, monkeypatch):
     storage: GovernanceStorage = env["storage"]
-    monkeypatch.setattr(TaskLauncher, "check_prerequisites", staticmethod(lambda: []))
+    monkeypatch.setattr(TaskLauncher, "check_condition_c_support", staticmethod(lambda: []))
 
     def exploding_run(self, spec):
         storage.record_task_step(spec.task_id, kind="phase", layer="intake", verdict="ALLOW",
@@ -130,7 +130,7 @@ def test_launcher_raising_mid_run_records_failed_terminal_step_and_frees_slot(en
 
 
 def test_stream_of_failed_run_ends_with_failed_event(env, monkeypatch):
-    monkeypatch.setattr(TaskLauncher, "check_prerequisites", staticmethod(lambda: []))
+    monkeypatch.setattr(TaskLauncher, "check_condition_c_support", staticmethod(lambda: []))
     started = threading.Event()
 
     def failing_run(self, spec):
@@ -169,7 +169,7 @@ def test_stream_for_unknown_task_ends_instead_of_spinning(env):
 
 def test_start_rejects_model_that_is_not_installed(env, monkeypatch):
     monkeypatch.setattr(rm, "list_installed_models", lambda: ["qwen2.5:7b", "llama3.1:8b"])
-    monkeypatch.setattr(TaskLauncher, "check_prerequisites", staticmethod(lambda: []))
+    monkeypatch.setattr(TaskLauncher, "check_condition_c_support", staticmethod(lambda: []))
     monkeypatch.setattr(TaskLauncher, "run", lambda self, spec: None)
     client: TestClient = env["client"]
 

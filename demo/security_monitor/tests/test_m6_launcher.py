@@ -33,7 +33,7 @@ ROOT = Path(__file__).resolve().parents[3]
 OS_LAYER = ROOT / "demo" / "security_monitor" / "app" / "governance" / "os_layer"
 
 
-needs_scope = pytest.mark.os_layer  # skip reason comes from conftest (TaskLauncher.check_prerequisites)
+needs_scope = pytest.mark.os_layer  # skip reason comes from conftest (TaskLauncher.check_condition_c_support)
 
 
 # ---------------------------------------------------------------------------

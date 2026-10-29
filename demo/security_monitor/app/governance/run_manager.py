@@ -389,7 +389,7 @@ class ActiveRunManager:
             sanitized_inputs = sanitize_input_files(combined_files)
 
             # Fail closed before accepting the run: no task id, no thread, no slot.
-            problems = TaskLauncher.check_prerequisites()
+            problems = TaskLauncher.check_condition_c_support()
             if problems:
                 raise RunPrerequisitesError(problems)
 

@@ -391,6 +391,33 @@ class TaskLauncher:
             problems.append("cgroup v2 unified hierarchy not mounted at /sys/fs/cgroup")
         return problems
 
+    @classmethod
+    def check_condition_c_support(cls) -> list[str]:
+        """check_prerequisites() plus what an ENFORCE / Condition C sandbox needs to arm.
+
+        Without these the enforcer reports isolation below the ENFORCE requirement and
+        the task is frozen, so a Run-page run could never do anything. (Conditions A/B
+        of the evaluation harness only need check_prerequisites().)
+        """
+        problems = cls.check_prerequisites()
+        if sys.platform != "linux":
+            return problems
+        from .os_layer.landlock import get_landlock_abi
+        abi = get_landlock_abi()
+        if 1 <= abi < 6:
+            problems.append(f"Landlock ABI {abi} < 6 (IPC/signal scoping needs kernel 6.12+)")
+        for knob, bad, msg in (
+            ("apparmor_restrict_unprivileged_userns", "1", "unprivileged user namespaces restricted by AppArmor"),
+            ("unprivileged_userns_clone", "0", "unprivileged user namespaces disabled"),
+        ):
+            p = Path("/proc/sys/kernel") / knob
+            try:
+                if p.read_text().strip() == bad:
+                    problems.append(f"{msg} (kernel.{knob}={bad})")
+            except OSError:
+                pass
+        return problems
+
     # --- cancellation ---
     def cancel(self, reason: str = "operator_stop") -> dict[str, bool]:
         """Requests a stop at any point of the run, including during preparation.
