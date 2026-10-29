@@ -9,7 +9,11 @@ from __future__ import annotations
 import json
 import hashlib
 import hmac
+import ipaddress
 import os
+import secrets
+import threading
+import time
 from pathlib import Path
 from datetime import datetime
 from typing import Any
@@ -34,7 +38,6 @@ from .inventory import AgentInventoryService
 from .models import EnforcementMode, TaskBoundary, TaskLifecycle, TaskRecord
 from .storage import GovernanceStorage
 
-governance_router = APIRouter()
 _default_storage = GovernanceStorage()
 _default_intake = TaskIntakeService(_default_storage)
 _default_inventory = AgentInventoryService(_default_storage)
@@ -76,39 +79,123 @@ def get_expansion_service() -> ExpansionService:
     return _default_expansion
 
 
+TOKEN_NOT_CONFIGURED = (
+    "Operator token is not configured on the server. Set GOVERNANCE_OPERATOR_TOKEN environment variable "
+    "to enable operator access."
+)
+
+
+def _header_token(authorization: str | None, x_operator_token: str | None) -> str | None:
+    if authorization:
+        parts = authorization.split()
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            return parts[1]
+        return authorization
+    return x_operator_token or None
+
+
 def verify_operator_token(
     authorization: str | None = Header(None),
     x_operator_token: str | None = Header(None),
 ) -> str:
-    """Verifies operator authorization token for high-privilege operations.
+    """Verifies the operator token header (a session cookie is never enough here).
 
-    Checked on POST /expansions/{id}/approve, /deny, and /tasks/{id}/grant.
+    Checked on every mutation: approve / deny / grant, POST /run, /run/{id}/stop,
+    POST /auth/session.
     Refuses with 403 if GOVERNANCE_OPERATOR_TOKEN is unset in environment.
     Refuses with 401 if the supplied token does not match.
     """
     expected = os.getenv("GOVERNANCE_OPERATOR_TOKEN")
     if not expected:
-        raise HTTPException(
-            status_code=403,
-            detail="Operator token is not configured on the server. Set GOVERNANCE_OPERATOR_TOKEN environment variable to enable operator decisions.",
-        )
+        raise HTTPException(status_code=403, detail=TOKEN_NOT_CONFIGURED)
 
-    token = None
-    if authorization:
-        parts = authorization.split()
-        if len(parts) == 2 and parts[0].lower() == "bearer":
-            token = parts[1]
-        else:
-            token = authorization
-    elif x_operator_token:
-        token = x_operator_token
-
+    token = _header_token(authorization, x_operator_token)
     if not token or not hmac.compare_digest(token, expected):
         raise HTTPException(
             status_code=401,
             detail="Invalid or missing operator token.",
         )
     return token
+
+
+# ---------------------------------------------------------------------------
+# Operator sessions: an HttpOnly cookie so that EventSource and plain links
+# (receipt download) can read without the token in the URL.
+# ---------------------------------------------------------------------------
+
+SESSION_COOKIE = "gov_session"
+SESSION_TTL_S = 8 * 3600
+_sessions: dict[str, float] = {}  # session id -> expiry (time.time())
+_sessions_lock = threading.Lock()
+
+
+def _session_valid(session_id: str | None) -> bool:
+    if not session_id:
+        return False
+    now = time.time()
+    with _sessions_lock:
+        expiry = _sessions.get(session_id)
+        if expiry is None:
+            return False
+        if expiry <= now:
+            del _sessions[session_id]
+            return False
+        return True
+
+
+_PUBLIC_ENDPOINTS: set[Any] = set()
+
+
+def _public(endpoint: Any) -> Any:
+    """Marks an endpoint that needs no credentials (it exposes no task data)."""
+    _PUBLIC_ENDPOINTS.add(endpoint)
+    return endpoint
+
+
+def require_operator_access(
+    request: Request,
+    authorization: str | None = Header(None),
+    x_operator_token: str | None = Header(None),
+) -> None:
+    """Router-wide guard: the token header, or (for reads only) a valid session cookie."""
+    if request.scope.get("endpoint") in _PUBLIC_ENDPOINTS:
+        return
+    expected = os.getenv("GOVERNANCE_OPERATOR_TOKEN")
+    if not expected:
+        raise HTTPException(status_code=403, detail=TOKEN_NOT_CONFIGURED)
+    token = _header_token(authorization, x_operator_token)
+    if token is not None:
+        if hmac.compare_digest(token, expected):
+            return
+        raise HTTPException(status_code=401, detail="Invalid or missing operator token.")
+    if request.method in ("GET", "HEAD") and _session_valid(request.cookies.get(SESSION_COOKIE)):
+        return
+    raise HTTPException(
+        status_code=401,
+        detail="Invalid or missing operator token. Sign in required: send the operator token header, "
+               "or sign in (POST /api/governance/auth/session).",
+    )
+
+
+def enforce_bind_policy(host: str) -> None:
+    """Refuses to serve on a non-loopback address without an operator token."""
+    if os.getenv("GOVERNANCE_OPERATOR_TOKEN"):
+        return
+    h = (host or "").strip().strip("[]")
+    if h == "localhost":
+        return
+    try:
+        if ipaddress.ip_address(h).is_loopback:
+            return
+    except ValueError:
+        pass
+    raise RuntimeError(
+        f"Refusing to start: bind host {host!r} is not loopback and GOVERNANCE_OPERATOR_TOKEN is unset. "
+        "Set GOVERNANCE_OPERATOR_TOKEN or bind to 127.0.0.1."
+    )
+
+
+governance_router = APIRouter(dependencies=[Depends(require_operator_access)])
 
 
 class SubmitTaskRequest(BaseModel):
@@ -119,6 +206,7 @@ class SubmitTaskRequest(BaseModel):
 
 
 @governance_router.get("/system/status")
+@_public
 async def get_system_status() -> dict[str, Any]:
     """Returns OS-level sandbox and enforcement status (Landlock ABI, seccomp, cgroups v2, sensor)."""
     landlock_abi = 0
@@ -159,12 +247,60 @@ async def get_system_status() -> dict[str, Any]:
 
 
 @governance_router.get("/auth/status")
-async def get_auth_status() -> dict[str, Any]:
-    """Returns whether operator token authentication is configured."""
+@_public
+async def get_auth_status(request: Request) -> dict[str, Any]:
+    """Returns whether operator token authentication is configured and the caller's session is valid."""
     return {
         "operator_token_configured": bool(os.getenv("GOVERNANCE_OPERATOR_TOKEN")),
+        "session_active": _session_valid(request.cookies.get(SESSION_COOKIE)),
         "auth_header_supported": ["Authorization: Bearer <token>", "X-Operator-Token: <token>"],
     }
+
+
+@governance_router.post("/auth/session")
+@_public
+async def create_auth_session(
+    request: Request,
+    response: Response,
+    _token: str = Depends(verify_operator_token),
+) -> dict[str, Any]:
+    """Exchanges the operator token (header) for an HttpOnly session cookie valid for 8 h.
+
+    The cookie authorises reads only (including the SSE stream); mutations still
+    need the token header.
+    """
+    session_id = secrets.token_urlsafe(32)
+    now = time.time()
+    with _sessions_lock:
+        for sid in [s for s, exp in _sessions.items() if exp <= now]:
+            del _sessions[sid]
+        _sessions[session_id] = now + SESSION_TTL_S
+    response.set_cookie(
+        SESSION_COOKIE,
+        session_id,
+        max_age=SESSION_TTL_S,
+        httponly=True,
+        samesite="strict",
+        path="/api",
+        secure=request.url.scheme == "https",
+    )
+    return {
+        "authenticated": True,
+        "expires_at": datetime.fromtimestamp(now + SESSION_TTL_S).astimezone().isoformat(),
+        "operator": os.getenv("GOVERNANCE_OPERATOR_NAME", "operator"),
+    }
+
+
+@governance_router.delete("/auth/session")
+@_public
+async def delete_auth_session(request: Request, response: Response) -> dict[str, Any]:
+    """Logs out: forgets the caller's session server-side and clears the cookie."""
+    session_id = request.cookies.get(SESSION_COOKIE)
+    if session_id:
+        with _sessions_lock:
+            _sessions.pop(session_id, None)
+    response.delete_cookie(SESSION_COOKIE, path="/api", httponly=True, samesite="strict")
+    return {"authenticated": False}
 
 
 def _extract_os_receipt_events(task_id: str) -> list[dict[str, Any]]:

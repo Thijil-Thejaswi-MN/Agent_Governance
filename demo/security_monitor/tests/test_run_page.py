@@ -68,6 +68,7 @@ def test_preview_returns_boundary_and_starts_nothing(test_env):
 
     resp = client.post(
         "/api/governance/run/preview",
+        headers={"X-Operator-Token": "test_run_token"},
         json={
             "prompt": "Read input/sales_data.csv and write summary to output/summary.txt",
             "preset": "summarise_csv",
@@ -283,13 +284,14 @@ def test_stream_replays_stored_steps_after_reconnect(test_env):
     )
     storage.save_task(task)
 
-    resp_poll = client.get(f"/api/governance/run/{task_id}/steps?after=0")
+    headers = {"X-Operator-Token": "test_run_token"}
+    resp_poll = client.get(f"/api/governance/run/{task_id}/steps?after=0", headers=headers)
     assert resp_poll.status_code == 200
     steps = resp_poll.json()
     assert len(steps) == 3
     assert [s["step_number"] for s in steps] == [1, 2, 3]
 
-    with client.stream("GET", f"/api/governance/run/{task_id}/stream") as response:
+    with client.stream("GET", f"/api/governance/run/{task_id}/stream", headers=headers) as response:
         lines = [line for line in response.iter_lines() if line.startswith("data: ")]
         assert len(lines) >= 3
         parsed = [json.loads(line[6:]) for line in lines[:3]]

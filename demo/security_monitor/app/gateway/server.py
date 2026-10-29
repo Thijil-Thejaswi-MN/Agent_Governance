@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 import json
 import os
+import sys
 import urllib.parse
 from ..core.models import PolicyAction, SecuritySeverity, SecurityViolation
 from ..cards.normalizer import normalize_agent_card
@@ -27,6 +28,17 @@ def get_evaluation_data_dir() -> Path:
         if (parent / "demo" / "data" / "evaluation").is_dir():
             return parent / "demo" / "data" / "evaluation"
     return Path.cwd() / "evaluation_data"
+
+
+def resolve_bind_host(argv: list[str] | None = None) -> str:
+    """The host this server is bound to: `--host` of the uvicorn CLI, else GATEWAY_HOST, else uvicorn's default."""
+    args = list(sys.argv if argv is None else argv)
+    for i, a in enumerate(args):
+        if a == "--host" and i + 1 < len(args):
+            return args[i + 1]
+        if a.startswith("--host="):
+            return a.split("=", 1)[1]
+    return os.getenv("GATEWAY_HOST", "127.0.0.1")
 
 
 def create_app(
@@ -73,6 +85,11 @@ def create_app(
         system_mode=gov_mode,
         ungoverned_action=gov_ungov_act,
     )
+
+    @app.on_event("startup")
+    async def refuse_open_bind_without_token() -> None:
+        from ..governance.api import enforce_bind_policy
+        enforce_bind_policy(resolve_bind_host())
 
     @app.on_event("shutdown")
     async def shutdown() -> None:
@@ -2676,6 +2693,8 @@ app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
+    from ..governance.api import enforce_bind_policy
     host = os.getenv("GATEWAY_HOST", "127.0.0.1")
     port = int(os.getenv("GATEWAY_PORT", "8000"))
+    enforce_bind_policy(host)
     uvicorn.run("demo.security_monitor.app.gateway.server:app", host=host, port=port, reload=False)

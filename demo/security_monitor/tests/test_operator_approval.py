@@ -49,7 +49,7 @@ def test_env(tmp_path: Path):
     os.environ["GOVERNANCE_OPERATOR_NAME"] = "secops_lead"
 
     storage = GovernanceStorage(db_path)
-    client = TestClient(create_app())
+    client = TestClient(create_app(), headers={"Authorization": "Bearer test_secret_token"})
 
     yield {
         "storage": storage,

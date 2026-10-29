@@ -4,11 +4,14 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { OperatorAuthModal } from '../common/OperatorAuthModal';
+import { SignInRequired } from '../common/SignInRequired';
+import { useAuth } from '../../context/AuthContext';
 
 export const AppLayout: React.FC = () => {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
+  const { needsSignIn, authEpoch } = useAuth();
 
   const isReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -26,13 +29,13 @@ export const AppLayout: React.FC = () => {
         <main className="flex-1 p-4 md:p-8 max-w-7xl w-full mx-auto">
           <AnimatePresence mode="wait">
             <motion.div
-              key={location.pathname}
+              key={`${location.pathname}#${authEpoch}`}
               initial={isReducedMotion ? undefined : { opacity: 0, y: 6 }}
               animate={isReducedMotion ? undefined : { opacity: 1, y: 0 }}
               exit={isReducedMotion ? undefined : { opacity: 0, y: -6 }}
               transition={{ duration: 0.18, ease: 'easeOut' }}
             >
-              <Outlet />
+              {needsSignIn ? <SignInRequired /> : <Outlet />}
             </motion.div>
           </AnimatePresence>
         </main>

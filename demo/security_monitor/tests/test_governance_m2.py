@@ -311,7 +311,7 @@ def test_agent_inventory_service(m2_storage: GovernanceStorage, m2_workspace: Pa
 
 # --- 5. GOVERNANCE API ROUTER ENDPOINTS ---
 
-def test_governance_api_endpoints(m2_storage: GovernanceStorage, m2_workspace: Path) -> None:
+def test_governance_api_endpoints(m2_storage: GovernanceStorage, m2_workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from fastapi import FastAPI
     from demo.security_monitor.app.governance.api import governance_router
     import demo.security_monitor.app.governance.api as gov_api_module
@@ -324,7 +324,8 @@ def test_governance_api_endpoints(m2_storage: GovernanceStorage, m2_workspace: P
     app = FastAPI()
     app.include_router(governance_router, prefix="/api/governance")
 
-    client = TestClient(app)
+    monkeypatch.setenv("GOVERNANCE_OPERATOR_TOKEN", "m2_operator_token")
+    client = TestClient(app, headers={"X-Operator-Token": "m2_operator_token"})
 
     # 1. POST /api/governance/tasks
     res = client.post(

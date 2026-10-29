@@ -200,6 +200,8 @@ def test_receipt_endpoint_both_cases(auth_test_env):
     empty_receipts_dir.mkdir(parents=True, exist_ok=True)
     old_receipts_dir = os.environ.get("RECEIPTS_DIR")
     os.environ["RECEIPTS_DIR"] = str(empty_receipts_dir)
+    os.environ["GOVERNANCE_OPERATOR_TOKEN"] = "receipt_reader_token"
+    client.headers["X-Operator-Token"] = "receipt_reader_token"
 
     try:
         resp1 = client.get("/api/governance/tasks/task_auth_01/receipt")
@@ -250,6 +252,7 @@ def test_receipt_endpoint_both_cases(auth_test_env):
         assert data2["receipt"] is not None
         assert data2["receipt"]["hash_chain"]["count"] == 1
     finally:
+        os.environ.pop("GOVERNANCE_OPERATOR_TOKEN", None)
         if old_receipts_dir is not None:
             os.environ["RECEIPTS_DIR"] = old_receipts_dir
         else:

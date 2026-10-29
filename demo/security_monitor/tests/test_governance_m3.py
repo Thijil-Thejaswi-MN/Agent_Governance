@@ -451,6 +451,7 @@ async def test_async_request_and_wait_does_not_block_event_loop(m3_storage: Gove
 
     monkeypatch.setenv("GOVERNANCE_DB_PATH", str(m3_storage.db_path))
     monkeypatch.setenv("GOVERNANCE_SYSTEM_MODE", "OBSERVE")
+    monkeypatch.setenv("GOVERNANCE_OPERATOR_TOKEN", "m3_operator_token")
 
     intake = TaskIntakeService(m3_storage)
     task, boundary = intake.submit_task("Analyze doc", "worker_agent", str(m3_workspace))
@@ -461,7 +462,8 @@ async def test_async_request_and_wait_does_not_block_event_loop(m3_storage: Gove
 
     app = create_app()
 
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
+                                 headers={"X-Operator-Token": "m3_operator_token"}) as client:
         # Launch a pending expansion request that waits for 0.4s
         wait_task = asyncio.create_task(
             client.post(

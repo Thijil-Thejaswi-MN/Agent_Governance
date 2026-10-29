@@ -33,6 +33,9 @@ export function clearOperatorToken(): void {
   sessionStorage.removeItem('governance_operator_token');
 }
 
+// Fired on any 401 so that the layout can switch every page to its "sign in" state.
+export const UNAUTHORIZED_EVENT = 'governance:unauthorized';
+
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = getOperatorToken();
   const headers: Record<string, string> = {
@@ -71,6 +74,9 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     const err = new Error(errorDetail);
     (err as any).status = res.status;
     (err as any).problems = problems;
+    if (res.status === 401) {
+      window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT));
+    }
     throw err;
   }
 
@@ -134,7 +140,30 @@ export const api = {
   getInventory: () => request<AgentInventoryItem[]>(`${API_BASE}/inventory`),
   getAlerts: () => request<any[]>(`${API_BASE}/alerts`),
   getConfig: () => request<{ system_mode: string; provenance_enabled: boolean }>(`${API_BASE}/config`),
-  getAuthStatus: () => request<{ operator_token_configured: boolean }>(`${API_BASE}/auth/status`),
+  getAuthStatus: () =>
+    request<{ operator_token_configured: boolean; session_active: boolean }>(`${API_BASE}/auth/status`),
+
+  // Exchanges the token for an HttpOnly read-session cookie (used by EventSource and plain links).
+  createSession: async (token: string): Promise<{ authenticated: boolean; expires_at: string }> => {
+    const res = await fetch(`${API_BASE}/auth/session`, {
+      method: 'POST',
+      headers: { 'X-Operator-Token': token },
+      credentials: 'same-origin',
+    });
+    if (!res.ok) {
+      let detail = `Sign-in failed: HTTP ${res.status}`;
+      try {
+        detail = (await res.json()).detail || detail;
+      } catch {
+        // ignore
+      }
+      const err = new Error(detail);
+      (err as any).status = res.status;
+      throw err;
+    }
+    return res.json();
+  },
+  deleteSession: () => fetch(`${API_BASE}/auth/session`, { method: 'DELETE', credentials: 'same-origin' }),
 
   // Evaluation Results Summary
   getResultsSummary: async (): Promise<ResultsSummary> => {

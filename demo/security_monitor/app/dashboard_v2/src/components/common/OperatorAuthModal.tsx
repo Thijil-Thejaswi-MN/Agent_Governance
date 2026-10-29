@@ -6,17 +6,25 @@ export const OperatorAuthModal: React.FC = () => {
   const { isModalOpen, closeAuthModal, saveToken, isConfigured, token } = useAuth();
   const [inputVal, setInputVal] = useState(token || '');
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   if (!isModalOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputVal.trim()) {
       setError('Please enter a valid operator token');
       return;
     }
-    saveToken(inputVal.trim());
-    setError(null);
+    setSubmitting(true);
+    try {
+      await saveToken(inputVal.trim());
+      setError(null);
+    } catch (err: any) {
+      setError(err?.status === 401 ? 'The server rejected this token.' : err?.message || 'Sign-in failed');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -37,7 +45,7 @@ export const OperatorAuthModal: React.FC = () => {
                 Operator Authentication
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Authorized access for expansion approvals & grants
+                Required to view tasks, runs and receipts, and to decide approvals
               </p>
             </div>
           </div>
@@ -55,7 +63,7 @@ export const OperatorAuthModal: React.FC = () => {
             <div className="flex items-start gap-2.5 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-600 dark:text-amber-400">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>
-                Note: Server currently has <code>GOVERNANCE_OPERATOR_TOKEN</code> unset. Mutating actions will refuse with HTTP 403 until set.
+                Note: Server currently has <code>GOVERNANCE_OPERATOR_TOKEN</code> unset. All task data and actions refuse with HTTP 403 until it is set.
               </span>
             </div>
           )}
@@ -80,7 +88,8 @@ export const OperatorAuthModal: React.FC = () => {
           </div>
 
           <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-            This token is kept in your browser's <code>sessionStorage</code> and sent with approval, denial, and grant mutations.
+            Signing in sets an HttpOnly read-session cookie (8 h) for this console. The token itself is kept in your
+            browser's <code>sessionStorage</code> and sent with every action (run, stop, approve, deny, grant).
           </p>
 
           <div className="flex justify-end gap-2.5 pt-2">
@@ -92,11 +101,13 @@ export const OperatorAuthModal: React.FC = () => {
               Cancel
             </button>
             <button
+              id="operator-signin-btn"
               type="submit"
-              className="px-4 py-2 text-xs font-medium text-white bg-cyan-600 hover:bg-cyan-500 dark:bg-cyan-500 dark:hover:bg-cyan-400 rounded-xl shadow-sm transition-colors flex items-center gap-1.5"
+              disabled={submitting}
+              className="px-4 py-2 disabled:opacity-60 text-xs font-medium text-white bg-cyan-600 hover:bg-cyan-500 dark:bg-cyan-500 dark:hover:bg-cyan-400 rounded-xl shadow-sm transition-colors flex items-center gap-1.5"
             >
               <ShieldCheck className="w-4 h-4" />
-              Save Operator Token
+              {submitting ? 'Signing in…' : 'Sign in'}
             </button>
           </div>
         </form>
