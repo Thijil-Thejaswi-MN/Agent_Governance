@@ -121,6 +121,13 @@ def test_launcher_raising_mid_run_records_failed_terminal_step_and_frees_slot(en
     assert task is not None and task.status == TaskLifecycle.FAILED
     assert not mgr.is_active() and mgr._active_task_id is None and mgr._active_launcher is None
 
+    # No workspace: the output endpoint must not read an output/ dir relative to the server cwd.
+    monkeypatch.chdir(env["tmp_path"])
+    (env["tmp_path"] / "output").mkdir()
+    (env["tmp_path"] / "output" / "unrelated.txt").write_text("not this task's output")
+    out = env["client"].get(f"/api/governance/run/{task_id}/output", headers=HEADERS)
+    assert out.status_code == 200 and out.json()["files"] == []
+
     # The slot is really free: another run is accepted.
     monkeypatch.setattr(TaskLauncher, "run", lambda self, spec: None)
     second = mgr.start_run(prompt="Analyse input/sales_data.csv", storage=storage, preset_id="summarise_csv",

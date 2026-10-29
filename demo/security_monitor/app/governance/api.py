@@ -1113,6 +1113,10 @@ async def get_task_output_files(task_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Task not found")
 
     ws_root = task.workspace_root
+    if not ws_root:
+        # A run that failed or was cancelled before intake has no workspace; never fall back to
+        # a path relative to the server's working directory.
+        return {"task_id": task_id, "files": []}
     out_dir = Path(ws_root) / "output"
     files = []
     if out_dir.is_dir():
