@@ -46,7 +46,7 @@ from .expansion import ExpansionService
 from .intake import TaskIntakeService
 from .models import EnforcementMode, ExpansionStatus, TaskLifecycle
 from .os_layer import cgroup_ctl
-from .os_layer.sandbox_spec import BROKER_SOCKET_NAME, compile_landlock_rules, write_rules_file
+from .os_layer.sandbox_spec import BROKER_SOCKET_NAME, SYSTEM_RX_PATHS, compile_landlock_rules, write_rules_file
 from .proxy import EgressProxyServer
 from .receipt import build_receipt, verify_chain
 from .storage import GovernanceStorage
@@ -416,6 +416,14 @@ class TaskLauncher:
                     problems.append(f"{msg} (kernel.{knob}={bad})")
             except OSError:
                 pass
+        # The sensor treats only the system paths as runtime; an interpreter elsewhere
+        # (e.g. /opt/hostedtoolcache) makes the agent's first library read OUTSIDE and
+        # the task is frozen before it does anything.
+        for label, path in (("interpreter", os.path.realpath(sys.executable)),
+                            ("Python installation", os.path.realpath(sys.base_prefix))):
+            if not any(path == p or path.startswith(p + "/") for p in SYSTEM_RX_PATHS):
+                problems.append(f"{label} {path} is outside the sensor's runtime system profile "
+                                f"({', '.join(SYSTEM_RX_PATHS)}); use a system Python")
         return problems
 
     # --- cancellation ---

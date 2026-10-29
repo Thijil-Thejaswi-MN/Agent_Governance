@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 import threading
 import time
 import uuid
@@ -300,3 +301,14 @@ def test_stop_after_agent_started_kills_cgroup_and_writes_receipt(env, ws_base, 
     assert ok and final == receipt["hash_chain"]["final_hash"]
     steps = _steps(storage, task_id)
     assert steps[-1]["kind"] == "finished" and steps[-1]["verdict"] == "STOPPED"
+
+
+def test_interpreter_outside_runtime_profile_is_a_host_problem(monkeypatch):
+    """An interpreter outside /usr etc. (e.g. actions/setup-python's /opt/hostedtoolcache)
+    would have every governed run frozen on its first library read: refuse it up front."""
+    monkeypatch.setattr(TaskLauncher, "check_prerequisites", classmethod(lambda cls: []))
+    monkeypatch.setattr(sys, "executable", "/opt/hostedtoolcache/Python/3.14.9/x64/bin/python3.14")
+    monkeypatch.setattr(sys, "base_prefix", "/opt/hostedtoolcache/Python/3.14.9/x64")
+    problems = TaskLauncher.check_condition_c_support()
+    assert any("interpreter /opt/hostedtoolcache/Python/3.14.9/x64/bin/python3.14 is outside" in p for p in problems)
+    assert any("Python installation /opt/hostedtoolcache/Python/3.14.9/x64 is outside" in p for p in problems)
