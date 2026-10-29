@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import asyncio
+import datetime
 import hashlib
 import threading
 from pathlib import Path
@@ -68,6 +70,8 @@ class GovernanceStorage:
         else:
             self.db_path = str(db_path or get_default_governance_db_path())
             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+        self._step_subscribers: dict[str, list[Any]] = {}
+        self._step_lock = threading.Lock()
         self._init_schema()
 
     def get_connection(self) -> sqlite3.Connection:
@@ -163,7 +167,8 @@ class GovernanceStorage:
                     resolved_by TEXT,
                     single_use INTEGER NOT NULL DEFAULT 0,
                     used_count INTEGER NOT NULL DEFAULT 0,
-                    timeout_seconds REAL NOT NULL DEFAULT 5.0
+                    timeout_seconds REAL NOT NULL DEFAULT 5.0,
+                    reason TEXT
                 )
             """)
 
@@ -184,6 +189,11 @@ class GovernanceStorage:
             except Exception:
                 pass
 
+            try:
+                cursor.execute("ALTER TABLE governance_expansions ADD COLUMN reason TEXT")
+            except Exception:
+                pass
+
             # 7. Task OS identity (M6): task_id <-> cgroup path read from /proc/<pid>/cgroup
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS task_os_identity (
@@ -195,6 +205,23 @@ class GovernanceStorage:
                     source TEXT NOT NULL
                 )
             """)
+
+            # 8. Task Live Steps (Run page): timeline of execution steps
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS task_steps (
+                    step_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL,
+                    step_number INTEGER NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    layer TEXT NOT NULL,
+                    verdict TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    detail TEXT,
+                    source_label TEXT
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_task_steps_task ON task_steps (task_id, step_number)")
             conn.commit()
 
     # --- Task Methods ---
@@ -506,13 +533,14 @@ class GovernanceStorage:
                     request_id, task_id, agent_id, resource_type, resource_target,
                     justification, baseline_risk_tier, effective_risk_tier,
                     escalated_by_provenance, status, created_at, resolved_at,
-                    resolved_by, single_use, used_count, timeout_seconds
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    resolved_by, single_use, used_count, timeout_seconds, reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(request_id) DO UPDATE SET
                     status=excluded.status,
                     resolved_at=coalesce(excluded.resolved_at, governance_expansions.resolved_at),
                     resolved_by=coalesce(excluded.resolved_by, governance_expansions.resolved_by),
-                    used_count=excluded.used_count
+                    used_count=excluded.used_count,
+                    reason=coalesce(excluded.reason, governance_expansions.reason)
                 """,
                 (
                     req.request_id,
@@ -531,6 +559,7 @@ class GovernanceStorage:
                     1 if req.single_use else 0,
                     req.used_count,
                     req.timeout_seconds,
+                    req.reason,
                 ),
             )
             conn.commit()
@@ -607,4 +636,133 @@ class GovernanceStorage:
             single_use=bool(r["single_use"]),
             used_count=r["used_count"],
             timeout_seconds=float(r["timeout_seconds"]),
+            reason=r["reason"] if "reason" in r.keys() else None,
         )
+
+
+    # --- Task Live Steps Methods (Run Page) ---
+    def record_task_step(
+        self,
+        task_id: str,
+        kind: str,
+        layer: str,
+        verdict: str,
+        summary: str,
+        detail: str = "",
+        source_label: str = "",
+        step_number: int | None = None,
+        timestamp: str | None = None,
+    ) -> dict[str, Any]:
+        if timestamp is None:
+            timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        if not source_label:
+            if kind == "model":
+                source_label = "model output (untrusted)"
+            elif kind == "sensor" and verdict in ("ALLOW", "INSIDE"):
+                source_label = "observed by OS sensor"
+            elif summary.lower().startswith("command output") or "in-sandbox shim" in summary.lower():
+                source_label = "reported by the in-sandbox shim"
+            else:
+                source_label = "enforced"
+
+        # Truncate detail to <= 2 KB (2048 chars)
+        if detail and len(detail) > 2048:
+            detail = detail[:2045] + "..."
+
+        with self.get_connection() as conn:
+            if step_number is None:
+                row = conn.execute(
+                    "SELECT COALESCE(MAX(step_number), 0) + 1 FROM task_steps WHERE task_id = ?",
+                    (task_id,),
+                ).fetchone()
+                step_number = int(row[0]) if row else 1
+
+            conn.execute(
+                """
+                INSERT INTO task_steps (
+                    task_id, step_number, timestamp, kind, layer, verdict, summary, detail, source_label
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    task_id,
+                    step_number,
+                    timestamp,
+                    kind,
+                    layer,
+                    verdict,
+                    summary,
+                    detail or "",
+                    source_label,
+                ),
+            )
+            conn.commit()
+
+        step_dict = {
+            "task_id": task_id,
+            "step_number": step_number,
+            "timestamp": timestamp,
+            "kind": kind,
+            "layer": layer,
+            "verdict": verdict,
+            "summary": summary,
+            "detail": detail or "",
+            "source_label": source_label,
+        }
+        self._dispatch_step(task_id, step_dict)
+        return step_dict
+
+    def _dispatch_step(self, task_id: str, step_dict: dict[str, Any]) -> None:
+        with self._step_lock:
+            queues = list(self._step_subscribers.get(task_id, []))
+        for q in queues:
+            try:
+                loop = getattr(q, "_loop", None)
+                if loop and loop.is_running():
+                    loop.call_soon_threadsafe(q.put_nowait, step_dict)
+                else:
+                    q.put_nowait(step_dict)
+            except Exception:
+                pass
+
+    def subscribe_task_steps(self, task_id: str) -> Any:
+        import asyncio
+        q = asyncio.Queue()
+        with self._step_lock:
+            if task_id not in self._step_subscribers:
+                self._step_subscribers[task_id] = []
+            self._step_subscribers[task_id].append(q)
+        return q
+
+    def unsubscribe_task_steps(self, task_id: str, q: Any) -> None:
+        with self._step_lock:
+            if task_id in self._step_subscribers:
+                if q in self._step_subscribers[task_id]:
+                    self._step_subscribers[task_id].remove(q)
+                if not self._step_subscribers[task_id]:
+                    del self._step_subscribers[task_id]
+
+    def get_task_steps(self, task_id: str, after_step: int = 0) -> list[dict[str, Any]]:
+        with self.get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT step_number, timestamp, kind, layer, verdict, summary, detail, source_label
+                FROM task_steps
+                WHERE task_id = ? AND step_number > ?
+                ORDER BY step_number ASC
+                """,
+                (task_id, after_step),
+            ).fetchall()
+            return [
+                {
+                    "task_id": task_id,
+                    "step_number": r["step_number"],
+                    "timestamp": r["timestamp"],
+                    "kind": r["kind"],
+                    "layer": r["layer"],
+                    "verdict": r["verdict"],
+                    "summary": r["summary"],
+                    "detail": r["detail"] or "",
+                    "source_label": r["source_label"] or "",
+                }
+                for r in rows
+            ]

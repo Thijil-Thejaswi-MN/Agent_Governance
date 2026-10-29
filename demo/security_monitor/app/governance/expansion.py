@@ -359,6 +359,16 @@ class ExpansionService:
             timeout_seconds=timeout_seconds,
         )
         self.storage.save_expansion_request(req)
+        if req.status == ExpansionStatus.PENDING:
+            self.storage.record_task_step(
+                task_id,
+                kind="expansion",
+                layer="broker",
+                verdict="PENDING",
+                summary=f"Expansion access requested for {resource_target} ({effective_tier.value} risk)",
+                detail=f"Baseline: {baseline_tier.value}, Effective: {effective_tier.value}\nJustification: {justification}",
+                source_label="enforced",
+            )
 
         # If auto-approved, create new boundary version N+1 immediately
         if is_auto_approved:
@@ -366,7 +376,7 @@ class ExpansionService:
 
         return req
 
-    def approve_request(self, request_id: str, approved_by: str) -> TaskBoundary:
+    def approve_request(self, request_id: str, approved_by: str, reason: str = "") -> TaskBoundary:
         """
         Approves a pending expansion request and applies version N+1 to the task boundary.
         STRICTLY PROHIBITS AGENT SELF-APPROVAL.
@@ -390,7 +400,18 @@ class ExpansionService:
         req.status = ExpansionStatus.APPROVED
         req.resolved_by = approved_by
         req.resolved_at = now_utc
+        if reason:
+            req.reason = reason
         self.storage.save_expansion_request(req)
+        self.storage.record_task_step(
+            req.task_id,
+            kind="expansion",
+            layer="broker",
+            verdict="APPROVED",
+            summary=f"Expansion {req.resource_target} approved by {approved_by}",
+            detail=f"Reason: {reason or 'Approved by operator'}",
+            source_label="enforced",
+        )
 
         return self._apply_boundary_expansion(req)
 
@@ -404,7 +425,17 @@ class ExpansionService:
         req.status = ExpansionStatus.DENIED
         req.resolved_by = denied_by
         req.resolved_at = now_utc
+        req.reason = reason
         self.storage.save_expansion_request(req)
+        self.storage.record_task_step(
+            req.task_id,
+            kind="expansion",
+            layer="broker",
+            verdict="BLOCK_ACTION",
+            summary=f"Expansion {req.resource_target} denied by {denied_by}",
+            detail=f"Reason: {reason}",
+            source_label="enforced",
+        )
 
     def _apply_boundary_expansion(self, req: ExpansionRequest) -> TaskBoundary:
         """Creates TaskBoundary version N+1 linked to request_id."""

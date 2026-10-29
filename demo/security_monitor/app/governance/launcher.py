@@ -46,9 +46,9 @@ from .expansion import ExpansionService
 from .intake import TaskIntakeService
 from .models import EnforcementMode, ExpansionStatus, TaskLifecycle
 from .os_layer import cgroup_ctl
-from .os_layer.sandbox_spec import BROKER_SOCKET_NAME, compile_landlock_rules, write_rules_file
+from .os_layer.sandbox_spec import BROKER_SOCKET_NAME, SYSTEM_RX_PATHS, compile_landlock_rules, write_rules_file
 from .proxy import EgressProxyServer
-from .receipt import build_receipt
+from .receipt import build_receipt, verify_chain
 from .storage import GovernanceStorage
 
 HERE = Path(__file__).resolve().parent
@@ -72,6 +72,7 @@ def default_workspace_base() -> Path:
 @dataclass
 class TaskSpec:
     prompt: str
+    task_id: str | None = None
     requester: str = "local_user"
     agent_id: str = "m6_agent"
     inputs: dict[str, str] = field(default_factory=dict)        # workspace-relative path -> text
@@ -85,7 +86,8 @@ class TaskSpec:
     timeout_s: float = 900.0
     command_timeout_s: float = 60.0
     freeze_timeout_s: float = 5.0
-    approval_policy: str = "deny"                                # "deny" | "oracle"
+    approval_policy: str = "deny"                                # "deny" | "oracle" | "operator"
+    approval_timeout_s: float = 120.0
     oracle_allowed: list[str] = field(default_factory=list)
     condition: str | None = None
     tools_schema: list[dict[str, Any]] | None = None
@@ -342,6 +344,7 @@ class TaskLauncher:
         workspace_base: Path | None = None,
         receipts_dir: Path | None = None,
         test_hooks: dict[str, Any] | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> None:
         self.storage = storage
         self.workspace_base = (workspace_base or default_workspace_base()).resolve()
@@ -352,6 +355,12 @@ class TaskLauncher:
         self.termination: dict[str, Any] = {}
         self._frozen = threading.Event()
         self.live: dict[str, Any] = {}  # exposed for tests (sensor pid, cgroup, rpc server)
+        # Owned by the caller (ActiveRunManager) so that run() can never reset it: a stop
+        # requested before or during preparation must survive until the next checkpoint.
+        self.cancel_event = cancel_event or threading.Event()
+        # Serialises "release the agent gate" against cancel(): either the agent starts
+        # and cancel() kills its cgroup, or cancel() wins and the agent never starts.
+        self._gate_lock = threading.Lock()
 
     # --- preconditions (fail closed) ---
     @staticmethod
@@ -359,12 +368,79 @@ class TaskLauncher:
         problems = []
         if sys.platform != "linux":
             problems.append("launcher requires Linux (WSL2)")
+            return problems
         for b in (SENSOR_BIN, SECCOMP_BIN, ENFORCER_BIN):
             if not os.access(b, os.X_OK):
                 problems.append(f"missing binary {b} (run make in os_layer/)")
         if not shutil.which("systemd-run"):
             problems.append("systemd-run not found")
+        else:
+            try:
+                r = subprocess.run(["systemctl", "--user", "is-system-running"],
+                                   capture_output=True, text=True, timeout=5.0)
+                state = r.stdout.strip()
+            except (OSError, subprocess.TimeoutExpired) as e:
+                state = f"unavailable ({e})"
+            if state not in ("running", "degraded"):
+                problems.append(f"systemd --user manager not available (state: {state or 'unknown'})")
+        from .os_layer.landlock import get_landlock_abi
+        abi = get_landlock_abi()
+        if abi < 1:
+            problems.append("Landlock not supported by this kernel")
+        if not (cgroup_ctl.CGROUP_ROOT / "cgroup.controllers").exists():
+            problems.append("cgroup v2 unified hierarchy not mounted at /sys/fs/cgroup")
         return problems
+
+    @classmethod
+    def check_condition_c_support(cls) -> list[str]:
+        """check_prerequisites() plus what an ENFORCE / Condition C sandbox needs to arm.
+
+        Without these the enforcer reports isolation below the ENFORCE requirement and
+        the task is frozen, so a Run-page run could never do anything. (Conditions A/B
+        of the evaluation harness only need check_prerequisites().)
+        """
+        problems = cls.check_prerequisites()
+        if sys.platform != "linux":
+            return problems
+        from .os_layer.landlock import get_landlock_abi
+        abi = get_landlock_abi()
+        if 1 <= abi < 6:
+            problems.append(f"Landlock ABI {abi} < 6 (IPC/signal scoping needs kernel 6.12+)")
+        for knob, bad, msg in (
+            ("apparmor_restrict_unprivileged_userns", "1", "unprivileged user namespaces restricted by AppArmor"),
+            ("unprivileged_userns_clone", "0", "unprivileged user namespaces disabled"),
+        ):
+            p = Path("/proc/sys/kernel") / knob
+            try:
+                if p.read_text().strip() == bad:
+                    problems.append(f"{msg} (kernel.{knob}={bad})")
+            except OSError:
+                pass
+        # The sensor treats only the system paths as runtime; an interpreter elsewhere
+        # (e.g. /opt/hostedtoolcache) makes the agent's first library read OUTSIDE and
+        # the task is frozen before it does anything.
+        for label, path in (("interpreter", os.path.realpath(sys.executable)),
+                            ("Python installation", os.path.realpath(sys.base_prefix))):
+            if not any(path == p or path.startswith(p + "/") for p in SYSTEM_RX_PATHS):
+                problems.append(f"{label} {path} is outside the sensor's runtime system profile "
+                                f"({', '.join(SYSTEM_RX_PATHS)}); use a system Python")
+        return problems
+
+    # --- cancellation ---
+    def cancel(self, reason: str = "operator_stop") -> dict[str, bool]:
+        """Requests a stop at any point of the run, including during preparation.
+
+        Sets the cancel event (checked by run() before intake, before the workspace,
+        right before the agent starts, and as soon as the cgroup exists). If the task
+        cgroup already exists it is killed immediately.
+        """
+        with self._gate_lock:
+            self.cancel_event.set()
+            started = bool(self.live.get("agent_started"))
+            has_cgroup = bool(self.live.get("cgroup"))
+        if has_cgroup:
+            self.stop(reason)
+        return {"killed": has_cgroup, "cancelled_before_start": not started}
 
     # --- freeze / kill ---
     def _freeze(self, reason: str, detail: Any = None) -> None:
@@ -392,9 +468,124 @@ class TaskLauncher:
     def _kill(self, reason: str) -> None:
         cg = self.live.get("cgroup")
         method = cgroup_ctl.kill_all(cg, self.live.get("unit")) if cg else "no_cgroup"
+        proc = self.live.get("proc")
+        if proc and proc.poll() is None:
+            try:
+                proc.kill()
+            except OSError:
+                pass
         if not self.termination:
             self.termination = {"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                                 "reason": reason, "method": method}
+
+    def stop(self, reason: str = "operator_stop") -> None:
+        """Terminates the task cgroup and marks the termination reason."""
+        self._kill(reason)
+        task_id = self.live.get("task_id")
+        if task_id:
+            try:
+                self.storage.record_task_step(
+                    task_id,
+                    kind="termination",
+                    layer="cgroup",
+                    verdict="TERMINATE",
+                    summary=f"Task execution halted ({reason})",
+                    detail=f"Cgroup termination initiated by operator with reason: {reason}",
+                    source_label="enforced",
+                )
+            except Exception:
+                pass
+
+    def _record_receipt_step(self, task_id: str, receipt: dict[str, Any], receipt_path: Path) -> None:
+        try:
+            ok, final_h, msg = verify_chain(receipt.get("events", []))
+            verify_ok = ok and receipt.get("hash_chain", {}).get("final_hash") == final_h
+        except Exception as e:
+            verify_ok = False
+            msg = str(e)
+
+        final_hash_str = receipt.get("hash_chain", {}).get("final_hash", "")
+        self.storage.record_task_step(
+            task_id,
+            kind="receipt",
+            layer="receipt",
+            verdict="ALLOW",
+            summary=f"Task receipt written and verified (final_hash={final_hash_str[:16]}...)",
+            detail=f"Receipt: {receipt_path}\nVerified: {verify_ok}\nEvents: {receipt.get('hash_chain', {}).get('count', 0)}",
+            source_label="enforced",
+        )
+
+    def _finish_cancelled(
+        self,
+        spec: TaskSpec,
+        t0: float,
+        stage: str,
+        task: Any = None,
+        initial_boundary: Any = None,
+        ws: Path | None = None,
+        control: Path | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> LaunchResult:
+        """Ends a run that was stopped before the agent process started.
+
+        Termination is operator_stop. If intake already created the task, the task is
+        marked TERMINATED and a receipt is written (no OS events: no sandbox ran).
+        """
+        self.termination = {"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                            "reason": "operator_stop", "method": "cancelled_before_agent_start",
+                            "stage": stage}
+        aborted = "cancelled_by_operator_before_agent_start"
+        task_id = task.task_id if task else spec.task_id
+        receipt: dict[str, Any] = {}
+        receipt_path: Path | None = None
+        if task is not None:
+            t = self.storage.get_task(task.task_id) or task
+            t.status = TaskLifecycle.TERMINATED
+            t.completed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            self.storage.save_task(t)
+            receipt = build_receipt(
+                task=t,
+                initial_boundary=initial_boundary,
+                requester=spec.requester,
+                storage=self.storage,
+                os_records=[],
+                deliveries=[],
+                sensor_status={"binary": str(SENSOR_BIN.name), "mode": "observation_only", "ran": False,
+                               "exit_trailer_seen": False, "exited_early": False, "events_observed": 0},
+                isolation={"isolation_level": None, "note": "sandbox not started (cancelled by operator)"},
+                freeze_events=[],
+                termination=self.termination,
+                wall_time_s=time.monotonic() - t0,
+                os_identity=None,
+                condition=spec.condition,
+                extra={"aborted": aborted, **(extra or {})},
+            )
+            self.receipts_dir.mkdir(parents=True, exist_ok=True)
+            receipt_path = self.receipts_dir / f"{t.task_id}.json"
+            receipt_path.write_text(json.dumps(receipt, indent=1, default=str), encoding="utf-8")
+        if task_id:
+            self.storage.record_task_step(
+                task_id,
+                kind="termination",
+                layer="launcher",
+                verdict="BLOCK_ACTION",
+                summary="Task lifecycle termination: operator_stop",
+                detail=f"Reason: operator_stop\nMethod: cancelled_before_agent_start\nStage: {stage}\n"
+                       "The agent process was never started.",
+                source_label="enforced",
+            )
+            if receipt_path is not None:
+                self._record_receipt_step(task_id, receipt, receipt_path)
+        return LaunchResult(
+            task_id=task_id or "",
+            workspace=ws or self.workspace_base,
+            control_dir=control or self.workspace_base / ".control",
+            receipt_path=receipt_path,
+            receipt=receipt,
+            shim_result=None,
+            model_inputs=[],
+            aborted=aborted,
+        )
 
     # --- main ---
     def run(self, spec: TaskSpec) -> LaunchResult:
@@ -406,6 +597,10 @@ class TaskLauncher:
             raise RuntimeError("launcher prerequisites failed (fail closed): " + "; ".join(problems))
         mode = EnforcementMode(spec.enforcement_mode)
 
+        # Cancellation checkpoint 1: before intake (no task, nothing to receipt).
+        if self.cancel_event.is_set():
+            return self._finish_cancelled(spec, t0, stage="before_intake")
+
         # 1. Intake: task + boundary
         ws = self.workspace_base / f"ws_{uuid.uuid4().hex[:12]}"
         intake = TaskIntakeService(self.storage)
@@ -416,6 +611,7 @@ class TaskLauncher:
             enforcement_mode=mode,
             output_targets=spec.output_targets or None,
             files_read=spec.files_read,
+            task_id=spec.task_id,
         )
         if spec.files_read is not None:
             boundary.files_read = list(spec.files_read)
@@ -430,6 +626,21 @@ class TaskLauncher:
             self.storage.save_boundary(boundary)
         initial_boundary = boundary.model_copy(deep=True)
         task_id = task.task_id
+        self.live["task_id"] = task_id
+        self.storage.record_task_step(
+            task_id,
+            kind="phase",
+            layer="intake",
+            verdict="ALLOW",
+            summary=f"Boundary derived from request ({len(boundary.files_read)} read, {len(boundary.files_write)} write targets)",
+            detail=f"Files read: {boundary.files_read}\nFiles write: {boundary.files_write}\nTools: {boundary.tools}\nHosts: {boundary.network}",
+            source_label="enforced",
+        )
+
+        # Cancellation checkpoint 2: before the workspace and sandbox exist.
+        if self.cancel_event.is_set():
+            return self._finish_cancelled(spec, t0, stage="before_workspace", task=task,
+                                          initial_boundary=initial_boundary, ws=ws)
 
         # 2. Workspace (+ control dir the sandbox cannot see)
         for d in ("input", "output", "scratch", "granted", "tmp", "runtime"):
@@ -455,14 +666,18 @@ class TaskLauncher:
         proxy = EgressProxyServer(self.storage, host="127.0.0.1", port=0)
         proxy_port = aloop.run(proxy.start())
 
-        def hook(req: Any) -> bool:
-            if spec.approval_policy == "oracle":
-                return req.resource_target in spec.oracle_allowed
-            return False
+        if spec.approval_policy == "operator":
+            hook = None
+        else:
+            def hook(req: Any) -> bool:
+                if spec.approval_policy == "oracle":
+                    return req.resource_target in spec.oracle_allowed
+                return False
 
         expansion = ExpansionService(self.storage, provenance_enabled=True, user_approval_hook=hook,
                                      simulated_user_policy=spec.approval_policy)
         broker = ToolBroker(self.storage, expansion_service=expansion)
+        broker.default_approval_timeout = float(spec.approval_timeout_s)
         broker.http_fetcher = proxy_http_fetcher(proxy_port)  # type: ignore[attr-defined]
         llm_cfg = dict(spec.llm)
         provider_label = llm_cfg.get("provider", "ollama")
@@ -479,7 +694,8 @@ class TaskLauncher:
 
         delivery = ExpansionDelivery(ws, self.storage)
         rpc = BrokerRPCServer(broker, ws / BROKER_SOCKET_NAME, task_id, llm_model=llm_model, llm_options=llm_options,
-                              delivery=delivery, cgroup_reader=cgroup_ctl.read_proc_cgroup)
+                              delivery=delivery, cgroup_reader=cgroup_ctl.read_proc_cgroup,
+                              call_timeout=max(float(spec.approval_timeout_s) + 30.0, 120.0))
         rpc.start()
         self.live["rpc"] = rpc
 
@@ -492,11 +708,40 @@ class TaskLauncher:
 
         # Sandbox spec compiled from the boundary
         spec_rules = compile_landlock_rules(boundary, ws, proxy_for_landlock, runtime_dir=ws / "runtime")
+        rules_list = spec_rules.get("rules", []) if isinstance(spec_rules, dict) else getattr(spec_rules, "rules", [])
+        net_restr = spec_rules.get("net_restricted") if isinstance(spec_rules, dict) else getattr(spec_rules, "net_restricted", None)
+        scoped = spec_rules.get("scoped") if isinstance(spec_rules, dict) else getattr(spec_rules, "scoped", None)
+        self.storage.record_task_step(
+            task_id,
+            kind="phase",
+            layer="os_layer",
+            verdict="ALLOW",
+            summary=f"Compiled Landlock sandbox rules ({cond or 'C'} condition)",
+            detail=f"Rules compiled: {len(rules_list)}, net_restricted={net_restr}, scoped={scoped}",
+            source_label="enforced",
+        )
         if self.test_hooks.get("rules_override") == "allow_workspace_read":
             # TEST ONLY: simulate a mis-compiled ruleset to exercise the unprevented-OUTSIDE freeze.
             spec_rules["rules"].append({"path": str(ws.resolve()), "access": ["read_file", "read_dir"]})
         rules_path = write_rules_file(spec_rules, control / "rules.json")
         (control / "rules_compile_report.json").write_text(json.dumps(spec_rules["_compile_report"], indent=1))
+
+        # Cancellation checkpoint 3: right before the agent process chain is started.
+        hook_fn = self.test_hooks.get("before_agent_start")
+        if hook_fn:
+            hook_fn(self)
+        if self.cancel_event.is_set():
+            rpc.stop()
+            try:
+                aloop.run(proxy.stop())
+            except Exception:
+                pass
+            aloop.stop()
+            self.storage.revoke_token(token)
+            return self._finish_cancelled(spec, t0, stage="before_agent_start", task=task,
+                                          initial_boundary=initial_boundary, ws=ws, control=control,
+                                          extra={"landlock_rules_sha256": _sha256_file(rules_path),
+                                                 "runtime_code_sha256": runtime_hashes})
 
         interpreter = os.path.realpath(sys.executable)
         seccomp_baseline = cgroup_ctl.own_seccomp_filter_count()
@@ -585,6 +830,7 @@ class TaskLauncher:
         if status_w != -1:
             os.close(status_w)
         self.live["scope_pid"] = proc.pid
+        self.live["proc"] = proc
 
         # Correlator + readers
         current_boundary = {"b": boundary}
@@ -650,11 +896,28 @@ class TaskLauncher:
             self.storage.save_task_cgroup(task_id, cg, unit, proc.pid)
             self.live.update({"cgroup": cg, "sensor_pid": correlator.sensor_pid, "root_pid": correlator.root_pid})
             rpc.expected_cgroup = cg
+            self.storage.record_task_step(
+                task_id,
+                kind="phase",
+                layer="launcher",
+                verdict="ALLOW",
+                summary=f"Agent process launched inside cgroup scope {unit}",
+                detail=f"cgroup: {cg}\nScope PID: {proc.pid}",
+                source_label="enforced",
+            )
 
-            # Release the gate: the agent chain may now exec.
-            os.write(gate_w, b"1")
-            os.close(gate_w)
-            gate_w = -1
+            # Cancellation checkpoint 4: the cgroup exists but the agent is still held at the
+            # sensor gate. Under the gate lock, either cancel() already ran (kill now, the
+            # agent never starts) or the gate is released and cancel() will kill the cgroup.
+            with self._gate_lock:
+                if self.cancel_event.is_set():
+                    self._kill("operator_stop")
+                    raise RuntimeError("cancelled_by_operator_before_agent_start")
+                # Release the gate: the agent chain may now exec.
+                os.write(gate_w, b"1")
+                os.close(gate_w)
+                gate_w = -1
+                self.live["agent_started"] = True
 
             # Enforcer status (kernel-sourced) -> arm or freeze
             poller = select.poll()
@@ -702,7 +965,9 @@ class TaskLauncher:
             hard_deadline = time.monotonic() + spec.timeout_s
             frozen_at: float | None = None
             while proc.poll() is None:
-                if self._frozen.is_set():
+                if self.cancel_event.is_set() and not self.termination:
+                    self._kill("operator_stop")
+                elif self._frozen.is_set():
                     frozen_at = frozen_at or time.monotonic()
                     if time.monotonic() - frozen_at >= spec.freeze_timeout_s:
                         self._kill("frozen_then_killed_after_timeout")
@@ -811,6 +1076,83 @@ class TaskLauncher:
         self.receipts_dir.mkdir(parents=True, exist_ok=True)
         receipt_path = self.receipts_dir / f"{task_id}.json"
         receipt_path.write_text(json.dumps(receipt, indent=1, default=str), encoding="utf-8")
+
+        # Record sensor block steps
+        for rec in correlator.records:
+            if rec.get("verdict") in ("OUTSIDE", "AMBIGUOUS") or rec.get("prevented"):
+                layer_lbl = rec.get("prevented_by") or "landlock"
+                if layer_lbl not in ("landlock", "seccomp"):
+                    layer_lbl = "landlock"
+                self.storage.record_task_step(
+                    task_id,
+                    kind="sensor",
+                    layer=layer_lbl,
+                    verdict="BLOCK_ACTION",
+                    summary=f"{layer_lbl.capitalize()} blocked {rec.get('kind')} on {rec.get('target')}",
+                    detail=f"Target: {rec.get('target')}\nSyscall: {rec.get('syscall')}\nRule: {rec.get('rule_matched')}",
+                    source_label="enforced",
+                )
+
+        # Record command output reported by shim
+        if shim_result and "tool_history" in shim_result:
+            for th in shim_result["tool_history"]:
+                if th.get("tool") == "run_command":
+                    r = th.get("result", {})
+                    out_text = (r.get("stdout", "") + "\n" + r.get("stderr", "")).strip()
+                    cmd_name = th.get("args", {}).get("command", "")
+                    self.storage.record_task_step(
+                        task_id,
+                        kind="tool",
+                        layer="broker",
+                        verdict="ALLOW" if r.get("exit_code") == 0 else "BLOCK_ACTION",
+                        summary=f"Command output reported: {cmd_name[:60]}",
+                        detail=out_text[:2000] if out_text else f"exit_code={r.get('exit_code')}",
+                        source_label="reported by the in-sandbox shim",
+                    )
+
+        # Record output files written
+        out_dir = ws / "output"
+        if out_dir.exists():
+            for ofile in sorted(out_dir.glob("*")):
+                if ofile.is_file():
+                    try:
+                        content_txt = ofile.read_text(encoding="utf-8", errors="replace")
+                    except Exception:
+                        content_txt = f"<binary {ofile.stat().st_size} bytes>"
+                    self.storage.record_task_step(
+                        task_id,
+                        kind="output",
+                        layer="broker",
+                        verdict="ALLOW",
+                        summary=f"Output file written: output/{ofile.name}",
+                        detail=content_txt[:2000],
+                        source_label="enforced",
+                    )
+
+        # Record termination step
+        term_reason = self.termination.get("reason", "agent_exited")
+        self.storage.record_task_step(
+            task_id,
+            kind="termination",
+            layer="launcher",
+            verdict="ALLOW" if term_reason in ("agent_exited", "success") else "BLOCK_ACTION",
+            summary=f"Task lifecycle termination: {term_reason}",
+            detail=f"Reason: {term_reason}\nMethod: {self.termination.get('method', 'default')}",
+            source_label="enforced",
+        )
+
+        self._record_receipt_step(task_id, receipt, receipt_path)
+
+        # Record final phase step
+        self.storage.record_task_step(
+            task_id,
+            kind="phase",
+            layer="launcher",
+            verdict="ALLOW",
+            summary="Task execution finished",
+            detail=f"Final status: {t.status.value if t else 'TERMINATED'}",
+            source_label="enforced",
+        )
 
         fs_diff = None
         diff_file = control / "fs_diff.json"

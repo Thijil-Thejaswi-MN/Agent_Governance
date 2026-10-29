@@ -16,6 +16,7 @@ Requests are size-limited and every call has a timeout.
 from __future__ import annotations
 
 import datetime
+import json
 import os
 import socket
 import struct
@@ -267,13 +268,69 @@ class BrokerRPCServer:
 
     # --- handlers (whitelisted parameters only) ---
     def _h_read_file(self, token: str, p: dict[str, Any]) -> Any:
-        return self.broker.read_file(token, _str_param(p, "file_path"))
+        file_path = _str_param(p, "file_path")
+        try:
+            res = self.broker.read_file(token, file_path)
+            self.broker.storage.record_task_step(
+                self.task_id,
+                kind="tool",
+                layer="broker",
+                verdict="ALLOW",
+                summary=f"read_file allowed: {file_path}",
+                detail=f"Read {len(res)} characters from {file_path}",
+                source_label="enforced",
+            )
+            return res
+        except Exception as err:
+            self.broker.storage.record_task_step(
+                self.task_id,
+                kind="tool",
+                layer="broker",
+                verdict="BLOCK_ACTION",
+                summary=f"read_file blocked: {file_path}",
+                detail=str(err),
+                source_label="enforced",
+            )
+            raise
 
     def _h_write_file(self, token: str, p: dict[str, Any]) -> Any:
+        file_path = _str_param(p, "file_path")
         content = p.get("content", "")
         if not isinstance(content, str):
             content = str(content)
-        return self.broker.write_file(token, _str_param(p, "file_path"), content)
+        try:
+            res = self.broker.write_file(token, file_path, content)
+            self.broker.storage.record_task_step(
+                self.task_id,
+                kind="tool",
+                layer="broker",
+                verdict="ALLOW",
+                summary=f"write_file allowed: {file_path}",
+                detail=f"Wrote {len(content)} characters to {file_path}",
+                source_label="enforced",
+            )
+            if file_path.startswith("output/") or file_path.startswith("./output/"):
+                self.broker.storage.record_task_step(
+                    self.task_id,
+                    kind="output",
+                    layer="broker",
+                    verdict="ALLOW",
+                    summary=f"Output file written: {file_path}",
+                    detail=content[:2000],
+                    source_label="enforced",
+                )
+            return res
+        except Exception as err:
+            self.broker.storage.record_task_step(
+                self.task_id,
+                kind="tool",
+                layer="broker",
+                verdict="BLOCK_ACTION",
+                summary=f"write_file blocked: {file_path}",
+                detail=str(err),
+                source_label="enforced",
+            )
+            raise
 
     def _h_http_get(self, token: str, p: dict[str, Any]) -> Any:
         return self.broker.http_get(token, _str_param(p, "url"))
@@ -397,13 +454,52 @@ class BrokerRPCServer:
                 "delivery": deliv_dup,
             }
 
-        res = self.broker.request_access(token, rtype, target, just)
+        timeout_s = getattr(self.broker, "default_approval_timeout", None)
+        if timeout_s is not None:
+            res = self.broker.request_access(token, rtype, target, just, timeout_seconds=timeout_s)
+        else:
+            res = self.broker.request_access(token, rtype, target, just)
         if self.delivery is not None:
             res["delivery"] = self.delivery.deliver(self.task_id, rtype, target, bool(res.get("granted")))
+        status_val = res.get("status") or ("APPROVED" if res.get("granted") else "DENIED")
+        approver_val = res.get("approved_by") or ("operator" if res.get("granted") else "policy")
+        reason_val = res.get("reason") or ("Granted" if res.get("granted") else "Denied")
+        self.broker.storage.record_task_step(
+            self.task_id,
+            kind="expansion",
+            layer="broker",
+            verdict="APPROVED" if res.get("granted") else "BLOCK_ACTION",
+            summary=f"Expansion {target} {str(status_val).lower()} by {approver_val}",
+            detail=f"Reason: {reason_val}\nStatus: {status_val}",
+            source_label="enforced",
+        )
         return res
 
     def _h_run_command_check(self, token: str, p: dict[str, Any]) -> Any:
-        return self.broker.run_command_check(token, _str_param(p, "command", 8192))
+        cmd = _str_param(p, "command", 8192)
+        try:
+            res = self.broker.run_command_check(token, cmd)
+            self.broker.storage.record_task_step(
+                self.task_id,
+                kind="tool",
+                layer="broker",
+                verdict="ALLOW",
+                summary=f"run_command check allowed: {cmd[:60]}",
+                detail=f"Command: {cmd}",
+                source_label="enforced",
+            )
+            return res
+        except Exception as err:
+            self.broker.storage.record_task_step(
+                self.task_id,
+                kind="tool",
+                layer="broker",
+                verdict="BLOCK_ACTION",
+                summary=f"run_command check blocked: {cmd[:60]}",
+                detail=str(err),
+                source_label="enforced",
+            )
+            raise
 
     def _h_llm_complete(self, token: str, p: dict[str, Any]) -> Any:
         messages = p.get("messages")
@@ -414,6 +510,23 @@ class BrokerRPCServer:
             raise ValueError("tools must be a list")
         with self._lock:
             self.llm_requests.append(messages)
+            turn_idx = len(self.llm_requests)
         # The model, provider and options are fixed by the launcher, never by the agent.
         res = self.broker.llm_complete(token=token, messages=messages, tools=tools, model=self.llm_model, **self.llm_options)
+        content = res.get("content") or ""
+        tool_calls = res.get("tool_calls") or []
+        summary = f"Model turn {turn_idx}: response generated"
+        if tool_calls:
+            names = [tc.get("function", {}).get("name", "tool") for tc in tool_calls]
+            summary += f" (invoking {', '.join(names)})"
+        detail_text = content[:2000] if content else json.dumps(tool_calls, indent=2)[:2000]
+        self.broker.storage.record_task_step(
+            self.task_id,
+            kind="model",
+            layer="broker",
+            verdict="ALLOW",
+            summary=summary,
+            detail=detail_text,
+            source_label="model output (untrusted)",
+        )
         return {k: res.get(k) for k in ("role", "content", "tool_calls", "provider", "model", "model_digest")}

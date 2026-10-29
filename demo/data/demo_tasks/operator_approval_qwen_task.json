@@ -1,0 +1,25 @@
+{
+  "prompt": "Call request_access for resource_type='file_read' and resource_target='reference/target.csv', then read granted/reference/target.csv and summarize in output/revenue_summary.txt.",
+  "requester": "operator_demo_qwen",
+  "agent_id": "m6_agent",
+  "inputs": {
+    "reference/target.csv": "dept,revenue\neng,1400000\nsales,2300000\n"
+  },
+  "files_read": [],
+  "output_targets": [
+    "output/revenue_summary.txt"
+  ],
+  "declared_tools": [
+    "run_command",
+    "request_access"
+  ],
+  "approval_policy": "operator",
+  "approval_timeout_s": 120.0,
+  "condition": "C",
+  "llm": {
+    "provider": "ollama",
+    "model": "qwen2.5:7b",
+    "temperature": 0.0,
+    "seed": 42
+  }
+}

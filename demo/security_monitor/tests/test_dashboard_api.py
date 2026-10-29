@@ -19,8 +19,13 @@ def client():
     return TestClient(app)
 
 
-def test_dashboard_static_page(client):
-    """Verify /dashboard serves the HTML single-page dashboard."""
+def test_dashboard_static_page(tmp_path, monkeypatch):
+    """Verify /dashboard serves the built single-page console (a stand-in build, so this does not need npm)."""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html><title>A2A Security Operations & Governance Console</title></html>")
+    monkeypatch.setenv("GOVERNANCE_CONSOLE_DIST", str(dist))
+    client = TestClient(create_app())
     resp = client.get("/dashboard")
     assert resp.status_code == 200
     assert "text/html" in resp.headers.get("content-type", "")
@@ -517,3 +522,17 @@ def test_agent_monitoring_and_policy_mode_controls(client):
 
 
 
+
+
+def test_governance_system_status(client):
+    """Tests GET /api/governance/system/status reports Landlock, seccomp, cgroups and sensor."""
+    resp = client.get("/api/governance/system/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "status" in data
+    assert "landlock_abi" in data
+    assert "seccomp_available" in data
+    assert "cgroup_v2" in data
+    assert "sensor_mode" in data
+    assert isinstance(data["landlock_abi"], int)
+    assert isinstance(data["seccomp_available"], bool)

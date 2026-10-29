@@ -72,8 +72,10 @@ class ToolBroker:
         resource_type: str,
         resource_target: str,
         justification: str,
-        timeout_seconds: float = 2.0,
+        timeout_seconds: float | None = None,
     ) -> tuple[bool, str]:
+        if timeout_seconds is None:
+            timeout_seconds = getattr(self, "default_approval_timeout", 2.0)
         """Allows an agent to synchronously request boundary expansion mid-execution."""
         if not resource_target or not str(resource_target).strip():
             raise ValueError("resource_target cannot be empty in expansion request")
@@ -95,8 +97,10 @@ class ToolBroker:
         resource_type: str,
         resource_target: str,
         justification: str,
-        timeout_seconds: float = 2.0,
+        timeout_seconds: float | None = None,
     ) -> dict[str, Any]:
+        if timeout_seconds is None:
+            timeout_seconds = getattr(self, "default_approval_timeout", 2.0)
         """
         Tool: request_access (F13.2 / M5).
         Agent-facing tool for dynamic boundary expansion requests.

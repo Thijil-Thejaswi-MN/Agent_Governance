@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [ui-v2, main]
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Console build (npm ci && npm run build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: demo/security_monitor/app/dashboard_v2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: demo/security_monitor/app/dashboard_v2/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: console-dist
+          path: demo/security_monitor/app/dashboard_v2/dist
+          if-no-files-found: error
+
+  python:
+    name: Python suite (no browser)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # System Python (/usr/bin/python3.14 on ubuntu-26.04), not actions/setup-python:
+      # the sensor's runtime profile covers /usr etc., not /opt/hostedtoolcache.
+      - name: System Python 3.14 venv
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q python3-venv
+          python3 -c 'import sys; assert sys.version_info[:2] == (3, 14), sys.version'
+          python3 -m venv "$RUNNER_TEMP/venv"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+      - name: OS layer (best effort; tests that cannot run here skip with the reason)
+        run: bash .github/workflows/setup_os_layer.sh
+      - run: pip install -r demo/security_monitor/requirements.txt pytest-timeout==2.4.0
+      - name: OS-layer host check
+        run: |
+          python - <<'PY'
+          from demo.security_monitor.app.governance.launcher import TaskLauncher
+          problems = TaskLauncher.check_condition_c_support()
+          print("os_layer tests:", "will run" if not problems else "will SKIP: " + "; ".join(problems))
+          PY
+      - name: pytest
+        run: python -m pytest demo/security_monitor/tests -m "not playwright" --timeout=120 -rs -p no:cacheprovider
+
+  playwright:
+    name: Browser tests (Playwright)
+    needs: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # System Python (/usr/bin/python3.14 on ubuntu-26.04), not actions/setup-python:
+      # the sensor's runtime profile covers /usr etc., not /opt/hostedtoolcache.
+      - name: System Python 3.14 venv
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q python3-venv
+          python3 -c 'import sys; assert sys.version_info[:2] == (3, 14), sys.version'
+          python3 -m venv "$RUNNER_TEMP/venv"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
+      - uses: actions/download-artifact@v4
+        with:
+          name: console-dist
+          path: demo/security_monitor/app/dashboard_v2/dist
+      - name: OS layer (best effort; run tests skip with the reason if the sandbox cannot arm)
+        run: bash .github/workflows/setup_os_layer.sh
+      - run: pip install -r demo/security_monitor/requirements.txt -r demo/security_monitor/requirements-ui-test.txt
+      - run: python -m playwright install --with-deps chromium
+      - name: pytest -m playwright
+        run: python -m pytest demo/security_monitor/tests -m playwright --timeout=180 -rs -p no:cacheprovider

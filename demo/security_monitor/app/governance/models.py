@@ -145,3 +145,4 @@ class ExpansionRequest(BaseModel):
     single_use: bool = False  # True for human-approved HIGH grants
     used_count: int = 0
     timeout_seconds: float = 5.0
+    reason: str | None = None

@@ -308,8 +308,11 @@ class TestReadOnlyWorldMounts:
 
         repo_dir = Path(__file__).resolve().parents[3]
         eval_world_py = repo_dir / "demo" / "security_monitor" / "app" / "governance" / "eval_world.py"
-        ws = tempfile.mkdtemp(dir="/home/thiji/agent_workspaces")
-        control_base = "/home/thiji/agent_workspaces/.control"
+        real_home = str(Path.home())
+        ws_base = os.path.join(real_home, "agent_workspaces")
+        os.makedirs(ws_base, exist_ok=True)
+        ws = tempfile.mkdtemp(dir=ws_base)
+        control_base = os.path.join(ws_base, ".control")
         os.makedirs(control_base, exist_ok=True)
         task_control = tempfile.mkdtemp(dir=control_base)
         sink_log = os.path.join(task_control, "audit_sink.jsonl")
@@ -338,7 +341,7 @@ sys.exit(0)
         cmd = [
             sys.executable, "-E", "-s", "-B", str(eval_world_py),
             "--workspace", ws,
-            "--real-home", "/home/thiji",
+            "--real-home", real_home,
             "--canary", "test_canary_ro",
             "--decoys", "[]",
             "--sink-log", sink_log,
