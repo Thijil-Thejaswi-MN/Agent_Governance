@@ -765,7 +765,7 @@ except PermissionError:
 def test_isolation_immutability_non_root_uid(test_workspace: TaskWorkspace) -> None:
     """
     Verifies that:
-    1. The agent runs as non-root UID inside the user namespace (e.g. UID 1000 != 0).
+    1. The agent runs as non-root UID inside the user namespace (the host UID, never 0).
     2. The agent cannot undo mount isolation (e.g. calling umount on /run/user/<uid> fails with EPERM).
     3. The masking of /run/user/<uid> remains strictly in effect.
     """
@@ -796,6 +796,6 @@ print(f'UMOUNT_RES={res},ERRNO={err}')
     )
 
     assert res.returncode == 0, f"Immutability test failed: {res.stderr}"
-    assert "NON_ROOT_UID=1000" in res.stdout
+    assert f"NON_ROOT_UID={os.getuid()}" in res.stdout  # host uid mapped 1:1, not root
     assert "UMOUNT_RES=-1,ERRNO=1" in res.stdout  # ERRNO 1 = EPERM
 
