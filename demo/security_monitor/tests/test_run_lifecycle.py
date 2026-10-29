@@ -167,6 +167,32 @@ def test_stream_for_unknown_task_ends_instead_of_spinning(env):
     assert end is not None and end["state"] == "failed"
 
 
+def test_start_rejects_model_that_is_not_installed(env, monkeypatch):
+    monkeypatch.setattr(rm, "list_installed_models", lambda: ["qwen2.5:7b", "llama3.1:8b"])
+    monkeypatch.setattr(TaskLauncher, "check_prerequisites", staticmethod(lambda: []))
+    monkeypatch.setattr(TaskLauncher, "run", lambda self, spec: None)
+    client: TestClient = env["client"]
+
+    resp = client.post("/api/governance/run", json=dict(RUN_BODY, model="gpt-imaginary:70b"), headers=HEADERS)
+    assert resp.status_code == 422
+    assert "gpt-imaginary:70b" in resp.json()["detail"] and "qwen2.5:7b" in resp.json()["detail"]
+    assert env["storage"].list_tasks() == []
+
+    for model in ("qwen2.5:7b", "scripted"):
+        resp = client.post("/api/governance/run", json=dict(RUN_BODY, model=model), headers=HEADERS)
+        assert resp.status_code == 200, (model, resp.text)
+        _join(rm.get_run_manager())
+
+
+def test_start_rejects_ollama_model_when_ollama_unreachable(env, monkeypatch):
+    monkeypatch.setattr(rm, "list_installed_models", lambda: None)
+    resp = env["client"].post("/api/governance/run", json=dict(RUN_BODY, model="qwen2.5:7b"), headers=HEADERS)
+    assert resp.status_code == 422
+    assert "Ollama unreachable" in resp.json()["detail"]
+    models = env["client"].get("/api/governance/run/models", headers=HEADERS).json()
+    assert models == {"models": [], "default": "scripted", "scripted_available": True, "ollama_reachable": False}
+
+
 # ---------------------------------------------------------------------------
 # 2. Stop races (real launcher, scripted MOCK LLM; OS layer, broker, sensor are real)
 # ---------------------------------------------------------------------------

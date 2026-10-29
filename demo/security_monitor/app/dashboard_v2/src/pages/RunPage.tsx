@@ -24,7 +24,7 @@ import {
   ArrowRight,
   Database,
 } from 'lucide-react';
-import { api, getOperatorToken } from '../api/client';
+import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import {
   TaskStep,
@@ -66,8 +66,8 @@ export const RunPage: React.FC = () => {
   // Presets and models state
   const [presets, setPresets] = useState<RunPreset[]>([]);
   const [selectedPresetId, setSelectedPresetId] = useState<string>('summarise_csv');
-  const [models, setModels] = useState<string[]>(['qwen2.5:7b']);
-  const [selectedModel, setSelectedModel] = useState<string>('qwen2.5:7b');
+  const [models, setModels] = useState<string[]>(['scripted']);
+  const [selectedModel, setSelectedModel] = useState<string>('scripted');
 
   // Input configuration state
   const [prompt, setPrompt] = useState<string>('');
@@ -119,12 +119,13 @@ export const RunPage: React.FC = () => {
         ]);
         setPresets(loadedPresets);
 
+        // Only models that are really installed, plus the deterministic scripted mock.
         const allModels = [...modelsResp.models];
         if (!allModels.includes('scripted')) {
           allModels.push('scripted');
         }
         setModels(allModels);
-        setSelectedModel(modelsResp.default || 'qwen2.5:7b');
+        setSelectedModel(modelsResp.default || 'scripted');
 
         // Apply initial preset
         const initialPreset = loadedPresets.find(p => p.id === 'summarise_csv') || loadedPresets[0];
@@ -1204,7 +1205,7 @@ export const RunPage: React.FC = () => {
                   <CheckCircle2 className="w-5 h-5 text-emerald-500" />
                   <div>
                     <span className="text-xs font-bold text-slate-900 dark:text-white block">
-                      Cryptographic Task Receipt
+                      Hash-chained Task Receipt
                     </span>
                     <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-mono font-medium">
                       {receiptData.verified ? 'Verified (SHA-256 hash chain intact)' : 'Unverified / Chain mismatch'}

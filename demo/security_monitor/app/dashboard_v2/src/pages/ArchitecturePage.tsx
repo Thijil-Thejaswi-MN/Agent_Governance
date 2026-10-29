@@ -122,12 +122,12 @@ export const ArchitecturePage: React.FC = () => {
         <div className="p-6 rounded-2xl bg-white dark:bg-surface-cardDark border border-slate-200 dark:border-slate-800 space-y-3">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Shield className="w-4 h-4 text-emerald-500" />
-            <span>Verified Architectural Properties</span>
+            <span>Architectural Properties</span>
           </h3>
           <ul className="space-y-2 text-xs text-slate-600 dark:text-slate-300">
             <li className="flex items-start gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
-              <span><strong>Hash-Chained Receipts:</strong> Receipts are cryptographically linked using a sequential SHA-256 hash chain verified by replaying each event digest against genesis.</span>
+              <span><strong>Hash-Chained Receipts:</strong> Receipt entries are linked by a SHA-256 hash chain; this detects edits to individual entries but is not signed — someone able to rewrite the whole file can recompute the chain.</span>
             </li>
             <li className="flex items-start gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />

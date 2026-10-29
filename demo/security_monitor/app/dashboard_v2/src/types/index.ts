@@ -211,6 +211,7 @@ export interface RunModelsResponse {
   models: string[];
   default: string;
   scripted_available: boolean;
+  ollama_reachable?: boolean;
 }
 
 export interface ActiveRunInfo {

@@ -566,7 +566,7 @@ async def get_task_events(task_id: str) -> list[dict[str, Any]]:
 
 @governance_router.get("/tasks/{task_id}/receipt")
 async def get_task_receipt(task_id: str) -> dict[str, Any]:
-    """Retrieves and cryptographically recomputes hash chain verification for a stored task receipt."""
+    """Retrieves a stored task receipt and recomputes its SHA-256 hash chain (integrity only; not signed)."""
     storage = get_storage()
     task = storage.get_task(task_id)
     if not task:

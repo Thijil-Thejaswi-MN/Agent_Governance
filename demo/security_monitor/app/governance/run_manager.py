@@ -177,26 +177,42 @@ def sanitize_input_files(files: dict[str, str]) -> dict[str, str]:
     return sanitized
 
 
-def fetch_available_models() -> dict[str, Any]:
-    """Queries local Ollama instance for installed models, defaulting to qwen2.5:7b."""
-    models = ["qwen2.5:7b"]
+def list_installed_models() -> list[str] | None:
+    """Model names installed in the local Ollama instance, or None if it is unreachable."""
     ollama_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
     try:
         req = urllib.request.Request(f"{ollama_url}/api/tags", headers={"User-Agent": "GovernanceConsole/2.0"})
         with urllib.request.urlopen(req, timeout=2.0) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-            tag_models = [m.get("name") for m in data.get("models", []) if m.get("name")]
-            if tag_models:
-                models = tag_models
+            return [m.get("name") for m in data.get("models", []) if m.get("name")]
     except Exception as e:
         logger.info("Ollama tags lookup failed or unreachable: %s", e)
+        return None
 
-    default_model = "qwen2.5:7b" if "qwen2.5:7b" in models else models[0]
+
+def fetch_available_models() -> dict[str, Any]:
+    """Installed Ollama models (only what is really installed; 'scripted' is always available)."""
+    installed = list_installed_models()
+    models = installed or []
+    default_model = "qwen2.5:7b" if "qwen2.5:7b" in models else (models[0] if models else "scripted")
     return {
         "models": models,
         "default": default_model,
         "scripted_available": True,
+        "ollama_reachable": installed is not None,
     }
+
+
+def validate_model(model: str) -> str:
+    """Accepts 'scripted' or an installed Ollama model name; raises ValueError (HTTP 422) otherwise."""
+    name = (model or "").strip()
+    if name.lower() == "scripted":
+        return "scripted"
+    installed = list_installed_models()
+    if name not in (installed or []):
+        available = ", ".join(installed) if installed else "none (Ollama unreachable)"
+        raise ValueError(f"Unknown model '{name}'. Installed Ollama models: {available}. Or use 'scripted'.")
+    return name
 
 
 def preview_run_boundary(
@@ -358,6 +374,7 @@ class ActiveRunManager:
         workspace_base: Path | None = None,
         launcher_hooks: dict[str, Any] | None = None,
     ) -> str:
+        model = validate_model(model)  # outside the lock: may query Ollama
         with self._lock:
             if self._active_thread is not None and self._active_thread.is_alive():
                 raise RuntimeError("Another task run is currently active. Only one run can execute at a time.")
@@ -378,7 +395,7 @@ class ActiveRunManager:
 
             task_id = f"task_{uuid.uuid4().hex[:12]}"
 
-            is_scripted = (model.strip().lower() == "scripted")
+            is_scripted = model == "scripted"
             if is_scripted:
                 steps = preset.get("scripted_steps", []) if preset else [
                     {"tool": "read_file", "args": {"path": "input/sales_data.csv"}},
@@ -392,7 +409,7 @@ class ActiveRunManager:
             else:
                 llm_cfg = {
                     "provider": "ollama",
-                    "model": model or "qwen2.5:7b",
+                    "model": model,
                     "temperature": 0.0,
                     "seed": 42,
                     "num_ctx": 8192,
