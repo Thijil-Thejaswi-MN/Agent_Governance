@@ -35,10 +35,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-          cache: pip
+      # System Python (/usr/bin/python3.14 on ubuntu-26.04), not actions/setup-python:
+      # the sensor's runtime profile covers /usr etc., not /opt/hostedtoolcache.
+      - name: System Python 3.14 venv
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q python3-venv
+          python3 -c 'import sys; assert sys.version_info[:2] == (3, 14), sys.version'
+          python3 -m venv "$RUNNER_TEMP/venv"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
       - name: OS layer (best effort; tests that cannot run here skip with the reason)
         run: bash .github/workflows/setup_os_layer.sh
       - run: pip install -r demo/security_monitor/requirements.txt pytest-timeout==2.4.0
@@ -58,10 +62,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-          cache: pip
+      # System Python (/usr/bin/python3.14 on ubuntu-26.04), not actions/setup-python:
+      # the sensor's runtime profile covers /usr etc., not /opt/hostedtoolcache.
+      - name: System Python 3.14 venv
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q python3-venv
+          python3 -c 'import sys; assert sys.version_info[:2] == (3, 14), sys.version'
+          python3 -m venv "$RUNNER_TEMP/venv"
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
       - uses: actions/download-artifact@v4
         with:
           name: console-dist
