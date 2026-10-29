@@ -437,8 +437,11 @@ class ActiveRunManager:
             )
 
             cancel_event = threading.Event()
+            # Receipts go where the API reads them (RECEIPTS_DIR), not only under the workspace base.
+            receipts_env = os.getenv("RECEIPTS_DIR")
             launcher = TaskLauncher(storage, workspace_base=workspace_base, test_hooks=launcher_hooks,
-                                    cancel_event=cancel_event)
+                                    cancel_event=cancel_event,
+                                    receipts_dir=Path(receipts_env) if receipts_env else None)
             self._active_task_id = task_id
             self._active_launcher = launcher
             self._active_spec = spec

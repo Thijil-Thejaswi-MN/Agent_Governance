@@ -241,7 +241,7 @@ def test_stop_while_sandbox_is_being_prepared_never_starts_agent(env, ws_base):
     assert "proc" not in launcher.live, "the sandbox process chain must not have been spawned"
     task = storage.get_task(task_id)
     assert task is not None and task.status == TaskLifecycle.TERMINATED
-    receipt_path = ws_base / "receipts" / f"{task_id}.json"
+    receipt_path = env["tmp_path"] / "receipts" / f"{task_id}.json"  # RECEIPTS_DIR, where the API reads
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     assert receipt["termination"]["reason"] == "operator_stop"
     assert receipt["termination"]["stage"] == "before_agent_start"
@@ -286,7 +286,7 @@ def test_stop_after_agent_started_kills_cgroup_and_writes_receipt(env, ws_base, 
     assert storage.get_task_cgroup(task_id) is not None
     assert launcher.termination["reason"] == "operator_stop"
     assert launcher.termination["method"] != "no_cgroup"
-    receipt_path = ws_base / "receipts" / f"{task_id}.json"
+    receipt_path = env["tmp_path"] / "receipts" / f"{task_id}.json"  # RECEIPTS_DIR, where the API reads
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     assert receipt["termination"]["reason"] == "operator_stop"
     ok, final, _ = verify_chain(receipt["events"])
