@@ -1,4 +1,5 @@
-export type TaskLifecycle = 'CREATED' | 'RUNNING' | 'ACTIVE' | 'COMPLETED' | 'FAILED' | 'TERMINATED' | 'FROZEN';
+// The server's TaskLifecycle (models.py), plus older values some records may carry.
+export type TaskLifecycle = 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'FAILED' | 'TERMINATED' | 'EXPIRED' | 'CREATED' | 'RUNNING' | 'FROZEN';
 export type EnforcementMode = 'OBSERVE' | 'ENFORCE';
 export type EventVerdict = 'INSIDE' | 'OUTSIDE' | 'AMBIGUOUS' | 'UNATTRIBUTED';
 export type RiskTier = 'LOW' | 'MEDIUM' | 'HIGH';
@@ -29,6 +30,7 @@ export interface TaskBoundary {
   files_read: string[];
   files_write: string[];
   tools: string[];
+  network?: string[];
   network_hosts?: string[];
   peer_agents?: string[];
   version?: number;
@@ -136,6 +138,11 @@ export interface ResultsSummary {
     steps?: Array<{ name: string; count: number; total: number }>;
   };
   timings_and_timeouts: Record<string, { mean_s?: number; median_s?: number; total_trials?: number; timeouts?: number; timeout_ratio?: string }>;
+  utility_timings_anticipated?: {
+    A?: { mean_s: number; mean_s_exact?: number; total_trials: number };
+    C?: { mean_s: number; mean_s_exact?: number; total_trials: number };
+    extra_s_c_vs_a?: number;
+  };
   limitations: string[];
 }
 
@@ -218,4 +225,54 @@ export interface ActiveRunInfo {
   active: boolean;
   task_id: string | null;
   elapsed_seconds: number;
+}
+
+export type DotState = 'working' | 'waiting' | 'blocked' | 'idle' | 'no_task';
+
+export interface FleetNeedsYouItem {
+  request_id: string;
+  task_id: string;
+  agent_id: string;
+  resource_type: string;
+  resource_target: string;
+  escalated_by_provenance: boolean;
+  learned_from: string | null;
+  baseline_risk_tier?: string;
+  effective_risk_tier?: string;
+  created_at: string;
+  deadline: string | null;
+}
+
+export interface FleetBlockedGroup {
+  target_class: 'mentioned_in_input' | 'outside_website' | 'private_folder' | 'other';
+  count: number;
+  task_count: number;
+  task_ids: string[];
+  agent_count: number;
+  by_layer: Record<string, number>;
+  by_kind: Record<string, number>;
+  examples: string[];
+  plain: string;
+  label: string;
+}
+
+export interface FleetDot {
+  id: string;
+  label: string;
+  state: DotState;
+  task_id: string | null;
+  view: 'watch' | 'history' | null;
+  classification?: string;
+}
+
+export interface FleetSummary {
+  generated_at: string;
+  agents_at_work: number;
+  need_you: number;
+  running_tasks: Array<{ task_id: string; agent_id: string; request_text: string; started_at: string; state: DotState }>;
+  dots: { basis: 'inventory' | 'tasks'; items: FleetDot[]; counts: Partial<Record<DotState, number>> };
+  needs_you: FleetNeedsYouItem[];
+  blocked: { window_hours: number; total: number; groups: FleetBlockedGroup[] };
+  inventory_size: number;
+  known_tasks: number;
 }

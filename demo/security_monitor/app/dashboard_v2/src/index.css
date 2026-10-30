@@ -261,6 +261,24 @@
   }
 }
 
+.fence-chip {
+  position: absolute;
+  padding: 9px 13px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .fence-chip {
+    padding: 6px 9px;
+    font-size: 12px;
+  }
+}
+
 .page-fade {
   animation: fadeIn 0.35s ease-out both;
 }

@@ -7,27 +7,20 @@ export const SignInRequired: React.FC = () => {
   const { openAuthModal, isConfigured } = useAuth();
 
   return (
-    <div
-      id="sign-in-required"
-      className="max-w-lg mx-auto mt-16 p-8 rounded-2xl bg-white dark:bg-surface-cardDark border border-slate-200 dark:border-slate-800 text-center space-y-4"
-    >
-      <div className="mx-auto w-12 h-12 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center">
+    <div id="sign-in-required" className="card max-w-lg mx-4 sm:mx-auto mt-16 p-8 text-center space-y-4">
+      <div className="mx-auto w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(251,191,36,0.1)', color: 'var(--waiting)' }}>
         <Lock className="w-6 h-6" />
       </div>
-      <h1 className="text-lg font-semibold text-slate-900 dark:text-white">Sign in to view governance data</h1>
-      <p className="text-sm text-slate-500 dark:text-slate-400">
+      <h1 className="font-display text-[26px] font-bold m-0">Sign in to see your agents</h1>
+      <p className="text-[16px] m-0" style={{ color: 'var(--text-2)' }}>
         Tasks, prompts, events, receipts and outputs are only served to an authenticated operator.
       </p>
       {isConfigured === false ? (
-        <p className="text-xs text-amber-600 dark:text-amber-400">
+        <p className="text-[14px]" style={{ color: '#FDE68A' }}>
           The server has no <code>GOVERNANCE_OPERATOR_TOKEN</code> set, so nobody can sign in. Set it and restart the server.
         </p>
       ) : (
-        <button
-          id="sign-in-btn"
-          onClick={openAuthModal}
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-cyan-600 hover:bg-cyan-500 rounded-xl"
-        >
+        <button id="sign-in-btn" onClick={openAuthModal} className="btn-primary">
           <KeyRound className="w-4 h-4" />
           Sign in
         </button>
