@@ -86,6 +86,7 @@ def test_review_and_allow_with_and_without_token(page: Page, console_server):
     expect(drawer).to_contain_text("APPROVED")
     expect(drawer).to_contain_text("operator:test_lead_operator")
     expect(drawer).to_contain_text("yes: requested after reading untrusted content")
+    expect(drawer.locator("#boundary-version")).to_have_text("Boundary version 2 (after 1 approval)")
 
 
 def test_dont_allow_requires_a_reason(page: Page, console_server):

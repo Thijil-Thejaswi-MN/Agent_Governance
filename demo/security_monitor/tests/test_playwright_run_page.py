@@ -78,6 +78,7 @@ def test_ask_watch_done_preset_1_scripted(page: Page, console_server):
     expect(drawer).to_be_visible()
     expect(drawer.locator("#receipt-verification")).to_have_text("Verified (SHA-256 hash chain intact)")
     expect(drawer.locator("#network-marker")).to_have_text("network: none")
+    expect(drawer.locator("#boundary-version")).to_have_text("Boundary version 1")
     expect(drawer).to_contain_text("enforced · tool broker")
     expect(drawer).to_contain_text("read_file allowed: input/sales_data.csv")
 
@@ -106,8 +107,10 @@ def test_preset_2_decision_card_allow_continues(page: Page, console_server):
     expect(status).to_have_attribute("data-state", "completed", timeout=60000)
     expect(status).to_have_text("Done. 1 attempt was stopped.")
     expect(page.locator("#record-status")).to_have_text("Record checked: no entries changed", timeout=15000)
-    # Once allowed, the file is inside the fence.
+    # Once allowed, the file is inside the fence, and the boundary version says why it changed.
     expect(page.locator('#fence [data-chip="inside"]', has_text="target_metrics.csv")).to_be_visible()
+    page.locator("#show-what-happened").click()
+    expect(page.locator("#details-drawer #boundary-version")).to_have_text("Boundary version 2 (after 1 approval)")
 
 
 def test_ask_failed_start_shows_plain_reason_and_stays(page: Page, unsupported_host_server):

@@ -9,7 +9,7 @@ import { Fence } from '../components/v3/Fence';
 import { DecisionCard } from '../components/v3/DecisionCard';
 import { DetailsDrawer, DetailsSection, KV } from '../components/v3/DetailsDrawer';
 import { EventTable, TechnicalTimeline } from '../components/v3/TechnicalTimeline';
-import { receiptSentence, statusSentence } from '../logic/plain';
+import { boundaryVersionLabel, receiptSentence, statusSentence } from '../logic/plain';
 import { agentStarted, blockedAttempts, fileName, isTerminal, justBlocked, outputsFromSteps } from '../logic/runView';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -241,7 +241,11 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
         <DetailsSection title="Boundary (what the request allows)">
           {run.boundary ? (
             <>
-              <KV k="Version" v={`v${run.boundary.version ?? 1}`} />
+              <KV
+                k="Version"
+                id="boundary-version"
+                v={boundaryVersionLabel(run.boundary.version, run.expansions.filter(e => e.status === 'APPROVED').length)}
+              />
               <KV k="Files read" v={(run.boundary.files_read || []).join(', ') || 'none'} />
               <KV k="Files write" v={(run.boundary.files_write || []).join(', ') || 'none'} />
               <KV k="Tools" v={(run.boundary.tools || []).join(', ') || 'none'} />

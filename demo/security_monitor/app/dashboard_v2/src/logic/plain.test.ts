@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   FIRST_SCREEN_JARGON,
   NEVER_SAY,
+  boundaryVersionLabel,
   decisionLead,
   decisionWarning,
   fleetHeadline,
@@ -168,5 +169,15 @@ describe('record and labels', () => {
     expect(technicalLabel('enforced', 'landlock')).toBe('enforced · kernel (Landlock)');
     expect(technicalLabel('reported by the in-sandbox shim', 'broker')).toBe('reported by the in-sandbox shim · tool broker');
     expect(technicalLabel('enforced', 'custom_layer')).toBe('enforced · custom_layer');
+  });
+});
+
+describe('boundary version label', () => {
+  it('names the version and counts approvals, never a bare vN', () => {
+    expect(boundaryVersionLabel(1, 0)).toBe('Boundary version 1');
+    expect(boundaryVersionLabel(undefined, 0)).toBe('Boundary version 1');
+    expect(boundaryVersionLabel(2, 1)).toBe('Boundary version 2 (after 1 approval)');
+    expect(boundaryVersionLabel(4, 3)).toBe('Boundary version 4 (after 3 approvals)');
+    expect(boundaryVersionLabel(2, 1)).not.toMatch(/^v\d/);
   });
 });

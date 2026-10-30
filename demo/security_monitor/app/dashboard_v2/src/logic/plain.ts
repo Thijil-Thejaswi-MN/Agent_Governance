@@ -232,3 +232,9 @@ export function relativeTime(iso: string | undefined | null, now: number): strin
   const d = Math.round(h / 24);
   return `${d} ${n(d, 'day', 'days')} ago`;
 }
+
+// Details label for the boundary version; never a bare "v2".
+export function boundaryVersionLabel(version: number | undefined, approvals: number): string {
+  const label = `Boundary version ${version ?? 1}`;
+  return approvals > 0 ? `${label} (after ${approvals} ${n(approvals, 'approval', 'approvals')})` : label;
+}
