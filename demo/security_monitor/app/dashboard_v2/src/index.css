@@ -276,6 +276,7 @@
   .fence-chip {
     padding: 6px 9px;
     font-size: 12px;
+    max-width: 38%;
   }
 }
 
