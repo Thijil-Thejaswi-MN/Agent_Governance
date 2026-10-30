@@ -702,18 +702,12 @@ async def get_fleet_summary() -> dict[str, Any]:
     ]
     events: list[dict[str, Any]] = []
     snippets_by_task: dict[str, list[str]] = {}
-    steps_by_task: dict[str, list[dict[str, Any]]] = {}
     for t in tasks:
         events.extend(_build_unified_task_events(t.task_id, storage.get_events_for_task(t.task_id)))
         snippets_by_task[t.task_id] = [p.content_snippet or "" for p in storage.get_provenance_for_task(t.task_id)]
-        if t.status in (TaskLifecycle.PENDING, TaskLifecycle.ACTIVE):
-            steps_by_task[t.task_id] = storage.get_task_steps(t.task_id)
     pending = [_enrich_expansion_dict(e, storage) for e in storage.list_expansion_requests(status="PENDING")]
     inventory = [i.model_dump() for i in get_inventory_service().get_inventory()]
-    return build_fleet_summary(
-        task_dicts, inventory, pending, events, snippets_by_task,
-        steps_by_task=steps_by_task, active_run_id=get_run_manager().get_active_info().get("task_id"),
-    )
+    return build_fleet_summary(task_dicts, inventory, pending, events, snippets_by_task)
 
 
 @governance_router.get("/config")

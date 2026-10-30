@@ -7,6 +7,7 @@
 - The SSE stream always ends with an `end` event.
 - Stop works during preparation (the agent never starts) and after the agent has
   started (the cgroup is killed); termination is operator_stop either way.
+- The task reads ACTIVE while the agent runs and its terminal status afterwards.
 """
 from __future__ import annotations
 
@@ -312,3 +313,54 @@ def test_interpreter_outside_runtime_profile_is_a_host_problem(monkeypatch):
     problems = TaskLauncher.check_condition_c_support()
     assert any("interpreter /opt/hostedtoolcache/Python/3.14.9/x64/bin/python3.14 is outside" in p for p in problems)
     assert any("Python installation /opt/hostedtoolcache/Python/3.14.9/x64 is outside" in p for p in problems)
+
+
+# ---------------------------------------------------------------------------
+# 3. Task lifecycle bookkeeping: PENDING until the agent starts, ACTIVE while it runs,
+#    then COMPLETED / TERMINATED (stopped) / EXPIRED (timed out) / FAILED
+# ---------------------------------------------------------------------------
+
+@pytest.mark.os_layer
+def test_running_scripted_task_reads_active_then_terminated(env, ws_base, monkeypatch):
+    storage: GovernanceStorage = env["storage"]
+    slow = dict(rm.PRESETS["summarise_csv"], id="slow_sleep",
+                scripted_steps=[{"tool": "run_command", "args": {"command": "sleep 30"}}, {"final": "done"}])
+    monkeypatch.setitem(rm.PRESETS, "slow_sleep", slow)
+
+    mgr, task_id, launcher = _start_real(storage, ws_base, preset="slow_sleep")
+    deadline = time.monotonic() + 45
+    while time.monotonic() < deadline:
+        rpc = launcher.live.get("rpc")
+        if launcher.live.get("agent_started") and rpc and rpc.call_counts.get("run_command_check"):
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail("agent never reached its sleep command")
+
+    task = storage.get_task(task_id)
+    assert task.status == TaskLifecycle.ACTIVE
+    assert task.started_at and not task.completed_at
+    summary = env["client"].get("/api/governance/fleet/summary", headers=HEADERS).json()
+    assert summary["agents_at_work"] == 1
+    assert [t["task_id"] for t in summary["running_tasks"]] == [task_id]
+
+    mgr.stop_run(task_id)
+    _join(mgr)
+    task = storage.get_task(task_id)
+    assert task.status == TaskLifecycle.TERMINATED and task.completed_at
+    assert env["client"].get("/api/governance/fleet/summary", headers=HEADERS).json()["agents_at_work"] == 0
+
+
+@pytest.mark.os_layer
+def test_completed_scripted_task_reads_completed(env, ws_base):
+    storage: GovernanceStorage = env["storage"]
+    seen: list[str] = []
+    mgr, task_id, _ = _start_real(
+        storage, ws_base,
+        hooks={"during_run": lambda launcher: seen.append(storage.get_task(launcher.live["task_id"]).status.value)})
+    _join(mgr)
+    assert "ACTIVE" in seen, "the task must read ACTIVE while the agent runs"
+    task = storage.get_task(task_id)
+    assert task.status == TaskLifecycle.COMPLETED
+    assert task.started_at and task.completed_at
+    assert _steps(storage, task_id)[-1]["verdict"] == "COMPLETED"

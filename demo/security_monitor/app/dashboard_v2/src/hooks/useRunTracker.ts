@@ -9,8 +9,6 @@ import { RunState, TERMINAL_STATES, isAgentLaunchStep } from '../logic/runView';
 // No step for this long (or a stream error) -> stop trusting the stream and read stored state.
 const STREAM_STALL_MS = 20000;
 const POLL_INTERVAL_MS = 2000;
-// Same rule as the fleet summary (fleet.py STALE_STEPS_AFTER_S).
-const STALE_STEPS_AFTER_MS = 15 * 60 * 1000;
 
 const TASK_STATUS_TO_STATE: Record<string, RunState> = {
   COMPLETED: 'completed',
@@ -147,15 +145,8 @@ export function useRunTracker(taskId: string | undefined): RunTracker {
             conclude(id, terminal, `task status ${t.status}`);
             return true;
           }
-          // Not run from this console (e.g. a CLI launch) but still going: keep following it.
-          // The launcher keeps a task PENDING until it ends, so recent non-terminal steps count.
-          const lastStepAt = Math.max(0, ...polled.map(s => Date.parse(s.timestamp) || 0));
-          const stillGoing =
-            t.status === 'ACTIVE' ||
-            (t.status === 'PENDING' &&
-              polled.length > 0 &&
-              !polled.some(s => ['finished', 'termination', 'receipt'].includes(s.kind)) &&
-              Date.now() - lastStepAt < STALE_STEPS_AFTER_MS);
+          // Not run from this console (e.g. a CLI launch) but still running: keep following it.
+          const stillGoing = t.status === 'ACTIVE';
           if (stillGoing) {
             setState(s => (s === 'preparing' ? 'running' : s));
             return false;
