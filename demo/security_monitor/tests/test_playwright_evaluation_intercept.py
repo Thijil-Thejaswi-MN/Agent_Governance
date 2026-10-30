@@ -1,7 +1,7 @@
-"""Playwright test verifying that EvaluationPage dynamically renders values from results_summary.json.
+"""Playwright test verifying that Results and Home render values from results_summary.json.
 
 Intercepts /dashboard/results_summary.json (or **/results_summary.json) with altered values
-and asserts that the page renders the altered values without hard-typed fallbacks.
+and asserts that both pages render the altered values without hard-typed fallbacks.
 """
 from __future__ import annotations
 
@@ -65,6 +65,11 @@ def test_evaluation_page_intercepts_altered_summary(page: Page, console_server):
             "C": {"mean_s": 77, "total_trials": 35, "timeouts": 3, "timeout_ratio": "3/35"},
             "D": {"mean_s": 66, "total_trials": 35, "timeouts": 2, "timeout_ratio": "2/35"},
         },
+        "utility_timings_anticipated": {
+            "A": {"mean_s": 3.1, "total_trials": 35},
+            "C": {"mean_s": 5.6, "total_trials": 35},
+            "extra_s_c_vs_a": 2.5,
+        },
         "limitations": [
             "Custom intercepted verification rule for empirical evaluation integrity.",
         ],
@@ -80,11 +85,11 @@ def test_evaluation_page_intercepts_altered_summary(page: Page, console_server):
     # Intercept any request matching results_summary.json
     page.route("**/results_summary.json*", handle_route)
 
-    # Navigate to the Evaluation page
-    page.goto(f"{base_url}/dashboard/evaluation")
+    # Navigate to the Results page
+    page.goto(f"{base_url}/dashboard/results")
 
     # Assert heading is present
-    expect(page.locator("h1")).to_contain_text("Empirical Evaluation Benchmarks")
+    expect(page.locator("h1")).to_contain_text("Full results")
 
     # Assert altered evaluation label is rendered
     expect(page.locator("body")).to_contain_text("Altered Test Evaluation Benchmark 999")
@@ -118,3 +123,15 @@ def test_evaluation_page_intercepts_altered_summary(page: Page, console_server):
 
     # Assert altered limitations list item is rendered
     expect(page.locator("body")).to_contain_text("Custom intercepted verification rule for empirical evaluation integrity.")
+
+    # Assert altered time per legitimate task is rendered
+    expect(page.locator("#utility-timings")).to_contain_text("3.1s")
+    expect(page.locator("#utility-timings")).to_contain_text("5.6s")
+    expect(page.locator("#utility-timings")).to_contain_text("+2.5s")
+
+    # Home renders its two numbers from the same file: harm A -> C out of the total, extra time
+    page.goto(f"{base_url}/dashboard")
+    expect(page.locator("#metric-harm")).to_contain_text("29 → 1")
+    expect(page.locator("#metric-harm")).to_contain_text("out of 35")
+    expect(page.locator("#metric-time")).to_contain_text("+2.5 s")
+    expect(page.locator("#metric-time")).to_contain_text("3.1 s → 5.6 s")

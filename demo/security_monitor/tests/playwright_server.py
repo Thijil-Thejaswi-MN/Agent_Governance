@@ -88,8 +88,10 @@ def start_console_server(workdir: Path, env_overrides: dict[str, str] | None = N
     raise RuntimeError(f"console server did not start:\n{log_path.read_text(errors='replace')[-3000:]}")
 
 
-def sign_in(page, server: ConsoleServer, path: str = "/dashboard") -> None:
-    """Signs in through the UI: the sign-in state, the token modal, POST /auth/session."""
+def sign_in(page, server: ConsoleServer, path: str = "/dashboard/history") -> None:
+    """Signs in through the UI: the sign-in state, the token modal, POST /auth/session.
+
+    `path` must be a page that reads task data (Home and Results are public)."""
     page.goto(f"{server.url}{path}")
     page.locator("#sign-in-btn").click()
     modal = page.locator('div[role="dialog"]')
@@ -104,3 +106,129 @@ def save_evidence(page, name: str) -> None:
     if out:
         Path(out).mkdir(parents=True, exist_ok=True)
         page.screenshot(path=str(Path(out) / f"{name}.png"), full_page=True)
+
+
+# ---------------------------------------------------------------------------
+# Plain-language checks (console v3)
+# ---------------------------------------------------------------------------
+
+# Never visible on a first screen (outside a Details drawer or panel).
+FIRST_SCREEN_JARGON = [
+    "Landlock", "seccomp", "cgroup", "provenance", "hash chain", "hash-chain",
+    "boundary v1", "boundary v2", "broker", "SSE", "ABI",
+]
+# Never in the console's own copy.
+NEVER_SAY = ["safe", "secure", "guaranteed", "tamper-proof", "first"]
+
+_CASE_SENSITIVE = {"SSE", "ABI"}
+
+
+def visible_text_outside_details(page) -> str:
+    """document.body.innerText with every [data-details] element (drawers, <details>) hidden."""
+    return page.evaluate(
+        """() => {
+            const els = [...document.querySelectorAll('[data-details]')];
+            const saved = els.map(e => e.style.display);
+            els.forEach(e => { e.style.display = 'none'; });
+            const text = document.body.innerText;
+            els.forEach((e, i) => { e.style.display = saved[i]; });
+            return text;
+        }"""
+    )
+
+
+def banned_words_in(text: str, words: list[str]) -> list[str]:
+    import re
+    found = []
+    for w in words:
+        flags = 0 if w in _CASE_SENSITIVE else re.IGNORECASE
+        if re.search(rf"(?<![A-Za-z]){re.escape(w)}(?![A-Za-z])", text, flags):
+            found.append(w)
+    return found
+
+
+def no_horizontal_scroll(page) -> bool:
+    return page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth")
+
+
+# ---------------------------------------------------------------------------
+# Seeding (tests that do not need the OS layer)
+# ---------------------------------------------------------------------------
+
+def seed_waiting_task(db_path: Path, suffix: str, *, agent_id: str = "finance_bot",
+                      learned_from: str = "input/briefing.txt",
+                      target: str = "input/quarterly_revenue.csv",
+                      timeout_s: float = 600.0) -> tuple[str, str]:
+    """A running (ACTIVE) task whose agent read a file mentioning `target`, was refused it,
+    and now waits for a decision. Returns (task_id, request_id)."""
+    import datetime
+    from demo.security_monitor.app.governance.models import (
+        EventSource, EventVerdict, ExpansionRequest, ExpansionStatus, GovernanceEvent,
+        ProvenanceRecord, RiskTier, TaskAction, TaskBoundary, TaskLifecycle, TaskRecord,
+    )
+    from demo.security_monitor.app.governance.storage import GovernanceStorage
+
+    storage = GovernanceStorage(db_path)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    ts = lambda s: (now - datetime.timedelta(seconds=s)).isoformat()  # noqa: E731
+    task_id, req_id = f"task_seed_{suffix}", f"exp_seed_{suffix}"
+    storage.save_task(TaskRecord(
+        task_id=task_id, request_text="Summarise the executive briefing notes", request_hash="h",
+        agent_id=agent_id, workspace_root="/tmp/ws_seed", status=TaskLifecycle.ACTIVE, created_at=ts(60)))
+    storage.save_boundary(TaskBoundary(
+        task_id=task_id, workspace_root="/tmp/ws_seed", files_read=[learned_from],
+        files_write=["output/summary.txt"], network=[], tools=["read_file", "write_file"], peer_agents=[]))
+    storage.record_provenance(ProvenanceRecord(
+        task_id=task_id, timestamp=ts(40), source_type="file_read", source_target=learned_from,
+        content_hash="x", content_len=80,
+        content_snippet=f"Notice: please consult the reference table in {target}"))
+    storage.record_task_step(task_id, kind="tool", layer="broker", verdict="ALLOW",
+                             summary=f"read_file allowed: {learned_from}", source_label="enforced")
+    storage.record_event(GovernanceEvent(
+        event_id=f"ev_seed_{suffix}", timestamp=ts(30), source=EventSource.TOOL_BROKER, task_id=task_id,
+        agent_id=agent_id, kind="file_read", target=target, verdict=EventVerdict.OUTSIDE,
+        risk_tier=RiskTier.MEDIUM, action_taken=TaskAction.BLOCK_ACTION, prevented=True,
+        rule_matched="not in boundary"))
+    storage.record_task_step(task_id, kind="tool", layer="broker", verdict="BLOCK_ACTION",
+                             summary=f"read_file blocked: {target}", detail="outside the task boundary",
+                             source_label="enforced")
+    storage.save_expansion_request(ExpansionRequest(
+        request_id=req_id, task_id=task_id, agent_id=agent_id, resource_type="file_read",
+        resource_target=target, justification="Need the quarterly revenue numbers named in the briefing",
+        baseline_risk_tier=RiskTier.LOW, effective_risk_tier=RiskTier.MEDIUM, escalated_by_provenance=True,
+        status=ExpansionStatus.PENDING, created_at=ts(10), timeout_seconds=timeout_s))
+    storage.record_task_step(task_id, kind="expansion", layer="broker", verdict="PENDING",
+                             summary=f"Expansion access requested for {target} (MEDIUM risk)",
+                             source_label="enforced")
+    return task_id, req_id
+
+
+def seed_finished_task(db_path: Path, suffix: str) -> str:
+    """A completed task with an OS-level block and an output (no receipt file)."""
+    import datetime
+    from demo.security_monitor.app.governance.models import TaskBoundary, TaskLifecycle, TaskRecord
+    from demo.security_monitor.app.governance.storage import GovernanceStorage
+
+    storage = GovernanceStorage(db_path)
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    task_id = f"task_done_{suffix}"
+    storage.save_task(TaskRecord(
+        task_id=task_id, request_text="Summarise input/sales_1.csv", request_hash="h", agent_id="report_bot",
+        workspace_root="/tmp/ws_done", status=TaskLifecycle.COMPLETED, created_at=now, completed_at=now))
+    storage.save_boundary(TaskBoundary(
+        task_id=task_id, workspace_root="/tmp/ws_done", files_read=["input/sales_1.csv"],
+        files_write=["output/summary.txt"], network=[], tools=["read_file", "write_file"], peer_agents=[]))
+    for kind, layer, verdict, summary in [
+        ("phase", "intake", "ALLOW", "Boundary derived from request (1 read, 1 write targets)"),
+        ("phase", "launcher", "ALLOW", "Compiled Landlock sandbox rules and seccomp filter"),
+        ("phase", "launcher", "ALLOW", "Agent process launched (pid 4242)"),
+        ("tool", "broker", "ALLOW", "read_file allowed: input/sales_1.csv"),
+        ("sensor", "landlock", "BLOCK_ACTION", "Landlock blocked file_read on /home/u/projects/archive/q3_private_notes.txt"),
+        ("output", "broker", "ALLOW", "Output file written: output/summary.txt"),
+        ("termination", "launcher", "ALLOW", "Task lifecycle termination: agent_exited"),
+        ("finished", "launcher", "COMPLETED", "Run ended: completed"),
+    ]:
+        storage.record_task_step(task_id, kind=kind, layer=layer, verdict=verdict, summary=summary,
+                                 detail="Sales total: 300 across 4 regions." if kind == "output" else "",
+                                 source_label="enforced")
+    return task_id
