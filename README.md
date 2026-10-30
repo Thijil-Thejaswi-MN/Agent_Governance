@@ -10,7 +10,7 @@ Every action is checked against the boundary. The boundary can grow during a tas
 The motivation is that agents can act beyond the task they were given, for example after reading untrusted content that tells them to.
 The aim is to bind what an agent can do to what the user asked for, at both the tool layer and the OS layer.
 
-Contents: [Architecture](#architecture) · [Status](#status) · [Results (M5–M6)](#results-m5m6) · [Limitations](#limitations) · [Governance Console and the Run page](#governance-console-and-the-run-page) · [Quick start](#quick-start) · [Tests](#tests) · [Project history: the A2A gateway stage](#project-history-the-a2a-gateway-stage)
+Contents: [Architecture](#architecture) · [Status](#status) · [Results (M5–M6)](#results-m5m6) · [Limitations](#limitations) · [Governance Console](#governance-console) · [Quick start](#quick-start) · [Tests](#tests) · [Project history: the A2A gateway stage](#project-history-the-a2a-gateway-stage)
 
 ## Architecture
 
@@ -62,7 +62,7 @@ Freeze triggers in the launcher:
 The task is killed after `freeze_timeout_s`.
 
 Other components:
-- **Governance Console** (`demo/security_monitor/app/dashboard_v2/`): the operator UI served at `/dashboard`, including the [Run page](#the-run-page). The earlier dashboard (`app/dashboard/`) stays at `/legacy-dashboard`.
+- **Governance Console** (`demo/security_monitor/app/dashboard_v2/`): the operator UI served at `/dashboard`: [Home, Run, Fleet and History](#governance-console). The earlier dashboard (`app/dashboard/`) stays at `/legacy-dashboard`.
 - **Inventory** (`inventory.py`): classifies observed agents as GOVERNED (bound to an active task) or SHADOW (acting with no task). Agents are discovered only through the observation sources, so discovery depends on what agents report about themselves.
 - **A2A gateway hook** (`gateway/server.py`, `governance/gateway_integration.py`): the gateway from the [earlier project stage](#project-history-the-a2a-gateway-stage), now one observation and enforcement source for agent-to-agent calls.
 
@@ -79,7 +79,7 @@ Design notes and limitations for the OS layer: [`docs/M6_OS_BOUND_AGENT_NOTES.md
 | Launcher, agent shim, broker Unix-socket RPC, correlator, graduated response, Task Receipt v0 (M6.1, M6.1b) | Implemented (Linux/WSL2) |
 | ptrace + seccomp `RET_TRACE` sensor | Experimental (observation only) |
 | Evaluation v3: conditions A–D on the OS-bound agent (M6.2) | Done |
-| Governance Console v2 with the Run page (live governed runs, inline approvals, operator sessions) | Implemented; governed runs need Linux/WSL2 |
+| Governance Console v3: Home, Run (live governed runs, decisions), Fleet, History, Results; operator sessions | Implemented; governed runs need Linux/WSL2 |
 | Inventory (GOVERNED / SHADOW), A2A gateway integration (M2) | Implemented |
 | eBPF sensor (M7) | Planned |
 | BPF-LSM dynamic grants | Planned |
@@ -181,7 +181,7 @@ Result files in [`demo/data/evaluation_v3/results/`](demo/data/evaluation_v3/res
 - Each task gets its own cgroup. Shared, long-lived agents are not supported yet.
 - Single-use delivery is not enforced by the kernel. A single-use grant is removed once the sensor observes it being opened, and Landlock cannot express "read once".
 - UDP is not mediated by Landlock.
-- Nothing is enforced on native Windows. On Windows only the tool layer and the dashboard run; the OS-layer tests skip and the Run page refuses to start runs (HTTP 503 with the reason).
+- Nothing is enforced on native Windows. On Windows only the tool layer and the dashboard run; the OS-layer tests skip and the console's Start refuses to start runs (HTTP 503 with the reason).
 - Inventory discovery relies on what agents declare about themselves.
 - Receipts are hash-chained, not signed.
 - LLM boundary derivation (v2) was evaluated against gold labels that were AI-authored and are pending team review.
@@ -210,21 +210,58 @@ This project claims only the combination of four things. We did not find a prior
 
 Summary: we implement task-scoped runtime governance that combines a request-derived boundary, tool- and OS-layer enforcement, provenance-aware expansion and per-request receipts. In a controlled evaluation with local 7–8B models, governance eliminated injected-attack harm (14/32 → 0/32, p < 0.001), and OS-level enforcement stopped shell-channel attacks that tool-level mediation allowed (8/128 → 0/128, p = 0.007), at a measurable latency and timeout cost.
 
-## Governance Console and the Run page
+## Governance Console
 
-The Governance Console (`demo/security_monitor/app/dashboard_v2`, React + Vite) is served by the FastAPI server at `/dashboard`. It shows tasks, boundaries, event timelines, receipts and expansion approvals, and its **Run** page starts a governed agent run and streams it live.
+The Governance Console (`demo/security_monitor/app/dashboard_v2`, React + Vite) is served by the FastAPI server at `/dashboard`. Version 3 is built for people who have not seen the system before:
+- each screen answers one question with one headline and one main action;
+- plain language comes first, and the precise technical labels are one click away in a **Details** drawer on the same page;
+- colour and motion are reserved for exceptions: a blocked action knocks against the fence and pulses red, a waiting decision pulses amber, and everything else stays calm. All motion stops under `prefers-reduced-motion`.
 
-**Platform.** Governed runs need Linux or WSL2 with a `systemd --user` manager, Landlock (ABI 6 or later, kernel 6.12+), cgroup v2, unprivileged user namespaces and the built `os_layer` binaries. On native Windows only the dashboard works: there, **Start** on the Run page returns HTTP 503 and the page shows the reason, for example "OS-layer execution needs Linux/WSL2 with systemd --user, Landlock and cgroup v2 — systemd-run not found".
+The design is specified by the mockups in [`docs/design/console_v3_mockups/`](docs/design/console_v3_mockups/). Every number on a screen is real data or a designed empty state.
+
+| Watch: a decision is waiting | Done |
+| :---: | :---: |
+| ![Watch: the agent wants one more file](docs/screenshots/console_v3/watch_waiting_1440.png) | ![Done: record checked](docs/screenshots/console_v3/done_1440.png) |
+| **Fleet** | **Home** |
+| ![Fleet: 1 agent at work, 1 needs you](docs/screenshots/console_v3/fleet_waiting_1440.png) | ![Home](docs/screenshots/console_v3/home_1440.png) |
+
+### Screens
+
+| Screen | Route | What it shows |
+| :--- | :--- | :--- |
+| Home | `/` | The idea in one headline, the three steps (you ask, we fence it in, you decide extras), and two numbers from [`results_summary.json`](demo/security_monitor/app/dashboard_v2/public/results_summary.json): injected trials with harm, 14 → 0 out of 32 (`qwen2.5:7b`, condition A vs C), and the extra time per legitimate task, +1.0 s (6.4 s → 7.4 s, `utility_v3d`, anticipated tasks). |
+| Run · Ask | `/run` | "What should the agent do?", a text box, the model, **Start**, and the three presets. Below the box: which files the request will allow, by name. |
+| Run · Watch | `/run/:taskId` | The fence picture, one status sentence, the decision card when the agent asks for more, **Show what happened**, and **Stop**. |
+| Run · Done | same route | One sentence about the outcome, the output preview, "Record checked: no entries changed" and **Download record**. |
+| Fleet | `/fleet` | "*N* agents at work. *M* need you.", one dot per agent in the inventory (or per running task when the inventory is empty; a `<canvas>` above 1,500 dots), **Needs you** with **Review**, and the blocked actions of the last 24 hours grouped into plain sentences. With nothing running: "All quiet. No agents are running." |
+| History | `/history`, `/history/:taskId` | Past runs as a list, with the filter "Something was stopped". A run opens the Watch/Done screen in read-only mode; its Details drawer also lists the stored governance events. |
+| Results | `/results` | The full evaluation results for reviewers (technical by design), linked from Home. |
+
+The v2 routes redirect, so existing links keep working: `/tasks` → `/history`, `/tasks/:id` → `/history/:id`, `/approvals`, `/activity` and `/agents` → `/fleet`, `/evaluation` → `/results`, `/architecture` → `/`.
+
+**Plain language and Details.** A first screen never shows the words Landlock, seccomp, cgroup, provenance, hash chain, boundary v1/v2, broker, SSE or ABI, and the console never says safe, secure, guaranteed, tamper-proof or first. A browser test checks the visible text of every first screen at 1440 px and 390 px. The technical layer is in the drawer:
+
+| On the screen | In Details |
+| :--- | :--- |
+| "The agent tried to open target_metrics.csv. Your request doesn't include it, so it was stopped." | each step with its stored source label and layer, for example `enforced · kernel (Landlock)`, `enforced · tool broker`, `reported by the in-sandbox shim · tool broker`, `model output (untrusted) · tool broker` |
+| "Be careful: it only learned about this file from inside sales_data.csv." | the risk tier change (for example LOW → MEDIUM), "escalated by provenance", the untrusted reads (★ marks the one that mentions the file), the agent's justification (untrusted) |
+| "Record checked: no entries changed" | the hash-chain verification, final hash and event count, and the caveat that the receipt is hash-chained, not signed |
+| the fence with file names | the boundary with full paths, tools and `network: none` |
+
+The status sentence comes from one tested function (`src/logic/plain.ts`), for example "Setting up a fenced space for the agent…", "The agent is working.", "The agent wants one more file.", "Done. The agent stayed inside its fence." or "Done. 1 attempt was stopped.". Stopped, failed and timed-out runs each have their own plain sentence. An attempt that was recorded twice (by the tool broker and by the OS sensor) is counted once.
+
+**Platform.** Governed runs need Linux or WSL2 with a `systemd --user` manager, Landlock (ABI 6 or later, kernel 6.12+), cgroup v2, unprivileged user namespaces and the built `os_layer` binaries. On native Windows only the dashboard works: there, **Start** returns HTTP 503 and the Ask screen says "This computer can't run a fenced agent right now.", with the server's reason in Details, for example "OS-layer execution needs Linux/WSL2 with systemd --user, Landlock and cgroup v2 — systemd-run not found".
 
 ### Start the console (Linux/WSL2)
 
-The built console (`dashboard_v2/dist`) is not committed. Build it once after cloning, and again after frontend changes:
+The built console (`dashboard_v2/dist`) is not committed. Build it once after cloning, and again after frontend changes. The fonts (Space Grotesk, Inter, JetBrains Mono) are installed from npm (`@fontsource`), so the console loads nothing from a CDN.
 
 ```bash
 cd demo/security_monitor/app/dashboard_v2
 npm ci
+npm test          # unit tests: status sentences, step parsing, text contrast
 npm run build
-cd -    # back to the repository root
+cd -              # back to the repository root
 ```
 
 Then start the server from the repository root:
@@ -237,7 +274,7 @@ export GOVERNANCE_DB_PATH="$HOME/agent_workspaces/governance.db"
 export RECEIPTS_DIR="$HOME/agent_workspaces/receipts"
 
 python -m uvicorn demo.security_monitor.app.gateway.server:app --host 127.0.0.1 --port 8000
-# open http://127.0.0.1:8000/dashboard and sign in with the operator token
+# open http://127.0.0.1:8000/dashboard, press Try it, and sign in with the operator token
 ```
 
 If `dist/` is missing, the server logs a warning and `/dashboard` shows a "Console not built — run `npm ci && npm run build` in `dashboard_v2`" page with a link to `/legacy-dashboard`. It does not silently serve the old UI. `GOVERNANCE_CONSOLE_DIST` can point the server at another build directory.
@@ -251,28 +288,30 @@ npm run dev        # http://localhost:5173/dashboard/ ; /api is proxied to http:
 
 ### Access control
 
-- Every `/api/governance/*` route requires either the operator token header (`Authorization: Bearer <token>` or `X-Operator-Token: <token>`) or a valid session cookie. Prompts, events, paths, receipts and outputs are not served without one. The exceptions carry no task data: `/auth/status`, `/auth/session` and `/system/status`, plus the static UI.
-- `POST /api/governance/auth/session` exchanges the token header for an HttpOnly, `SameSite=Strict`, `path=/api` cookie that holds a random session id. The id is kept server-side (in memory) and expires after 8 hours; `DELETE` on the same path logs out. The console does this when you sign in, so the live SSE stream (`EventSource`) and the receipt download link work without the token in a URL.
+- Every `/api/governance/*` route requires either the operator token header (`Authorization: Bearer <token>` or `X-Operator-Token: <token>`) or a valid session cookie. Prompts, events, paths, receipts and outputs are not served without one. The exceptions carry no task data: `/auth/status`, `/auth/session` and `/system/status`, plus the static UI. Home and Results read only the static `results_summary.json` and need no sign-in.
+- `POST /api/governance/auth/session` exchanges the token header for an HttpOnly, `SameSite=Strict`, `path=/api` cookie that holds a random session id. The id is kept server-side (in memory) and expires after 8 hours; `DELETE` on the same path logs out. The console does this when you sign in, so the live SSE stream (`EventSource`) and the record download link work without the token in a URL.
 - The cookie is accepted for reads (GET/HEAD) only. Every mutation (run, stop, approve, deny, grant, and the other POST endpoints) still requires the token header, which keeps the CSRF surface minimal.
 - If `GOVERNANCE_OPERATOR_TOKEN` is unset, all governance routes refuse with HTTP 403. If, in addition, the bind host is not loopback (for example `--host 0.0.0.0`), the server refuses to start.
+- `GET /api/governance/fleet/summary` (the Fleet page) is a read behind the same token or session. It returns the running tasks, the pending expansions of running tasks whose fail-closed deadline is still ahead, one dot per inventory agent, and the blocked events of the last 24 hours grouped by target class: a file only mentioned inside content the agent read (and not in the request), an outside website, a private or home folder, or other. A task counts as running while it is the console's active run, is `ACTIVE`, or is still `PENDING` with recent non-terminal steps (a CLI launch into the same database).
 - Scope: a single shared operator token is a minimal step for controlled, local deployments. SSO, role-based access control and mutual TLS are future work.
 
-### The Run page
+### A run, step by step
 
-1. **Choose a preset or write a request.**
-   - **Summarise a CSV:** reads `input/sales_data.csv` and writes `output/summary.txt`, staying inside the derived boundary.
-   - **Compare with a target:** needs `input/target_metrics.csv`, which is outside the initial boundary, so the agent requests access and the request waits for the operator.
-   - **Hidden instruction in a file:** the input CSV contains an injected instruction to read a decoy file (`~/projects/archive/q3_private_notes.txt`); the read is blocked at the sandbox and broker boundary.
-   - **Custom:** your own request text and up to 3 input files under `input/` (50 KB each, text only).
-2. **Choose a model and check the boundary.** The model list shows only models installed in the local Ollama instance, plus `scripted (deterministic)`, a mock LLM with scripted tool calls (the OS layer, broker and sensor are still real). Any other model name is rejected with HTTP 422. The derived boundary (read and write paths, tools, network) is previewed before anything starts.
-3. **Start Governed Run.** This needs the operator token. Only one run executes at a time (a second start gets HTTP 409). The run always uses Condition C with the evaluation world: user, mount and network namespaces, boundary-compiled Landlock rules, seccomp, broker mediation, sensor attribution and a tmpfs fake home with decoys. The host is checked before the run is accepted; an unsupported host gets HTTP 503 with the list of problems, and no task is created.
-4. **Watch the steps and decide approvals.** Each step carries a source label: `enforced` (broker and Landlock decisions), `observed by OS sensor`, `model output (untrusted)` or `reported by the in-sandbox shim`. A pending expansion appears as an inline card with the provenance warning and the countdown to fail-closed denial.
-5. **Stop.** Stop works at any point. During preparation (intake, workspace, sandbox compilation) the run is cancelled and the agent never starts. Once the agent runs, its task cgroup is killed. Either way the termination reason is `operator_stop`, and a receipt is written if intake had already created the task.
-6. **End of the run.** Every run ends visibly as **Completed**, **Stopped**, **Failed** or **Timed out**: the live stream always closes with a terminal event. If no step arrives for 20 s or the stream breaks, the page reads the stored steps and task status instead of spinning. The page then shows the output files and the **hash-chained Task Receipt**. Verification recomputes the SHA-256 chain; this detects edits to individual entries, but the receipt is not signed, so someone able to rewrite the whole file can recompute the chain. The raw JSON can be downloaded and checked with `scripts/verify_receipt.py`.
+1. **Ask.** Write a request, or press one of the three presets:
+   - **Summarise a file:** reads `input/sales_data.csv` and writes `output/summary.txt`, staying inside the derived boundary.
+   - **Needs one more file:** needs `input/target_metrics.csv`, which is outside the initial boundary, so the agent requests access and the request waits for you.
+   - **A file tries to trick the agent:** the input CSV contains an injected instruction to read a decoy file (`~/projects/archive/q3_private_notes.txt`); the read is blocked at the sandbox and broker boundary.
+   - **Add your own file:** up to 3 input files under `input/` (50 KB each, text only).
+
+   The model list shows only models installed in the local Ollama instance, plus `scripted (deterministic)`, a mock LLM with scripted tool calls (the OS layer, broker and sensor are still real). Any other model name is rejected with HTTP 422.
+2. **Start.** This needs the operator token. Only one run executes at a time (a second start gets HTTP 409, and Ask links to the run in progress). The run always uses Condition C with the evaluation world: user, mount and network namespaces, boundary-compiled Landlock rules, seccomp, broker mediation, sensor attribution and a tmpfs fake home with decoys. The host is checked before the run is accepted; an unsupported host gets HTTP 503 with the list of problems, and no task is created.
+3. **Watch and decide.** The fence shows the files the request allows (at most four names, then "+N more"), and outside it what the agent tried (red) or asks for (amber). When the agent asks, the decision card names the file, gives one plain warning if the agent learned about it from content it read, and counts down to the fail-closed denial ("Decide within 1:34, or it stays blocked."). **Allow once** applies to this run only. **Don't allow** needs a short reason. Both use the existing approve and deny endpoints with the operator token.
+4. **Stop.** Stop works at any point. During preparation (intake, workspace, sandbox compilation) the run is cancelled and the agent never starts ("Stopped before the agent started. It never ran."). Once the agent runs, its task cgroup is killed. Either way the termination reason is `operator_stop`, and a receipt is written if intake had already created the task.
+5. **Done.** Every run ends visibly as completed, stopped, failed or timed out: the live stream always closes with a terminal event. If no step arrives for 20 s or the stream breaks, the page reads the stored steps and task status instead of spinning (with a slow local model this fallback is normal; Details says so under "Live updates"). The page then shows the output and the record check. Verification recomputes the SHA-256 chain; this detects edits to individual entries, but the receipt is not signed, so someone able to rewrite the whole file can recompute the chain. The raw JSON can be downloaded and checked with `scripts/verify_receipt.py`.
 
 ### Operator-approval demo from the command line
 
-With the server running as above, a task launched from the CLI under the operator approval policy shows up on the Approvals page:
+With the server running as above, a task launched from the CLI under the operator approval policy shows up on Fleet under **Needs you**:
 
 ```bash
 python -m demo.security_monitor.app.governance.launcher run \
@@ -282,13 +321,13 @@ python -m demo.security_monitor.app.governance.launcher run \
 
 `--db` matters: by default the CLI launcher uses its own database (`~/agent_workspaces/.control/governance_m6.db`), which the server does not read.
 
-The agent reads untrusted input (`input/notes.txt`) and then requests `input/target.csv`; provenance tracking raises the request to MEDIUM risk, so it waits for an operator. Approve it (or deny it with a reason) on the Approvals page within 120 seconds. On approval the file is delivered into the sandbox, the task finishes, and the receipt is written to `$RECEIPTS_DIR/<task_id>.json`:
+The agent reads untrusted input (`input/notes.txt`) and then requests `input/target.csv`; provenance tracking raises the request to MEDIUM risk, so it waits for an operator. Press **Review** and allow it (or don't, with a reason) within 120 seconds. On approval the file is delivered into the sandbox, the task finishes, and the receipt is written to `$RECEIPTS_DIR/<task_id>.json`:
 
 ```bash
 python scripts/verify_receipt.py "$RECEIPTS_DIR/<task_id>.json"
 ```
 
-Third-party UI note: the components in `dashboard_v2/src/components/reactbits/` (AuroraBg, SpotlightCard, CountUpMetric, ShinyTextHeader, AnimatedListFeed) are hand-written and inspired by React Bits; no React Bits source is included.
+**Review evidence.** `python scripts/capture_ui_review_v3.py --out ui_review/v3 --record qwen2.5:7b` starts its own server and writes dark screenshots of every screen at 1440 px and 390 px, plus a video of a preset 2 run with the given model, approved live (`ui_review/` is not committed).
 
 ## Quick start
 
@@ -320,7 +359,19 @@ python scripts/verify_receipt.py ~/agent_workspaces/receipts/<task_id>.json
 
 The launcher prints a JSON summary that includes `task_id` and the receipt path. By default, workspaces and receipts go under `~/agent_workspaces`; to change that, use `--workspace-base` and `--receipts-dir`.
 
-For the console, see [Start the console](#start-the-console-linuxwsl2).
+### The console (WSL2 / Linux)
+
+After the setup above, build the console once and start the server (details in [Start the console](#start-the-console-linuxwsl2)):
+
+```bash
+(cd demo/security_monitor/app/dashboard_v2 && npm ci && npm run build)
+export GOVERNANCE_OPERATOR_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+echo "operator token: $GOVERNANCE_OPERATOR_TOKEN"
+export GOVERNANCE_DB_PATH="$HOME/agent_workspaces/governance.db" RECEIPTS_DIR="$HOME/agent_workspaces/receipts"
+python -m uvicorn demo.security_monitor.app.gateway.server:app --host 127.0.0.1 --port 8000
+```
+
+Open `http://127.0.0.1:8000/dashboard` and press **Try it**. Sign in with the token, press **Needs one more file**, keep the model `scripted (deterministic)` (or pick `qwen2.5:7b`) and press **Start**. When the agent asks for `target_metrics.csv`, press **Allow once**; the run ends with "Done. 1 attempt was stopped." and "Record checked: no entries changed". **Fleet** shows the waiting decision while it is open, and **History** keeps the run.
 
 ### Windows: tool layer, dashboard and tests
 
@@ -331,11 +382,14 @@ pip install -r demo/security_monitor/requirements.txt
 python -m pytest demo/security_monitor/tests
 ```
 
-On native Windows nothing is enforced at the OS layer. The OS-layer tests skip, and the console works for browsing while the Run page reports the 503 reason. Build the console and start the server as described above, using the PowerShell forms (`$env:GOVERNANCE_OPERATOR_TOKEN = "..."`).
+On native Windows nothing is enforced at the OS layer. The OS-layer tests skip, and the console works for browsing while Start on the Run screen reports the 503 reason. Build the console and start the server as described above, using the PowerShell forms (`$env:GOVERNANCE_OPERATOR_TOKEN = "..."`).
 
 ## Tests
 
 ```bash
+# Console unit tests (status sentences, step parsing, text contrast)
+(cd demo/security_monitor/app/dashboard_v2 && npm test)
+
 # Python suite (no browser)
 python -m pytest demo/security_monitor/tests -m "not playwright" --timeout=120 -rs
 
@@ -347,7 +401,11 @@ python -m pytest demo/security_monitor/tests -m playwright --timeout=180 -rs
 
 The browser tests start their own servers (free port, temporary governance DB, `RECEIPTS_DIR` and operator token); they do not expect a server on port 8000. They skip only when Playwright is not installed. If the console is not built they fail with that message. One fixture runs the server through `tests/playwright_app.py`, a test-only entrypoint that holds runs in sandbox preparation until Stop is pressed, so Stop-during-preparation can be exercised from a browser.
 
-**Fresh result on this branch** — 2026-10-29, commit `bd098de`, WSL2 (kernel 6.18.54.1-microsoft-standard-WSL2, Ubuntu 26.04.1 LTS, Python 3.14.4, Node 20.18.0, `systemd --user` running, Landlock ABI 7), Playwright installed and the console built: `python -m pytest demo/security_monitor/tests --timeout=180 -rs` → **275 passed, 1 skipped** (the skip is `test_sensor_bind`, see below). The OS-layer, stop-race and browser tests all ran. The earlier "171 passed, 1 skipped" figure was from an older suite (commit `f342dc8`) and no longer applies.
+**Fresh result on this branch** — 2026-10-30, commit `1217875` (branch `ui-v3`), WSL2 (kernel 6.18.54.1-microsoft-standard-WSL2, Ubuntu 26.04.1 LTS, Python 3.14.4, Node 20.18.0, Playwright 1.64.1, `systemd --user` running, Landlock ABI 7), the console built from that commit:
+- `python -m pytest demo/security_monitor/tests --timeout=180 -rs` → **318 passed, 1 skipped** (292 without the browser tests, 26 browser tests). The skip is `test_sensor_bind`, see below. The OS-layer, stop-race and browser tests all ran.
+- `npm test` in `dashboard_v2` → **50 passed** (3 files).
+
+The earlier "275 passed, 1 skipped" (commit `bd098de`) and "171 passed, 1 skipped" (commit `f342dc8`) figures were from older suites and no longer apply.
 
 **Tests that may skip, and why.** `-rs` prints every skip with its reason. Nothing is counted as passed that did not run.
 
@@ -358,7 +416,7 @@ The browser tests start their own servers (free port, temporary governance DB, `
 | `test_m6_launcher.py::test_sensor_bind` | WSL2 only: a seccomp filter installed by WSL's init outranks `SECCOMP_RET_TRACE` for `bind()`, so the sensor cannot observe it. This is the one skip on the WSL2 machine. |
 | All `test_playwright_*.py` (`playwright` marker) | Playwright not installed. |
 
-**CI** (`.github/workflows/ci.yml`, on pull requests and pushes to `ui-v2` and `main`, `ubuntu-latest`): the Python suite without browser tests; the console build (`npm ci && npm run build`); and the Playwright tests against that build. The test jobs use the runner's system Python 3.14 in a venv, not `actions/setup-python`, so the interpreter is inside the sensor's runtime profile. `setup_os_layer.sh` builds the C helpers, starts a `systemd --user` manager and lifts the AppArmor user-namespace restriction. Whatever the runner kernel still lacks makes the `os_layer` tests skip with the reason, which the job log prints, and a separate step prints the host check result up front.
+**CI** (`.github/workflows/ci.yml`, on pull requests and pushes to `ui-v2`, `ui-v3` and `main`, `ubuntu-latest`): the Python suite without browser tests; the console unit tests and build (`npm ci && npm test && npm run build`); and the Playwright tests against that build. The test jobs use the runner's system Python 3.14 in a venv, not `actions/setup-python`, so the interpreter is inside the sensor's runtime profile. `setup_os_layer.sh` builds the C helpers, starts a `systemd --user` manager and lifts the AppArmor user-namespace restriction. Whatever the runner kernel still lacks makes the `os_layer` tests skip with the reason, which the job log prints, and a separate step prints the host check result up front.
 
 ## Repository map
 
@@ -368,7 +426,8 @@ demo/security_monitor/app/governance/      task-scoped governance (M1–M6)
   broker.py, broker_rpc.py, proxy.py         tool broker, Unix-socket RPC, egress proxy
   expansion.py, policy.py, evaluator.py      expansion requests, risk tiers, graduated response
   launcher.py, agent_shim.py, llm_agent.py   M6 launcher, in-sandbox shim, LLM agent
-  run_manager.py, api.py                     Run page lifecycle; console REST/SSE API and operator sessions
+  run_manager.py, api.py                     run lifecycle; console REST/SSE API and operator sessions
+  fleet.py                                   Fleet summary: running tasks, waiting decisions, blocked-event grouping
   correlator.py, receipt.py, redaction.py    cgroup attribution, Task Receipt v0, command redaction
   inventory.py, gateway_integration.py       GOVERNED/SHADOW inventory, A2A gateway hook
   os_layer/                                  Landlock enforcer, seccomp filter, ptrace sensor (C); sandbox spec; cgroup control
