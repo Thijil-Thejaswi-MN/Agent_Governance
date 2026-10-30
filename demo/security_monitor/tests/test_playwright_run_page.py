@@ -4,7 +4,7 @@
    with the output preview, 'Record checked: no entries changed' and Download record; the
    drawer keeps the technical labels and the hash-chain verification.
 2. Preset 2 (Needs one more file), scripted provider: the decision card appears with the
-   file name, the plain warning and the countdown; Allow once lets the run finish.
+   file name, the plain warning and the countdown; Allow for this run lets the run finish.
 3. A host without the OS layer: Start shows a plain line (the server's 503 reason in
    Details) and the page stays on Ask; nothing was started.
 4. Stop pressed while the sandbox is being prepared: the run ends 'stopped'
@@ -97,7 +97,9 @@ def test_preset_2_decision_card_allow_continues(page: Page, console_server):
     expect(page.locator('#fence [data-chip="requested"]')).to_contain_text("target_metrics.csv")
     _assert_plain(page)
 
-    card.locator('[id^="inline-approve-btn-"]').click()
+    allow = card.locator('[id^="inline-approve-btn-"]')
+    expect(allow).to_have_text("Allow for this run")
+    allow.click()
     expect(card).to_have_count(0, timeout=15000)
 
     status = page.locator("#run-status")

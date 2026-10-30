@@ -272,7 +272,7 @@ export function useRunTracker(taskId: string | undefined): RunTracker {
       setDeciding(true);
       setActionError(null);
       try {
-        await api.approveExpansion(requestId, { decided_by: 'operator', reason: 'Allowed once in the console' });
+        await api.approveExpansion(requestId, { decided_by: 'operator', reason: 'Allowed for this run in the console' });
         setPending(null);
         setState(s => (s === 'waiting_approval' ? 'running' : s));
         if (taskId) {

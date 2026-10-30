@@ -5,7 +5,7 @@
    (reads need the token header or a session cookie); the request stays PENDING.
 3. Signing in through the token modal shows the request under "Needs you" with its plain
    reason; Review opens Watch with the decision card (file name, plain warning, countdown).
-4. Allow once records APPROVED by operator:<GOVERNANCE_OPERATOR_NAME> and the card goes.
+4. Allow for this run records APPROVED by operator:<GOVERNANCE_OPERATOR_NAME> and the card goes.
 5. Don't allow needs a reason: the button stays disabled until one is typed; the request
    is then DENIED with that reason.
 """
@@ -70,7 +70,9 @@ def test_review_and_allow_with_and_without_token(page: Page, console_server):
         "Be careful: it only learned about this file from inside briefing.txt.")
     expect(card.locator("#decision-countdown")).to_contain_text("or it stays blocked.")
 
-    page.locator(f"#inline-approve-btn-{req_id}").click()
+    allow = page.locator(f"#inline-approve-btn-{req_id}")
+    expect(allow).to_have_text("Allow for this run")
+    allow.click()
     expect(card).to_have_count(0)
 
     final_req = storage.get_expansion_request(req_id)

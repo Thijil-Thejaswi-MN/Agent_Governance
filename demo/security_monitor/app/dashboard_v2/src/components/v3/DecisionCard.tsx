@@ -46,32 +46,27 @@ export const DecisionCard: React.FC<{
           A decision is waiting. Open it from Run to decide.
         </p>
       ) : !denying ? (
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap gap-3">
-            <button
-              id={`inline-approve-btn-${exp.request_id}`}
-              type="button"
-              disabled={deciding}
-              onClick={onAllow}
-              className="btn-primary pulse-waiting"
-              style={{ minHeight: 52, padding: '0 28px', background: 'linear-gradient(135deg, #34D399, #22D3EE)', color: '#04130F' }}
-            >
-              Allow once
-            </button>
-            <button
-              id={`deny-btn-${exp.request_id}`}
-              type="button"
-              disabled={deciding}
-              onClick={() => setDenying(true)}
-              className="btn-ghost"
-              style={{ minHeight: 52, padding: '0 28px' }}
-            >
-              Don't allow
-            </button>
-          </div>
-          <span className="text-[13px]" style={{ color: 'var(--text-3)' }}>
-            Allowing applies to this run only.
-          </span>
+        <div className="flex flex-wrap gap-3">
+          <button
+            id={`inline-approve-btn-${exp.request_id}`}
+            type="button"
+            disabled={deciding}
+            onClick={onAllow}
+            className="btn-primary pulse-waiting"
+            style={{ minHeight: 52, padding: '0 28px', background: 'linear-gradient(135deg, #34D399, #22D3EE)', color: '#04130F' }}
+          >
+            Allow for this run
+          </button>
+          <button
+            id={`deny-btn-${exp.request_id}`}
+            type="button"
+            disabled={deciding}
+            onClick={() => setDenying(true)}
+            className="btn-ghost"
+            style={{ minHeight: 52, padding: '0 28px' }}
+          >
+            Don't allow
+          </button>
         </div>
       ) : (
         <form
