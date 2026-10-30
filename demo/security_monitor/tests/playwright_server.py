@@ -232,3 +232,25 @@ def seed_finished_task(db_path: Path, suffix: str) -> str:
                                  detail="Sales total: 300 across 4 regions." if kind == "output" else "",
                                  source_label="enforced")
     return task_id
+
+
+def bar_heights(page, chart_id: str) -> list[float]:
+    """Rendered height (px) of every bar in a Recharts bar chart, in data order (0 for a zero bar)."""
+    return page.evaluate(
+        """(id) => [...document.querySelectorAll(`#${id} .recharts-bar-rectangle`)].map(g => {
+            const shape = g.querySelector('path, rect');
+            return shape ? shape.getBoundingClientRect().height : 0;
+        })""",
+        chart_id,
+    )
+
+
+def assert_bars_match(page, chart_id: str, values: list[int]) -> None:
+    heights = bar_heights(page, chart_id)
+    assert len(heights) == len(values), f"{chart_id}: {len(heights)} bars for {len(values)} values"
+    for v, h in zip(values, heights):
+        assert (h > 0) == (v > 0), f"{chart_id}: value {v} drawn {h:.1f} px high ({heights})"
+    nonzero = [(v, h) for v, h in zip(values, heights) if v > 0]
+    # Heights are proportional to the values on one axis.
+    for (v1, h1), (v2, h2) in zip(nonzero, nonzero[1:]):
+        assert abs(h1 / v1 - h2 / v2) < 1.0, f"{chart_id}: bars not proportional ({heights})"

@@ -97,7 +97,7 @@ export const ResultsPage: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Chart 1: Harm Prevention */}
         <div className="card p-6 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="m-0 font-display text-[20px] font-bold">
                 Harm Injected Trials
@@ -106,12 +106,12 @@ export const ResultsPage: React.FC = () => {
                 Number of trials where prompt injection successfully leaked decoy or sink canary.
               </p>
             </div>
-            <span className="mono text-[13px]" style={{ color: 'var(--text-3)' }}>
+            <span className="mono text-[13px] whitespace-nowrap shrink-0" style={{ color: 'var(--text-3)' }}>
               {harmA?.total !== undefined ? `N=${harmA.total} per condition` : '—'}
             </span>
           </div>
 
-          <div className="h-64 w-full">
+          <div className="h-64 w-full" id="chart-harm">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={harmData} margin={{ top: 20, right: 20, left: -20, bottom: 20 }}>
                 <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} stroke="#9AA4B8" />
@@ -120,7 +120,7 @@ export const ResultsPage: React.FC = () => {
                   contentStyle={{ backgroundColor: '#121829', borderColor: '#334155', borderRadius: '12px', color: '#E6EAF2', fontSize: '12px' }}
                   cursor={{ fill: 'rgba(148,163,184,0.08)' }}
                 />
-                <Bar dataKey="harm" radius={[6, 6, 0, 0]}>
+                <Bar dataKey="harm" radius={[6, 6, 0, 0]} isAnimationActive={false}>
                   {harmData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={entry.fill} />
                   ))}
@@ -146,7 +146,7 @@ export const ResultsPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="h-64 w-full">
+          <div className="h-64 w-full" id="chart-shell">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={shellAttackData} margin={{ top: 20, right: 20, left: -20, bottom: 20 }}>
                 <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} stroke="#9AA4B8" />
@@ -155,7 +155,7 @@ export const ResultsPage: React.FC = () => {
                   contentStyle={{ backgroundColor: '#121829', borderColor: '#334155', borderRadius: '12px', color: '#E6EAF2', fontSize: '12px' }}
                   cursor={{ fill: 'rgba(148,163,184,0.08)' }}
                 />
-                <Bar dataKey="succeeded" radius={[6, 6, 0, 0]}>
+                <Bar dataKey="succeeded" radius={[6, 6, 0, 0]} isAnimationActive={false}>
                   {shellAttackData.map((entry, index) => (
                     <Cell key={`cell-shell-${index}`} fill={entry.fill} />
                   ))}

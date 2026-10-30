@@ -14,7 +14,7 @@ try:
 except ImportError:
     HAS_PLAYWRIGHT = False
 
-from demo.security_monitor.tests.playwright_server import sign_in
+from demo.security_monitor.tests.playwright_server import assert_bars_match, sign_in
 
 pytestmark = [
     pytest.mark.playwright,
@@ -91,6 +91,16 @@ def test_evaluation_page_intercepts_altered_summary(page: Page, console_server):
     # Assert heading is present
     expect(page.locator("h1")).to_contain_text("Full results")
 
+    # Each chart draws one bar per condition, non-zero exactly where the value is,
+    # also right after a resize (no grow-in animation that leaves empty bars)
+    page.locator("#chart-harm .recharts-bar-rectangle").first.wait_for(state="attached")
+    assert_bars_match(page, "chart-harm", [29, 3, 1, 0])
+    assert_bars_match(page, "chart-shell", [7, 2])
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert_bars_match(page, "chart-harm", [29, 3, 1, 0])
+    assert_bars_match(page, "chart-shell", [7, 2])
+    page.set_viewport_size({"width": 1280, "height": 720})
+
     # Assert altered evaluation label is rendered
     expect(page.locator("body")).to_contain_text("Altered Test Evaluation Benchmark 999")
 
@@ -135,3 +145,20 @@ def test_evaluation_page_intercepts_altered_summary(page: Page, console_server):
     expect(page.locator("#metric-harm")).to_contain_text("out of 35")
     expect(page.locator("#metric-time")).to_contain_text("+2.5 s")
     expect(page.locator("#metric-time")).to_contain_text("3.1 s → 5.6 s")
+
+
+
+def test_results_charts_draw_the_real_values(page: Page, console_server):
+    """With the committed results_summary.json: harm A 14, B/C/D 0; shell attacks B 8, C 0."""
+    import pathlib
+    summary = json.loads((pathlib.Path(__file__).resolve().parents[1] / "app" / "dashboard_v2" / "public" /
+                          "results_summary.json").read_text(encoding="utf-8"))
+    harm = [summary["harm_injected"][c]["exposed"] for c in "ABCD"]
+    shell = [summary["shell_attacks_succeeded"][c]["succeeded"] for c in "BC"]
+    assert harm == [14, 0, 0, 0] and shell == [8, 0]
+    for width, height in ((1440, 900), (390, 844)):
+        page.set_viewport_size({"width": width, "height": height})
+        page.goto(f"{console_server.url}/dashboard/results")
+        page.locator("#chart-harm .recharts-bar-rectangle").first.wait_for(state="attached")
+        assert_bars_match(page, "chart-harm", harm)
+        assert_bars_match(page, "chart-shell", shell)
