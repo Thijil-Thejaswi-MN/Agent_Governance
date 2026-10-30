@@ -280,6 +280,49 @@
   }
 }
 
+/* Fence layout: the ring on the left, outside chips in a lane to its right that starts 28 px
+   past the ring (more than the 22 px knock). Narrow screens: the lane moves under the ring. */
+.fence {
+  position: relative;
+  width: 100%;
+  max-width: 640px;
+  --lane: clamp(150px, 36%, 220px);
+}
+.fence-ring {
+  position: relative;
+  aspect-ratio: 1;
+  width: calc(100% - var(--lane));
+}
+.fence-lane {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(100% - var(--lane) + 28px);
+  width: calc(var(--lane) - 28px);
+}
+.fence-lane > .fence-chip {
+  max-width: calc(100% - 4px);
+}
+@media (max-width: 479px) {
+  .fence-ring {
+    width: 84%;
+    margin: 0 auto;
+  }
+  .fence-lane {
+    position: static;
+    width: auto;
+    margin-top: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+  .fence-lane > .fence-chip {
+    position: static;
+    max-width: 100%;
+  }
+}
+
 .page-fade {
   animation: fadeIn 0.35s ease-out both;
 }
