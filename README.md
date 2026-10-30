@@ -401,9 +401,9 @@ python -m pytest demo/security_monitor/tests -m playwright --timeout=180 -rs
 
 The browser tests start their own servers (free port, temporary governance DB, `RECEIPTS_DIR` and operator token); they do not expect a server on port 8000. They skip only when Playwright is not installed. If the console is not built they fail with that message. One fixture runs the server through `tests/playwright_app.py`, a test-only entrypoint that holds runs in sandbox preparation until Stop is pressed, so Stop-during-preparation can be exercised from a browser.
 
-**Fresh result on this branch** — 2026-10-30, commit `fec2533` (branch `ui-v3`), WSL2 (kernel 6.18.54.1-microsoft-standard-WSL2, Ubuntu 26.04.1 LTS, Python 3.14.4, Node 20.18.0, Playwright 1.64.1, `systemd --user` running, Landlock ABI 7), the console built from that commit:
-- `python -m pytest demo/security_monitor/tests --timeout=180 -rs` → **321 passed, 1 skipped** (293 without the browser tests, 28 browser tests). The skip is `test_sensor_bind`, see below. The OS-layer, stop-race and browser tests all ran.
-- `npm test` in `dashboard_v2` → **50 passed** (3 files).
+**Fresh result on this branch** — 2026-10-30, commit `5920cfb` (branch `ui-v3`), WSL2 (kernel 6.18.54.1-microsoft-standard-WSL2, Ubuntu 26.04.1 LTS, Python 3.14.4, Node 20.18.0, Playwright 1.64.1, `systemd --user` running, Landlock ABI 7), the console built from that commit:
+- `python -m pytest demo/security_monitor/tests --timeout=180 -rs` → **326 passed, 1 skipped** (296 without the browser tests, 30 browser tests). The skip is `test_sensor_bind`, see below. The OS-layer, stop-race and browser tests all ran.
+- `npm test` in `dashboard_v2` → **51 passed** (3 files).
 
 The earlier "275 passed, 1 skipped" (commit `bd098de`) and "171 passed, 1 skipped" (commit `f342dc8`) figures were from older suites and no longer apply.
 
