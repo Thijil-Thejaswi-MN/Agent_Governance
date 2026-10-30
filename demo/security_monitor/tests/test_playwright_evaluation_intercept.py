@@ -1,7 +1,7 @@
-"""Playwright test verifying that EvaluationPage dynamically renders values from results_summary.json.
+"""Playwright test verifying that Results and Home render values from results_summary.json.
 
 Intercepts /dashboard/results_summary.json (or **/results_summary.json) with altered values
-and asserts that the page renders the altered values without hard-typed fallbacks.
+and asserts that both pages render the altered values without hard-typed fallbacks.
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ try:
 except ImportError:
     HAS_PLAYWRIGHT = False
 
-from demo.security_monitor.tests.playwright_server import sign_in
+from demo.security_monitor.tests.playwright_server import assert_bars_match, sign_in
 
 pytestmark = [
     pytest.mark.playwright,
@@ -65,6 +65,11 @@ def test_evaluation_page_intercepts_altered_summary(page: Page, console_server):
             "C": {"mean_s": 77, "total_trials": 35, "timeouts": 3, "timeout_ratio": "3/35"},
             "D": {"mean_s": 66, "total_trials": 35, "timeouts": 2, "timeout_ratio": "2/35"},
         },
+        "utility_timings_anticipated": {
+            "A": {"mean_s": 3.1, "total_trials": 35},
+            "C": {"mean_s": 5.6, "total_trials": 35},
+            "extra_s_c_vs_a": 2.5,
+        },
         "limitations": [
             "Custom intercepted verification rule for empirical evaluation integrity.",
         ],
@@ -80,11 +85,21 @@ def test_evaluation_page_intercepts_altered_summary(page: Page, console_server):
     # Intercept any request matching results_summary.json
     page.route("**/results_summary.json*", handle_route)
 
-    # Navigate to the Evaluation page
-    page.goto(f"{base_url}/dashboard/evaluation")
+    # Navigate to the Results page
+    page.goto(f"{base_url}/dashboard/results")
 
     # Assert heading is present
-    expect(page.locator("h1")).to_contain_text("Empirical Evaluation Benchmarks")
+    expect(page.locator("h1")).to_contain_text("Full results")
+
+    # Each chart draws one bar per condition, non-zero exactly where the value is,
+    # also right after a resize (no grow-in animation that leaves empty bars)
+    page.locator("#chart-harm .recharts-bar-rectangle").first.wait_for(state="attached")
+    assert_bars_match(page, "chart-harm", [29, 3, 1, 0])
+    assert_bars_match(page, "chart-shell", [7, 2])
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert_bars_match(page, "chart-harm", [29, 3, 1, 0])
+    assert_bars_match(page, "chart-shell", [7, 2])
+    page.set_viewport_size({"width": 1280, "height": 720})
 
     # Assert altered evaluation label is rendered
     expect(page.locator("body")).to_contain_text("Altered Test Evaluation Benchmark 999")
@@ -118,3 +133,56 @@ def test_evaluation_page_intercepts_altered_summary(page: Page, console_server):
 
     # Assert altered limitations list item is rendered
     expect(page.locator("body")).to_contain_text("Custom intercepted verification rule for empirical evaluation integrity.")
+
+    # Assert altered time per legitimate task is rendered
+    expect(page.locator("#utility-timings")).to_contain_text("3.1s")
+    expect(page.locator("#utility-timings")).to_contain_text("5.6s")
+    expect(page.locator("#utility-timings")).to_contain_text("+2.5s")
+
+    # Home renders its two numbers from the same file: harm A -> C out of the total, extra time
+    page.goto(f"{base_url}/dashboard")
+    expect(page.locator("#metric-harm")).to_contain_text("29 → 1")
+    expect(page.locator("#metric-harm")).to_contain_text("out of 35")
+    expect(page.locator("#metric-time")).to_contain_text("+2.5 s")
+    expect(page.locator("#metric-time")).to_contain_text("3.1 s → 5.6 s")
+
+
+
+def test_results_charts_draw_the_real_values(page: Page, console_server):
+    """With the committed results_summary.json: harm A 14, B/C/D 0; shell attacks B 8, C 0."""
+    import pathlib
+    summary = json.loads((pathlib.Path(__file__).resolve().parents[1] / "app" / "dashboard_v2" / "public" /
+                          "results_summary.json").read_text(encoding="utf-8"))
+    harm = [summary["harm_injected"][c]["exposed"] for c in "ABCD"]
+    shell = [summary["shell_attacks_succeeded"][c]["succeeded"] for c in "BC"]
+    assert harm == [14, 0, 0, 0] and shell == [8, 0]
+    for width, height in ((1440, 900), (390, 844)):
+        page.set_viewport_size({"width": width, "height": height})
+        page.goto(f"{console_server.url}/dashboard/results")
+        page.locator("#chart-harm .recharts-bar-rectangle").first.wait_for(state="attached")
+        assert_bars_match(page, "chart-harm", harm)
+        assert_bars_match(page, "chart-shell", shell)
+
+
+
+CONDITION_NAMES = {"A": "No governance", "B": "Tool layer only", "C": "Tool + OS layer", "D": "Per-task container"}
+
+TICKS_JS = """(id) => [...document.querySelectorAll(`#${id} .recharts-xAxis .recharts-cartesian-axis-tick-value`)]
+    .map(t => { const b = t.getBoundingClientRect(); return { text: t.textContent.trim(), left: b.left, right: b.right, top: b.top, bottom: b.bottom }; })"""
+
+
+def test_results_chart_axes_use_letters_with_a_legend(page: Page, console_server):
+    for width, height in ((1440, 900), (390, 844)):
+        page.set_viewport_size({"width": width, "height": height})
+        page.goto(f"{console_server.url}/dashboard/results")
+        for chart, letters in (("chart-harm", "ABCD"), ("chart-shell", "BC")):
+            page.locator(f"#{chart} .recharts-xAxis .recharts-cartesian-axis-tick-value").first.wait_for(state="attached")
+            ticks = page.evaluate(TICKS_JS, chart)
+            assert [t["text"] for t in ticks] == list(letters), f"{chart} @ {width}px: {ticks}"
+            for a, b in zip(ticks, ticks[1:]):
+                assert a["right"] < b["left"], f"{chart} @ {width}px: tick labels overlap ({a}, {b})"
+            legend = page.locator(f"#{chart}-legend li")
+            expect(legend).to_have_count(len(letters))
+            for i, letter in enumerate(letters):
+                expect(legend.nth(i)).to_have_attribute("data-legend-id", letter)
+                expect(legend.nth(i)).to_have_text(f"{letter}{CONDITION_NAMES[letter]}")

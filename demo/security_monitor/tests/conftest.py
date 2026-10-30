@@ -82,3 +82,19 @@ def unbuilt_console_server(tmp_path_factory):
     srv = _server(tmp_path_factory, "console_unbuilt", {"GOVERNANCE_CONSOLE_DIST": missing}, require_build=False)
     yield srv
     srv.stop()
+
+
+@pytest.fixture(scope="session")
+def empty_console_server(tmp_path_factory):
+    """A server with an empty governance DB that no test writes to (Fleet empty state)."""
+    srv = _server(tmp_path_factory, "console_empty")
+    yield srv
+    srv.stop()
+
+
+@pytest.fixture(scope="session")
+def seeded_console_server(tmp_path_factory):
+    """A server whose DB only the Fleet counts test writes to."""
+    srv = _server(tmp_path_factory, "console_seeded")
+    yield srv
+    srv.stop()

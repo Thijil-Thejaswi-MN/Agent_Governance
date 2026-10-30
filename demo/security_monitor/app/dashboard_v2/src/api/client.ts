@@ -13,6 +13,7 @@ import {
   RunOutputFile,
   RunModelsResponse,
   ActiveRunInfo,
+  FleetSummary,
 } from '../types';
 
 const API_BASE = '/api/governance';
@@ -138,6 +139,7 @@ export const api = {
 
   // Inventory & Alerts
   getInventory: () => request<AgentInventoryItem[]>(`${API_BASE}/inventory`),
+  getFleetSummary: () => request<FleetSummary>(`${API_BASE}/fleet/summary`),
   getAlerts: () => request<any[]>(`${API_BASE}/alerts`),
   getConfig: () => request<{ system_mode: string; provenance_enabled: boolean }>(`${API_BASE}/config`),
   getAuthStatus: () =>
