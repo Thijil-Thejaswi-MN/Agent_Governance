@@ -26,15 +26,19 @@ def _plural(n: int, one: str, many: str) -> str:
     return one if n == 1 else many
 
 
-def _plain_sentence(target_class: str, n: int) -> str:
-    attempts = f"{n} {_plural(n, 'attempt', 'attempts')}"
+def _plain_label(target_class: str, n: int) -> str:
+    """The sentence after the count: '<n> attempts to ...'."""
     if target_class == "mentioned_in_input":
-        return f"{attempts} to open a file that was only mentioned inside another file"
+        return f"{_plural(n, 'attempt', 'attempts')} to open a file that was only mentioned inside another file"
     if target_class == "outside_website":
-        return f"{attempts} to reach a website outside the task"
+        return f"{_plural(n, 'attempt', 'attempts')} to reach a website outside the task"
     if target_class == "private_folder":
-        return f"{attempts} to read a private or home folder"
-    return f"{n} other {_plural(n, 'action', 'actions')} outside what the request allows"
+        return f"{_plural(n, 'attempt', 'attempts')} to read a private or home folder"
+    return f"other {_plural(n, 'action', 'actions')} outside what the request allows"
+
+
+def _plain_sentence(target_class: str, n: int) -> str:
+    return f"{n} {_plain_label(target_class, n)}"
 
 
 def _val(x: Any) -> str:
@@ -167,6 +171,7 @@ def group_blocked_events(
             "by_kind": dict(b["by_kind"]),
             "examples": b["examples"],
             "plain": _plain_sentence(cls, b["count"]),
+            "label": _plain_label(cls, b["count"]),
         })
     return {
         "window_hours": window_hours,

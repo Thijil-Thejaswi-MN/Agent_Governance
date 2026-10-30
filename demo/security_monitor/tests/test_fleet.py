@@ -114,6 +114,7 @@ def test_group_blocked_events_counts_classes_and_sentences():
     m = by_class["mentioned_in_input"]
     assert m["count"] == 2 and m["task_count"] == 2 and m["agent_count"] == 2
     assert m["plain"] == "2 attempts to open a file that was only mentioned inside another file"
+    assert m["label"] == "attempts to open a file that was only mentioned inside another file"
     assert m["by_layer"] == {"broker": 2} and m["by_kind"] == {"file_read": 2}
     assert by_class["outside_website"]["plain"] == "1 attempt to reach a website outside the task"
     assert by_class["outside_website"]["by_layer"] == {"proxy": 1}
