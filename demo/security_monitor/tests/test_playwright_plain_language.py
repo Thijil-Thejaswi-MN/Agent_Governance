@@ -105,3 +105,23 @@ def test_results_never_says_forbidden_words(page: Page, console_server):
     expect(page.locator("#utility-timings")).to_contain_text("6.4s")
     expect(page.locator("#utility-timings")).to_contain_text("7.4s")
     assert banned_words_in(page.locator("body").inner_text(), NEVER_SAY) == []
+
+
+@pytest.mark.parametrize("width,height", [(1440, 900), (390, 844)])
+def test_results_how_it_works_is_plain_with_details(page: Page, console_server, width, height):
+    page.set_viewport_size({"width": width, "height": height})
+    page.goto(f"{console_server.url}/dashboard/results")
+    section = page.locator("#how-it-works")
+    expect(section).to_be_visible()
+    expect(section.locator("#layer-tools")).to_contain_text("Layer 1: its tools")
+    expect(section.locator("#layer-os")).to_contain_text("Layer 2: the operating system")
+    text = section.inner_text()
+    assert banned_words_in(text, FIRST_SCREEN_JARGON + NEVER_SAY) == [], text
+    assert no_horizontal_scroll(page)
+
+    section.locator("#how-it-works-details-btn").click()
+    drawer = page.locator("#how-it-works-drawer")
+    expect(drawer).to_contain_text("Landlock")
+    expect(drawer).to_contain_text("7 agent-facing endpoints")
+    expect(drawer).to_contain_text("observation only, it does not block")
+    expect(drawer).to_contain_text("not signed")

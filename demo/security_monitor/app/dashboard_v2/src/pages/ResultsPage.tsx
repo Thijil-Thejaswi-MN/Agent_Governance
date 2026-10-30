@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 'recharts';
 import { api } from '../api/client';
 import { ResultsSummary } from '../types';
+import { HowItWorks } from '../components/v3/HowItWorks';
 
 export const ResultsPage: React.FC = () => {
   const [summary, setSummary] = useState<ResultsSummary | null>(null);
@@ -90,6 +91,8 @@ export const ResultsPage: React.FC = () => {
           {summary.evaluation_label || '—'}
         </span>
       </div>
+
+      <HowItWorks />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Chart 1: Harm Prevention */}

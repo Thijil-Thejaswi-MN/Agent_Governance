@@ -235,7 +235,7 @@ The design is specified by the mockups in [`docs/design/console_v3_mockups/`](do
 | Run · Done | same route | One sentence about the outcome, the output preview, "Record checked: no entries changed" and **Download record**. |
 | Fleet | `/fleet` | "*N* agents at work. *M* need you.", one dot per agent in the inventory (or per running task when the inventory is empty; a `<canvas>` above 1,500 dots), **Needs you** with **Review**, and the blocked actions of the last 24 hours grouped into plain sentences. With nothing running: "All quiet. No agents are running." |
 | History | `/history`, `/history/:taskId` | Past runs as a list, with the filter "Something was stopped". A run opens the Watch/Done screen in read-only mode; its Details drawer also lists the stored governance events. |
-| Results | `/results` | The full evaluation results for reviewers (technical by design), linked from Home. |
+| Results | `/results` | **How it works**: the request → fence → two layers (the agent's tools, then the operating system) → your decision → record picture and the four tested setups, in plain words, with the components (broker, Landlock, seccomp, sensor, receipt) in a Details drawer. Then the full evaluation results for reviewers (technical by design). Linked from Home. |
 
 The v2 routes redirect, so existing links keep working: `/tasks` → `/history`, `/tasks/:id` → `/history/:id`, `/approvals`, `/activity` and `/agents` → `/fleet`, `/evaluation` → `/results`, `/architecture` → `/`.
 
