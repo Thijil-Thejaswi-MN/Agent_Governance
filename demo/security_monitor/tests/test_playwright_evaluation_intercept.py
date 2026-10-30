@@ -162,3 +162,27 @@ def test_results_charts_draw_the_real_values(page: Page, console_server):
         page.locator("#chart-harm .recharts-bar-rectangle").first.wait_for(state="attached")
         assert_bars_match(page, "chart-harm", harm)
         assert_bars_match(page, "chart-shell", shell)
+
+
+
+CONDITION_NAMES = {"A": "No governance", "B": "Tool layer only", "C": "Tool + OS layer", "D": "Per-task container"}
+
+TICKS_JS = """(id) => [...document.querySelectorAll(`#${id} .recharts-xAxis .recharts-cartesian-axis-tick-value`)]
+    .map(t => { const b = t.getBoundingClientRect(); return { text: t.textContent.trim(), left: b.left, right: b.right, top: b.top, bottom: b.bottom }; })"""
+
+
+def test_results_chart_axes_use_letters_with_a_legend(page: Page, console_server):
+    for width, height in ((1440, 900), (390, 844)):
+        page.set_viewport_size({"width": width, "height": height})
+        page.goto(f"{console_server.url}/dashboard/results")
+        for chart, letters in (("chart-harm", "ABCD"), ("chart-shell", "BC")):
+            page.locator(f"#{chart} .recharts-xAxis .recharts-cartesian-axis-tick-value").first.wait_for(state="attached")
+            ticks = page.evaluate(TICKS_JS, chart)
+            assert [t["text"] for t in ticks] == list(letters), f"{chart} @ {width}px: {ticks}"
+            for a, b in zip(ticks, ticks[1:]):
+                assert a["right"] < b["left"], f"{chart} @ {width}px: tick labels overlap ({a}, {b})"
+            legend = page.locator(f"#{chart}-legend li")
+            expect(legend).to_have_count(len(letters))
+            for i, letter in enumerate(letters):
+                expect(legend.nth(i)).to_have_attribute("data-legend-id", letter)
+                expect(legend.nth(i)).to_have_text(f"{letter}{CONDITION_NAMES[letter]}")

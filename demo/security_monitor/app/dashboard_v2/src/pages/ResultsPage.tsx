@@ -4,6 +4,19 @@ import { api } from '../api/client';
 import { ResultsSummary } from '../types';
 import { HowItWorks } from '../components/v3/HowItWorks';
 
+// The axes show only the condition letter; this maps each letter to its name, in the bar's colour.
+const ChartLegend: React.FC<{ id: string; items: Array<{ id: string; label: string; fill: string }> }> = ({ id, items }) => (
+  <ul id={id} className="list-none m-0 p-0 flex flex-wrap gap-x-5 gap-y-1.5 text-[14px]" style={{ color: 'var(--text-2)' }}>
+    {items.map(it => (
+      <li key={it.id} data-legend-id={it.id} className="inline-flex items-center gap-2">
+        <span aria-hidden="true" className="inline-block w-2.5 h-2.5 rounded-[3px]" style={{ background: it.fill }} />
+        <span className="font-semibold" style={{ color: 'var(--text)' }}>{it.id}</span>
+        {it.label}
+      </li>
+    ))}
+  </ul>
+);
+
 export const ResultsPage: React.FC = () => {
   const [summary, setSummary] = useState<ResultsSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -29,18 +42,18 @@ export const ResultsPage: React.FC = () => {
   const harmD = summary.harm_injected?.['D'];
 
   const harmData = [
-    { name: 'A "No governance"', harm: harmA?.exposed, total: harmA?.total, fill: '#FB7185' },
-    { name: 'B "Tool layer only"', harm: harmB?.exposed, total: harmB?.total, fill: '#34D399' },
-    { name: 'C "Tool + OS layer"', harm: harmC?.exposed, total: harmC?.total, fill: '#22D3EE' },
-    { name: 'D "Per-task container"', harm: harmD?.exposed, total: harmD?.total, fill: '#A78BFA' },
+    { id: 'A', label: 'No governance', name: 'A "No governance"', harm: harmA?.exposed, total: harmA?.total, fill: '#FB7185' },
+    { id: 'B', label: 'Tool layer only', name: 'B "Tool layer only"', harm: harmB?.exposed, total: harmB?.total, fill: '#34D399' },
+    { id: 'C', label: 'Tool + OS layer', name: 'C "Tool + OS layer"', harm: harmC?.exposed, total: harmC?.total, fill: '#22D3EE' },
+    { id: 'D', label: 'Per-task container', name: 'D "Per-task container"', harm: harmD?.exposed, total: harmD?.total, fill: '#A78BFA' },
   ];
 
   const shellB = summary.shell_attacks_succeeded?.['B'];
   const shellC = summary.shell_attacks_succeeded?.['C'];
 
   const shellAttackData = [
-    { name: 'B "Tool layer only"', succeeded: shellB?.succeeded, total: shellB?.total, fill: '#FB7185' },
-    { name: 'C "Tool + OS layer"', succeeded: shellC?.succeeded, total: shellC?.total, fill: '#34D399' },
+    { id: 'B', label: 'Tool layer only', name: 'B "Tool layer only"', succeeded: shellB?.succeeded, total: shellB?.total, fill: '#FB7185' },
+    { id: 'C', label: 'Tool + OS layer', name: 'C "Tool + OS layer"', succeeded: shellC?.succeeded, total: shellC?.total, fill: '#34D399' },
   ];
 
   const formatRatio = (item?: { exposed?: number; succeeded?: number; correct?: number; total?: number; ratio?: string }) => {
@@ -97,7 +110,7 @@ export const ResultsPage: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Chart 1: Harm Prevention */}
         <div className="card p-6 space-y-4">
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1 sm:gap-4">
             <div>
               <h2 className="m-0 font-display text-[20px] font-bold">
                 Harm Injected Trials
@@ -114,10 +127,11 @@ export const ResultsPage: React.FC = () => {
           <div className="h-64 w-full" id="chart-harm">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={harmData} margin={{ top: 20, right: 20, left: -20, bottom: 20 }}>
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} stroke="#9AA4B8" />
+                <XAxis dataKey="id" tick={{ fontSize: 13 }} interval={0} stroke="#9AA4B8" />
                 <YAxis domain={[0, harmA?.total || 32]} stroke="#9AA4B8" />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#121829', borderColor: '#334155', borderRadius: '12px', color: '#E6EAF2', fontSize: '12px' }}
+                  labelFormatter={(_id, items) => (items?.[0]?.payload as { name?: string } | undefined)?.name ?? String(_id)}
                   cursor={{ fill: 'rgba(148,163,184,0.08)' }}
                 />
                 <Bar dataKey="harm" radius={[6, 6, 0, 0]} isAnimationActive={false}>
@@ -128,6 +142,7 @@ export const ResultsPage: React.FC = () => {
               </BarChart>
             </ResponsiveContainer>
           </div>
+          <ChartLegend id="chart-harm-legend" items={harmData} />
           <div className="p-3 rounded-[14px] mono text-[13px]" style={{ background: 'var(--field)', color: 'var(--text-2)' }}>
             Harm: A "No governance" = {formatRatio(harmA)} | B "Tool layer only" = {formatRatio(harmB)} | C "Tool + OS layer" = {formatRatio(harmC)} | D "Per-task container" = {formatRatio(harmD)}
           </div>
@@ -149,10 +164,11 @@ export const ResultsPage: React.FC = () => {
           <div className="h-64 w-full" id="chart-shell">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={shellAttackData} margin={{ top: 20, right: 20, left: -20, bottom: 20 }}>
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} stroke="#9AA4B8" />
+                <XAxis dataKey="id" tick={{ fontSize: 13 }} interval={0} stroke="#9AA4B8" />
                 <YAxis domain={[0, shellC?.total || 10]} stroke="#9AA4B8" />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#121829', borderColor: '#334155', borderRadius: '12px', color: '#E6EAF2', fontSize: '12px' }}
+                  labelFormatter={(_id, items) => (items?.[0]?.payload as { name?: string } | undefined)?.name ?? String(_id)}
                   cursor={{ fill: 'rgba(148,163,184,0.08)' }}
                 />
                 <Bar dataKey="succeeded" radius={[6, 6, 0, 0]} isAnimationActive={false}>
@@ -163,6 +179,7 @@ export const ResultsPage: React.FC = () => {
               </BarChart>
             </ResponsiveContainer>
           </div>
+          <ChartLegend id="chart-shell-legend" items={shellAttackData} />
           <div className="p-3 rounded-[14px] mono text-[13px]" style={{ background: 'var(--field)', color: 'var(--text-2)' }}>
             B "Tool layer only": {formatRatio(shellB)} succeeded | C "Tool + OS layer": {formatRatio(shellC)} succeeded
           </div>
