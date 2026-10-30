@@ -275,3 +275,33 @@ def test_fleet_route_returns_real_counts(seeded):
     assert [d["state"] for d in body["dots"]["items"]] == ["waiting"]
     assert body["blocked"]["total"] == 1
     assert body["blocked"]["groups"][0]["target_class"] == "mentioned_in_input"
+
+
+# --- which tasks are running ----------------------------------------------
+
+def _step(kind: str, minutes_ago: float) -> dict:
+    return {"kind": kind, "timestamp": _iso(minutes_ago)}
+
+
+def test_is_running_rules():
+    from demo.security_monitor.app.governance.fleet import is_running
+    pending = {"task_id": "t1", "status": "PENDING"}
+    # The console's active run, and ACTIVE tasks, are running.
+    assert is_running(pending, [], "t1", NOW)
+    assert is_running({"task_id": "t2", "status": "ACTIVE"}, [], None, NOW)
+    # The launcher keeps tasks PENDING until they end: recent non-terminal steps count.
+    assert is_running(pending, [_step("phase", 3), _step("expansion", 1)], None, NOW)
+    assert not is_running(pending, [], None, NOW)                                   # never launched
+    assert not is_running(pending, [_step("phase", 30)], None, NOW)                 # stale
+    assert not is_running(pending, [_step("tool", 2), _step("termination", 1)], None, NOW)
+    assert not is_running({"task_id": "t3", "status": "COMPLETED"}, [_step("tool", 1)], None, NOW)
+
+
+def test_fleet_summary_counts_launcher_pending_tasks_and_active_run():
+    tasks = [_task("t_run", "PENDING"), _task("t_cli", "PENDING", agent_id="agent_b"), _task("t_old", "PENDING")]
+    steps = {"t_cli": [_step("phase", 2)], "t_old": [_step("phase", 120)]}
+    out = build_fleet_summary(tasks, [], [_pending("r1", "t_run")], [], now=NOW,
+                              steps_by_task=steps, active_run_id="t_run")
+    assert out["agents_at_work"] == 2
+    assert out["need_you"] == 1
+    assert {d["id"] for d in out["dots"]["items"]} == {"t_run", "t_cli"}

@@ -14,6 +14,9 @@ from typing import Any, Iterable
 
 BLOCKED_WINDOW_H = 24
 RECENT_BLOCK_WINDOW_H = 1
+# A PENDING task counts as running only while its steps keep coming (CLI launches into this DB).
+STALE_STEPS_AFTER_S = 15 * 60
+_TERMINAL_STEP_KINDS = {"finished", "termination", "receipt"}
 
 # Order matters: the first class that matches wins.
 TARGET_CLASSES = ("mentioned_in_input", "outside_website", "private_folder", "other")
@@ -187,6 +190,27 @@ def _expansion_deadline(exp: dict[str, Any]) -> datetime.datetime | None:
     return created + datetime.timedelta(seconds=float(exp.get("timeout_seconds") or 0))
 
 
+def is_running(task: dict[str, Any], steps: list[dict[str, Any]], active_run_id: str | None,
+               now: datetime.datetime) -> bool:
+    """Is this task running now?
+
+    The console's active run is; an ACTIVE task is. The launcher keeps a task PENDING until it
+    ends (COMPLETED / TERMINATED / FAILED), so a PENDING task counts while it has steps, none
+    of them terminal, and the last one is recent. A PENDING task with no steps was never launched.
+    """
+    if active_run_id and task.get("task_id") == active_run_id:
+        return True
+    status = _val(task.get("status"))
+    if status == "ACTIVE":
+        return True
+    if status != "PENDING" or not steps:
+        return False
+    if any(_val(s.get("kind")) in _TERMINAL_STEP_KINDS for s in steps):
+        return False
+    last = max((parse_ts(s.get("timestamp")) for s in steps), default=None, key=lambda d: d or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc))
+    return last is not None and (now - last).total_seconds() <= STALE_STEPS_AFTER_S
+
+
 def build_fleet_summary(
     tasks: list[dict[str, Any]],
     inventory: list[dict[str, Any]],
@@ -194,16 +218,20 @@ def build_fleet_summary(
     blocked_events: list[dict[str, Any]],
     snippets_by_task: dict[str, list[str]] | None = None,
     now: datetime.datetime | None = None,
+    steps_by_task: dict[str, list[dict[str, Any]]] | None = None,
+    active_run_id: str | None = None,
 ) -> dict[str, Any]:
     """Everything the Fleet page shows, from real stored records only.
 
     tasks: dicts with task_id, agent_id, status, request_text, created_at, started_at.
     inventory: AgentInventoryItem dicts. pending_expansions: enriched expansion dicts
     (with prior_untrusted_reads). blocked_events: unified task events (any verdict).
+    steps_by_task / active_run_id: decide which tasks are running (see is_running).
     """
     now = now or datetime.datetime.now(datetime.timezone.utc)
+    steps_by_task = steps_by_task or {}
     task_by_id = {t["task_id"]: t for t in tasks}
-    running = [t for t in tasks if t.get("status") == "ACTIVE"]
+    running = [t for t in tasks if is_running(t, steps_by_task.get(t["task_id"], []), active_run_id, now)]
     running_ids = {t["task_id"] for t in running}
 
     # A decision is waiting only while its task runs and its fail-closed deadline is ahead.
