@@ -1,0 +1,17 @@
+--- a/infuse/envs/docker.py
++++ b/infuse/envs/docker.py
+@@ -36,7 +36,7 @@ class DockerEnvConfig:
+-    run_args: list[str] = field(default_factory=lambda: ["--rm"])
++    run_args: list[str] = field(default_factory=lambda: ["--rm", "--network", "none"])
+
+--- a/infuse/runners/run_single_minisweagent.py
++++ b/infuse/runners/run_single_minisweagent.py
+@@ -504,7 +504,7 @@ def run_single_test_with_minisweagent(
+-            docker_run_args = ["--rm", "--tmpfs", "/tmp:rw,noexec,nosuid,size=100m,mode=1777"]
++            docker_run_args = ["--rm", "--network", "none", "--tmpfs", "/tmp:rw,noexec,nosuid,size=100m,mode=1777"]
+
+--- a/infuse/runners/verifier.py
++++ b/infuse/runners/verifier.py
+@@ -43,7 +43,7 @@ def run_attack_verifier(
+-    cmd = ["docker", "run", "--rm",
++    cmd = ["docker", "run", "--rm", "--network", "none",
