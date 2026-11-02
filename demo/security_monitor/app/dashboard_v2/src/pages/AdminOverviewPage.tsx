@@ -37,10 +37,11 @@ export const AdminOverviewPage: React.FC = () => {
     };
   }, []);
 
-  const totalRuns = tasks.length || 9412;
-  const activeCount = tasks.filter(t => t.status === 'RUNNING' || t.status === 'ACTIVE').length || 1284;
-  const stoppedCount = tasks.reduce((a, b) => a + (b.prevented_count || b.os_denials_count || 0), 0) || 214;
-  const waitingCount = expansions.length || 3;
+  const totalRuns = tasks.length > 0 ? tasks.length : 9412;
+  const activeTasksCount = tasks.filter(t => t.status === 'RUNNING' || t.status === 'ACTIVE').length;
+  const activeCount = tasks.length > 0 ? (activeTasksCount > 0 ? activeTasksCount : tasks.length) : 1284;
+  const stoppedCount = tasks.length > 0 ? tasks.reduce((a, b) => a + (b.prevented_count || b.os_denials_count || 0), 0) : 214;
+  const waitingCount = expansions.length > 0 ? expansions.length : 3;
 
   // Scale adaptive mode:
   // <= 20: individual agents
@@ -178,7 +179,7 @@ export const AdminOverviewPage: React.FC = () => {
       </section>
 
       {/* The Live Agent Map (Scale Adaptive) */}
-      <section className="relative overflow-hidden p-5 rounded-2xl bg-[#0E121A] border border-[#1F2633] flex flex-col gap-3">
+      <section data-mode={mode} className="relative overflow-hidden p-5 rounded-2xl bg-[#0E121A] border border-[#1F2633] flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <h2 className="text-[15px] font-bold text-[#E6E9EF]">Live agent map</h2>
@@ -206,7 +207,7 @@ export const AdminOverviewPage: React.FC = () => {
 
         {/* Scale Adaptive View */}
         {mode === 'canvas' ? (
-          <div className="relative w-full h-[380px] flex items-center justify-center">
+          <div data-view="canvas" className="relative w-full h-[380px] flex items-center justify-center">
             <canvas
               ref={canvasRef}
               width={900}
@@ -216,15 +217,78 @@ export const AdminOverviewPage: React.FC = () => {
               aria-label="Canvas map of active teams inside fence"
             />
           </div>
+        ) : mode === 'teams' ? (
+          <div data-view="teams" className="flex flex-col gap-4">
+            <svg
+              width="100%"
+              height="380"
+              viewBox="0 0 900 380"
+              role="img"
+              aria-label="Live map: team nodes sized by agent count inside fence"
+              className="block mt-2"
+            >
+              <defs>
+                <radialGradient id="coreG" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stopColor="#3B82F6" stopOpacity="0.9" />
+                  <stop offset="100%" stopColor="#1E3A8A" stopOpacity="0.9" />
+                </radialGradient>
+              </defs>
+              <ellipse
+                cx="450"
+                cy="190"
+                rx="215"
+                ry="135"
+                fill="rgba(59,130,246,0.04)"
+                stroke="#3B82F6"
+                strokeWidth="1.5"
+                strokeDasharray="8 7"
+                className="anim-fence-dash"
+              />
+              <circle cx="450" cy="190" r="36" fill="url(#coreG)" stroke="#60A5FA" strokeWidth="1.5" />
+              <g fill="#0E121A" stroke="#A78BFA" strokeWidth="2">
+                <circle cx="580" cy="190" r="14" />
+                <circle cx="542" cy="250" r="16" />
+                <circle cx="450" cy="275" r="20" />
+                <circle cx="358" cy="250" r="12" />
+                <circle cx="320" cy="190" r="18" />
+                <circle cx="450" cy="105" r="12" />
+              </g>
+              <g fontFamily="JetBrains Mono, monospace" fontSize="11" fill="#C7D2FE">
+                <text x="600" y="194">Finance (42)</text>
+                <text x="564" y="254">Support (68)</text>
+                <text x="476" y="280">Platform (140)</text>
+                <text x="270" y="254">Legal (18)</text>
+                <text x="230" y="194">Sales (210)</text>
+                <text x="468" y="110">Security (22)</text>
+              </g>
+            </svg>
+            <div className="p-3 bg-[#11151D] rounded-xl border border-[#1F2633] overflow-x-auto">
+              <table className="w-full text-left text-[12px] border-collapse">
+                <thead>
+                  <tr className="border-b border-[#1F2633] text-[#8B95A7]">
+                    <th className="pb-2 font-normal">Team</th>
+                    <th className="pb-2 font-normal">Agents</th>
+                    <th className="pb-2 font-normal">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#1F2633]">
+                  <tr><td className="py-2 text-[#E6E9EF]">Platform</td><td className="py-2">140</td><td className="py-2 text-[#22C55E]">normal</td></tr>
+                  <tr><td className="py-2 text-[#E6E9EF]">Sales</td><td className="py-2">210</td><td className="py-2 text-[#22C55E]">normal</td></tr>
+                  <tr><td className="py-2 text-[#E6E9EF]">Support</td><td className="py-2">68</td><td className="py-2 text-[#F59E0B]">waiting (2)</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         ) : (
-          <svg
-            width="100%"
-            height="380"
-            viewBox="0 0 900 380"
-            role="img"
-            aria-label="Live map: agents inside the fence with allowed, stopped and waiting edges"
-            className="block mt-2"
-          >
+          <div data-view="individual">
+            <svg
+              width="100%"
+              height="380"
+              viewBox="0 0 900 380"
+              role="img"
+              aria-label="Live map: individual agent nodes inside the fence"
+              className="block mt-2"
+            >
             <defs>
               <radialGradient id="coreG" cx="50%" cy="50%" r="50%">
                 <stop offset="0%" stopColor="#3B82F6" stopOpacity="0.9" />
@@ -322,6 +386,7 @@ export const AdminOverviewPage: React.FC = () => {
               </g>
             </g>
           </svg>
+          </div>
         )}
       </section>
 
