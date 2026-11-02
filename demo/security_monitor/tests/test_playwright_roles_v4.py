@@ -89,7 +89,7 @@ def test_auditor_records_screen_readonly(page: Page, console_server):
     _sign_in_via_signin_page(page, console_server.url, console_server.token)
 
     page.goto(f"{console_server.url}/dashboard/records")
-    expect(page.locator("body")).to_contain_text("records. Every one checked: no entries changed")
+    expect(page.locator("body")).to_contain_text("No records yet.")
     expect(page.locator("button:has-text('Export CSV')")).to_be_visible()
     expect(page.locator("body")).not_to_contain_text("Allow for this run")
     expect(page.locator("body")).not_to_contain_text("Deny all")
