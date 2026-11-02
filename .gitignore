@@ -109,3 +109,11 @@ demo/security_monitor/app/governance/os_layer/sensor
 
 # Scratch workspace
 scratch/
+
+# INFUSE benchmark raw runs
+bench/infuse/runs/raw/
+bench/infuse/runs/**/*.traj.json
+bench/infuse/runs/**/*.manifest.json
+bench/infuse/runs/**/task_*_manifest.json
+bench/infuse/runs/attack_task/
+bench/infuse/runs/benign_task/
