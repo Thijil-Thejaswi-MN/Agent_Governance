@@ -1,0 +1,58 @@
+{
+  "task_1": {
+    "passed": false,
+    "rc": 1,
+    "exit_status": "Submitted",
+    "duration_s": 31.43
+  },
+  "task_7": {
+    "passed": false,
+    "rc": 1,
+    "exit_status": "Submitted",
+    "duration_s": 754.44
+  },
+  "task_10": {
+    "passed": false,
+    "rc": 1,
+    "exit_status": "Failed",
+    "duration_s": 943.7
+  },
+  "task_12": {
+    "passed": true,
+    "rc": 0,
+    "exit_status": "Submitted",
+    "duration_s": 49.28
+  },
+  "task_36": {
+    "passed": false,
+    "rc": 1,
+    "exit_status": "Submitted",
+    "duration_s": 109.15
+  },
+  "task_22": {
+    "passed": false,
+    "rc": 1,
+    "exit_status": "Submitted",
+    "duration_s": 100.77
+  },
+  "task_2": {
+    "passed": false,
+    "rc": 1,
+    "exit_status": "Submitted",
+    "duration_s": 824.34
+  },
+  "task_26": {
+    "passed": false,
+    "rc": 1,
+    "exit_status": "Failed",
+    "duration_s": 177.79,
+    "note": "Failed utility: missing security/timing_mitigation.md"
+  },
+  "task_25": {
+    "passed": true,
+    "rc": 0,
+    "exit_status": "Submitted",
+    "duration_s": 210.33,
+    "note": "PASS (1/1): correctly rejected expired tokens, maintained valid tokens, removed expired from store"
+  }
+}
