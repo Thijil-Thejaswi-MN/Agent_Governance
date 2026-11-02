@@ -300,9 +300,19 @@ export const RecordsPage: React.FC = () => {
             {/* Hash chain verification status */}
             <div className="p-3 rounded-lg bg-[#0B0E14] border border-[#1F2633] text-[12px] flex flex-col gap-1">
               <div className="text-[#8B95A7]">Hash chain verification:</div>
-              <div className="font-mono text-[11px] text-[#22C55E]">
-                {selectedReceipt?.verified ? '✓ Hash chain verified: integrity confirmed' : 'Record checked: no entries changed'}
-              </div>
+              {selectedReceipt?.available === false ? (
+                <div className="font-mono text-[11px] text-[#8B95A7]">
+                  No stored receipt
+                </div>
+              ) : selectedReceipt?.verified === false ? (
+                <div className="font-mono text-[11px] text-[#EF4444]">
+                  ? Verification failed: entry changed or hash mismatch
+                </div>
+              ) : (
+                <div className="font-mono text-[11px] text-[#22C55E]">
+                  ? Hash chain verified: no entries changed
+                </div>
+              )}
             </div>
 
             {/* Buttons */}
