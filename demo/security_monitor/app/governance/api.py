@@ -1426,6 +1426,9 @@ async def start_governed_task_run(
     Requires operator token. Rejects concurrent runs with 409.
     Validates input files (under input/, <= 50 KB, text-only).
     """
+    if is_demo_data_enabled():
+        raise HTTPException(status_code=400, detail="Turn off demo data to run a real agent")
+
     user = authenticate_token(_token)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid token.")

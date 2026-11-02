@@ -232,3 +232,16 @@ def test_receipt_download_byte_identical_in_demo_and_non_demo(monkeypatch, tmp_p
     assert resp_on.content == resp_off.content == rc_content
 
 
+def test_demo_mode_refuses_start_run(monkeypatch, tmp_path):
+    monkeypatch.setenv("GOVERNANCE_DEMO_DATA", "1")
+    monkeypatch.setenv("GOVERNANCE_OPERATOR_TOKEN", "secret-test-token")
+    demo_db = tmp_path / "demo_run.db"
+    monkeypatch.setenv("GOVERNANCE_DEMO_DB_PATH", str(demo_db))
+
+    assert is_demo_data_enabled() is True
+    app = create_app()
+    client = TestClient(app)
+    headers = {"Authorization": "Bearer secret-test-token"}
+    resp = client.post("/api/governance/run", headers=headers, json={"prompt": "Test run"})
+    assert resp.status_code == 400
+    assert resp.json().get("detail") == "Turn off demo data to run a real agent"
