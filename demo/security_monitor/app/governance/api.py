@@ -1015,6 +1015,21 @@ async def request_expansion(payload: ExpansionSubmission) -> dict[str, Any]:
             provenance_enabled=payload.provenance_enabled,
             timeout_seconds=payload.timeout_seconds,
         )
+        if is_standing_rules_enabled():
+            with _standing_rules_lock:
+                active_rules = [r for r in _standing_rules if r.is_active]
+            storage = get_storage()
+            task = storage.get_task(payload.task_id) if storage else None
+            matched = match_rule(active_rules, req, task_team=task.team if task else None)
+            if matched:
+                get_expansion_service().approve_request(
+                    request_id=req.request_id,
+                    decided_by=f"standing_rule:{matched.rule_id}",
+                    reason=f"Matched standing rule {matched.rule_id}",
+                )
+                req.status = ExpansionStatus.APPROVED
+                req.resolved_by = f"standing_rule:{matched.rule_id}"
+
         return req.model_dump()
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
