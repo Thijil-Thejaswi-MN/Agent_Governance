@@ -29,4 +29,12 @@ def is_demo_data_enabled() -> bool:
 
 def get_demo_db_path() -> Path:
     """Returns the path to the separate demo database file."""
-    return Path(os.getenv("GOVERNANCE_DEMO_DB_PATH", "/tmp/demo_governance.db"))
+    return Path(os.getenv("GOVERNANCE_DEMO_DB_PATH", "/tmp/governance_demo.db"))
+
+
+def get_demo_size() -> int:
+    """Returns the demo size configured in GOVERNANCE_DEMO_SIZE (default 200)."""
+    try:
+        return int(os.getenv("GOVERNANCE_DEMO_SIZE", "200").strip())
+    except (ValueError, TypeError):
+        return 200

@@ -47,7 +47,8 @@ from .roles import (
     ROLE_LANDING_ROUTES,
 )
 from .inbox import group_pending
-from .scale import layout_mode, is_demo_data_enabled
+from .scale import layout_mode, is_demo_data_enabled, get_demo_db_path, get_demo_size
+from .demo_data import seed_demo_database
 from .standing_rules import (
     StandingRule,
     match_rule,
@@ -69,6 +70,13 @@ def get_receipt_dir() -> Path:
 
 
 def get_storage() -> GovernanceStorage:
+    if is_demo_data_enabled():
+        demo_path = get_demo_db_path()
+        if not demo_path.exists() or demo_path.stat().st_size == 0:
+            demo_path.parent.mkdir(parents=True, exist_ok=True)
+            seed_demo_database(demo_path, size=get_demo_size())
+        return GovernanceStorage(demo_path)
+
     env_path = os.environ.get("GOVERNANCE_DB_PATH")
     if env_path and (_default_storage.db_path != env_path):
         return GovernanceStorage(Path(env_path))
