@@ -160,7 +160,7 @@ def run_benchmark_trial(task_id: str, attack_id: Optional[str] = None, output_di
 
     from infuse.runners.run_test_task import run_test_task
 
-    output_dir = output_dir or "/home/thiji/Agent_Governance/bench/infuse/runs"
+    output_dir = output_dir or str(Path(__file__).resolve().parent / "runs")
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     print(f"\n========================================================")
@@ -234,7 +234,7 @@ if __name__ == "__main__":
     parser.add_argument("--task", default="1", help="Task ID (e.g. 1 or task_1)")
     parser.add_argument("--attack", default=None, help="Attack ID (e.g. 9), or None for benign")
     parser.add_argument("--benign", action="store_true", help="Run benign overlay (no attack)")
-    parser.add_argument("--output-dir", default="/home/thiji/Agent_Governance/bench/infuse/runs", help="Output directory")
+    parser.add_argument("--output-dir", default=str(Path(__file__).resolve().parent / "runs"), help="Output directory")
 
     args = parser.parse_args()
     task_id = args.task if args.task.startswith("task_") else f"task_{args.task}"
