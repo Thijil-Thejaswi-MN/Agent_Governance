@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-27T12:22:22.847731+00:00",
+  "generated_at": "2026-10-30T01:58:11.771660+00:00",
   "evaluation_label": "controlled evaluation, local 7\u20138B models",
   "model": "qwen2.5:7b",
   "harm_injected": {
@@ -137,6 +137,19 @@
       "timeouts": 2,
       "timeout_ratio": "2/32"
     }
+  },
+  "utility_timings_anticipated": {
+    "A": {
+      "mean_s": 6.4,
+      "mean_s_exact": 6.44,
+      "total_trials": 32
+    },
+    "C": {
+      "mean_s": 7.4,
+      "mean_s_exact": 7.38,
+      "total_trials": 32
+    },
+    "extra_s_c_vs_a": 1.0
   },
   "limitations": [
     "Controlled evaluation with local 7\u20138B models (qwen2.5:7b, llama3.1:8b).",

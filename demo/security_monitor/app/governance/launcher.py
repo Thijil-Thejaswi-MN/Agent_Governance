@@ -515,6 +515,20 @@ class TaskLauncher:
             source_label="enforced",
         )
 
+    def _set_task_status(self, task_id: str, status: TaskLifecycle, *, started: bool = False,
+                         completed: bool = False) -> None:
+        """Task lifecycle bookkeeping only (PENDING -> ACTIVE -> terminal); no enforcement reads it."""
+        t = self.storage.get_task(task_id)
+        if t is None:
+            return
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        t.status = status
+        if started:
+            t.started_at = t.started_at or now
+        if completed:
+            t.completed_at = now
+        self.storage.save_task(t)
+
     def _finish_cancelled(
         self,
         spec: TaskSpec,
@@ -905,6 +919,8 @@ class TaskLauncher:
                 detail=f"cgroup: {cg}\nScope PID: {proc.pid}",
                 source_label="enforced",
             )
+            # Lifecycle bookkeeping (read by the console; nothing enforces on it): running now.
+            self._set_task_status(task_id, TaskLifecycle.ACTIVE, started=True)
 
             # Cancellation checkpoint 4: the cgroup exists but the agent is still held at the
             # sensor gate. Under the gate lock, either cancel() already ran (kill now, the
@@ -995,6 +1011,10 @@ class TaskLauncher:
                 self._kill(f"aborted: {aborted}")
             else:
                 proc.kill()
+        except Exception:
+            # Unexpected launcher error: never leave the task looking ACTIVE.
+            self._set_task_status(task_id, TaskLifecycle.FAILED, completed=True)
+            raise
         finally:
             for fd in (gate_w, status_r):
                 if fd != -1:
@@ -1031,11 +1051,16 @@ class TaskLauncher:
             except json.JSONDecodeError:
                 shim_result = {"status": "unparseable_result"}
 
+        # Terminal status: completed, timed out (EXPIRED), or stopped (TERMINATED: operator
+        # stop, freeze/kill, abort). Launcher errors are FAILED (above, and in run_manager).
+        if (shim_result or {}).get("status") == "completed" and not self.freeze_events:
+            final_status = TaskLifecycle.COMPLETED
+        elif self.termination.get("reason") == "task_timeout":
+            final_status = TaskLifecycle.EXPIRED
+        else:
+            final_status = TaskLifecycle.TERMINATED
+        self._set_task_status(task_id, final_status, completed=True)
         t = self.storage.get_task(task_id)
-        if t:
-            t.status = TaskLifecycle.COMPLETED if (shim_result or {}).get("status") == "completed" and not self.freeze_events else TaskLifecycle.TERMINATED
-            t.completed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            self.storage.save_task(t)
 
         sensor_status = {
             "binary": str(SENSOR_BIN.name),

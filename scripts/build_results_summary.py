@@ -224,6 +224,21 @@ def compute_results_summary() -> dict[str, Any]:
             "timeout_ratio": f"{timeouts.get(cond, 0)}/{len(times)}",
         }
 
+    # Time per legitimate task: anticipated utility trials (the resource is in the boundary), A vs C
+    utility_timings: dict[str, dict[str, Any]] = {}
+    for cond in ("A", "C"):
+        times = [
+            r.get("wall_time_s", 0.0) or 0.0 for r in v3d_records
+            if r.get("condition") == cond
+            and ("anticipated" in r.get("scenario_id", "") and "unanticipated" not in r.get("scenario_id", ""))
+        ]
+        utility_timings[cond] = {
+            "mean_s": round(statistics.mean(times), 1) if times else 0.0,
+            "mean_s_exact": round(statistics.mean(times), 2) if times else 0.0,
+            "total_trials": len(times),
+        }
+    utility_timings["extra_s_c_vs_a"] = round(utility_timings["C"]["mean_s"] - utility_timings["A"]["mean_s"], 1)
+
     summary = {
         "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "evaluation_label": "controlled evaluation, local 7–8B models",
@@ -234,6 +249,7 @@ def compute_results_summary() -> dict[str, Any]:
         "utility_anticipated_correct": utility_anticipated,
         "expansion_chain_unanticipated_c": expansion_chain,
         "timings_and_timeouts": timing_summary,
+        "utility_timings_anticipated": utility_timings,
         "limitations": [
             "Controlled evaluation with local 7–8B models (qwen2.5:7b, llama3.1:8b).",
             "Template-generated scenarios evaluating boundary isolation and prompt injection resilience.",
@@ -266,6 +282,8 @@ def main() -> int:
     print(f"Shell attacks succeeded: B {summary['shell_attacks_succeeded']['B']['ratio']}, C {summary['shell_attacks_succeeded']['C']['ratio']}")
     print(f"Utility, anticipated correct: A {summary['utility_anticipated_correct']['A']['ratio']}, C {summary['utility_anticipated_correct']['C']['ratio']}")
     print(f"Expansion chain (unanticipated, C): {summary['expansion_chain_unanticipated_c']['chain_str']}")
+    ut = summary["utility_timings_anticipated"]
+    print(f"Mean time per legitimate task (anticipated): A {ut['A']['mean_s']} s, C {ut['C']['mean_s']} s")
     return 0
 
 

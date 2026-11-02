@@ -3,14 +3,14 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [ui-v2, main]
+    branches: [ui-v2, ui-v3, main]
 
 permissions:
   contents: read
 
 jobs:
   frontend:
-    name: Console build (npm ci && npm run build)
+    name: Console unit tests and build (npm ci, npm test, npm run build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -23,6 +23,7 @@ jobs:
           cache: npm
           cache-dependency-path: demo/security_monitor/app/dashboard_v2/package-lock.json
       - run: npm ci
+      - run: npm test
       - run: npm run build
       - uses: actions/upload-artifact@v4
         with:

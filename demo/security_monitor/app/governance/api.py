@@ -33,6 +33,7 @@ from .run_manager import (
 )
 
 from .expansion import ExpansionService
+from .fleet import build_fleet_summary
 from .intake import TaskIntakeService
 from .inventory import AgentInventoryService
 from .models import EnforcementMode, TaskBoundary, TaskLifecycle, TaskRecord
@@ -681,6 +682,32 @@ async def get_agent_inventory() -> list[dict[str, Any]]:
 @governance_router.get("/alerts")
 async def get_alerts() -> list[dict[str, Any]]:
     return get_inventory_service().get_alerts()
+
+
+@governance_router.get("/fleet/summary")
+async def get_fleet_summary() -> dict[str, Any]:
+    """Agents at work, waiting decisions and grouped blocked actions (Fleet page). Reads only."""
+    storage = get_storage()
+    tasks = storage.list_tasks()
+    task_dicts = [
+        {
+            "task_id": t.task_id,
+            "agent_id": t.agent_id,
+            "status": t.status.value,
+            "request_text": t.request_text,
+            "created_at": t.created_at,
+            "started_at": t.started_at,
+        }
+        for t in tasks
+    ]
+    events: list[dict[str, Any]] = []
+    snippets_by_task: dict[str, list[str]] = {}
+    for t in tasks:
+        events.extend(_build_unified_task_events(t.task_id, storage.get_events_for_task(t.task_id)))
+        snippets_by_task[t.task_id] = [p.content_snippet or "" for p in storage.get_provenance_for_task(t.task_id)]
+    pending = [_enrich_expansion_dict(e, storage) for e in storage.list_expansion_requests(status="PENDING")]
+    inventory = [i.model_dump() for i in get_inventory_service().get_inventory()]
+    return build_fleet_summary(task_dicts, inventory, pending, events, snippets_by_task)
 
 
 @governance_router.get("/config")

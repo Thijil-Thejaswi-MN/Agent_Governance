@@ -1,9 +1,11 @@
-"""Playwright smoke test for Governance Console v2.
+"""Playwright smoke test for the Governance Console (v3).
 
 Asserts:
-- Clicking every sidebar item navigates to /dashboard/<page> (no doubled basename)
-- The page heading changed as expected
-- A hard reload on /dashboard/tasks still renders the Tasks page (server fallback routing)
+- Every top-navigation item (Home, Run, Fleet, History) navigates to /dashboard/<page>
+  (no doubled basename) and shows that page's headline; the active item is marked.
+- Results is linked from Home.
+- Every v2 route redirects to its new home, so existing links keep working.
+- A hard reload on a deep link still renders the page (server fallback routing).
 """
 from __future__ import annotations
 
@@ -23,42 +25,59 @@ pytestmark = [
     pytest.mark.skipif(not HAS_PLAYWRIGHT, reason="playwright not installed (pip install -r demo/security_monitor/requirements-ui-test.txt)"),
 ]
 
+NAV = [
+    ("Run", "/dashboard/run", "What should the agent do?"),
+    ("Fleet", "/dashboard/fleet", "at work|All quiet"),
+    ("History", "/dashboard/history", "Past runs"),
+    ("Home", "/dashboard", "AI agents should only touch"),
+]
 
-def test_sidebar_navigation_and_reload(page: Page, console_server):
+REDIRECTS = [
+    ("/dashboard/tasks", "/dashboard/history"),
+    ("/dashboard/tasks/task_from_v2_link", "/dashboard/history/task_from_v2_link"),
+    ("/dashboard/approvals", "/dashboard/fleet"),
+    ("/dashboard/activity", "/dashboard/fleet"),
+    ("/dashboard/agents", "/dashboard/fleet"),
+    ("/dashboard/evaluation", "/dashboard/results"),
+    ("/dashboard/architecture", "/dashboard"),
+    ("/dashboard/no-such-page", "/dashboard"),
+]
+
+
+def test_top_navigation(page: Page, console_server):
     base_url = console_server.url
     sign_in(page, console_server)
-
-    # 1. Start at /dashboard
     page.goto(f"{base_url}/dashboard")
     expect(page).to_have_url(re.compile(r"/dashboard/?$"))
-    expect(page.locator("h1")).to_contain_text("Bind AI Agent Capabilities")
+    expect(page.locator("h1")).to_contain_text("AI agents should only touch")
+    expect(page.locator("aside, [data-sidebar]")).to_have_count(0)
 
-    # 2. Click each nav item and verify URL + heading
-    nav_targets = [
-        {"name": "Tasks", "expected_url": "/dashboard/tasks", "heading": "Governed Tasks"},
-        {"name": "Agents", "expected_url": "/dashboard/agents", "heading": "Agent Inventory"},
-        {"name": "Live Activity", "expected_url": "/dashboard/activity", "heading": "Live Event Activity"},
-        {"name": "Approvals", "expected_url": "/dashboard/approvals", "heading": "Expansion Approvals"},
-        {"name": "Evaluation", "expected_url": "/dashboard/evaluation", "heading": "Empirical Evaluation Benchmarks"},
-        {"name": "Architecture", "expected_url": "/dashboard/architecture", "heading": "System Architecture"},
-        {"name": "Overview", "expected_url": "/dashboard", "heading": "Bind AI Agent Capabilities"},
-    ]
-
-    for item in nav_targets:
-        # Click the sidebar NavLink by text
-        link = page.locator("nav").get_by_role("link", name=item["name"])
+    nav = page.get_by_role("navigation", name="Main")
+    expect(nav.get_by_role("link")).to_have_count(4)
+    for name, url, heading in NAV:
+        link = nav.get_by_role("link", name=name, exact=True)
         link.click()
-
-        # Assert URL does NOT have doubled basename like /dashboard/dashboard/...
-        expect(page).to_have_url(re.compile(f"{re.escape(item['expected_url'])}/?$"))
+        expect(page).to_have_url(re.compile(f"{re.escape(url)}/?$"))
         assert "/dashboard/dashboard" not in page.url, f"Doubled basename detected in {page.url}"
+        expect(page.locator("h1")).to_contain_text(re.compile(heading))
+        expect(link).to_have_attribute("aria-current", "page")
 
-        # Assert heading changed
-        expect(page.locator("h1")).to_contain_text(item["heading"])
+    # Results is linked from Home.
+    page.locator("#see-results").click()
+    expect(page).to_have_url(re.compile(r"/dashboard/results/?$"))
+    expect(page.locator("h1")).to_contain_text("Full results")
 
-    # 3. Hard reload on /dashboard/tasks still renders Tasks page
-    page.goto(f"{base_url}/dashboard/tasks")
-    expect(page).to_have_url(re.compile(r"/dashboard/tasks/?$"))
+
+@pytest.mark.parametrize("old,new", REDIRECTS)
+def test_old_routes_redirect(page: Page, console_server, old, new):
+    sign_in(page, console_server)
+    page.goto(f"{console_server.url}{old}")
+    expect(page).to_have_url(re.compile(f"{re.escape(new)}/?$"))
+
+
+def test_deep_link_reload(page: Page, console_server):
+    sign_in(page, console_server)
+    page.goto(f"{console_server.url}/dashboard/history")
     page.reload()
-    expect(page).to_have_url(re.compile(r"/dashboard/tasks/?$"))
-    expect(page.locator("h1")).to_contain_text("Governed Tasks")
+    expect(page).to_have_url(re.compile(r"/dashboard/history/?$"))
+    expect(page.locator("h1")).to_contain_text("Past runs")

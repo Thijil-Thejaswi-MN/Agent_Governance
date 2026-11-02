@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fleet — all agents</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&amp;family=Inter:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#070B14}
+a{color:#67E8F9}a:hover{color:#A5F3FC}
+@keyframes twinkle{0%,100%{opacity:.35}50%{opacity:.9}}
+@keyframes ping{0%{box-shadow:0 0 0 0 rgba(251,191,36,.7)}100%{box-shadow:0 0 0 12px rgba(251,191,36,0)}}
+@keyframes pingRed{0%{box-shadow:0 0 0 0 rgba(251,113,133,.7)}100%{box-shadow:0 0 0 10px rgba(251,113,133,0)}}
+@media (prefers-reduced-motion: reduce){*{animation:none !important}}
+</style>
+</helmet>
+<div style="min-height: 900px; background: radial-gradient(1000px 600px at 30% 60%, rgba(34,211,238,0.08), transparent 60%), #070B14; color: #E6EAF2; font-family: Inter, system-ui, sans-serif">
+
+<header style="display: flex; align-items: center; justify-content: space-between; padding: 20px 40px">
+<span style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 18px">Agent Governance</span>
+<nav aria-label="Main" style="display: flex; gap: 6px">
+<a href="#" style="padding: 8px 14px; border-radius: 999px; background: rgba(34,211,238,0.14); color: #A5F3FC; text-decoration: none; font-size: 14px; font-weight: 600">Fleet</a>
+<a href="Main.dc.html" style="padding: 8px 14px; color: #9AA4B8; text-decoration: none; font-size: 14px">Run</a>
+<a href="#" style="padding: 8px 14px; color: #9AA4B8; text-decoration: none; font-size: 14px">History</a>
+</nav>
+</header>
+
+<main style="max-width: 1360px; margin: 0 auto; padding: 24px 40px 56px; display: flex; flex-wrap: wrap; gap: 40px; align-items: flex-start">
+
+<section aria-label="All agents" style="flex: 999 1 620px; min-width: 0; display: flex; flex-direction: column; gap: 22px">
+<h1 style="margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 46px; line-height: 1.1; letter-spacing: -1px">1,284 agents at work.<br><span style="color: #FCD34D">3 need you.</span></h1>
+<p style="margin: 0; font-size: 17px; color: #A9B4C7">Each dot is one agent inside its own fence. Calm dots need nothing from you.</p>
+<div role="img" aria-label="Map of running agents: almost all calm, three waiting for a decision, five recently blocked" style="display: grid; grid-template-columns: repeat(48, minmax(0, 1fr)); gap: 7px; padding: 24px; border-radius: 24px; background: #0B1120; border: 1px solid rgba(148,163,184,0.14)">
+<sc-for list="{{dots}}" as="d" hint-placeholder-count="1152">
+<sc-if value="{{d.calmA}}" hint-placeholder-val="{{true}}"><span style="display: block; aspect-ratio: 1; border-radius: 50%; background: #22D3EE; opacity: .35; animation: twinkle 5s ease-in-out infinite"></span></sc-if>
+<sc-if value="{{d.calmB}}" hint-placeholder-val="{{false}}"><span style="display: block; aspect-ratio: 1; border-radius: 50%; background: #22D3EE; opacity: .35; animation: twinkle 5s ease-in-out 1.7s infinite"></span></sc-if>
+<sc-if value="{{d.calmC}}" hint-placeholder-val="{{false}}"><span style="display: block; aspect-ratio: 1; border-radius: 50%; background: #67E8F9; opacity: .25"></span></sc-if>
+<sc-if value="{{d.ask}}" hint-placeholder-val="{{false}}"><span style="display: block; aspect-ratio: 1; border-radius: 50%; background: #FBBF24; transform: scale(1.6); animation: ping 1.6s ease-out infinite"></span></sc-if>
+<sc-if value="{{d.block}}" hint-placeholder-val="{{false}}"><span style="display: block; aspect-ratio: 1; border-radius: 50%; background: #FB7185; transform: scale(1.3); animation: pingRed 2.2s ease-out infinite"></span></sc-if>
+</sc-for>
+</div>
+<div style="display: flex; flex-wrap: wrap; gap: 20px; font-size: 14px; color: #A9B4C7">
+<span><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #22D3EE; margin-right: 6px"></span>working inside its fence</span>
+<span><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #FBBF24; margin-right: 6px"></span>waiting for your decision</span>
+<span><span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #FB7185; margin-right: 6px"></span>blocked in the last hour</span>
+</div>
+<span style="font-size: 12px; color: #7C879B">Example data</span>
+</section>
+
+<section aria-label="Needs attention" style="flex: 1 1 380px; max-width: 460px; display: flex; flex-direction: column; gap: 28px">
+<div style="display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 22px">Needs you</h2>
+<div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 16px; background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.45)">
+<div style="flex: 1; min-width: 0"><div style="font-weight: 600">Finance bot wants targets.csv</div><div style="font-size: 13px; color: #A9B4C7">learned of it from inside another file</div></div>
+<a href="Live.dc.html" style="padding: 10px 14px; border-radius: 10px; background: #FBBF24; color: #1A1203; font-weight: 700; font-size: 14px; text-decoration: none">Review</a>
+</div>
+<div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 16px; background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.45)">
+<div style="flex: 1; min-width: 0"><div style="font-weight: 600">Support agent wants the CRM site</div><div style="font-size: 13px; color: #A9B4C7">not in the ticket it was given</div></div>
+<a href="Live.dc.html" style="padding: 10px 14px; border-radius: 10px; background: #FBBF24; color: #1A1203; font-weight: 700; font-size: 14px; text-decoration: none">Review</a>
+</div>
+<div style="display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 16px; background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.45)">
+<div style="flex: 1; min-width: 0"><div style="font-weight: 600">Build agent wants to write to /deploy</div><div style="font-size: 13px; color: #A9B4C7">the request said “test only”</div></div>
+<a href="Live.dc.html" style="padding: 10px 14px; border-radius: 10px; background: #FBBF24; color: #1A1203; font-weight: 700; font-size: 14px; text-decoration: none">Review</a>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 22px">Blocked today, grouped</h2>
+<div style="display: flex; align-items: baseline; gap: 14px; padding: 12px 0; border-bottom: 1px solid rgba(148,163,184,0.14)"><span style="font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 700; color: #FDA4AF; min-width: 48px">41</span><span style="font-size: 15px">agents tried to open files only mentioned inside documents</span></div>
+<div style="display: flex; align-items: baseline; gap: 14px; padding: 12px 0; border-bottom: 1px solid rgba(148,163,184,0.14)"><span style="font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 700; color: #FDA4AF; min-width: 48px">12</span><span style="font-size: 15px">agents tried to reach websites outside their task</span></div>
+<div style="display: flex; align-items: baseline; gap: 14px; padding: 12px 0"><span style="font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 700; color: #FDA4AF; min-width: 48px">3</span><span style="font-size: 15px">agents tried to read private folders</span></div>
+<a href="#" style="font-size: 14px">See every blocked action</a>
+</div>
+</section>
+
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const asks = [137, 642, 980];
+    const blocks = [215, 517, 731, 1044, 1110];
+    const dots = [];
+    for (let i = 0; i < 1152; i++) {
+      const ask = asks.indexOf(i) !== -1;
+      const block = blocks.indexOf(i) !== -1;
+      const calm = !ask && !block;
+      dots.push({ ask: ask, block: block, calmA: calm && i % 3 === 0, calmB: calm && i % 3 === 1, calmC: calm && i % 3 === 2 });
+    }
+    return { dots: dots };
+  }
+}
+</script>
+</body>
+</html>

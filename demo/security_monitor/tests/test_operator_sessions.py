@@ -31,6 +31,7 @@ READ_PATHS = [
     "/api/governance/events",
     "/api/governance/expansions",
     "/api/governance/inventory",
+    "/api/governance/fleet/summary",
     "/api/governance/alerts",
     "/api/governance/config",
     "/api/governance/run/presets",

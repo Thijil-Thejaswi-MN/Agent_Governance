@@ -64,3 +64,13 @@ def test_results_summary_exact_values():
     assert timings["D"]["total_trials"] == 32
     assert timings["D"]["mean_s"] == 26, f"Expected mean 26 s for D, got {timings['D']['mean_s']}"
 
+
+
+def test_results_summary_utility_mean_times():
+    # 7. Mean time per legitimate task (utility_v3d, anticipated, 32 per condition): A 6.4 s, C 7.4 s
+    ut = compute_results_summary()["utility_timings_anticipated"]
+    assert ut["A"]["total_trials"] == 32
+    assert ut["C"]["total_trials"] == 32
+    assert ut["A"]["mean_s"] == 6.4, f"Expected mean 6.4 s for A, got {ut['A']['mean_s']}"
+    assert ut["C"]["mean_s"] == 7.4, f"Expected mean 7.4 s for C, got {ut['C']['mean_s']}"
+    assert ut["extra_s_c_vs_a"] == 1.0
