@@ -153,21 +153,28 @@ def tracking_parse_action(self, response: dict) -> dict:
 DefaultAgent.parse_action = tracking_parse_action
 
 
-def run_benchmark_trial(task_id: str, attack_id: Optional[str] = None, output_dir: Optional[str] = None) -> Dict[str, Any]:
+def run_benchmark_trial(
+    task_id: str,
+    attack_id: Optional[str] = None,
+    output_dir: Optional[str] = None,
+    repeat: int = 1,
+) -> Dict[str, Any]:
     global format_error_count, observed_containers
     format_error_count = 0
     observed_containers = []
 
     from infuse.runners.run_test_task import run_test_task
 
-    output_dir = output_dir or str(Path(__file__).resolve().parent / "runs")
+    runs_base = Path(__file__).resolve().parent / "runs"
+    output_dir = output_dir or str(runs_base / "raw" / f"repeat_{repeat}")
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     print(f"\n========================================================")
     print(f"STARTING GOVERNED BENCHMARK TRIAL")
-    print(f"Task: {task_id}, Attack: {attack_id or 'NONE (Benign Overlay)'}")
+    print(f"Task: {task_id}, Attack: {attack_id or 'NONE (Benign Overlay)'}, Repeat: {repeat}")
     print(f"Model: ollama_chat/qwen2.5:7b (temperature=0.0, seed=42)")
     print(f"Network: --network none (enforced)")
+    print(f"Raw Output Dir: {output_dir}")
     print(f"========================================================\n")
 
     t0 = time.time()
@@ -187,9 +194,33 @@ def run_benchmark_trial(task_id: str, attack_id: Optional[str] = None, output_di
     # Locate trajectory output file
     traj_path = result.get("output_file")
     if not traj_path or not Path(traj_path).exists():
-        # Search output_dir
         found = list(Path(output_dir).rglob(f"*{task_id}*.traj.json"))
         traj_path = str(found[-1]) if found else None
+
+    # Parse evaluation results from trajectory
+    test_sh_passed = None
+    test_sh_rc = None
+    test_sh_output = ""
+    attack_passed = None
+    baseline_passed = None
+    informative = None
+
+    if traj_path and Path(traj_path).exists():
+        try:
+            tdata = json.loads(Path(traj_path).read_text(encoding="utf-8"))
+            info = tdata.get("info", {})
+            eval_info = info.get("evaluation", {})
+            if attack_id:
+                test_sh_obj = eval_info.get("test_sh", {})
+                attack_passed = test_sh_obj.get("passed")
+                baseline_passed = test_sh_obj.get("baseline_passed")
+                informative = test_sh_obj.get("informative")
+            else:
+                test_sh_passed = eval_info.get("evaluation_success")
+                test_sh_rc = eval_info.get("test_returncode")
+                test_sh_output = eval_info.get("test_output", "")
+        except Exception as e:
+            print(f"[!] Warning: failed to parse evaluation from {traj_path}: {e}", file=sys.stderr)
 
     # Determine NetworkMode of task container
     task_net_mode = observed_containers[-1]["network_mode"] if observed_containers else "none"
@@ -198,6 +229,7 @@ def run_benchmark_trial(task_id: str, attack_id: Optional[str] = None, output_di
     manifest = {
         "task_id": task_id,
         "attack_id": attack_id,
+        "repeat": repeat,
         "model": "ollama_chat/qwen2.5:7b",
         "temperature": 0.0,
         "seed": 42,
@@ -206,6 +238,10 @@ def run_benchmark_trial(task_id: str, attack_id: Optional[str] = None, output_di
         "observed_containers": observed_containers,
         "format_error_count": format_error_count,
         "duration_seconds": round(duration, 2),
+        "test_sh_passed": test_sh_passed,
+        "test_sh_returncode": test_sh_rc,
+        "attack_passed": attack_passed,
+        "informative": informative,
         "trajectory_file": traj_path,
         "result": result,
     }
@@ -215,15 +251,47 @@ def run_benchmark_trial(task_id: str, attack_id: Optional[str] = None, output_di
     manifest_path = Path(output_dir) / f"{task_id}_{mode_str}_{stamp}_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2))
 
+    # Append to summary.jsonl in runs/
+    summary_path = runs_base / "summary.jsonl"
+    summary_record = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "task_id": task_id,
+        "attack_id": attack_id,
+        "trial_type": "attack" if attack_id else "benign",
+        "repeat": repeat,
+        "model": "ollama_chat/qwen2.5:7b",
+        "temperature": 0.0,
+        "seed": 42,
+        "container_network": task_net_mode,
+        "format_errors": format_error_count,
+        "n_steps": result.get("n_steps", 0),
+        "exit_status": result.get("exit_status", ""),
+        "test_sh_passed": test_sh_passed,
+        "test_sh_returncode": test_sh_rc,
+        "attack_passed": attack_passed,
+        "baseline_passed": baseline_passed,
+        "informative": informative,
+        "duration_s": round(duration, 2),
+    }
+    with open(summary_path, "a", encoding="utf-8") as sf:
+        sf.write(json.dumps(summary_record) + "\n")
+
     print(f"\n========================================================")
     print(f"TRIAL EXECUTION SUMMARY")
+    print(f"Task: {task_id}, Repeat: {repeat}")
     print(f"Manifest written to: {manifest_path}")
     print(f"Trajectory written to: {traj_path}")
+    print(f"Summary updated at: {summary_path}")
     print(f"Network Mode: {manifest['network_mode']}")
     print(f"Container ID: {manifest['container_id']}")
     print(f"FormatError count: {format_error_count}")
     print(f"Duration: {manifest['duration_seconds']}s")
-    print(f"Test Result: {json.dumps(result, indent=2)}")
+    if not attack_id:
+        print(f"Utility test.sh Passed: {test_sh_passed} (returncode: {test_sh_rc})")
+        if test_sh_output:
+            print(f"test.sh Output:\n{test_sh_output.strip()}")
+    else:
+        print(f"Attack Passed: {attack_passed} (Informative: {informative})")
     print(f"========================================================\n")
 
     return manifest
@@ -234,10 +302,11 @@ if __name__ == "__main__":
     parser.add_argument("--task", default="1", help="Task ID (e.g. 1 or task_1)")
     parser.add_argument("--attack", default=None, help="Attack ID (e.g. 9), or None for benign")
     parser.add_argument("--benign", action="store_true", help="Run benign overlay (no attack)")
-    parser.add_argument("--output-dir", default=str(Path(__file__).resolve().parent / "runs"), help="Output directory")
+    parser.add_argument("--output-dir", default=None, help="Output directory")
+    parser.add_argument("--repeat", type=int, default=1, help="Repeat index (default: 1)")
 
     args = parser.parse_args()
     task_id = args.task if args.task.startswith("task_") else f"task_{args.task}"
     attack_id = None if args.benign else args.attack
 
-    run_benchmark_trial(task_id=task_id, attack_id=attack_id, output_dir=args.output_dir)
+    run_benchmark_trial(task_id=task_id, attack_id=attack_id, output_dir=args.output_dir, repeat=args.repeat)
