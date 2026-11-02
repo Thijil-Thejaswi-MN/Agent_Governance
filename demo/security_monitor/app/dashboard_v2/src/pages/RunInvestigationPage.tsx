@@ -411,7 +411,7 @@ export const RunInvestigationPage: React.FC = () => {
               <h3 className="text-[14px] font-bold text-[#E6E9EF]">Record Verification</h3>
               <div className="p-3 rounded-lg bg-[#0B0E14] border border-[#1F2633] font-mono text-[12px] text-[#A7B0C0]">
                 <div>Hash chain integrity: {receipt?.verified ? 'Intact' : 'Record checked: no entries changed'}</div>
-                <div>Final Hash: {receipt?.final_hash || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'}</div>
+                <div>Final Hash: {receipt?.final_hash || '—'}</div>
               </div>
             </div>
           )}

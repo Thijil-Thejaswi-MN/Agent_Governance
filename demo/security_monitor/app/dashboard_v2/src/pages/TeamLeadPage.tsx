@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import { TaskRecord, ExpansionItem } from '../types';
+import { TaskRecord, ExpansionItem, RecordsSummary } from '../types';
 import { useAuth } from '../context/AuthContext';
 
 export const TeamLeadPage: React.FC = () => {
@@ -11,6 +11,7 @@ export const TeamLeadPage: React.FC = () => {
 
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [expansions, setExpansions] = useState<ExpansionItem[]>([]);
+  const [recordsSummary, setRecordsSummary] = useState<RecordsSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -71,17 +72,9 @@ export const TeamLeadPage: React.FC = () => {
     agentsMap.set(aid, existing);
   });
 
-  // Fallback designed list if empty
-  const defaultAgents = [
-    { agentId: 'finance-report-bot', owner: 'Dev P.', actions: 1240, stops: 27, status: 'running', taskIds: [] as string[] },
-    { agentId: 'invoice-matcher', owner: 'Sarah K.', actions: 890, stops: 0, status: 'running', taskIds: [] as string[] },
-    { agentId: 'forecast-agent', owner: 'Alex M.', actions: 412, stops: 2, status: 'idle', taskIds: [] as string[] },
-    { agentId: 'expense-checker', owner: 'Ravi T.', actions: 670, stops: 1, status: 'idle', taskIds: [] as string[] },
-    { agentId: 'ledger-sync', owner: 'Meera S.', actions: 3015, stops: 0, status: 'running', taskIds: [] as string[] },
-    { agentId: 'tax-prep-bot', owner: 'Ravi T.', actions: 212, stops: 6, status: 'stopped', taskIds: [] as string[] },
-  ];
 
-  const agentRows = agentsMap.size > 0 ? Array.from(agentsMap.values()) : defaultAgents;
+
+  const agentRows = Array.from(agentsMap.values());
 
   // Heatmap hourly data generator for 24 columns
   const hours = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
@@ -121,17 +114,27 @@ export const TeamLeadPage: React.FC = () => {
         <div className="p-4 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col justify-between anim-rise">
           <div className="text-[12px] font-medium text-[#8B95A7]">Stopped at the fence</div>
           <div className="mt-2 text-3xl font-bold text-[#EF4444] tracking-tight">
-            {stoppedCount || 37}
+            {stoppedCount}
           </div>
           <div className="mt-1 text-[12px] text-[#8B95A7]">today · prevented by policy</div>
         </div>
 
         <div className="p-4 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col justify-between anim-rise">
           <div className="text-[12px] font-medium text-[#8B95A7]">Records checked</div>
-          <div className="mt-2 text-3xl font-bold text-[#22C55E] tracking-tight">
-            100%
+          <div className={`mt-2 text-3xl font-bold tracking-tight ${recordsSummary && recordsSummary.failed > 0 ? 'text-[#EF4444]' : 'text-[#22C55E]'}`}>
+            {!recordsSummary || recordsSummary.total === 0
+              ? '—'
+              : recordsSummary.failed === 0
+              ? `${Math.round((recordsSummary.verified / recordsSummary.total) * 100)}%`
+              : `${recordsSummary.failed} failed`}
           </div>
-          <div className="mt-1 text-[12px] text-[#8B95A7]">Record checked: no entries changed</div>
+          <div className="mt-1 text-[12px] text-[#8B95A7]">
+            {!recordsSummary || recordsSummary.total === 0
+              ? 'No records yet'
+              : recordsSummary.failed === 0
+              ? `${recordsSummary.verified} of ${recordsSummary.total} records checked`
+              : `${recordsSummary.failed} of ${recordsSummary.total} failed check`}
+          </div>
         </div>
       </section>
 

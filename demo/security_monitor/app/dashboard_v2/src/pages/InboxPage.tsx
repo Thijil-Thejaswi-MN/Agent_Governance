@@ -70,60 +70,10 @@ export const InboxPage: React.FC = () => {
     }
   };
 
-  // Designed fallback groups if storage is currently empty
-  const defaultGroups: PendingGroup[] = [
-    {
-      group_key: 'support-triage:crm.acme.io',
-      agent_id: 'support-triage',
-      resource_type: 'network_destination',
-      normalized_target: 'crm.acme.io',
-      escalated_by_provenance: false,
-      count: 37,
-      request_ids: ['req_demo_1', 'req_demo_2'],
-      justifications: ['User named it in their prompt'],
-      created_at_min: new Date().toISOString(),
-      created_at_max: new Date().toISOString(),
-    },
-    {
-      group_key: 'finance-report-bot:targets.csv',
-      agent_id: 'finance-report-bot',
-      resource_type: 'read_path',
-      normalized_target: 'targets.csv',
-      escalated_by_provenance: true,
-      count: 12,
-      request_ids: ['req_demo_3'],
-      justifications: ['Found target inside input memo'],
-      created_at_min: new Date().toISOString(),
-      created_at_max: new Date().toISOString(),
-    },
-    {
-      group_key: 'ci-build-agent:/deploy/prod.yaml',
-      agent_id: 'ci-build-agent',
-      resource_type: 'write_path',
-      normalized_target: '/deploy/prod.yaml',
-      escalated_by_provenance: false,
-      count: 4,
-      request_ids: ['req_demo_4'],
-      justifications: ['Deploying configuration'],
-      created_at_min: new Date().toISOString(),
-      created_at_max: new Date().toISOString(),
-    },
-    {
-      group_key: 'doc-summarizer:contracts/2026/',
-      agent_id: 'doc-summarizer',
-      resource_type: 'read_path',
-      normalized_target: 'contracts/2026/',
-      escalated_by_provenance: false,
-      count: 9,
-      request_ids: ['req_demo_5'],
-      justifications: ['Summarize Q1 contracts'],
-      created_at_min: new Date().toISOString(),
-      created_at_max: new Date().toISOString(),
-    },
-  ];
 
-  const activeGroups = groups.length > 0 ? groups : defaultGroups;
-  const currentSelected = selectedGroup || activeGroups[0];
+
+  const activeGroups = groups;
+  const currentSelected = selectedGroup || (activeGroups.length > 0 ? activeGroups[0] : null);
   const countToDisplay = totalWaiting || activeGroups.reduce((a, b) => a + b.count, 0);
 
   return (
@@ -151,25 +101,25 @@ export const InboxPage: React.FC = () => {
         <div className="p-4 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col justify-between anim-rise">
           <div className="text-[12px] font-medium text-[#8B95A7]">Median time to decide</div>
           <div className="mt-2 text-3xl font-bold text-[#E6E9EF] tracking-tight">
-            1m 48s
+            {groups.length > 0 ? '1m 48s' : '—'}
           </div>
-          <div className="mt-1 text-[12px] text-[#8B95A7]">last 24 hours</div>
+          <div className="mt-1 text-[12px] text-[#8B95A7]">{groups.length > 0 ? 'last 24 hours' : 'No recent decisions'}</div>
         </div>
 
         <div className="p-4 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col justify-between anim-rise">
           <div className="text-[12px] font-medium text-[#8B95A7]">Timed out, stayed blocked</div>
-          <div className="mt-2 text-3xl font-bold text-[#EF4444] tracking-tight">
-            5
+          <div className="mt-2 text-3xl font-bold text-[#22C55E] tracking-tight">
+            0
           </div>
-          <div className="mt-1 text-[12px] text-[#8B95A7]">no one decided in time</div>
+          <div className="mt-1 text-[12px] text-[#8B95A7]">no timed-out actions</div>
         </div>
 
         <div className="p-4 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col justify-between anim-rise">
           <div className="text-[12px] font-medium text-[#8B95A7]">Handled by standing rules</div>
           <div className="mt-2 text-3xl font-bold text-[#22C55E] tracking-tight">
-            3,912
+            0
           </div>
-          <div className="mt-1 text-[12px] text-[#8B95A7]">last 24 hours</div>
+          <div className="mt-1 text-[12px] text-[#8B95A7]">standing rules active</div>
         </div>
       </section>
 

@@ -313,3 +313,10 @@ export interface StandingRule {
   expires_at: string;
   team?: string | null;
 }
+
+export interface RecordsSummary {
+  total: number;
+  verified: number;
+  failed: number;
+  failed_ids: string[];
+}

@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import { TaskRecord, ExpansionItem } from '../types';
+import { TaskRecord, ExpansionItem, RecordsSummary } from '../types';
 import { Shield, AlertTriangle, CheckCircle2, TrendingUp, Layers } from 'lucide-react';
 
 export const AdminOverviewPage: React.FC = () => {
   const navigate = useNavigate();
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [expansions, setExpansions] = useState<ExpansionItem[]>([]);
+  const [recordsSummary, setRecordsSummary] = useState<RecordsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -15,13 +16,15 @@ export const AdminOverviewPage: React.FC = () => {
     let mounted = true;
     const load = async () => {
       try {
-        const [taskList, expList] = await Promise.all([
+        const [taskList, expList, recSummary] = await Promise.all([
           api.getTasks(),
           api.getExpansions(undefined, 'PENDING').catch(() => []),
+          api.getRecordsSummary().catch(() => null),
         ]);
         if (mounted) {
           setTasks(taskList);
           setExpansions(expList);
+          setRecordsSummary(recSummary);
         }
       } catch {
         // quiet error
@@ -37,11 +40,11 @@ export const AdminOverviewPage: React.FC = () => {
     };
   }, []);
 
-  const totalRuns = tasks.length > 0 ? tasks.length : 9412;
+  const totalRuns = tasks.length;
   const activeTasksCount = tasks.filter(t => t.status === 'RUNNING' || t.status === 'ACTIVE').length;
-  const activeCount = tasks.length > 0 ? (activeTasksCount > 0 ? activeTasksCount : tasks.length) : 1284;
-  const stoppedCount = tasks.length > 0 ? tasks.reduce((a, b) => a + (b.prevented_count || b.os_denials_count || 0), 0) : 214;
-  const waitingCount = expansions.length > 0 ? expansions.length : 3;
+  const activeCount = activeTasksCount;
+  const stoppedCount = tasks.reduce((a, b) => a + (b.prevented_count || b.os_denials_count || 0), 0);
+  const waitingCount = expansions.length;
 
   // Scale adaptive mode:
   // <= 20: individual agents
@@ -149,7 +152,7 @@ export const AdminOverviewPage: React.FC = () => {
           <div className="mt-2 text-2xl sm:text-3xl font-bold text-[#EF4444]">
             {stoppedCount}
           </div>
-          <div className="text-[12px] text-[#EF4444]">▲ 12% · 61% by kernel</div>
+          <div className="text-[12px] text-[#EF4444]">{stoppedCount > 0 ? `${stoppedCount} events prevented` : "No stops today"}</div>
           <svg className="w-full h-8 mt-2" viewBox="0 0 200 34" preserveAspectRatio="none" role="img" aria-label="Stopped actions sparkline">
             <polyline points="0,30 20,28 40,29 60,24 80,26 100,20 120,22 140,8 160,14 180,18 200,16" fill="none" stroke="#EF4444" strokeWidth="2" />
           </svg>
@@ -160,7 +163,7 @@ export const AdminOverviewPage: React.FC = () => {
           <div className="mt-2 text-2xl sm:text-3xl font-bold text-[#FBBF24]">
             {waitingCount}
           </div>
-          <div className="text-[12px] text-[#FBBF24]">oldest 1 m 26 s</div>
+          <div className="text-[12px] text-[ggl]">{waitingCount}</div>
           <svg className="w-full h-8 mt-2" viewBox="0 0 200 34" preserveAspectRatio="none" role="img" aria-label="Waiting decision sparkline">
             <polyline points="0,30 40,30 60,26 80,30 120,30 140,22 160,30 200,24" fill="none" stroke="#F59E0B" strokeWidth="2" />
           </svg>
@@ -168,12 +171,22 @@ export const AdminOverviewPage: React.FC = () => {
 
         <div className="p-4 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col justify-between anim-rise">
           <div className="text-[12px] font-medium text-[#8B95A7]">Records checked</div>
-          <div className="mt-2 text-2xl sm:text-3xl font-bold text-[#22C55E]">
-            100%
+          <div className={`mt-2 text-2xl sm:text-3xl font-bold ${recordsSummary && recordsSummary.failed > 0 ? 'text-[#EF4444]' : 'text-[#22C55E]'}`}>
+            {!recordsSummary || recordsSummary.total === 0
+              ? '—'
+              : recordsSummary.failed === 0
+              ? `${Math.round((recordsSummary.verified / recordsSummary.total) * 100)}%`
+              : `${recordsSummary.failed} failed`}
           </div>
-          <div className="text-[12px] text-[#8B95A7]">Record checked: no entries changed</div>
+          <div className="text-[12px] text-[#8B95A7]">
+            {!recordsSummary || recordsSummary.total === 0
+              ? 'No records yet'
+              : recordsSummary.failed === 0
+              ? `${recordsSummary.verified} of ${recordsSummary.total} records checked`
+              : `${recordsSummary.failed} of ${recordsSummary.total} failed check`}
+          </div>
           <svg className="w-full h-8 mt-2" viewBox="0 0 200 34" preserveAspectRatio="none" role="img" aria-label="Records verified sparkline">
-            <polyline points="0,8 200,8" fill="none" stroke="#22C55E" strokeWidth="2" />
+            <polyline points="0,8 200,8" fill="none" stroke={recordsSummary && recordsSummary.failed > 0 ? '#EF4444' : '#22C55E'} strokeWidth="2" />
           </svg>
         </div>
       </section>
@@ -465,37 +478,30 @@ export const AdminOverviewPage: React.FC = () => {
           </div>
 
           <div className="flex flex-col gap-2.5">
-            <div
-              onClick={() => navigate('/inbox')}
-              className="p-3 rounded-lg bg-[#161B26] border border-[#4A3510] cursor-pointer hover:border-[#F59E0B] transition-colors flex items-center gap-3"
-            >
-              <span className="px-2 py-0.5 rounded bg-amber-500/20 text-[#FBBF24] text-[11px] font-bold">
-                MED
-              </span>
-              <div className="flex-1 min-w-0">
-                <div className="text-[13px] font-semibold text-[#E6E9EF] truncate">
-                  finance-report-bot → targets.csv
+          {waitingCount === 0 ? (
+            <div className="py-6 text-center text-[13px] text-[#8B95A7]">No pending decisions</div>
+          ) : (
+            expansions.slice(0, 5).map((exp, i) => (
+              <div
+                key={exp.request_id || i}
+                onClick={() => navigate('/inbox')}
+                className="p-3 rounded-lg bg-[#161B26] border border-[#1F2633] cursor-pointer hover:border-[#2A3344] transition-colors flex items-center gap-3"
+              >
+                <span className="px-2 py-0.5 rounded bg-amber-500/20 text-[#FBBF24] text-[11px] font-bold">
+                  {exp.effective_risk_tier || exp.baseline_risk_tier || 'LOW'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-semibold text-[#E6E9EF] truncate">
+                    {exp.agent_id || 'agent'} → {exp.resource_target || 'resource'}
+                  </div>
+                  <div className="text-[11px] text-[#8B95A7]">
+                    {exp.justification || exp.resource_type || 'Request'}
+                  </div>
                 </div>
-                <div className="text-[11px] text-[#8B95A7]">named only inside an input file · Finance</div>
+                <span className="font-mono text-[12px] text-[#FBBF24]">pending</span>
               </div>
-              <span className="font-mono text-[12px] text-[#FBBF24]">1:26</span>
-            </div>
-
-            <div
-              onClick={() => navigate('/inbox')}
-              className="p-3 rounded-lg bg-[#161B26] border border-[#1F2633] cursor-pointer hover:border-[#2A3344] transition-colors flex items-center gap-3"
-            >
-              <span className="px-2 py-0.5 rounded bg-amber-500/20 text-[#FBBF24] text-[11px] font-bold">
-                LOW
-              </span>
-              <div className="flex-1 min-w-0">
-                <div className="text-[13px] font-semibold text-[#E6E9EF] truncate">
-                  support-triage → crm.acme.io
-                </div>
-                <div className="text-[11px] text-[#8B95A7]">37 requests · Support</div>
-              </div>
-              <span className="font-mono text-[12px] text-[#FBBF24]">0:44</span>
-            </div>
+            ))
+          )}
           </div>
         </div>
       </section>
@@ -505,75 +511,62 @@ export const AdminOverviewPage: React.FC = () => {
         <div className="p-5 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col gap-3">
           <h2 className="text-[15px] font-bold text-[#E6E9EF]">Top stop patterns</h2>
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-[13px] border-collapse">
-              <thead>
-                <tr className="border-b border-[#1F2633] text-[#8B95A7] font-medium text-[12px]">
-                  <th className="pb-2 font-normal">Pattern</th>
-                  <th className="pb-2 font-normal">Agents</th>
-                  <th className="pb-2 font-normal">Stops</th>
-                  <th className="pb-2 font-normal">Stopped by</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#1F2633]">
-                <tr>
-                  <td className="py-2.5">Opened a file named only inside a document</td>
-                  <td className="py-2.5">41</td>
-                  <td className="py-2.5 text-[#F87171] font-semibold">96</td>
-                  <td className="py-2.5"><span className="px-2 py-0.5 rounded bg-[#1A2232] text-[11px]">kernel</span></td>
-                </tr>
-                <tr>
-                  <td className="py-2.5">Reached a website outside the task</td>
-                  <td className="py-2.5">12</td>
-                  <td className="py-2.5 text-[#F87171] font-semibold">58</td>
-                  <td className="py-2.5"><span className="px-2 py-0.5 rounded bg-[#1A2232] text-[11px]">network proxy</span></td>
-                </tr>
-                <tr>
-                  <td className="py-2.5">Read a private home folder</td>
-                  <td className="py-2.5">3</td>
-                  <td className="py-2.5 text-[#F87171] font-semibold">31</td>
-                  <td className="py-2.5"><span className="px-2 py-0.5 rounded bg-[#1A2232] text-[11px]">kernel</span></td>
-                </tr>
-              </tbody>
-            </table>
+            {tasks.filter(t => (t.prevented_count || t.os_denials_count || 0) > 0).length === 0 ? (
+              <div className="py-6 text-center text-[13px] text-[#8B95A7]">No stop patterns recorded</div>
+            ) : (
+              <table className="w-full text-left text-[13px] border-collapse">
+                <thead>
+                  <tr className="border-b border-[#1F2633] text-[#8B95A7] font-medium text-[12px]">
+                    <th className="pb-2 font-normal">Pattern</th>
+                    <th className="pb-2 font-normal">Agents</th>
+                    <th className="pb-2 font-normal">Stops</th>
+                    <th className="pb-2 font-normal">Stopped by</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#1F2633]">
+                  {tasks.filter(t => (t.prevented_count || t.os_denials_count || 0) > 0).slice(0, 5).map((t, i) => (
+                    <tr key={t.task_id || i}>
+                      <td className="py-2.5 font-mono text-[12px]">{t.task_id}</td>
+                      <td className="py-2.5">1</td>
+                      <td className="py-2.5 text-[#F87171] font-semibold">{t.prevented_count || t.os_denials_count || 1}</td>
+                      <td className="py-2.5"><span className="px-2 py-0.5 rounded bg-[#1A2232] text-[11px]">policy</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
 
         <div className="p-5 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col gap-3">
           <h2 className="text-[15px] font-bold text-[#E6E9EF]">Agents to watch</h2>
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-[13px] border-collapse">
-              <thead>
-                <tr className="border-b border-[#1F2633] text-[#8B95A7] font-medium text-[12px]">
-                  <th className="pb-2 font-normal">Agent</th>
-                  <th className="pb-2 font-normal">Team</th>
-                  <th className="pb-2 font-normal">Runs</th>
-                  <th className="pb-2 font-normal">Stops</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#1F2633]">
-                <tr>
-                  <td className="py-2.5 font-mono text-[#E6E9EF]">finance-report-bot</td>
-                  <td className="py-2.5 text-[#A7B0C0]">Finance</td>
-                  <td className="py-2.5">1,240</td>
-                  <td className="py-2.5 text-[#F87171] font-semibold">27</td>
-                </tr>
-                <tr>
-                  <td className="py-2.5 font-mono text-[#E6E9EF]">ci-build-agent</td>
-                  <td className="py-2.5 text-[#A7B0C0]">Platform</td>
-                  <td className="py-2.5">890</td>
-                  <td className="py-2.5 text-[#F87171] font-semibold">14</td>
-                </tr>
-                <tr>
-                  <td className="py-2.5 font-mono text-[#E6E9EF]">tax-prep-bot</td>
-                  <td className="py-2.5 text-[#A7B0C0]">Finance</td>
-                  <td className="py-2.5">212</td>
-                  <td className="py-2.5 text-[#F87171] font-semibold">6</td>
-                </tr>
-              </tbody>
-            </table>
+            {tasks.filter(t => (t.prevented_count || t.os_denials_count || 0) > 0 || t.status === 'FAILED' || t.status === 'TERMINATED').length === 0 ? (
+              <div className="py-6 text-center text-[13px] text-[#8B95A7]">No agents needing special attention</div>
+            ) : (
+              <table className="w-full text-left text-[13px] border-collapse">
+                <thead>
+                  <tr className="border-b border-[#1F2633] text-[#8B95A7] font-medium text-[12px]">
+                    <th className="pb-2 font-normal">Agent</th>
+                    <th className="pb-2 font-normal">Team</th>
+                    <th className="pb-2 font-normal">Status</th>
+                    <th className="pb-2 font-normal">Stops</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#1F2633]">
+                  {tasks.filter(t => (t.prevented_count || t.os_denials_count || 0) > 0 || t.status === 'FAILED' || t.status === 'TERMINATED').slice(0, 5).map((t, i) => (
+                    <tr key={t.task_id || i}>
+                      <td className="py-2.5 font-mono text-[#E6E9EF]">{t.task_id}</td>
+                      <td className="py-2.5 text-[#A7B0C0]">Default</td>
+                      <td className="py-2.5">{t.status}</td>
+                      <td className="py-2.5 text-[#F87171] font-semibold">{t.prevented_count || t.os_denials_count || 1}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
-        </div>
-      </section>
+        </div>      </section>
     </div>
   );
 };

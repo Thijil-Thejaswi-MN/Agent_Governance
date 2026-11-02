@@ -103,6 +103,9 @@ export const api = {
   getTaskReceipt: (taskId: string) =>
     request<ReceiptResponse>(`${API_BASE}/tasks/${taskId}/receipt`),
 
+  getRecordsSummary: () =>
+    request<{ total: number; verified: number; failed: number; failed_ids: string[] }>(`${API_BASE}/records/summary`),
+
   // Expansions
   getExpansions: (taskId?: string, status?: string) => {
     const params = new URLSearchParams();

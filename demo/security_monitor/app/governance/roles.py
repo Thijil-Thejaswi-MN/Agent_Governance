@@ -204,6 +204,10 @@ class PermissionMatrix:
         return user.role in (Role.ADMIN, Role.SECURITY_REVIEWER, Role.AUDITOR)
 
     @staticmethod
+    def can_view_records_summary(user: UserSession) -> bool:
+        return user.role in (Role.ADMIN, Role.SECURITY_REVIEWER, Role.AUDITOR)
+
+    @staticmethod
     def can_download_or_verify_record(user: UserSession, task_owner: str | None, task_team: str | None) -> bool:
         if user.role in (Role.ADMIN, Role.SECURITY_REVIEWER, Role.AUDITOR):
             return True

@@ -670,6 +670,82 @@ async def get_task_events(task_id: str) -> list[dict[str, Any]]:
     return _build_unified_task_events(task_id, storage_events)
 
 
+_records_verification_cache: dict[str, tuple[float, bool]] = {}
+_records_cache_lock = threading.Lock()
+
+
+@governance_router.get("/records/summary")
+async def get_records_summary(request: Request = None) -> dict[str, Any]:
+    """Runs verify_chain on every stored receipt (cached by file mtime) and returns summary counts.
+    Auditor role and above can read it.
+    """
+    user = get_current_user_session(request)
+    if not PermissionMatrix.can_view_records_summary(user):
+        raise HTTPException(status_code=403, detail="Forbidden: Auditor role or above required to view records summary.")
+
+    receipts_dir_env = os.getenv("RECEIPTS_DIR")
+    if receipts_dir_env:
+        receipts_dir = Path(receipts_dir_env)
+    else:
+        receipts_dir = Path.home() / "agent_workspaces" / "receipts"
+
+    candidate_files: list[Path] = []
+    if receipts_dir.is_dir():
+        candidate_files.extend(receipts_dir.glob("*.json"))
+
+    ckpt_dir = Path(__file__).resolve().parents[3] / "data" / "evaluation_v3" / "checkpoint1" / "receipts"
+    if not receipts_dir_env and ckpt_dir.is_dir():
+        for f in ckpt_dir.glob("*.json"):
+            if not any(cf.name == f.name for cf in candidate_files):
+                candidate_files.append(f)
+
+    from .receipt import verify_chain
+
+    total = 0
+    verified = 0
+    failed = 0
+    failed_ids: list[str] = []
+
+    for rf in candidate_files:
+        try:
+            st = rf.stat()
+            mtime = st.st_mtime
+            key = str(rf.resolve())
+            with _records_cache_lock:
+                cached = _records_verification_cache.get(key)
+            if cached and cached[0] == mtime:
+                is_valid = cached[1]
+            else:
+                data = json.loads(rf.read_text(encoding="utf-8"))
+                events = data.get("events", [])
+                ok, final, msg = verify_chain(events)
+                is_valid = ok
+                if ok:
+                    hc = data.get("hash_chain", {})
+                    if hc.get("count") != len(events) or hc.get("final_hash") != final:
+                        is_valid = False
+                with _records_cache_lock:
+                    _records_verification_cache[key] = (mtime, is_valid)
+
+            total += 1
+            if is_valid:
+                verified += 1
+            else:
+                failed += 1
+                failed_ids.append(rf.stem)
+        except Exception:
+            total += 1
+            failed += 1
+            failed_ids.append(rf.stem)
+
+    return {
+        "total": total,
+        "verified": verified,
+        "failed": failed,
+        "failed_ids": failed_ids,
+    }
+
+
 @governance_router.get("/tasks/{task_id}/receipt")
 async def get_task_receipt(task_id: str, request: Request = None) -> dict[str, Any]:
     """Retrieves a stored task receipt and recomputes its SHA-256 hash chain (integrity only; not signed)."""

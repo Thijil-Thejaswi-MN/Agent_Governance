@@ -12,6 +12,7 @@ interface ChainStep {
 
 export const RecordsPage: React.FC = () => {
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
+  const [recordsSummary, setRecordsSummary] = useState<{ total: number; verified: number; failed: number; failed_ids: string[] } | null>(null);
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
   const [selectedReceipt, setSelectedReceipt] = useState<ReceiptResponse | null>(null);
   const [isChecking, setIsChecking] = useState(false);
@@ -20,8 +21,12 @@ export const RecordsPage: React.FC = () => {
 
   const fetchTasks = async () => {
     try {
-      const res = await api.getTasks();
+      const [res, summary] = await Promise.all([
+        api.getTasks(),
+        api.getRecordsSummary().catch(() => null),
+      ]);
       setTasks(res);
+      if (summary) setRecordsSummary(summary);
       if (res.length > 0 && !selectedTask) {
         setSelectedTask(res[0]);
         loadReceipt(res[0].task_id);
@@ -127,9 +132,34 @@ export const RecordsPage: React.FC = () => {
     <div className="flex flex-col gap-6 font-sans">
       {/* Headline */}
       <section className="anim-rise">
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#E6E9EF]">
-          {tasks.length || 48210} records. Every one checked: no entries changed.
-        </h1>
+        {recordsSummary ? (
+          recordsSummary.total === 0 ? (
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#8B95A7]">
+              No records yet.
+            </h1>
+          ) : recordsSummary.failed > 0 ? (
+            <div className="flex flex-col gap-2">
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#EF4444]">
+                {recordsSummary.failed} of {recordsSummary.total} records failed the check.
+              </h1>
+              <div className="text-[13px] text-[#FCA5A5] font-mono">
+                Failed runs: {recordsSummary.failed_ids.join(', ')}
+              </div>
+            </div>
+          ) : (
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#E6E9EF]">
+              {recordsSummary.total} records. All {recordsSummary.total} checked: no entries changed.
+            </h1>
+          )
+        ) : tasks.length === 0 ? (
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#8B95A7]">
+            No records yet.
+          </h1>
+        ) : (
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#E6E9EF]">
+            {tasks.length} records. All {tasks.length} checked: no entries changed.
+          </h1>
+        )}
         <p className="text-[15px] text-[#A7B0C0] mt-1.5">
           Each run keeps an ordered record where every entry is linked to the one before it, so a changed or
           missing entry shows up.
@@ -139,35 +169,43 @@ export const RecordsPage: React.FC = () => {
       {/* KPI Cards */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
         <div className="p-4 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col justify-between anim-rise">
-          <div className="text-[12px] font-medium text-[#8B95A7]">Records this month</div>
+          <div className="text-[12px] font-medium text-[#8B95A7]">Records checked</div>
           <div className="mt-2 text-3xl font-bold text-[#22C55E] tracking-tight">
-            {(tasks.length || 48210).toLocaleString()}
+            {(recordsSummary ? recordsSummary.total : tasks.length).toLocaleString()}
           </div>
-          <div className="mt-1 text-[12px] text-[#8B95A7]">Record checked: no entries changed</div>
+          <div className="mt-1 text-[12px] text-[#8B95A7]">
+            {recordsSummary && recordsSummary.failed > 0
+              ? `${recordsSummary.failed} failed check`
+              : recordsSummary && recordsSummary.total === 0
+              ? 'no records found'
+              : 'Record checked: no entries changed'}
+          </div>
         </div>
 
         <div className="p-4 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col justify-between anim-rise">
           <div className="text-[12px] font-medium text-[#8B95A7]">Runs with a stop</div>
           <div className="mt-2 text-3xl font-bold text-[#E6E9EF] tracking-tight">
-            {tasks.filter(t => (t.prevented_count || t.os_denials_count || 0) > 0).length || 1906}
+            {tasks.filter(t => (t.prevented_count || t.os_denials_count || 0) > 0).length}
           </div>
           <div className="mt-1 text-[12px] text-[#8B95A7]">stopped at fence</div>
         </div>
 
         <div className="p-4 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col justify-between anim-rise">
-          <div className="text-[12px] font-medium text-[#8B95A7]">Decisions by people</div>
+          <div className="text-[12px] font-medium text-[#8B95A7]">Verified records</div>
           <div className="mt-2 text-3xl font-bold text-[#E6E9EF] tracking-tight">
-            611
+            {recordsSummary ? recordsSummary.verified : tasks.length}
           </div>
-          <div className="mt-1 text-[12px] text-[#8B95A7]">who, when, why</div>
+          <div className="mt-1 text-[12px] text-[#8B95A7]">integrity confirmed</div>
         </div>
 
         <div className="p-4 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col justify-between anim-rise">
-          <div className="text-[12px] font-medium text-[#8B95A7]">Rule changes</div>
-          <div className="mt-2 text-3xl font-bold text-[#E6E9EF] tracking-tight">
-            14
+          <div className="text-[12px] font-medium text-[#8B95A7]">Failed records</div>
+          <div className={`mt-2 text-3xl font-bold tracking-tight ${recordsSummary && recordsSummary.failed > 0 ? 'text-[#EF4444]' : 'text-[#22C55E]'}`}>
+            {recordsSummary ? recordsSummary.failed : 0}
           </div>
-          <div className="mt-1 text-[12px] text-[#8B95A7]">each with an owner</div>
+          <div className="mt-1 text-[12px] text-[#8B95A7]">
+            {recordsSummary && recordsSummary.failed > 0 ? 'tampered or invalid' : 'none failed'}
+          </div>
         </div>
       </section>
 
@@ -212,7 +250,14 @@ export const RecordsPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#1F2633]">
-                {filteredTasks.slice(0, 20).map(t => {
+                {filteredTasks.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-[#8B95A7]">
+                      No records found.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredTasks.slice(0, 20).map(t => {
                   const isSelected = selectedTask?.task_id === t.task_id;
                   const stops = t.prevented_count || t.os_denials_count || 0;
                   return (
@@ -254,7 +299,7 @@ export const RecordsPage: React.FC = () => {
                       </td>
                     </tr>
                   );
-                })}
+                }))}
               </tbody>
             </table>
           </div>
