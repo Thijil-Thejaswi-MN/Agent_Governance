@@ -132,34 +132,13 @@ def create_app(
         await app.state.http_client.aclose()
 
     @app.middleware("http")
-    async def add_demo_header_and_field(request: Request, call_next):
-        response = await call_next(request)
+    async def add_demo_header(request: Request, call_next):
         from ..governance.scale import is_demo_data_enabled
-        if is_demo_data_enabled() and request.url.path.startswith("/api/"):
-            content_type = response.headers.get("content-type", "")
-            if "application/json" in content_type:
-                body_bytes = b"".join([chunk async for chunk in response.body_iterator])
-                try:
-                    payload = json.loads(body_bytes.decode("utf-8"))
-                    if isinstance(payload, dict) and "demo" not in payload:
-                        payload["demo"] = True
-                        new_body = json.dumps(payload).encode("utf-8")
-                        response_headers = dict(response.headers)
-                        response_headers["content-length"] = str(len(new_body))
-                        return Response(
-                            content=new_body,
-                            status_code=response.status_code,
-                            headers=response_headers,
-                            media_type="application/json",
-                        )
-                except Exception:
-                    pass
-                return Response(
-                    content=body_bytes,
-                    status_code=response.status_code,
-                    headers=dict(response.headers),
-                    media_type=content_type,
-                )
+        if not is_demo_data_enabled():
+            return await call_next(request)
+
+        response = await call_next(request)
+        response.headers["X-Governance-Demo"] = "1"
         return response
 
     # --- Core System APIs ---
