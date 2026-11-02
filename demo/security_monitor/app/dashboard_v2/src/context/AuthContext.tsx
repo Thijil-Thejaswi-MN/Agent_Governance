@@ -1,16 +1,20 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { getOperatorToken, setOperatorToken, clearOperatorToken, api, UNAUTHORIZED_EVENT } from '../api/client';
+import { Role, UserSession } from '../types';
 
 interface AuthContextType {
   token: string | null;
   hasToken: boolean;
+  user: UserSession | null;
+  role: Role;
+  team: string | null;
+  landingRoute: string;
+  isDemoDataActive: boolean;
   isConfigured: boolean | null;
   isModalOpen: boolean;
-  // True after any API call returned 401: pages show the "sign in" state.
   needsSignIn: boolean;
-  // Bumped on every successful sign-in so pages remount and refetch.
   authEpoch: number;
-  saveToken: (token: string) => Promise<void>;
+  saveToken: (token: string) => Promise<{ user?: UserSession; landing_route?: string }>;
   removeToken: () => void;
   openAuthModal: () => void;
   closeAuthModal: () => void;
@@ -19,11 +23,16 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   token: null,
   hasToken: false,
+  user: null,
+  role: 'admin',
+  team: null,
+  landingRoute: '/',
+  isDemoDataActive: false,
   isConfigured: null,
   isModalOpen: false,
   needsSignIn: false,
   authEpoch: 0,
-  saveToken: async () => {},
+  saveToken: async () => ({}),
   removeToken: () => {},
   openAuthModal: () => {},
   closeAuthModal: () => {},
@@ -31,6 +40,11 @@ const AuthContext = createContext<AuthContextType>({
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [token, setTokenState] = useState<string | null>(() => getOperatorToken());
+  const [user, setUser] = useState<UserSession | null>(null);
+  const [role, setRole] = useState<Role>('admin');
+  const [team, setTeam] = useState<string | null>(null);
+  const [landingRoute, setLandingRoute] = useState<string>('/');
+  const [isDemoDataActive, setIsDemoDataActive] = useState<boolean>(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isConfigured, setIsConfigured] = useState<boolean | null>(null);
   const [needsSignIn, setNeedsSignIn] = useState(false);
@@ -46,34 +60,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     api.getAuthStatus()
       .then(res => {
         setIsConfigured(res.operator_token_configured);
-        // A token kept from earlier in this tab: renew the read-session cookie (SSE needs it).
+        setIsDemoDataActive(!!(res as any).demo_data_active);
+        if ((res as any).user) {
+          setUser((res as any).user);
+          setRole((res as any).user.role || 'admin');
+          setTeam((res as any).user.team || null);
+          setLandingRoute((res as any).landing_route || '/');
+        }
         const stored = getOperatorToken();
         if (stored && !res.session_active) {
-          api.createSession(stored).catch(() => {
-            clearOperatorToken();
-            setTokenState(null);
-            setNeedsSignIn(true);
-          });
+          api.createSession(stored)
+            .then(sessRes => {
+              if ((sessRes as any).user) {
+                setUser((sessRes as any).user);
+                setRole((sessRes as any).user.role || 'admin');
+                setTeam((sessRes as any).user.team || null);
+                setLandingRoute((sessRes as any).landing_route || '/');
+              }
+            })
+            .catch(() => {
+              clearOperatorToken();
+              setTokenState(null);
+              setUser(null);
+              setNeedsSignIn(true);
+            });
         }
       })
       .catch(() => setIsConfigured(null));
-  }, []);
+  }, [authEpoch]);
 
-  // Throws if the server rejects the token, so the modal can show the error.
   const saveToken = async (newToken: string) => {
     const trimmed = newToken.trim();
-    await api.createSession(trimmed);
+    const sessRes = await api.createSession(trimmed);
     setOperatorToken(trimmed);
     setTokenState(trimmed);
+    if ((sessRes as any).user) {
+      setUser((sessRes as any).user);
+      setRole((sessRes as any).user.role || 'admin');
+      setTeam((sessRes as any).user.team || null);
+      setLandingRoute((sessRes as any).landing_route || '/');
+    }
     setIsModalOpen(false);
     setNeedsSignIn(false);
     setAuthEpoch(e => e + 1);
+    return sessRes as any;
   };
 
   const removeToken = () => {
     api.deleteSession().catch(() => {});
     clearOperatorToken();
     setTokenState(null);
+    setUser(null);
+    setRole('admin');
+    setTeam(null);
     setNeedsSignIn(true);
   };
 
@@ -85,6 +124,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         token,
         hasToken: !!token,
+        user,
+        role,
+        team,
+        landingRoute,
+        isDemoDataActive,
         isConfigured,
         isModalOpen,
         needsSignIn,

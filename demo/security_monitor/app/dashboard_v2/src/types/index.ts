@@ -6,6 +6,8 @@ export type RiskTier = 'LOW' | 'MEDIUM' | 'HIGH';
 export type ExpansionStatus = 'PENDING' | 'APPROVED' | 'DENIED' | 'AUTO_APPROVED';
 
 export interface TaskRecord {
+  owner?: string | null;
+  team?: string | null;
   task_id: string;
   request_text: string;
   request_hash?: string;
@@ -25,6 +27,7 @@ export interface TaskRecord {
 }
 
 export interface TaskBoundary {
+  network_outbound?: string[];
   task_id: string;
   workspace_root: string;
   files_read: string[];
@@ -37,6 +40,7 @@ export interface TaskBoundary {
 }
 
 export interface TaskEvent {
+  operation?: string;
   event_id?: string;
   task_id: string;
   agent_id?: string;
@@ -275,4 +279,37 @@ export interface FleetSummary {
   blocked: { window_hours: number; total: number; groups: FleetBlockedGroup[] };
   inventory_size: number;
   known_tasks: number;
+}
+
+
+export type Role = 'developer' | 'team_lead' | 'security_reviewer' | 'admin' | 'auditor';
+
+export interface UserSession {
+  name: string;
+  role: Role;
+  team?: string | null;
+}
+
+export interface PendingGroup {
+  group_key: string;
+  agent_id: string;
+  resource_type: string;
+  normalized_target: string;
+  escalated_by_provenance: boolean;
+  count: number;
+  request_ids: string[];
+  justifications: string[];
+  created_at_min: string;
+  created_at_max: string;
+}
+
+export interface StandingRule {
+  rule_id: string;
+  agent_id: string;
+  resource_type: string;
+  normalized_target: string;
+  owner: string;
+  created_at: string;
+  expires_at: string;
+  team?: string | null;
 }

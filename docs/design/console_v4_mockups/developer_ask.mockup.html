@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ask the agent</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&amp;family=Inter:wght@400;500;600&amp;display=swap">
+<style>
+body{margin:0;background:#070B14}
+a{color:#67E8F9}a:hover{color:#A5F3FC}
+@keyframes drift{0%,100%{transform:translate(0,0)}50%{transform:translate(60px,-30px)}}
+@keyframes drift2{0%,100%{transform:translate(0,0)}50%{transform:translate(-60px,30px)}}
+@media (prefers-reduced-motion: reduce){*{animation:none !important}}
+</style>
+</helmet>
+<div style="position: relative; overflow: hidden; min-height: 900px; background: #070B14; color: #E6EAF2; font-family: Inter, system-ui, sans-serif">
+<div aria-hidden="true" style="position: absolute; width: 700px; height: 700px; left: -200px; top: -300px; border-radius: 50%; background: radial-gradient(circle, rgba(34,211,238,0.28), transparent 65%); animation: drift 16s ease-in-out infinite"></div>
+<div aria-hidden="true" style="position: absolute; width: 700px; height: 700px; right: -220px; bottom: -320px; border-radius: 50%; background: radial-gradient(circle, rgba(167,139,250,0.28), transparent 65%); animation: drift2 18s ease-in-out infinite"></div>
+
+<header style="position: relative; display: flex; align-items: center; justify-content: space-between; padding: 20px 40px">
+<span style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 18px">Agent Governance</span>
+<nav aria-label="Main" style="display: flex; gap: 6px">
+<a href="Overview.dc.html" style="padding: 8px 14px; color: #9AA4B8; text-decoration: none; font-size: 14px">Home</a>
+<a href="#" style="padding: 8px 14px; border-radius: 999px; background: rgba(34,211,238,0.14); color: #A5F3FC; text-decoration: none; font-size: 14px; font-weight: 600">Run</a>
+<a href="#" style="padding: 8px 14px; color: #9AA4B8; text-decoration: none; font-size: 14px">History</a>
+</nav>
+</header>
+
+<main style="position: relative; max-width: 760px; margin: 0 auto; padding: 96px 24px 64px; display: flex; flex-direction: column; align-items: center; gap: 28px; text-align: center">
+<h1 style="margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 52px; line-height: 1.08; letter-spacing: -1.2px">What should the agent do?</h1>
+<p style="margin: 0; font-size: 18px; color: #A9B4C7">It can only touch what your request needs. Anything else is blocked, or you decide.</p>
+<label for="ask" style="position: absolute; left: -9999px">Your request</label>
+<div style="width: 100%; display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 22px; background: rgba(18,24,41,0.9); border: 1px solid rgba(34,211,238,0.35); box-shadow: 0 20px 60px rgba(34,211,238,0.12)">
+<textarea id="ask" rows="3" style="width: 100%; box-sizing: border-box; resize: none; border: none; outline: none; background: transparent; color: #E6EAF2; font-family: Inter, sans-serif; font-size: 18px; line-height: 1.5; padding: 8px">Read sales_data.csv and write a short summary to report.txt.</textarea>
+<div style="display: flex; justify-content: flex-end">
+<a href="Live.dc.html" style="display: inline-flex; align-items: center; min-height: 48px; padding: 0 26px; border-radius: 14px; background: linear-gradient(135deg, #22D3EE, #A78BFA); color: #070B14; font-weight: 700; text-decoration: none">Start</a>
+</div>
+</div>
+<div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 10px">
+<span style="font-size: 14px; color: #9AA4B8; align-self: center">Try:</span>
+<button type="button" style="min-height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid rgba(148,163,184,0.3); background: transparent; color: #E6EAF2; font-size: 14px; cursor: pointer">Summarise a file</button>
+<button type="button" style="min-height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid rgba(148,163,184,0.3); background: transparent; color: #E6EAF2; font-size: 14px; cursor: pointer">Needs one more file</button>
+<button type="button" style="min-height: 40px; padding: 0 16px; border-radius: 999px; border: 1px solid rgba(148,163,184,0.3); background: transparent; color: #E6EAF2; font-size: 14px; cursor: pointer">A file tries to trick the agent</button>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
