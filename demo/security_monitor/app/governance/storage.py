@@ -95,7 +95,9 @@ class GovernanceStorage:
                     started_at TEXT,
                     completed_at TEXT,
                     current_boundary_version INTEGER DEFAULT 1,
-                    pid INTEGER
+                    pid INTEGER,
+                    owner TEXT,
+                    team TEXT
                 )
             """)
 
@@ -222,6 +224,14 @@ class GovernanceStorage:
                 )
             """)
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_task_steps_task ON task_steps (task_id, step_number)")
+            try:
+                cursor.execute("ALTER TABLE governance_tasks ADD COLUMN owner TEXT")
+            except Exception:
+                pass
+            try:
+                cursor.execute("ALTER TABLE governance_tasks ADD COLUMN team TEXT")
+            except Exception:
+                pass
             conn.commit()
 
     # --- Task Methods ---
@@ -231,14 +241,16 @@ class GovernanceStorage:
                 """
                 INSERT INTO governance_tasks (
                     task_id, request_text, request_hash, agent_id, workspace_root,
-                    status, created_at, started_at, completed_at, current_boundary_version, pid
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    status, created_at, started_at, completed_at, current_boundary_version, pid, owner, team
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(task_id) DO UPDATE SET
                     status=excluded.status,
                     started_at=coalesce(excluded.started_at, governance_tasks.started_at),
                     completed_at=coalesce(excluded.completed_at, governance_tasks.completed_at),
                     current_boundary_version=excluded.current_boundary_version,
-                    pid=coalesce(excluded.pid, governance_tasks.pid)
+                    pid=coalesce(excluded.pid, governance_tasks.pid),
+                    owner=coalesce(excluded.owner, governance_tasks.owner),
+                    team=coalesce(excluded.team, governance_tasks.team)
                 """,
                 (
                     task.task_id,
@@ -252,6 +264,8 @@ class GovernanceStorage:
                     task.completed_at,
                     task.current_boundary_version,
                     task.pid,
+                    task.owner,
+                    task.team,
                 ),
             )
             conn.commit()
@@ -261,6 +275,7 @@ class GovernanceStorage:
             row = conn.execute("SELECT * FROM governance_tasks WHERE task_id = ?", (task_id,)).fetchone()
             if not row:
                 return None
+            keys = row.keys()
             return TaskRecord(
                 task_id=row["task_id"],
                 request_text=row["request_text"],
@@ -273,27 +288,34 @@ class GovernanceStorage:
                 completed_at=row["completed_at"],
                 current_boundary_version=row["current_boundary_version"],
                 pid=row["pid"],
+                owner=row["owner"] if "owner" in keys else None,
+                team=row["team"] if "team" in keys else None,
             )
 
     def list_tasks(self) -> list[TaskRecord]:
         with self.get_connection() as conn:
             rows = conn.execute("SELECT * FROM governance_tasks ORDER BY created_at DESC").fetchall()
-            return [
-                TaskRecord(
-                    task_id=r["task_id"],
-                    request_text=r["request_text"],
-                    request_hash=r["request_hash"],
-                    agent_id=r["agent_id"],
-                    workspace_root=r["workspace_root"],
-                    status=TaskLifecycle(r["status"]),
-                    created_at=r["created_at"],
-                    started_at=r["started_at"],
-                    completed_at=r["completed_at"],
-                    current_boundary_version=r["current_boundary_version"],
-                    pid=r["pid"],
+            out = []
+            for r in rows:
+                k = r.keys()
+                out.append(
+                    TaskRecord(
+                        task_id=r["task_id"],
+                        request_text=r["request_text"],
+                        request_hash=r["request_hash"],
+                        agent_id=r["agent_id"],
+                        workspace_root=r["workspace_root"],
+                        status=TaskLifecycle(r["status"]),
+                        created_at=r["created_at"],
+                        started_at=r["started_at"],
+                        completed_at=r["completed_at"],
+                        current_boundary_version=r["current_boundary_version"],
+                        pid=r["pid"],
+                        owner=r["owner"] if "owner" in k else None,
+                        team=r["team"] if "team" in k else None,
+                    )
                 )
-                for r in rows
-            ]
+            return out
 
     # --- Boundary Methods ---
     def save_boundary(self, boundary: TaskBoundary) -> None:

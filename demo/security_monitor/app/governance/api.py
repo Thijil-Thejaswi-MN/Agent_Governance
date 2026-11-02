@@ -6,6 +6,8 @@ All data is derived from real stored records in governance.db.
 """
 from __future__ import annotations
 
+import uuid
+
 import json
 import hashlib
 import hmac
@@ -15,7 +17,7 @@ import secrets
 import threading
 import time
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 import asyncio
@@ -37,6 +39,20 @@ from .fleet import build_fleet_summary
 from .intake import TaskIntakeService
 from .inventory import AgentInventoryService
 from .models import EnforcementMode, TaskBoundary, TaskLifecycle, TaskRecord
+from .roles import (
+    Role,
+    UserSession,
+    PermissionMatrix,
+    authenticate_token,
+    ROLE_LANDING_ROUTES,
+)
+from .inbox import group_pending
+from .scale import layout_mode, is_demo_data_enabled
+from .standing_rules import (
+    StandingRule,
+    match_rule,
+    is_standing_rules_enabled,
+)
 from .storage import GovernanceStorage
 
 _default_storage = GovernanceStorage()
@@ -101,21 +117,22 @@ def verify_operator_token(
 ) -> str:
     """Verifies the operator token header (a session cookie is never enough here).
 
-    Checked on every mutation: approve / deny / grant, POST /run, /run/{id}/stop,
-    POST /auth/session.
-    Refuses with 403 if GOVERNANCE_OPERATOR_TOKEN is unset in environment.
+    Checked on mutations and POST /auth/session.
+    Refuses with 403 if neither GOVERNANCE_USERS_FILE nor GOVERNANCE_OPERATOR_TOKEN is set.
     Refuses with 401 if the supplied token does not match.
     """
-    expected = os.getenv("GOVERNANCE_OPERATOR_TOKEN")
-    if not expected:
+    has_op = bool(os.getenv("GOVERNANCE_OPERATOR_TOKEN"))
+    has_users = bool(os.getenv("GOVERNANCE_USERS_FILE") and Path(os.getenv("GOVERNANCE_USERS_FILE", "")).is_file())
+    if not has_op and not has_users:
         raise HTTPException(status_code=403, detail=TOKEN_NOT_CONFIGURED)
 
     token = _header_token(authorization, x_operator_token)
-    if not token or not hmac.compare_digest(token, expected):
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid or missing operator token.",
-        )
+    if not token:
+        raise HTTPException(status_code=401, detail="Invalid or missing operator token.")
+
+    user = authenticate_token(token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or missing operator token.")
     return token
 
 
@@ -127,7 +144,40 @@ def verify_operator_token(
 SESSION_COOKIE = "gov_session"
 SESSION_TTL_S = 8 * 3600
 _sessions: dict[str, float] = {}  # session id -> expiry (time.time())
+_session_users: dict[str, dict[str, Any]] = {}  # session id -> user session dict
 _sessions_lock = threading.Lock()
+_standing_rules: list[StandingRule] = []
+_standing_rules_lock = threading.Lock()
+
+
+def get_current_user_session(request: Request | None = None) -> UserSession:
+    """Resolves the current UserSession from header credentials or session cookie.
+    Never logs tokens.
+    """
+    if request is None:
+        op_name = os.getenv("GOVERNANCE_OPERATOR_NAME", "Admin")
+        return UserSession(name=op_name, role=Role.ADMIN, team=None)
+
+    auth_header = request.headers.get("Authorization")
+    x_token = request.headers.get("X-Operator-Token")
+    raw_token = _header_token(auth_header, x_token)
+    if raw_token:
+        user = authenticate_token(raw_token)
+        if user:
+            return user
+
+    sid = request.cookies.get(SESSION_COOKIE)
+    if sid and _session_valid(sid):
+        with _sessions_lock:
+            u_dict = _session_users.get(sid)
+            if u_dict:
+                return UserSession(**u_dict)
+        # Fallback for sessions created under legacy operator token
+        op_name = os.getenv("GOVERNANCE_OPERATOR_NAME", "Admin")
+        return UserSession(name=op_name, role=Role.ADMIN, team=None)
+
+    # If unauthenticated, return anonymous/unauthorized
+    raise HTTPException(status_code=401, detail="Authentication required.")
 
 
 def _session_valid(session_id: str | None) -> bool:
@@ -161,12 +211,14 @@ def require_operator_access(
     """Router-wide guard: the token header, or (for reads only) a valid session cookie."""
     if request.scope.get("endpoint") in _PUBLIC_ENDPOINTS:
         return
-    expected = os.getenv("GOVERNANCE_OPERATOR_TOKEN")
-    if not expected:
+    has_op = bool(os.getenv("GOVERNANCE_OPERATOR_TOKEN"))
+    has_users = bool(os.getenv("GOVERNANCE_USERS_FILE") and Path(os.getenv("GOVERNANCE_USERS_FILE", "")).is_file())
+    if not has_op and not has_users:
         raise HTTPException(status_code=403, detail=TOKEN_NOT_CONFIGURED)
     token = _header_token(authorization, x_operator_token)
     if token is not None:
-        if hmac.compare_digest(token, expected):
+        user = authenticate_token(token)
+        if user:
             return
         raise HTTPException(status_code=401, detail="Invalid or missing operator token.")
     if request.method in ("GET", "HEAD") and _session_valid(request.cookies.get(SESSION_COOKIE)):
@@ -250,11 +302,38 @@ async def get_system_status() -> dict[str, Any]:
 @governance_router.get("/auth/status")
 @_public
 async def get_auth_status(request: Request) -> dict[str, Any]:
-    """Returns whether operator token authentication is configured and the caller's session is valid."""
+    """Returns authentication status, role, team and session information."""
+    configured = bool(os.getenv("GOVERNANCE_OPERATOR_TOKEN")) or bool(
+        os.getenv("GOVERNANCE_USERS_FILE") and Path(os.getenv("GOVERNANCE_USERS_FILE", "")).is_file()
+    )
+    is_active = _session_valid(request.cookies.get(SESSION_COOKIE))
+    user_info = None
+    landing_route = "/"
+    demo_active = is_demo_data_enabled()
+
+    if is_active:
+        sid = request.cookies.get(SESSION_COOKIE)
+        with _sessions_lock:
+            u_dict = _session_users.get(sid or "")
+        if u_dict:
+            user_info = u_dict
+            try:
+                role_enum = Role(u_dict.get("role", "admin"))
+                landing_route = ROLE_LANDING_ROUTES.get(role_enum, "/")
+            except Exception:
+                pass
+        else:
+            op_name = os.getenv("GOVERNANCE_OPERATOR_NAME", "Admin")
+            user_info = {"name": op_name, "role": "admin", "team": None}
+            landing_route = "/"
+
     return {
-        "operator_token_configured": bool(os.getenv("GOVERNANCE_OPERATOR_TOKEN")),
-        "session_active": _session_valid(request.cookies.get(SESSION_COOKIE)),
+        "operator_token_configured": configured,
+        "session_active": is_active,
         "auth_header_supported": ["Authorization: Bearer <token>", "X-Operator-Token: <token>"],
+        "user": user_info,
+        "landing_route": landing_route,
+        "demo_data_active": demo_active,
     }
 
 
@@ -265,17 +344,23 @@ async def create_auth_session(
     response: Response,
     _token: str = Depends(verify_operator_token),
 ) -> dict[str, Any]:
-    """Exchanges the operator token (header) for an HttpOnly session cookie valid for 8 h.
+    """Exchanges bearer token for an HttpOnly session cookie valid for 8 h.
 
-    The cookie authorises reads only (including the SSE stream); mutations still
-    need the token header.
+    The session carries user identity, role, and team.
     """
+    user = authenticate_token(_token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+
     session_id = secrets.token_urlsafe(32)
     now = time.time()
     with _sessions_lock:
         for sid in [s for s, exp in _sessions.items() if exp <= now]:
-            del _sessions[sid]
+            _sessions.pop(sid, None)
+            _session_users.pop(sid, None)
         _sessions[session_id] = now + SESSION_TTL_S
+        _session_users[session_id] = user.model_dump()
+
     response.set_cookie(
         SESSION_COOKIE,
         session_id,
@@ -285,10 +370,13 @@ async def create_auth_session(
         path="/api",
         secure=request.url.scheme == "https",
     )
+    landing_route = ROLE_LANDING_ROUTES.get(user.role, "/")
     return {
         "authenticated": True,
         "expires_at": datetime.fromtimestamp(now + SESSION_TTL_S).astimezone().isoformat(),
-        "operator": os.getenv("GOVERNANCE_OPERATOR_NAME", "operator"),
+        "operator": user.name,
+        "user": user.model_dump(),
+        "landing_route": landing_route,
     }
 
 
@@ -300,6 +388,7 @@ async def delete_auth_session(request: Request, response: Response) -> dict[str,
     if session_id:
         with _sessions_lock:
             _sessions.pop(session_id, None)
+            _session_users.pop(session_id, None)
     response.delete_cookie(SESSION_COOKIE, path="/api", httponly=True, samesite="strict")
     return {"authenticated": False}
 
@@ -490,11 +579,14 @@ async def list_all_events(
 
 
 @governance_router.get("/tasks")
-async def list_tasks() -> list[dict[str, Any]]:
+async def list_tasks(request: Request = None) -> list[dict[str, Any]]:
+    user = get_current_user_session(request)
     storage = get_storage()
     tasks = storage.list_tasks()
     output = []
     for t in tasks:
+        if not PermissionMatrix.can_view_run(user, t.owner, t.team):
+            continue
         storage_events = storage.get_events_for_task(t.task_id)
         evts = _build_unified_task_events(t.task_id, storage_events)
         summary = _compute_task_summary(evts)
@@ -510,6 +602,8 @@ async def list_tasks() -> list[dict[str, Any]]:
             "created_at": t.created_at,
             "started_at": t.started_at,
             "completed_at": t.completed_at,
+            "owner": t.owner,
+            "team": t.team,
             "total_actions": summary["total_actions"],
             "actions_inside": summary["actions_inside"],
             "actions_outside": summary["actions_outside"],
@@ -536,11 +630,14 @@ async def submit_task(req: SubmitTaskRequest) -> dict[str, Any]:
 
 
 @governance_router.get("/tasks/{task_id}")
-async def get_task_detail(task_id: str) -> dict[str, Any]:
+async def get_task_detail(task_id: str, request: Request = None) -> dict[str, Any]:
+    user = get_current_user_session(request)
     storage = get_storage()
     task = storage.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    if not PermissionMatrix.can_view_run(user, task.owner, task.team):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have permission to view this run.")
 
     boundary = storage.get_boundary(task_id)
     storage_events = storage.get_events_for_task(task_id)
@@ -566,12 +663,15 @@ async def get_task_events(task_id: str) -> list[dict[str, Any]]:
 
 
 @governance_router.get("/tasks/{task_id}/receipt")
-async def get_task_receipt(task_id: str) -> dict[str, Any]:
+async def get_task_receipt(task_id: str, request: Request = None) -> dict[str, Any]:
     """Retrieves a stored task receipt and recomputes its SHA-256 hash chain (integrity only; not signed)."""
+    user = get_current_user_session(request)
     storage = get_storage()
     task = storage.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    if not PermissionMatrix.can_download_or_verify_record(user, task.owner, task.team):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have permission to view or verify this receipt.")
 
     receipts_dir_env = os.getenv("RECEIPTS_DIR")
     if receipts_dir_env:
@@ -637,11 +737,14 @@ async def get_task_receipt(task_id: str) -> dict[str, Any]:
 
 
 @governance_router.get("/tasks/{task_id}/receipt/raw")
-async def get_task_receipt_raw(task_id: str) -> Response:
+async def get_task_receipt_raw(task_id: str, request: Request = None) -> Response:
+    user = get_current_user_session(request)
     storage = get_storage()
     task = storage.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    if not PermissionMatrix.can_download_or_verify_record(user, task.owner, task.team):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have permission to download this receipt.")
 
     receipts_dir_env = os.getenv("RECEIPTS_DIR")
     if receipts_dir_env:
@@ -858,11 +961,28 @@ async def request_expansion_and_wait(payload: ExpansionSubmission) -> dict[str, 
 async def approve_expansion(
     request_id: str,
     payload: ExpansionDecision,
+    request: Request,
     _token: str = Depends(verify_operator_token),
 ) -> dict[str, Any]:
+    user = authenticate_token(_token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+
+    storage = get_storage()
+    req = storage.get_expansion_request(request_id)
+    if not req:
+        raise HTTPException(status_code=404, detail=f"Expansion request '{request_id}' not found.")
+    task = storage.get_task(req.task_id)
+    task_team = task.team if task else None
+
+    if not PermissionMatrix.can_decide_request(user, task_team, req.escalated_by_provenance):
+        raise HTTPException(status_code=403, detail="Forbidden: Role not authorized to approve this expansion.")
+
     try:
-        operator_name = os.getenv("GOVERNANCE_OPERATOR_NAME", "operator")
-        approver = f"operator:{operator_name}"
+        if user.role == Role.ADMIN or user.name == os.getenv("GOVERNANCE_OPERATOR_NAME", "operator"):
+            approver = f"operator:{user.name}"
+        else:
+            approver = f"{user.role.value}:{user.name}"
         new_boundary = get_expansion_service().approve_request(
             request_id=request_id,
             approved_by=approver,
@@ -885,13 +1005,31 @@ async def approve_expansion(
 async def deny_expansion(
     request_id: str,
     payload: ExpansionDecision,
+    request: Request,
     _token: str = Depends(verify_operator_token),
 ) -> dict[str, Any]:
     if not payload.reason or not payload.reason.strip():
         raise HTTPException(status_code=422, detail="A reason is required to deny an expansion request.")
+
+    user = authenticate_token(_token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+
+    storage = get_storage()
+    req = storage.get_expansion_request(request_id)
+    if not req:
+        raise HTTPException(status_code=404, detail=f"Expansion request '{request_id}' not found.")
+    task = storage.get_task(req.task_id)
+    task_team = task.team if task else None
+
+    if not PermissionMatrix.can_decide_request(user, task_team, req.escalated_by_provenance):
+        raise HTTPException(status_code=403, detail="Forbidden: Role not authorized to deny this expansion.")
+
     try:
-        operator_name = os.getenv("GOVERNANCE_OPERATOR_NAME", "operator")
-        denier = f"operator:{operator_name}"
+        if user.role == Role.ADMIN or user.name == os.getenv("GOVERNANCE_OPERATOR_NAME", "operator"):
+            denier = f"operator:{user.name}"
+        else:
+            denier = f"{user.role.value}:{user.name}"
         get_expansion_service().deny_request(
             request_id=request_id,
             denied_by=denier,
@@ -904,6 +1042,188 @@ async def deny_expansion(
         }
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
+
+
+
+
+class BatchDecisionRequest(BaseModel):
+    request_ids: list[str]
+    reason: str = ""
+    create_standing_rule: bool = False
+
+
+@governance_router.post("/expansions/batch-approve")
+async def batch_approve_expansions(
+    payload: BatchDecisionRequest,
+    _token: str = Depends(verify_operator_token),
+) -> dict[str, Any]:
+    """Batch approves pending requests. Rejects if any request is provenance-escalated."""
+    user = authenticate_token(_token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+
+    if not PermissionMatrix.can_batch_decide(user):
+        raise HTTPException(status_code=403, detail="Forbidden: Role not authorized for batch decisions.")
+
+    storage = get_storage()
+    exp_service = get_expansion_service()
+
+    # Pre-validate all requests exist and none are provenance-escalated
+    reqs: list[Any] = []
+    for rid in payload.request_ids:
+        r = storage.get_expansion_request(rid)
+        if not r:
+            raise HTTPException(status_code=404, detail=f"Request {rid} not found.")
+        if r.escalated_by_provenance:
+            raise HTTPException(
+                status_code=400,
+                detail="Batch approval rejected: Group contains provenance-escalated requests which must be reviewed one by one."
+            )
+        reqs.append(r)
+
+    results = []
+    approver = f"{user.role.value}:{user.name}"
+    for r in reqs:
+        new_boundary = exp_service.approve_request(
+            request_id=r.request_id,
+            approved_by=approver,
+            reason=payload.reason or "Batch approved by operator",
+        )
+        results.append({"request_id": r.request_id, "status": "APPROVED"})
+
+    # Optional standing rule creation if requested
+    created_rule = None
+    if payload.create_standing_rule and is_standing_rules_enabled() and reqs:
+        first = reqs[0]
+        rule_id = f"rule_{uuid.uuid4().hex[:8]}"
+        now = datetime.now(timezone.utc)
+        expires_at = (now + timedelta(days=90)).isoformat()
+        new_rule = StandingRule(
+            rule_id=rule_id,
+            agent_or_profile=first.agent_id,
+            action=first.resource_type,
+            target=first.resource_target,
+            owner=user.name,
+            created_at=now.isoformat(),
+            expires_at=expires_at,
+            team=user.team,
+            is_active=True,
+        )
+        with _standing_rules_lock:
+            _standing_rules.append(new_rule)
+        created_rule = new_rule.model_dump()
+
+    return {"status": "SUCCESS", "approved_count": len(results), "results": results, "standing_rule": created_rule}
+
+
+@governance_router.post("/expansions/batch-deny")
+async def batch_deny_expansions(
+    payload: BatchDecisionRequest,
+    _token: str = Depends(verify_operator_token),
+) -> dict[str, Any]:
+    """Batch denies pending requests with a mandatory reason."""
+    if not payload.reason or not payload.reason.strip():
+        raise HTTPException(status_code=422, detail="A reason is required to deny requests.")
+
+    user = authenticate_token(_token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+
+    if not PermissionMatrix.can_batch_decide(user):
+        raise HTTPException(status_code=403, detail="Forbidden: Role not authorized for batch decisions.")
+
+    storage = get_storage()
+    exp_service = get_expansion_service()
+
+    results = []
+    denier = f"{user.role.value}:{user.name}"
+    for rid in payload.request_ids:
+        r = storage.get_expansion_request(rid)
+        if not r:
+            continue
+        exp_service.deny_request(request_id=rid, denied_by=denier, reason=payload.reason.strip())
+        results.append({"request_id": rid, "status": "DENIED"})
+
+    return {"status": "SUCCESS", "denied_count": len(results), "results": results}
+
+
+@governance_router.get("/inbox/pending")
+async def get_inbox_pending(request: Request) -> dict[str, Any]:
+    """Returns pending requests grouped by pattern for Security Reviewer inbox."""
+    storage = get_storage()
+    pending = storage.list_expansion_requests(status="PENDING")
+    groups = group_pending(pending)
+    total_waiting = len(pending)
+    pattern_count = len(groups)
+    return {
+        "total_waiting": total_waiting,
+        "pattern_count": pattern_count,
+        "groups": groups,
+    }
+
+
+class StandingRuleCreateRequest(BaseModel):
+    agent_or_profile: str
+    action: str
+    target: str
+    expiry_days: int = 90
+    team: str | None = None
+
+
+@governance_router.get("/standing-rules")
+async def list_standing_rules(request: Request) -> list[dict[str, Any]]:
+    """Lists standing rules (auditor, reviewer, admin)."""
+    user = get_current_user_session(request)
+    if not PermissionMatrix.can_view_standing_rules(user):
+        raise HTTPException(status_code=403, detail="Forbidden: Cannot view standing rules.")
+    with _standing_rules_lock:
+        return [r.model_dump() for r in _standing_rules]
+
+
+@governance_router.post("/standing-rules")
+async def create_standing_rule_endpoint(
+    payload: StandingRuleCreateRequest,
+    _token: str = Depends(verify_operator_token),
+) -> dict[str, Any]:
+    """Creates a standing rule (reviewer, admin)."""
+    user = authenticate_token(_token)
+    if not user or not PermissionMatrix.can_manage_standing_rules(user):
+        raise HTTPException(status_code=403, detail="Forbidden: Cannot manage standing rules.")
+
+    days = min(max(1, payload.expiry_days), 90)
+    now = datetime.now(timezone.utc)
+    expires_at = (now + timedelta(days=days)).isoformat()
+    rule = StandingRule(
+        rule_id=f"rule_{uuid.uuid4().hex[:8]}",
+        agent_or_profile=payload.agent_or_profile,
+        action=payload.action,
+        target=payload.target,
+        owner=user.name,
+        created_at=now.isoformat(),
+        expires_at=expires_at,
+        team=payload.team or user.team,
+        is_active=True,
+    )
+    with _standing_rules_lock:
+        _standing_rules.append(rule)
+    return rule.model_dump()
+
+
+@governance_router.post("/standing-rules/{rule_id}/expire")
+async def expire_standing_rule(
+    rule_id: str,
+    _token: str = Depends(verify_operator_token),
+) -> dict[str, Any]:
+    """Expires a standing rule immediately."""
+    user = authenticate_token(_token)
+    if not user or not PermissionMatrix.can_manage_standing_rules(user):
+        raise HTTPException(status_code=403, detail="Forbidden: Cannot manage standing rules.")
+    with _standing_rules_lock:
+        for r in _standing_rules:
+            if r.rule_id == rule_id:
+                r.is_active = False
+                return {"status": "EXPIRED", "rule_id": rule_id}
+    raise HTTPException(status_code=404, detail="Rule not found.")
 
 
 class ProactiveGrantRequest(BaseModel):
@@ -999,6 +1319,7 @@ async def preview_task_run(req: RunPreviewRequest) -> dict[str, Any]:
 @governance_router.post("/run")
 async def start_governed_task_run(
     req: RunStartRequest,
+    request: Request,
     _token: str = Depends(verify_operator_token),
 ) -> dict[str, Any]:
     """Starts a governed agent task inside isolated Condition C evaluation sandbox.
@@ -1006,6 +1327,12 @@ async def start_governed_task_run(
     Requires operator token. Rejects concurrent runs with 409.
     Validates input files (under input/, <= 50 KB, text-only).
     """
+    user = authenticate_token(_token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+    if not PermissionMatrix.can_start_run(user):
+        raise HTTPException(status_code=403, detail="Forbidden: Role not authorized to start a run.")
+
     storage = get_storage()
     manager = get_run_manager()
 
@@ -1016,6 +1343,8 @@ async def start_governed_task_run(
             preset_id=req.preset,
             model=req.model,
             files=req.files,
+            owner=user.name,
+            team=user.team,
         )
         return {
             "task_id": task_id,
@@ -1033,6 +1362,7 @@ async def start_governed_task_run(
 @governance_router.post("/run/{task_id}/stop")
 async def stop_governed_task_run(
     task_id: str,
+    request: Request,
     _token: str = Depends(verify_operator_token),
 ) -> dict[str, Any]:
     """Stops the active run at any stage (also during sandbox preparation).
@@ -1040,6 +1370,17 @@ async def stop_governed_task_run(
     Requires operator token. If the task cgroup exists it is killed; otherwise the
     run is cancelled at its next checkpoint and the agent never starts.
     """
+    user = authenticate_token(_token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+
+    storage = get_storage()
+    task = storage.get_task(task_id)
+    t_owner = task.owner if task else None
+    t_team = task.team if task else None
+    if not PermissionMatrix.can_stop_run(user, t_owner, t_team):
+        raise HTTPException(status_code=403, detail="Forbidden: Role not authorized to stop this run.")
+
     manager = get_run_manager()
     try:
         result = manager.stop_run(task_id)

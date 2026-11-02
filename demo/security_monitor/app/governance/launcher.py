@@ -94,6 +94,8 @@ class TaskSpec:
     decoys: list[dict[str, Any]] = field(default_factory=list)
     canary: str = ""
     use_eval_world: bool = False
+    owner: str | None = None
+    team: str | None = None
 
     @classmethod
     def from_file(cls, path: str | Path) -> "TaskSpec":
@@ -626,6 +628,8 @@ class TaskLauncher:
             output_targets=spec.output_targets or None,
             files_read=spec.files_read,
             task_id=spec.task_id,
+            owner=spec.owner,
+            team=spec.team,
         )
         if spec.files_read is not None:
             boundary.files_read = list(spec.files_read)

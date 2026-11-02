@@ -38,6 +38,8 @@ class TaskIntakeService:
         output_targets: list[str] | None = None,
         files_read: list[str] | None = None,
         task_id: str | None = None,
+        owner: str | None = None,
+        team: str | None = None,
     ) -> tuple[TaskRecord, TaskBoundary]:
         """
         Creates a new task record, derives its initial execution boundary contract,
@@ -61,6 +63,8 @@ class TaskIntakeService:
             status=TaskLifecycle.PENDING,
             created_at=now_utc,
             current_boundary_version=1,
+            owner=owner,
+            team=team,
         )
         self.storage.save_task(task)
 
