@@ -280,3 +280,21 @@ class BoundaryDerivationV1:
             enforcement_mode=enforcement_mode,
             derived_by="template_v1",
         )
+
+
+class BoundaryDerivationV1_1(BoundaryDerivationV1):
+    """Template derivation v1.1 (M7): v1 without the bare-basename write alias.
+
+    v1 adds both 'output/<name>' and the bare '<name>' to files_write. The tool
+    layer honoured the bare name (a write landing at the workspace root) while the
+    kernel layer skipped it, so the two layers disagreed on that path. v1.1 drops
+    a bare files_write entry whenever 'output/<name>' is also present. Everything
+    else is v1 unchanged; BoundaryDerivationV1 itself is frozen (evaluation runs).
+    """
+
+    def derive(self, *args: Any, **kwargs: Any) -> TaskBoundary:
+        b = super().derive(*args, **kwargs)
+        writes = set(b.files_write)
+        b.files_write = [w for w in b.files_write if "/" in w or f"output/{w}" not in writes]
+        b.derived_by = "template_v1_1"
+        return b
