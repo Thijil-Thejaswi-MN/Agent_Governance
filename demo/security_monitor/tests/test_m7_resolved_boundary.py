@@ -75,6 +75,29 @@ def test_v1_1_drops_only_the_bare_output_alias(tmp_path: Path) -> None:
     assert "notes.md" in b.files_write
 
 
+def test_v1_1_narrows_code_write_globs_to_named_files(tmp_path: Path) -> None:
+    prompt = "Fix the bug in src/app.py and write a summary to output/summary.txt"
+    v1 = BoundaryDerivationV1().derive(task_id="t", request_text=prompt, workspace_root=str(tmp_path))
+    v11 = BoundaryDerivationV1_1().derive(task_id="t", request_text=prompt, workspace_root=str(tmp_path))
+    assert {"src/**", "tests/**"} <= set(v1.files_write)
+    # src/ names a file, so its glob becomes that file; tests/ names none, so its glob stays.
+    assert v11.files_write == ["output/summary.txt", "src/app.py", "tests/**"]
+    assert v11.files_read == v1.files_read
+    # The per-file rule closes the sensitive-name gap of the directory rule in both layers.
+    ws = tmp_path / "ws"
+    (ws / "src").mkdir(parents=True)
+    (ws / "src/app.py").write_text("x = 1\n")
+    v11.workspace_root = str(ws)
+    r = resolve_boundary(v11, ws)
+    assert not r.allows(str(ws / "src/.env"), "create")[0] and not r.allows(str(ws / "src/new.py"), "create")[0]
+    assert r.allows(str(ws / "src/app.py"), "write")[0]
+    spec = compile_landlock_rules_resolved(r, None)
+    assert not any(x["path"].startswith(str(ws / "src")) for x in spec["_compile_report"]["kernel_cannot_express"])
+    # With no file named, the glob is the only rule available and is kept.
+    b = BoundaryDerivationV1_1().derive(task_id="t", request_text="Refactor the code", workspace_root=str(tmp_path))
+    assert "src/**" in b.files_write
+
+
 # --- resolve_boundary ------------------------------------------------------
 
 def test_alias_rule_collapses_bare_names_into_the_scoped_entry(tmp_path: Path) -> None:
