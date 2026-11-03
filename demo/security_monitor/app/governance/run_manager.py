@@ -23,7 +23,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from .catalog import BoundaryDerivationV1, ServiceCatalog
+from .catalog import BoundaryDerivationV1_1, ServiceCatalog
 from .launcher import TaskLauncher, TaskSpec
 from .models import EnforcementMode, TaskLifecycle, TaskRecord
 from .storage import GovernanceStorage
@@ -221,9 +221,14 @@ def preview_run_boundary(
     files: dict[str, str] | None = None,
     workspace_root: str = "/tmp/agent_preview",
 ) -> dict[str, Any]:
-    """Derives the task boundary without launching anything."""
+    """Derives the task boundary without launching anything.
+
+    The Run page enforces template derivation v1.1 (v1 without the bare output
+    alias); "active_version" stays "v1" because it names the template family, as
+    opposed to the LLM-assisted derivation v2.
+    """
     catalog = ServiceCatalog()
-    derivation_v1 = BoundaryDerivationV1(catalog)
+    derivation_v1 = BoundaryDerivationV1_1(catalog)
 
     b_v1 = derivation_v1.derive(
         task_id="preview",
@@ -265,7 +270,8 @@ def preview_run_boundary(
         "active_version": "v1",
         "boundary_v1": boundary_v1_dict,
         "boundary_v2": boundary_v2_dict,
-        "explanation": "Execution enforces derivation v1 (rule-based template bounds).",
+        "enforced_derivation": "template_v1_1",
+        "explanation": "Execution enforces derivation v1.1 (rule-based template bounds, no bare output aliases).",
     }
 
 
@@ -434,6 +440,7 @@ class ActiveRunManager:
                 llm=llm_cfg,
                 decoys=decoys,
                 canary=canary,
+                boundary_model="v1.1",
             )
 
             cancel_event = threading.Event()

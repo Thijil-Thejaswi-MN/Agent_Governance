@@ -74,6 +74,7 @@ class OSEventCorrelator:
         flush_every: int = 200,
         condition: str | None = None,
         freeze_on_outside: bool | None = None,
+        task_owned_dirs: tuple[str, ...] = ("output", "scratch"),
     ) -> None:
         self.storage = storage
         self.task_id = task_id
@@ -86,6 +87,7 @@ class OSEventCorrelator:
         self.seccomp_active = seccomp_active
         self.on_violation = on_violation
         self.on_open = on_open
+        self.task_owned_dirs = tuple(task_owned_dirs)
         self.evaluator = evaluator or BoundaryEvaluator()
         self.flush_every = flush_every
         if freeze_on_outside is None:
@@ -142,7 +144,7 @@ class OSEventCorrelator:
                 return EventVerdict.INSIDE, RiskTier.LOW, "expansion delivery dir (granted/)"
             if rel == ".":
                 return EventVerdict.INSIDE, RiskTier.LOW, "workspace root directory handle"
-            if top in ("output", "scratch") and boundary is not None:
+            if top in self.task_owned_dirs and boundary is not None:
                 res = self.evaluator.evaluate_file_access(boundary, rel, is_write=is_write)
                 if res.verdict == EventVerdict.INSIDE:
                     return res.verdict, res.risk_tier, res.rule_matched
