@@ -515,7 +515,8 @@ class ToolBroker:
             else:
                 # M6: Landlock rules are compiled from the task boundary (--rules mode),
                 # not from the workspace layout.
-                from .os_layer.sandbox_spec import compile_landlock_rules, write_rules_file
+                from .os_layer.sandbox_spec import compile_landlock_rules, compile_landlock_rules_resolved, write_rules_file
+                from .resolved_boundary import ResolvedBoundaryEvaluator
 
                 runner = CgroupTaskRunner(self.storage)
                 ws_root = Path(workspace_root or boundary.workspace_root).resolve()
@@ -523,8 +524,11 @@ class ToolBroker:
                 ws.setup()
                 control = ws_root.parent / ".control" / task_id
                 control.mkdir(parents=True, exist_ok=True)
-                rules = write_rules_file(compile_landlock_rules(boundary, ws_root, proxy_port=None),
-                                         control / f"rules_broker_{uuid.uuid4().hex[:8]}.json")
+                if isinstance(self.evaluator, ResolvedBoundaryEvaluator):  # M7 path: same resolved entries as the file tools
+                    compiled = compile_landlock_rules_resolved(self.evaluator.resolve(boundary), proxy_port=None)
+                else:
+                    compiled = compile_landlock_rules(boundary, ws_root, proxy_port=None)
+                rules = write_rules_file(compiled, control / f"rules_broker_{uuid.uuid4().hex[:8]}.json")
                 res = runner.run_task_command(
                     task_id=task_id,
                     cmd=["/bin/sh", "-c", command],

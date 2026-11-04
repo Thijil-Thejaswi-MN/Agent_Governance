@@ -33,6 +33,7 @@ from typing import Any
 
 from demo.security_monitor.app.governance.evaluator import SENSITIVE_FILE_PATTERNS
 from demo.security_monitor.app.governance.models import TaskBoundary
+from demo.security_monitor.app.governance.resolved_boundary import ResolvedBoundary
 
 RX = ["execute", "read_file", "read_dir"]
 RO_DIR = ["read_file", "read_dir"]
@@ -215,6 +216,105 @@ def compile_landlock_rules(
         "tcp_connect_ports": [int(proxy_port)] if proxy_port else [],
         "rules": rules,
         "_compile_report": {"workspace_rules": provenance, "skipped": skipped},
+    }
+
+
+# Landlock rights for each ResolvedBoundary access kind ("create" on a file entry
+# is realised by pre-creating that one file; see resolved_boundary).
+_FILE_RIGHTS = {"read": ["read_file"], "write": ["write_file", "truncate"], "create": [], "remove": []}
+_DIR_RIGHTS = {
+    "read": ["read_file", "read_dir"],
+    "write": ["write_file", "truncate"],
+    "create": ["make_reg", "make_dir", "refer"],
+    "remove": ["remove_file", "remove_dir"],
+}
+
+
+def compile_landlock_rules_resolved(
+    resolved: "ResolvedBoundary",
+    proxy_port: int | None,
+    runtime_dir: str | Path | None = None,
+    extra_ro_paths: list[str] | None = None,
+) -> dict[str, Any]:
+    """Compiles the Landlock rules dict from a ResolvedBoundary (M7 path).
+
+    Workspace rules come only from `resolved.entries`; this function never reads
+    files_read / files_write. The rest is kernel-only runtime support (system
+    paths, interpreter, task tmp/, runtime/ code, broker socket), which is never a
+    boundary entry. Write-target files are pre-created (empty), write-glob
+    directories are created. compile_landlock_rules (M6) is kept unchanged for the
+    frozen evaluation path.
+    """
+    root = Path(resolved.workspace)
+    rules: list[dict[str, Any]] = []
+    provenance: list[dict[str, Any]] = []
+    by_path: dict[str, dict[str, Any]] = {}
+
+    def add(path: str | Path, access: list[str], optional: bool = False, why: str = "") -> None:
+        key = str(path)
+        if key in by_path:
+            r = by_path[key]
+            r["access"] = sorted(set(r["access"]) | set(access))
+            if not optional:
+                r.pop("optional", None)
+        else:
+            r = {"path": key, "access": list(access)}
+            if optional:
+                r["optional"] = True
+            by_path[key] = r
+            rules.append(r)
+        if why:
+            provenance.append({"path": key, "access": list(access), "from": why})
+
+    # Kernel-only runtime support (same set as compile_landlock_rules, minus granted/,
+    # which is a resolved entry here).
+    for p in SYSTEM_RX_PATHS:
+        add(p, RX, optional=not os.path.exists(p))
+    for p in SYSTEM_RO_PATHS:
+        add(p, RO_DIR if os.path.isdir(p) else RO_FILE, optional=not os.path.exists(p))
+    for p in SYSTEM_RW_FILES:
+        add(p, ["read_file", "write_file"], optional=not os.path.exists(p))
+    for p in extra_ro_paths or []:
+        add(p, RO_DIR if os.path.isdir(p) else RO_FILE, why="extra_ro")
+    interp = os.path.realpath(sys.executable)
+    if not any(interp.startswith(p) for p in SYSTEM_RX_PATHS):
+        add(interp, RX if os.path.isdir(interp) else ["execute", "read_file"], why="runtime_interpreter")
+        venv_prefix = getattr(sys, "base_prefix", None) or getattr(sys, "prefix", None)
+        if venv_prefix and venv_prefix != "/usr" and os.path.exists(venv_prefix):
+            add(venv_prefix, RO_DIR, why="runtime_venv")
+    tmp_dir = root / "tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    add(tmp_dir, RW_DIR, why="task_tmp")
+    if runtime_dir:
+        add(Path(os.path.realpath(runtime_dir)), RO_DIR, why="agent_runtime_code")
+    add(root / BROKER_SOCKET_NAME, ["read_file", "write_file"], optional=True, why="broker_socket")
+
+    kernel_cannot_express: list[dict[str, str]] = []
+    for e in resolved.entries:
+        p = Path(e.path)
+        table = _DIR_RIGHTS if e.kind == "dir" else _FILE_RIGHTS
+        rights = sorted({r for a in e.access for r in table[a]})
+        if e.kind == "dir":
+            p.mkdir(parents=True, exist_ok=True)
+        elif "create" in e.access and not p.exists():
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.touch()
+        add(p, rights, why=f"resolved:{e.kind}:{','.join(sorted(e.access))}:{e.sources[0]}")
+        if e.exclude_sensitive_writes:
+            kernel_cannot_express.append({"path": e.path, "rule": "sensitive-name write exclusion beneath a directory"})
+
+    return {
+        "version": 1,
+        "task_tmp": str(tmp_dir),
+        "tcp_connect_ports": [int(proxy_port)] if proxy_port else [],
+        "rules": rules,
+        "_compile_report": {
+            "compiler": "resolved",
+            "workspace_rules": provenance,
+            "skipped": [{"pattern": s, "reason": r} for s, r in resolved.skipped],
+            "resolved_boundary": resolved.to_dict(),
+            "kernel_cannot_express": kernel_cannot_express,
+        },
     }
 
 
