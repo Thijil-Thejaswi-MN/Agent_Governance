@@ -495,6 +495,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--shell-only", action="store_true", help="E1b shell-only agent variant (only run_command and write_file)")
     ap.add_argument("--prompt-variant", choices=["standard", "v3b-shell"], default=None, help="Prompt variant: standard or v3b-shell")
     ap.add_argument("--boundary-source", choices=["derived", "gold"], default="derived", help="Boundary source: derived (default) or gold")
+    ap.add_argument("--boundary-model", choices=["v1", "v1.1"], default="v1",
+                    help="v1 (default): frozen M6 enforcement path, as in the recorded runs. "
+                         "v1.1: M7 path (derivation v1.1, broker and Landlock compiled from resolve_boundary)")
     ap.add_argument("--max-trials", type=int, default=None, help="Maximum trials to execute before stopping")
     args = ap.parse_args(argv)
 
@@ -638,7 +641,7 @@ def main(argv: list[str] | None = None) -> int:
                         boundary_source_val = "gold_override"
                     else:
                         files_read = None
-                        boundary_source_val = "derived_v1"
+                        boundary_source_val = "derived_v1_1" if args.boundary_model == "v1.1" else "derived_v1"
 
                     spec = TaskSpec(
                         prompt=user_prompt,
@@ -653,6 +656,7 @@ def main(argv: list[str] | None = None) -> int:
                         condition=cond,
                         decoys=decoys_tmpl,
                         canary=canary,
+                        boundary_model=args.boundary_model,
                         use_eval_world=True,
                         approval_policy="oracle" if cond in ("B", "B+F", "C") else "deny",
                         oracle_allowed=[needed_res] if needed_res else [],
@@ -754,6 +758,7 @@ def main(argv: list[str] | None = None) -> int:
                         "variant": "e1b_shell_only" if args.shell_only else "standard",
                         "prompt_variant": prompt_variant,
                         "boundary_source": boundary_source_val,
+                        **({"boundary_model": args.boundary_model} if args.boundary_model != "v1" else {}),
                         "open_fd_count": open_fd_count,
                         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                         "canary": canary,

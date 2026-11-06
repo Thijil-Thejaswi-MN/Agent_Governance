@@ -41,14 +41,22 @@ from urllib.parse import urlparse
 
 from .broker import ToolBroker
 from .broker_rpc import BrokerRPCServer
+from .catalog import BoundaryDerivationV1_1
 from .correlator import OSEventCorrelator
 from .expansion import ExpansionService
 from .intake import TaskIntakeService
 from .models import EnforcementMode, ExpansionStatus, TaskLifecycle
 from .os_layer import cgroup_ctl
-from .os_layer.sandbox_spec import BROKER_SOCKET_NAME, SYSTEM_RX_PATHS, compile_landlock_rules, write_rules_file
+from .os_layer.sandbox_spec import (
+    BROKER_SOCKET_NAME,
+    SYSTEM_RX_PATHS,
+    compile_landlock_rules,
+    compile_landlock_rules_resolved,
+    write_rules_file,
+)
 from .proxy import EgressProxyServer
 from .receipt import build_receipt, verify_chain
+from .resolved_boundary import ResolvedBoundaryEvaluator
 from .storage import GovernanceStorage
 
 HERE = Path(__file__).resolve().parent
@@ -59,6 +67,9 @@ ENFORCER_BIN = OS_LAYER / "landlock_enforcer"
 EVAL_WORLD_PY = HERE / "eval_world.py"
 RUNTIME_FILES = ("agent_shim.py", "llm_agent.py")
 REPO_ROOT = HERE.parents[3]
+
+
+BOUNDARY_MODELS = ("v1", "v1.1")
 
 
 def default_workspace_base() -> Path:
@@ -96,6 +107,10 @@ class TaskSpec:
     use_eval_world: bool = False
     owner: str | None = None
     team: str | None = None
+    # "v1": the frozen M6 path (BoundaryDerivationV1, BoundaryEvaluator, compile_landlock_rules),
+    # kept as the default for the evaluation harness. "v1.1": the M7 path (BoundaryDerivationV1_1;
+    # broker and Landlock both compiled from resolve_boundary). Selected by the Run page and the CLI.
+    boundary_model: str = "v1"
 
     @classmethod
     def from_file(cls, path: str | Path) -> "TaskSpec":
@@ -603,23 +618,10 @@ class TaskLauncher:
             aborted=aborted,
         )
 
-    # --- main ---
-    def run(self, spec: TaskSpec) -> LaunchResult:
-        t0 = time.monotonic()
-        self.freeze_events, self.termination, self.live = [], {}, {}
-        self._frozen = threading.Event()
-        problems = self.check_prerequisites()
-        if problems:
-            raise RuntimeError("launcher prerequisites failed (fail closed): " + "; ".join(problems))
-        mode = EnforcementMode(spec.enforcement_mode)
-
-        # Cancellation checkpoint 1: before intake (no task, nothing to receipt).
-        if self.cancel_event.is_set():
-            return self._finish_cancelled(spec, t0, stage="before_intake")
-
-        # 1. Intake: task + boundary
-        ws = self.workspace_base / f"ws_{uuid.uuid4().hex[:12]}"
-        intake = TaskIntakeService(self.storage)
+    def derive_boundary(self, spec: TaskSpec, ws: Path, mode: EnforcementMode) -> tuple[Any, Any]:
+        """Intake: creates the task and derives its initial boundary (no workspace is created)."""
+        derivation = BoundaryDerivationV1_1() if spec.boundary_model == "v1.1" else None
+        intake = TaskIntakeService(self.storage, derivation=derivation)
         task, boundary = intake.submit_task(
             request_text=spec.prompt,
             agent_id=spec.agent_id,
@@ -642,6 +644,28 @@ class TaskLauncher:
             boundary.tools = sorted(set(boundary.tools) | set(spec.declared_tools))
             boundary.metadata["tools_declared_by_requester"] = sorted(spec.declared_tools)
             self.storage.save_boundary(boundary)
+        return task, boundary
+
+    # --- main ---
+    def run(self, spec: TaskSpec) -> LaunchResult:
+        t0 = time.monotonic()
+        self.freeze_events, self.termination, self.live = [], {}, {}
+        self._frozen = threading.Event()
+        problems = self.check_prerequisites()
+        if problems:
+            raise RuntimeError("launcher prerequisites failed (fail closed): " + "; ".join(problems))
+        mode = EnforcementMode(spec.enforcement_mode)
+        if spec.boundary_model not in BOUNDARY_MODELS:
+            raise ValueError(f"unknown boundary_model {spec.boundary_model!r}; expected one of {BOUNDARY_MODELS}")
+        resolved_path = spec.boundary_model == "v1.1"
+
+        # Cancellation checkpoint 1: before intake (no task, nothing to receipt).
+        if self.cancel_event.is_set():
+            return self._finish_cancelled(spec, t0, stage="before_intake")
+
+        # 1. Intake: task + boundary
+        ws = self.workspace_base / f"ws_{uuid.uuid4().hex[:12]}"
+        task, boundary = self.derive_boundary(spec, ws, mode)
         initial_boundary = boundary.model_copy(deep=True)
         task_id = task.task_id
         self.live["task_id"] = task_id
@@ -694,7 +718,9 @@ class TaskLauncher:
 
         expansion = ExpansionService(self.storage, provenance_enabled=True, user_approval_hook=hook,
                                      simulated_user_policy=spec.approval_policy)
-        broker = ToolBroker(self.storage, expansion_service=expansion)
+        # M7 path: the broker's file checks and the Landlock rules both come from resolve_boundary.
+        file_evaluator = ResolvedBoundaryEvaluator(self.storage) if resolved_path else None
+        broker = ToolBroker(self.storage, expansion_service=expansion, evaluator=file_evaluator)
         broker.default_approval_timeout = float(spec.approval_timeout_s)
         broker.http_fetcher = proxy_http_fetcher(proxy_port)  # type: ignore[attr-defined]
         llm_cfg = dict(spec.llm)
@@ -725,7 +751,11 @@ class TaskLauncher:
         sensor_freeze_on_outside = cond_upper in ("C", "D", "B+F", "B_F", "BF") or (not cond_upper)
 
         # Sandbox spec compiled from the boundary
-        spec_rules = compile_landlock_rules(boundary, ws, proxy_for_landlock, runtime_dir=ws / "runtime")
+        if file_evaluator is not None:
+            spec_rules = compile_landlock_rules_resolved(file_evaluator.resolve(boundary), proxy_for_landlock,
+                                                         runtime_dir=ws / "runtime")
+        else:
+            spec_rules = compile_landlock_rules(boundary, ws, proxy_for_landlock, runtime_dir=ws / "runtime")
         rules_list = spec_rules.get("rules", []) if isinstance(spec_rules, dict) else getattr(spec_rules, "rules", [])
         net_restr = spec_rules.get("net_restricted") if isinstance(spec_rules, dict) else getattr(spec_rules, "net_restricted", None)
         scoped = spec_rules.get("scoped") if isinstance(spec_rules, dict) else getattr(spec_rules, "scoped", None)
@@ -863,6 +893,8 @@ class TaskLauncher:
             on_open=delivery.on_open,
             condition=cond,
             freeze_on_outside=sensor_freeze_on_outside,
+            evaluator=file_evaluator,
+            task_owned_dirs=() if resolved_path else ("output", "scratch"),
         )
         raw_events = open(control / "sensor_events.jsonl", "w", encoding="utf-8")
         events_done = threading.Event()
@@ -1100,6 +1132,7 @@ class TaskLauncher:
                 "rpc_call_counts": dict(rpc.call_counts),
                 "rpc_rejections": rpc.rejections,
                 "aborted": aborted,
+                **({"boundary_model": spec.boundary_model} if resolved_path else {}),
             },
         )
         self.receipts_dir.mkdir(parents=True, exist_ok=True)
@@ -1232,6 +1265,8 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     spec = TaskSpec.from_file(args.task_file)
+    if "boundary_model" not in json.loads(Path(args.task_file).read_text(encoding="utf-8")):
+        spec.boundary_model = "v1.1"  # the launcher CLI runs the M7 path unless the task file says otherwise
     base = Path(args.workspace_base) if args.workspace_base else default_workspace_base()
     storage = GovernanceStorage(args.db or (base / ".control" / "governance_m6.db"))
     launcher = TaskLauncher(storage, workspace_base=base,
