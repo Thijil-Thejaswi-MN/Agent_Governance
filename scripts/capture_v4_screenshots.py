@@ -190,9 +190,9 @@ def run():
             p_rec_dev.goto(f"{srv.url}/dashboard/run")
             p_rec_dev.locator("#preset-compare_target").click()
             p_rec_dev.wait_for_timeout(500)
-            # select qwen2.5:7b model
+            # select scripted model per prompt requirement
             try:
-                p_rec_dev.locator("#model-selector").select_option("qwen2.5:7b")
+                p_rec_dev.locator("#model-selector").select_option("scripted")
             except Exception:
                 pass
             p_rec_dev.wait_for_timeout(500)
