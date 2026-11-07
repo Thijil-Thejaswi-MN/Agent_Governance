@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Run investigation — enterprise console</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#0B0E14}
+a{color:#60A5FA}a:hover{color:#93C5FD}
+@keyframes flowDash{to{stroke-dashoffset:-24}}
+@keyframes pulseA{0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,.55)}50%{box-shadow:0 0 0 8px rgba(245,158,11,0)}}
+@keyframes glowAgent{0%,100%{box-shadow:0 0 24px rgba(59,130,246,.35)}50%{box-shadow:0 0 40px rgba(59,130,246,.6)}}
+@media (prefers-reduced-motion: reduce){*{animation:none !important}}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; min-height: 1180px; background: #0B0E14; color: #E6E9EF; font-family: Inter, system-ui, sans-serif; font-size: 14px">
+
+<aside style="flex: 1 1 232px; max-width: 248px; background: #0E121A; border-right: 1px solid #1F2633; padding: 18px 14px; display: flex; flex-direction: column; gap: 18px">
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 6px">
+<div style="width: 30px; height: 30px; border-radius: 8px; background: #3B82F6; display: flex; align-items: center; justify-content: center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg></div>
+<div><div style="font-weight: 700; font-size: 15px">Agent Governance</div><div style="font-size: 12px; color: #8B95A7">Acme Corp · Production</div></div>
+</div>
+<nav aria-label="Main" style="display: flex; flex-direction: column; gap: 2px">
+<a href="EntOverview.dc.html" style="padding: 9px 10px; border-radius: 8px; color: #A7B0C0; text-decoration: none">Overview</a>
+<a href="#" style="padding: 9px 10px; border-radius: 8px; color: #A7B0C0; text-decoration: none">Agents</a>
+<a href="#" style="padding: 9px 10px; border-radius: 8px; background: #1A2232; color: #E6E9EF; text-decoration: none; font-weight: 600">Runs</a>
+<a href="#" style="padding: 9px 10px; border-radius: 8px; color: #A7B0C0; text-decoration: none">Approvals <span style="margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: #F59E0B; color: #1A1203; font-size: 12px; font-weight: 700">3</span></a>
+<a href="#" style="padding: 9px 10px; border-radius: 8px; color: #A7B0C0; text-decoration: none">Blocked actions</a>
+<a href="#" style="padding: 9px 10px; border-radius: 8px; color: #A7B0C0; text-decoration: none">Policies</a>
+<a href="#" style="padding: 9px 10px; border-radius: 8px; color: #A7B0C0; text-decoration: none">Reports</a>
+</nav>
+</aside>
+
+<div style="flex: 999 1 900px; min-width: 0">
+<main style="padding: 22px 28px 40px; display: flex; flex-direction: column; gap: 18px">
+<div style="font-size: 13px; color: #8B95A7"><a href="#" style="color: #8B95A7">Runs</a> / <span style="font-family: 'JetBrains Mono', monospace">task_2149716d1a36</span></div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px">
+<h1 style="margin: 0; font-size: 24px; font-weight: 700">finance-report-bot · quarterly comparison</h1>
+<span style="padding: 4px 10px; border-radius: 999px; background: rgba(245,158,11,0.15); color: #FBBF24; font-size: 12px; font-weight: 700; animation: pulseA 2s ease-in-out infinite">WAITING FOR DECISION</span>
+<span style="margin-left: auto; font-size: 13px; color: #8B95A7">Started by T. M. · 00:41 · qwen2.5:7b</span>
+<button type="button" style="height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid #5B2328; background: transparent; color: #F87171; font-weight: 600">Stop run</button>
+</div>
+<p style="margin: 0; color: #A7B0C0; font-size: 15px">The agent read and wrote only what the request allows. It then tried a file it learned about from inside <strong style="color: #E6E9EF">sales_data.csv</strong>. The kernel stopped it, and it is asking for access.</p>
+
+<div role="tablist" aria-label="Run views" style="display: flex; gap: 4px; border-bottom: 1px solid #1F2633">
+<button type="button" role="tab" aria-selected="true" style="padding: 10px 14px; border: none; border-bottom: 2px solid #3B82F6; background: transparent; color: #E6E9EF; font-weight: 600">Access map</button>
+<button type="button" role="tab" aria-selected="false" style="padding: 10px 14px; border: none; background: transparent; color: #8B95A7">Timeline (9)</button>
+<button type="button" role="tab" aria-selected="false" style="padding: 10px 14px; border: none; background: transparent; color: #8B95A7">Boundary</button>
+<button type="button" role="tab" aria-selected="false" style="padding: 10px 14px; border: none; background: transparent; color: #8B95A7">Record</button>
+</div>
+
+<section style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start">
+<div style="flex: 999 1 640px; min-width: 0; padding: 18px; border-radius: 12px; background: #11151D; border: 1px solid #1F2633">
+<div style="display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: #8B95A7; margin-bottom: 8px">
+<span><span style="display: inline-block; width: 18px; height: 2px; background: #22C55E; vertical-align: middle; margin-right: 6px"></span>allowed</span>
+<span><span style="display: inline-block; width: 18px; border-top: 2px dashed #F59E0B; vertical-align: middle; margin-right: 6px"></span>stopped, now asking</span>
+<span><span style="display: inline-block; width: 18px; border-top: 2px dotted #F87171; vertical-align: middle; margin-right: 6px"></span>where it learned of the file</span>
+<span><span style="display: inline-block; width: 14px; height: 10px; border: 1.5px dashed #3B82F6; border-radius: 3px; vertical-align: middle; margin-right: 6px"></span>the fence for this request</span>
+</div>
+<div style="position: relative; width: 700px; max-width: 100%; height: 400px; margin: 0 auto">
+<svg width="700" height="400" viewBox="0 0 700 400" aria-hidden="true" style="position: absolute; inset: 0; max-width: 100%">
+<rect x="190" y="18" width="340" height="364" rx="22" fill="rgba(59,130,246,0.05)" stroke="#3B82F6" stroke-width="1.5" stroke-dasharray="7 6"/>
+<line x1="132" y1="200" x2="236" y2="200" stroke="#64748B" stroke-width="2"/>
+<path d="M366 186 C 390 150, 390 110, 404 96" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-dasharray="6 6" style="animation: flowDash 1.2s linear infinite"/>
+<path d="M366 214 C 390 250, 390 290, 404 304" fill="none" stroke="#22C55E" stroke-width="2.5" stroke-dasharray="6 6" style="animation: flowDash 1.2s linear infinite"/>
+<line x1="370" y1="200" x2="566" y2="200" stroke="#F59E0B" stroke-width="2.5" stroke-dasharray="8 6"/>
+<path d="M514 96 C 590 100, 620 140, 616 178" fill="none" stroke="#F87171" stroke-width="2" stroke-dasharray="2 5"/>
+<circle r="4" fill="#F59E0B"><animateMotion dur="1.6s" repeatCount="indefinite" path="M370 200 L516 200"/></circle>
+<circle r="4" fill="#22C55E"><animateMotion dur="1.8s" repeatCount="indefinite" path="M366 186 C 390 150, 390 110, 404 96"/></circle>
+<circle r="4" fill="#22C55E"><animateMotion dur="1.8s" begin="0.6s" repeatCount="indefinite" path="M366 214 C 390 250, 390 290, 404 304"/></circle>
+<circle r="3" fill="#F87171"><animateMotion dur="2.4s" repeatCount="indefinite" path="M514 96 C 590 100, 620 140, 616 178"/></circle>
+<circle cx="530" cy="200" r="14" fill="none" stroke="#EF4444" stroke-width="2"><animate attributeName="r" values="14;30" dur="1.6s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.8;0" dur="1.6s" repeatCount="indefinite"/></circle>
+<circle cx="530" cy="200" r="14" fill="#0B0E14" stroke="#EF4444" stroke-width="2"/>
+<path d="M525 199v-3a5 5 0 0110 0v3M523 199h14v8h-14z" fill="none" stroke="#F87171" stroke-width="1.8"/>
+</svg>
+<div style="position: absolute; left: 20px; top: 172px; width: 112px; padding: 10px; border-radius: 10px; background: #161B26; border: 1px solid #2A3344; text-align: center"><div style="font-size: 11px; color: #8B95A7">REQUEST</div><div style="font-weight: 600; font-size: 13px">T. M. (Finance)</div></div>
+<div style="position: absolute; left: 236px; top: 160px; width: 134px; padding: 12px; border-radius: 14px; background: #1A2440; border: 1.5px solid #3B82F6; text-align: center; animation: glowAgent 3s ease-in-out infinite"><div style="font-size: 11px; color: #93C5FD">AGENT</div><div style="font-weight: 700; font-size: 13px; font-family: 'JetBrains Mono', monospace">finance-report-bot</div></div>
+<div style="position: absolute; left: 404px; top: 74px; width: 112px; padding: 10px; border-radius: 10px; background: rgba(34,197,94,0.1); border: 1px solid #166534; text-align: center"><div style="font-size: 11px; color: #4ADE80">READ · allowed</div><div style="font-weight: 600; font-size: 13px">sales_data.csv</div></div>
+<div style="position: absolute; left: 404px; top: 282px; width: 112px; padding: 10px; border-radius: 10px; background: rgba(34,197,94,0.1); border: 1px solid #166534; text-align: center"><div style="font-size: 11px; color: #4ADE80">WRITE · allowed</div><div style="font-weight: 600; font-size: 13px">summary.txt</div></div>
+<div style="position: absolute; left: 566px; top: 178px; width: 120px; padding: 10px; border-radius: 10px; background: rgba(245,158,11,0.12); border: 1.5px solid #F59E0B; text-align: center; animation: pulseA 2s ease-in-out infinite"><div style="font-size: 11px; color: #FBBF24">READ · asking</div><div style="font-weight: 700; font-size: 13px">targets.csv</div></div>
+<div style="position: absolute; left: 600px; top: 112px; font-size: 11px; color: #FCA5A5">named inside</div>
+<div style="position: absolute; left: 200px; top: 26px; font-size: 11px; color: #93C5FD; letter-spacing: 1px">FENCE · DERIVED FROM THE REQUEST</div>
+</div>
+</div>
+
+<div style="flex: 1 1 340px; display: flex; flex-direction: column; gap: 14px">
+<div style="padding: 18px; border-radius: 12px; background: #11151D; border: 1.5px solid #B45309; display: flex; flex-direction: column; gap: 12px">
+<div style="display: flex; align-items: center; gap: 8px"><h2 style="margin: 0; font-size: 16px; font-weight: 700">Decision needed</h2><span style="margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #FBBF24">1:26 left</span></div>
+<div style="display: grid; grid-template-columns: 110px 1fr; gap: 8px 10px; font-size: 13px">
+<span style="color: #8B95A7">Wants</span><span style="font-family: 'JetBrains Mono', monospace">read input/targets.csv</span>
+<span style="color: #8B95A7">Risk</span><span>Low → <strong style="color: #FBBF24">Medium</strong></span>
+<span style="color: #8B95A7">Why raised</span><span>Named only inside sales_data.csv, not in the request</span>
+<span style="color: #8B95A7">Agent says</span><span style="color: #A7B0C0">“Need benchmark targets for the comparison.” (untrusted)</span>
+</div>
+<div style="display: flex; gap: 10px; flex-wrap: wrap">
+<button type="button" style="flex: 1 1 140px; height: 42px; border-radius: 8px; border: none; background: #22C55E; color: #052E16; font-weight: 700">Allow for this run</button>
+<button type="button" style="flex: 1 1 120px; height: 42px; border-radius: 8px; border: 1px solid #5B2328; background: transparent; color: #F87171; font-weight: 600">Deny</button>
+</div>
+<a href="#" style="font-size: 12px">Create a standing rule for this agent…</a>
+</div>
+<div style="padding: 18px; border-radius: 12px; background: #11151D; border: 1px solid #1F2633; display: grid; grid-template-columns: 110px 1fr; gap: 8px 10px; font-size: 13px">
+<span style="color: #8B95A7">Steps</span><span>9 · 6 allowed · 1 stopped · 1 asking</span>
+<span style="color: #8B95A7">Stopped by</span><span>kernel (file access)</span>
+<span style="color: #8B95A7">Network</span><span>none allowed</span>
+<span style="color: #8B95A7">Record</span><span style="color: #4ADE80">hash chain intact so far</span>
+</div>
+</div>
+</section>
+
+<section style="padding: 18px; border-radius: 12px; background: #11151D; border: 1px solid #1F2633">
+<h2 style="margin: 0 0 10px; font-size: 15px; font-weight: 600">Latest steps</h2>
+<div style="overflow-x: auto"><table style="width: 100%; border-collapse: collapse; font-size: 13px">
+<thead><tr style="color: #8B95A7; text-align: left"><th style="padding: 8px 6px; font-weight: 500">Time</th><th style="padding: 8px 6px; font-weight: 500">Action</th><th style="padding: 8px 6px; font-weight: 500">Target</th><th style="padding: 8px 6px; font-weight: 500">Checked by</th><th style="padding: 8px 6px; font-weight: 500">Result</th></tr></thead>
+<tbody>
+<tr style="border-top: 1px solid #1F2633"><td style="padding: 9px 6px; font-family: 'JetBrains Mono', monospace; color: #8B95A7">00:18</td><td style="padding: 9px 6px">Asked for access</td><td style="padding: 9px 6px; font-family: 'JetBrains Mono', monospace">input/targets.csv</td><td style="padding: 9px 6px">approval</td><td style="padding: 9px 6px"><span style="padding: 2px 8px; border-radius: 999px; background: rgba(245,158,11,0.15); color: #FBBF24; font-size: 12px">waiting</span></td></tr>
+<tr style="border-top: 1px solid #1F2633"><td style="padding: 9px 6px; font-family: 'JetBrains Mono', monospace; color: #8B95A7">00:15</td><td style="padding: 9px 6px">Ran a command</td><td style="padding: 9px 6px; font-family: 'JetBrains Mono', monospace">cat input/targets.csv</td><td style="padding: 9px 6px">kernel</td><td style="padding: 9px 6px"><span style="padding: 2px 8px; border-radius: 999px; background: rgba(239,68,68,0.15); color: #F87171; font-size: 12px">stopped</span></td></tr>
+<tr style="border-top: 1px solid #1F2633"><td style="padding: 9px 6px; font-family: 'JetBrains Mono', monospace; color: #8B95A7">00:12</td><td style="padding: 9px 6px">Model reply</td><td style="padding: 9px 6px; color: #A7B0C0">“targets are in input/targets.csv”</td><td style="padding: 9px 6px">—</td><td style="padding: 9px 6px"><span style="padding: 2px 8px; border-radius: 999px; background: #1A2232; color: #A7B0C0; font-size: 12px">untrusted</span></td></tr>
+<tr style="border-top: 1px solid #1F2633"><td style="padding: 9px 6px; font-family: 'JetBrains Mono', monospace; color: #8B95A7">00:06</td><td style="padding: 9px 6px">Read a file</td><td style="padding: 9px 6px; font-family: 'JetBrains Mono', monospace">input/sales_data.csv</td><td style="padding: 9px 6px">tool layer</td><td style="padding: 9px 6px"><span style="padding: 2px 8px; border-radius: 999px; background: rgba(34,197,94,0.15); color: #4ADE80; font-size: 12px">allowed</span></td></tr>
+</tbody></table></div>
+</section>
+<p style="margin: 0; font-size: 12px; color: #6B7487">Example data for the design mockup.</p>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1180}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

@@ -1,9 +1,9 @@
 import React, { Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppLayout } from './components/layout/AppLayout';
 
-// Route-level code splitting via React.lazy
+// Pages
 const HomePage = React.lazy(() => import('./pages/HomePage').then(m => ({ default: m.HomePage })));
 const AskPage = React.lazy(() => import('./pages/AskPage').then(m => ({ default: m.AskPage })));
 const WatchPage = React.lazy(() => import('./pages/WatchPage').then(m => ({ default: m.WatchPage })));
@@ -11,15 +11,37 @@ const FleetPage = React.lazy(() => import('./pages/FleetPage').then(m => ({ defa
 const HistoryPage = React.lazy(() => import('./pages/HistoryPage').then(m => ({ default: m.HistoryPage })));
 const ResultsPage = React.lazy(() => import('./pages/ResultsPage').then(m => ({ default: m.ResultsPage })));
 
+// v4 Role Pages
+const AdminOverviewPage = React.lazy(() =>
+  import('./pages/AdminOverviewPage').then(m => ({ default: m.AdminOverviewPage }))
+);
+const TeamLeadPage = React.lazy(() =>
+  import('./pages/TeamLeadPage').then(m => ({ default: m.TeamLeadPage }))
+);
+const InboxPage = React.lazy(() =>
+  import('./pages/InboxPage').then(m => ({ default: m.InboxPage }))
+);
+const RecordsPage = React.lazy(() =>
+  import('./pages/RecordsPage').then(m => ({ default: m.RecordsPage }))
+);
+const RunInvestigationPage = React.lazy(() =>
+  import('./pages/RunInvestigationPage').then(m => ({ default: m.RunInvestigationPage }))
+);
+const StandingRulesPage = React.lazy(() =>
+  import('./pages/StandingRulesPage').then(m => ({ default: m.StandingRulesPage }))
+);
+const SignInPage = React.lazy(() =>
+  import('./pages/SignInPage').then(m => ({ default: m.SignInPage }))
+);
+
 const PageLoader: React.FC = () => (
-  <div className="flex items-center justify-center min-h-[350px] text-[15px]" style={{ color: 'var(--text-2)' }}>
+  <div className="flex items-center justify-center min-h-[350px] text-[15px] text-[#8B95A7]">
     Loading…
   </div>
 );
 
 const page = (el: React.ReactNode) => <Suspense fallback={<PageLoader />}>{el}</Suspense>;
 
-// Old v2 links keep working.
 const TaskRedirect: React.FC = () => {
   const { taskId } = useParams<{ taskId: string }>();
   return <Navigate to={`/history/${taskId}`} replace />;
@@ -31,14 +53,31 @@ export const App: React.FC = () => {
       <BrowserRouter basename="/dashboard">
         <Routes>
           <Route element={<AppLayout />}>
+            {/* The v3 Home page with condition cards and demo description */}
             <Route index element={page(<HomePage />)} />
+
+            {/* v4 Role Homes */}
+            <Route path="signin" element={page(<SignInPage />)} />
+            <Route path="overview" element={page(<AdminOverviewPage />)} />
+            <Route path="team" element={page(<TeamLeadPage />)} />
+            <Route path="inbox" element={page(<InboxPage />)} />
+            <Route path="records" element={page(<RecordsPage />)} />
+            <Route path="standing-rules" element={page(<StandingRulesPage />)} />
+
+            {/* Developer Flow (Ask / Watch / Done demo) */}
             <Route path="run" element={page(<AskPage />)} />
             <Route path="run/:taskId" element={page(<WatchPage />)} />
+
+            {/* Shared run investigation */}
+            <Route path="runs/:taskId" element={page(<RunInvestigationPage />)} />
+
+            {/* Fleet, History, Results */}
             <Route path="fleet" element={page(<FleetPage />)} />
             <Route path="history" element={page(<HistoryPage />)} />
             <Route path="history/:taskId" element={page(<WatchPage readOnly />)} />
             <Route path="results" element={page(<ResultsPage />)} />
 
+            {/* v2 and v3 compatibility redirects */}
             <Route path="tasks" element={<Navigate to="/history" replace />} />
             <Route path="tasks/:taskId" element={<TaskRedirect />} />
             <Route path="approvals" element={<Navigate to="/fleet" replace />} />

@@ -105,6 +105,8 @@ class TaskSpec:
     decoys: list[dict[str, Any]] = field(default_factory=list)
     canary: str = ""
     use_eval_world: bool = False
+    owner: str | None = None
+    team: str | None = None
     # "v1": the frozen M6 path (BoundaryDerivationV1, BoundaryEvaluator, compile_landlock_rules),
     # kept as the default for the evaluation harness. "v1.1": the M7 path (BoundaryDerivationV1_1;
     # broker and Landlock both compiled from resolve_boundary). Selected by the Run page and the CLI.
@@ -628,6 +630,8 @@ class TaskLauncher:
             output_targets=spec.output_targets or None,
             files_read=spec.files_read,
             task_id=spec.task_id,
+            owner=spec.owner,
+            team=spec.team,
         )
         if spec.files_read is not None:
             boundary.files_read = list(spec.files_read)

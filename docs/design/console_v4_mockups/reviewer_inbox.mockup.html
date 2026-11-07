@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Approvals inbox — Security reviewer</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#0B0E14}
+a{color:#60A5FA}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,.5)}50%{box-shadow:0 0 0 6px rgba(245,158,11,0)}}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes glow{0%,100%{opacity:.35}50%{opacity:.8}}
+@keyframes scan{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+@media (prefers-reduced-motion: reduce){*{animation:none !important}}
+</style>
+</helmet>
+<div style="display:flex;flex-wrap:wrap;min-height:1100px;background:#0B0E14;color:#E6E9EF;font-family:Inter,system-ui,sans-serif;font-size:14px">
+<aside style="flex:1 1 232px;max-width:248px;background:#0E121A;border-right:1px solid #1F2633;padding:18px 14px;display:flex;flex-direction:column;gap:18px">
+<div style="display:flex;align-items:center;gap:10px;padding:0 6px">
+<div style="width:30px;height:30px;border-radius:8px;background:#3B82F6;display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg></div>
+<div><div style="font-weight:700;font-size:15px">Agent Governance</div><div style="font-size:12px;color:#8B95A7">Acme Corp · Production</div></div>
+</div>
+<nav aria-label="Main" style="display:flex;flex-direction:column;gap:2px">
+<a href="#" style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;text-decoration:none;background:#1A2232;color:#E6E9EF;font-weight:600"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg>Inbox<span style="margin-left:auto;padding:1px 8px;border-radius:999px;background:#F59E0B;color:#1A1203;font-size:12px;font-weight:700">62</span></a>
+<a href="#" style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;text-decoration:none;color:#A7B0C0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/></svg>Standing rules<span style="margin-left:auto;font-size:12px;color:#8B95A7">148</span></a>
+<a href="#" style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;text-decoration:none;color:#A7B0C0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>Blocked actions</a>
+<a href="#" style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;text-decoration:none;color:#A7B0C0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 8V4M9 13h.01M15 13h.01"/></svg>Agents<span style="margin-left:auto;font-size:12px;color:#8B95A7">1,284</span></a>
+<a href="#" style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;text-decoration:none;color:#A7B0C0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg>Records</a>
+</nav>
+<div style="margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px;border-radius:10px;background:#11151D;border:1px solid #1F2633">
+<span aria-hidden="true" style="flex:none;width:30px;height:30px;border-radius:50%;background:#FBBF24;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#0B0E14">PR</span><div style="min-width:0"><div style="font-weight:600;font-size:13px">Priya Raman</div><div style="font-size:12px;color:#FBBF24">Security reviewer</div></div>
+</div>
+</aside>
+<div style="flex:999 1 900px;min-width:0;display:flex;flex-direction:column">
+<header style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:14px 28px;border-bottom:1px solid #1F2633;background:linear-gradient(180deg,#0E121A,#0B0E14)">
+<div style="font-size:13px;color:#8B95A7">Acme Corp / <b style='color:#E6E9EF'>Approvals inbox</b></div>
+<div style="flex:1 1 240px;max-width:420px;margin-left:auto;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:#11151D;border:1px solid #1F2633;color:#6B7487;font-size:13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>Search agents, runs, files…<span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:11px;padding:1px 6px;border:1px solid #2A3344;border-radius:4px">/</span></div>
+<span style="display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;background:rgba(245,158,11,0.15);color:#FBBF24;font-size:12px;font-weight:600">● 62 waiting</span>
+</header>
+<main style="padding:24px 28px 32px;display:flex;flex-direction:column;gap:18px">
+<section style="animation:rise .4s both"><h1 style="margin:0;font-size:28px;font-weight:700;letter-spacing:-0.02em">62 requests are waiting. They come from 4 patterns.</h1><p style="margin:6px 0 0;color:#A7B0C0;font-size:15px">Similar requests are grouped, so you decide once per pattern instead of once per agent.</p></section>
+<section style="display:flex;flex-wrap:wrap;gap:14px"><div style="flex:1 1 180px;padding:18px;border-radius:12px;background:#11151D;border:1px solid #1F2633;animation:rise .5s both"><div style="font-size:12px;color:#8B95A7">Waiting now</div><div style="margin-top:6px;font-size:28px;font-weight:700;color:#FBBF24;letter-spacing:-0.02em">62</div><div style="margin-top:4px;font-size:12px;color:#8B95A7">in 4 groups</div></div><div style="flex:1 1 180px;padding:18px;border-radius:12px;background:#11151D;border:1px solid #1F2633;animation:rise .5s both"><div style="font-size:12px;color:#8B95A7">Median time to decide</div><div style="margin-top:6px;font-size:28px;font-weight:700;color:#E6E9EF;letter-spacing:-0.02em">1m 48s</div><div style="margin-top:4px;font-size:12px;color:#8B95A7">last 24 hours</div></div><div style="flex:1 1 180px;padding:18px;border-radius:12px;background:#11151D;border:1px solid #1F2633;animation:rise .5s both"><div style="font-size:12px;color:#8B95A7">Timed out, stayed blocked</div><div style="margin-top:6px;font-size:28px;font-weight:700;color:#F87171;letter-spacing:-0.02em">5</div><div style="margin-top:4px;font-size:12px;color:#8B95A7">no one decided in time</div></div><div style="flex:1 1 180px;padding:18px;border-radius:12px;background:#11151D;border:1px solid #1F2633;animation:rise .5s both"><div style="font-size:12px;color:#8B95A7">Handled by standing rules</div><div style="margin-top:6px;font-size:28px;font-weight:700;color:#4ADE80;letter-spacing:-0.02em">3,912</div><div style="margin-top:4px;font-size:12px;color:#8B95A7">last 24 hours</div></div></section>
+<section style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start">
+<div style="flex:999 1 620px;min-width:0;display:flex;flex-direction:column;gap:10px">
+<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center"><span style="font-weight:600">Grouped requests</span><span style="display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;background:#1A2232;color:#E6E9EF;font-size:12px;font-weight:600">All teams ▾</span><span style="display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;background:#1A2232;color:#E6E9EF;font-size:12px;font-weight:600">Any risk ▾</span><span style="display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;background:#1A2232;color:#E6E9EF;font-size:12px;font-weight:600">Oldest first ▾</span><span style="margin-left:auto;font-size:12px;color:#8B95A7">Each request expires in 2:00 and stays blocked if no one decides.</span></div>
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:14px 16px;border-radius:12px;background:#11151D;border:1px solid #F59E0B;box-shadow:0 0 0 3px rgba(245,158,11,.12);animation:rise .45s 0.00s both">
+<input type="checkbox" checked aria-label="Select group" style="width:16px;height:16px;accent-color:#F59E0B">
+<div style="flex:none;min-width:52px;text-align:center"><div style="font-size:22px;font-weight:700;color:#FBBF24">37</div><div style="font-size:11px;color:#8B95A7">requests</div></div>
+<div style="flex:1 1 360px;min-width:0"><div style="font-size:14px"><span style="font-family:'JetBrains Mono',monospace;color:#C7D2FE">support-triage</span> <span style="color:#A7B0C0">wants to open</span> <span style="font-family:'JetBrains Mono',monospace;font-weight:600">crm.acme.io</span></div>
+<div style="margin-top:4px;font-size:12px;color:#8B95A7">Support · an outside website · All 37 named it themselves in the task request.</div></div>
+<span style="display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;background:#1A2232;color:#A7B0C0;font-size:12px;font-weight:600">Routine</span>
+<div style="display:flex;gap:8px"><button style="min-height:36px;padding:0 14px;border-radius:8px;border:1px solid #2A3344;background:transparent;color:#E6E9EF;font:600 13px Inter,sans-serif;cursor:pointer">Deny all</button><button style="min-height:36px;padding:0 14px;border-radius:8px;border:0;background:#2563EB;color:#fff;font:600 13px Inter,sans-serif;cursor:pointer">Allow for these runs</button></div>
+</div><div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:14px 16px;border-radius:12px;background:#11151D;border:1px solid #1F2633;animation:rise .45s 0.07s both">
+<input type="checkbox"  aria-label="Select group" style="width:16px;height:16px;accent-color:#F59E0B">
+<div style="flex:none;min-width:52px;text-align:center"><div style="font-size:22px;font-weight:700;color:#FBBF24">12</div><div style="font-size:11px;color:#8B95A7">requests</div></div>
+<div style="flex:1 1 360px;min-width:0"><div style="font-size:14px"><span style="font-family:'JetBrains Mono',monospace;color:#C7D2FE">finance-report-bot</span> <span style="color:#A7B0C0">wants to read</span> <span style="font-family:'JetBrains Mono',monospace;font-weight:600">targets.csv</span></div>
+<div style="margin-top:4px;font-size:12px;color:#8B95A7">Finance · a file · It only learned about this file from inside another file.</div></div>
+<span style="display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;background:rgba(239,68,68,0.14);color:#F87171;font-size:12px;font-weight:600">Look closely</span>
+<div style="display:flex;gap:8px"><button style="min-height:36px;padding:0 14px;border-radius:8px;border:1px solid #2A3344;background:transparent;color:#E6E9EF;font:600 13px Inter,sans-serif;cursor:pointer">Deny all</button><button style="min-height:36px;padding:0 14px;border-radius:8px;border:0;background:#2563EB;color:#fff;font:600 13px Inter,sans-serif;cursor:pointer">Allow for these runs</button></div>
+</div><div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:14px 16px;border-radius:12px;background:#11151D;border:1px solid #1F2633;animation:rise .45s 0.14s both">
+<input type="checkbox"  aria-label="Select group" style="width:16px;height:16px;accent-color:#F59E0B">
+<div style="flex:none;min-width:52px;text-align:center"><div style="font-size:22px;font-weight:700;color:#FBBF24">4</div><div style="font-size:11px;color:#8B95A7">requests</div></div>
+<div style="flex:1 1 360px;min-width:0"><div style="font-size:14px"><span style="font-family:'JetBrains Mono',monospace;color:#C7D2FE">ci-build-agent</span> <span style="color:#A7B0C0">wants to write</span> <span style="font-family:'JetBrains Mono',monospace;font-weight:600">/deploy/prod.yaml</span></div>
+<div style="margin-top:4px;font-size:12px;color:#8B95A7">Platform · a deploy folder · Writing here changes production settings.</div></div>
+<span style="display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;background:rgba(239,68,68,0.14);color:#F87171;font-size:12px;font-weight:600">Look closely</span>
+<div style="display:flex;gap:8px"><button style="min-height:36px;padding:0 14px;border-radius:8px;border:1px solid #2A3344;background:transparent;color:#E6E9EF;font:600 13px Inter,sans-serif;cursor:pointer">Deny all</button><button style="min-height:36px;padding:0 14px;border-radius:8px;border:0;background:#2563EB;color:#fff;font:600 13px Inter,sans-serif;cursor:pointer">Allow for these runs</button></div>
+</div><div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;padding:14px 16px;border-radius:12px;background:#11151D;border:1px solid #1F2633;animation:rise .45s 0.21s both">
+<input type="checkbox"  aria-label="Select group" style="width:16px;height:16px;accent-color:#F59E0B">
+<div style="flex:none;min-width:52px;text-align:center"><div style="font-size:22px;font-weight:700;color:#FBBF24">9</div><div style="font-size:11px;color:#8B95A7">requests</div></div>
+<div style="flex:1 1 360px;min-width:0"><div style="font-size:14px"><span style="font-family:'JetBrains Mono',monospace;color:#C7D2FE">doc-summarizer</span> <span style="color:#A7B0C0">wants to read</span> <span style="font-family:'JetBrains Mono',monospace;font-weight:600">contracts/2026/</span></div>
+<div style="margin-top:4px;font-size:12px;color:#8B95A7">Legal · a folder · Named in the task request.</div></div>
+<span style="display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;background:#1A2232;color:#A7B0C0;font-size:12px;font-weight:600">Routine</span>
+<div style="display:flex;gap:8px"><button style="min-height:36px;padding:0 14px;border-radius:8px;border:1px solid #2A3344;background:transparent;color:#E6E9EF;font:600 13px Inter,sans-serif;cursor:pointer">Deny all</button><button style="min-height:36px;padding:0 14px;border-radius:8px;border:0;background:#2563EB;color:#fff;font:600 13px Inter,sans-serif;cursor:pointer">Allow for these runs</button></div>
+</div>
+</div>
+<aside style="flex:1 1 340px;min-width:0;padding:18px;border-radius:12px;background:#11151D;border:1px solid #1F2633;border-color:#3A2E12;display:flex;flex-direction:column;gap:12px">
+<div style="font-size:12px;color:#FBBF24;font-weight:600;letter-spacing:.04em">SELECTED · 37 REQUESTS</div>
+<div style="font-size:18px;font-weight:700">support-triage wants to open crm.acme.io</div>
+<p style="margin:0;color:#A7B0C0;line-height:1.5">37 runs on the Support team asked for the same website. Each user named it in their request, so nothing points to a planted instruction.</p>
+<div style="display:flex;flex-direction:column;gap:6px;font-size:13px">
+<div style="display:flex;justify-content:space-between"><span style="color:#8B95A7">Teams</span><span>Support</span></div>
+<div style="display:flex;justify-content:space-between"><span style="color:#8B95A7">Oldest waiting</span><span>1m 12s</span></div>
+<div style="display:flex;justify-content:space-between"><span style="color:#8B95A7">Same request last week</span><span>allowed 211 times</span></div>
+</div>
+<div style="height:1px;background:#1F2633"></div>
+<div style="font-weight:600">Make this a standing rule?</div>
+<div style="padding:12px;border-radius:10px;background:#0B0E14;border:1px solid #1F2633;font-size:13px;line-height:1.6">Allow <b>support-triage</b> to open <b>crm.acme.io</b><br>when the user names it in the request<br><span style="color:#8B95A7">Expires in</span> 30 days · <span style="color:#8B95A7">Owner</span> Priya Raman</div>
+<div style="display:flex;flex-wrap:wrap;gap:8px"><button style="min-height:36px;padding:0 14px;border-radius:8px;border:0;background:#2563EB;color:#fff;font:600 13px Inter,sans-serif;cursor:pointer">Allow these 37</button><button style="min-height:36px;padding:0 14px;border-radius:8px;border:0;background:#7C3AED;color:#fff;font:600 13px Inter,sans-serif;cursor:pointer">Allow + create rule</button><button style="min-height:36px;padding:0 14px;border-radius:8px;border:1px solid #2A3344;background:transparent;color:#E6E9EF;font:600 13px Inter,sans-serif;cursor:pointer">Deny…</button></div>
+<p style="margin:0;font-size:12px;color:#6B7487">A rule covers only requests that match it exactly. Requests that come from inside a file never match a rule; a person always decides those.</p>
+</aside>
+</section>
+<p style="margin:0;font-size:12px;color:#6B7487">Example data for the design mockup.</p>
+</main>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1100}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

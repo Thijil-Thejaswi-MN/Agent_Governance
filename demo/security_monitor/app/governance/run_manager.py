@@ -379,6 +379,8 @@ class ActiveRunManager:
         files: dict[str, str] | None = None,
         workspace_base: Path | None = None,
         launcher_hooks: dict[str, Any] | None = None,
+        owner: str | None = None,
+        team: str | None = None,
     ) -> str:
         model = validate_model(model)  # outside the lock: may query Ollama
         with self._lock:
@@ -440,6 +442,8 @@ class ActiveRunManager:
                 llm=llm_cfg,
                 decoys=decoys,
                 canary=canary,
+                owner=owner,
+                team=team,
                 boundary_model="v1.1",
             )
 

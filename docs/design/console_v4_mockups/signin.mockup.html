@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sign in — Agent Governance</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#0B0E14}
+a{color:#60A5FA}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,.5)}50%{box-shadow:0 0 0 6px rgba(245,158,11,0)}}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes glow{0%,100%{opacity:.35}50%{opacity:.8}}
+@keyframes scan{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+@media (prefers-reduced-motion: reduce){*{animation:none !important}}
+</style>
+</helmet>
+<div style="position:relative;overflow:hidden;min-height:900px;background:radial-gradient(900px 500px at 50% -10%,rgba(59,130,246,0.22),transparent 60%),#0B0E14;color:#E6E9EF;font-family:Inter,system-ui,sans-serif;font-size:14px;display:flex;flex-direction:column;align-items:center;padding:56px 24px">
+<svg aria-hidden="true" width="100%" height="100%" style="position:absolute;inset:0;opacity:.5" preserveAspectRatio="none" viewBox="0 0 1440 900"><g fill="#3B82F6">
+<circle cx="140" cy="210" r="2"><animate attributeName="opacity" values=".2;1;.2" dur="3s" repeatCount="indefinite"/></circle><circle cx="1290" cy="160" r="2"><animate attributeName="opacity" values=".2;1;.2" dur="4s" repeatCount="indefinite"/></circle><circle cx="1180" cy="760" r="2"><animate attributeName="opacity" values=".2;1;.2" dur="3.4s" repeatCount="indefinite"/></circle><circle cx="260" cy="700" r="2"><animate attributeName="opacity" values=".2;1;.2" dur="2.6s" repeatCount="indefinite"/></circle><circle cx="720" cy="840" r="2"><animate attributeName="opacity" values=".2;1;.2" dur="3.8s" repeatCount="indefinite"/></circle></g>
+<ellipse cx="720" cy="120" rx="520" ry="200" fill="none" stroke="#3B82F6" stroke-opacity=".25" stroke-dasharray="6 8"><animate attributeName="stroke-dashoffset" from="0" to="-70" dur="7s" repeatCount="indefinite"/></ellipse></svg>
+<div style="position:relative;display:flex;flex-direction:column;align-items:center;gap:14px;max-width:1120px;width:100%">
+<div style="width:52px;height:52px;border-radius:14px;background:linear-gradient(135deg,#3B82F6,#6366F1);display:flex;align-items:center;justify-content:center;box-shadow:0 10px 40px rgba(59,130,246,.45)"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg></div>
+<h1 style="margin:6px 0 0;font-size:34px;font-weight:700;letter-spacing:-0.02em;text-align:center">Sign in to Agent Governance</h1>
+<p style="margin:0;color:#A7B0C0;font-size:16px;text-align:center">Every agent only touches what its task needs. Choose how you work today.</p>
+
+<div style="margin-top:18px;width:100%;max-width:440px;padding:18px;border-radius:12px;background:#11151D;border:1px solid #1F2633;display:flex;flex-direction:column;gap:12px">
+<button style="min-height:44px;border-radius:10px;border:1px solid #2A3344;background:#161B26;color:#E6E9EF;font:600 14px Inter,sans-serif;display:flex;align-items:center;justify-content:center;gap:10px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 010 7M18 14.8c1.8.7 3 2.4 3.5 5.2"/></svg>Continue with company sign-in (SSO)</button>
+<div style="display:flex;align-items:center;gap:10px;color:#6B7487;font-size:12px"><span style="flex:1;height:1px;background:#1F2633"></span>or, on a local install<span style="flex:1;height:1px;background:#1F2633"></span></div>
+<label style="font-size:12px;color:#8B95A7">Operator token</label>
+<div style="display:flex;gap:8px"><div style="flex:1;min-height:42px;border-radius:10px;border:1px solid #2A3344;background:#0B0E14;display:flex;align-items:center;padding:0 12px;font-family:'JetBrains Mono',monospace;color:#6B7487">••••••••••••••••</div><button style="min-height:36px;padding:0 14px;border-radius:8px;border:0;background:#3B82F6;color:#fff;font:600 13px Inter,sans-serif;cursor:pointer">Sign in</button></div>
+</div>
+
+<div style="margin-top:22px;width:100%;display:flex;align-items:center;gap:12px"><h2 style="margin:0;font-size:15px;font-weight:600">Your role in Acme Corp</h2><span style="font-size:12px;color:#8B95A7">Each role opens on a different home. Your admin assigns roles.</span><span style="margin-left:auto;display:flex;gap:6px"><span style="display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;background:#1A2232;color:#A7B0C0;font-size:12px;font-weight:600">Personal</span><span style="display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;background:rgba(59,130,246,0.15);color:#93C5FD;font-size:12px;font-weight:600">Acme Corp · Production</span></span></div>
+<div style="width:100%;display:flex;flex-wrap:wrap;gap:12px"><a href="Main.dc.html" style="flex:1 1 200px;display:flex;flex-direction:column;gap:10px;padding:18px;border-radius:14px;background:#11151D;border:1px solid #1F2633;color:#E6E9EF;text-decoration:none;animation:rise .5s 0.00s both">
+<div style="width:38px;height:38px;border-radius:10px;background:#60A5FA22;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 8V4M9 13h.01M15 13h.01"/></svg></div>
+<div style="font-weight:700;font-size:15px">Developer</div>
+<div style="font-size:13px;color:#A7B0C0;line-height:1.45">Give tasks to your agents and watch them work.</div>
+<div style="margin-top:auto;font-size:12px;color:#60A5FA">Lands on: My agents →</div>
+</a><a href="TeamLead.dc.html" style="flex:1 1 200px;display:flex;flex-direction:column;gap:10px;padding:18px;border-radius:14px;background:#11151D;border:1px solid #1F2633;color:#E6E9EF;text-decoration:none;animation:rise .5s 0.08s both">
+<div style="width:38px;height:38px;border-radius:10px;background:#A78BFA22;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 010 7M18 14.8c1.8.7 3 2.4 3.5 5.2"/></svg></div>
+<div style="font-weight:700;font-size:15px">Team lead</div>
+<div style="font-size:13px;color:#A7B0C0;line-height:1.45">See your team's agents. Approve their requests.</div>
+<div style="margin-top:auto;font-size:12px;color:#A78BFA">Lands on: Team · Finance →</div>
+</a><a href="Reviewer.dc.html" style="flex:1 1 200px;display:flex;flex-direction:column;gap:10px;padding:18px;border-radius:14px;background:#11151D;border:1px solid #FBBF24;box-shadow:0 0 0 3px #FBBF2422;color:#E6E9EF;text-decoration:none;animation:rise .5s 0.16s both">
+<div style="width:38px;height:38px;border-radius:10px;background:#FBBF2422;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FBBF24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg></div>
+<div style="font-weight:700;font-size:15px">Security reviewer</div>
+<div style="font-size:13px;color:#A7B0C0;line-height:1.45">Decide on requests. Turn repeats into rules.</div>
+<div style="margin-top:auto;font-size:12px;color:#FBBF24">Lands on: Approvals inbox →</div>
+</a><a href="EntOverview.dc.html" style="flex:1 1 200px;display:flex;flex-direction:column;gap:10px;padding:18px;border-radius:14px;background:#11151D;border:1px solid #1F2633;color:#E6E9EF;text-decoration:none;animation:rise .5s 0.24s both">
+<div style="width:38px;height:38px;border-radius:10px;background:#34D39922;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#34D399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></div>
+<div style="font-weight:700;font-size:15px">Admin</div>
+<div style="font-size:13px;color:#A7B0C0;line-height:1.45">Every agent, team and rule in one place.</div>
+<div style="margin-top:auto;font-size:12px;color:#34D399">Lands on: Organization overview →</div>
+</a><a href="Auditor.dc.html" style="flex:1 1 200px;display:flex;flex-direction:column;gap:10px;padding:18px;border-radius:14px;background:#11151D;border:1px solid #1F2633;color:#E6E9EF;text-decoration:none;animation:rise .5s 0.32s both">
+<div style="width:38px;height:38px;border-radius:10px;background:#F472B622;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#F472B6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V9z"/><path d="M14 3v6h6"/></svg></div>
+<div style="font-weight:700;font-size:15px">Auditor</div>
+<div style="font-size:13px;color:#A7B0C0;line-height:1.45">Check what happened. Download the records.</div>
+<div style="margin-top:auto;font-size:12px;color:#F472B6">Lands on: Records · read-only →</div>
+</a></div>
+<p style="margin:10px 0 0;font-size:12px;color:#6B7487;text-align:center">Every role sees the same records. Roles change what you land on and what you may decide, never what gets enforced.</p>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

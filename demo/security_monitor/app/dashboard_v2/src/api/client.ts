@@ -14,6 +14,9 @@ import {
   RunModelsResponse,
   ActiveRunInfo,
   FleetSummary,
+  Role,
+  PendingGroup,
+  StandingRule,
 } from '../types';
 
 const API_BASE = '/api/governance';
@@ -99,6 +102,9 @@ export const api = {
   
   getTaskReceipt: (taskId: string) =>
     request<ReceiptResponse>(`${API_BASE}/tasks/${taskId}/receipt`),
+
+  getRecordsSummary: () =>
+    request<{ total: number; verified: number; failed: number; failed_ids: string[] }>(`${API_BASE}/records/summary`),
 
   // Expansions
   getExpansions: (taskId?: string, status?: string) => {
@@ -204,5 +210,29 @@ export const api = {
   getRunOutput: (taskId: string) =>
     request<{ task_id: string; files: RunOutputFile[] }>(`${API_BASE}/run/${taskId}/output`),
   getRunStreamUrl: (taskId: string) => `${API_BASE}/run/${taskId}/stream`,
+
+
+  // Role & Session Status
+  getSessionUser: () => request<{ user: { name: string; role: Role; team: string | null } }>(`${API_BASE}/auth/status`),
+
+  // Inbox & Batch Operations
+  getPendingGroups: () => request<{ groups: PendingGroup[]; total_waiting: number }>(`${API_BASE}/inbox/pending`),
+  batchApprove: (payload: { request_ids: string[]; reason?: string; create_rule?: boolean }) =>
+    request<{ approved_count: number; rule_created?: StandingRule }>(`${API_BASE}/expansions/batch-approve`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  batchDeny: (payload: { request_ids: string[]; reason: string }) =>
+    request<{ denied_count: number }>(`${API_BASE}/expansions/batch-deny`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  // Standing Rules
+  getStandingRules: () => request<{ rules: StandingRule[]; enabled: boolean }>(`${API_BASE}/standing-rules`),
+  expireStandingRule: (ruleId: string) =>
+    request<{ expired: boolean }>(`${API_BASE}/standing-rules/${ruleId}/expire`, {
+      method: 'POST',
+    }),
 
 };

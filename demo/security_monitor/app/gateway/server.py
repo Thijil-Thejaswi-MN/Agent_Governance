@@ -131,6 +131,16 @@ def create_app(
     async def shutdown() -> None:
         await app.state.http_client.aclose()
 
+    @app.middleware("http")
+    async def add_demo_header(request: Request, call_next):
+        from ..governance.scale import is_demo_data_enabled
+        if not is_demo_data_enabled():
+            return await call_next(request)
+
+        response = await call_next(request)
+        response.headers["X-Governance-Demo"] = "1"
+        return response
+
     # --- Core System APIs ---
 
     @app.get("/health")

@@ -88,6 +88,8 @@ class TaskRecord(BaseModel):
     completed_at: str | None = None
     current_boundary_version: int = 1
     pid: int | None = None
+    owner: str | None = None
+    team: str | None = None
 
 
 class GovernanceEvent(BaseModel):

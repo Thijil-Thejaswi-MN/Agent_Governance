@@ -58,7 +58,7 @@ export const Fence: React.FC<FenceProps> = ({ inside, blocked, requested, live }
         <div id="fence-ring" className="fence-ring">
           <div
             aria-hidden="true"
-            className="absolute inset-0 rounded-full"
+            className="absolute inset-0 rounded-full pointer-events-none"
             style={{
               background: 'radial-gradient(circle, rgba(34,211,238,0.12), transparent 70%)',
               animation: live ? 'halo 4s ease-in-out infinite' : undefined,
@@ -66,7 +66,7 @@ export const Fence: React.FC<FenceProps> = ({ inside, blocked, requested, live }
           />
           <div
             aria-hidden="true"
-            className="absolute inset-0 rounded-full"
+            className="absolute inset-0 rounded-full pointer-events-none"
             style={{ border: '3px dashed rgba(34,211,238,0.85)', animation: live ? 'spin 40s linear infinite' : undefined }}
           />
           <div
