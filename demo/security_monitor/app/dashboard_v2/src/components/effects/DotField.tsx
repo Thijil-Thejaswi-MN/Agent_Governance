@@ -1,3 +1,4 @@
+// Source: React Bits DotField (https://reactbits.dev/backgrounds/dot-field)
 'use client';
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react';

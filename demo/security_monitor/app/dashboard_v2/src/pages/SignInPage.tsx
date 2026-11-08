@@ -19,7 +19,7 @@ const ROLES: RoleCard[] = [
     role: 'developer',
     title: 'Developer',
     desc: 'Give tasks to your agents and watch them work.',
-    landingText: 'Lands on: Ask & Watch →',
+    landingText: 'Lands on: Run →',
     color: '#60A5FA',
     icon: <Bot className="w-5 h-5" />,
   },
@@ -204,7 +204,7 @@ export const SignInPage: React.FC = () => {
         {/* Role Explanation Section */}
         <div className="mt-10 w-full flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-[15px] font-bold text-[#E6E9EF]">Your role in Acme Corp</h2>
+            <h2 className="text-[15px] font-bold text-[#E6E9EF]">Your role</h2>
             <span className="text-[12px] text-[#8B95A7]">
               Each role opens on a different home. Your admin assigns roles.
             </span>
