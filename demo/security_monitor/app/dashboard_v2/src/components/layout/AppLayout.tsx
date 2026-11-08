@@ -7,6 +7,7 @@ import { OperatorAuthModal } from '../common/OperatorAuthModal';
 import { SignInRequired } from '../common/SignInRequired';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../api/client';
+import { onCountsRefresh } from '../../logic/countsRefresh';
 
 // Home's top bar (Home is the one signed-in page without the sidebar; see test_top_navigation)
 const TOP_NAV = [
@@ -56,9 +57,12 @@ export const AppLayout: React.FC = () => {
 
     fetchCounts();
     const interval = setInterval(fetchCounts, 5000);
+    // Also refresh at once when a run changes state or a decision is made.
+    const off = onCountsRefresh(fetchCounts);
     return () => {
       mounted = false;
       clearInterval(interval);
+      off();
     };
   }, [authEpoch]);
 
