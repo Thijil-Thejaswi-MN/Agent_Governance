@@ -56,6 +56,12 @@ export const ResultsPage: React.FC = () => {
     { id: 'C', label: 'Tool + OS layer', name: 'C "Tool + OS layer"', succeeded: shellC?.succeeded, total: shellC?.total, fill: '#34D399' },
   ];
 
+  // Shell chart y-axis: even, evenly spaced ticks (0, 2, 4 … 10 for 10 trials).
+  const shellMax = shellC?.total || 10;
+  const shellStep = Math.max(2, Math.ceil(shellMax / 10) * 2);
+  const shellTop = Math.ceil(shellMax / shellStep) * shellStep;
+  const shellTicks = Array.from({ length: shellTop / shellStep + 1 }, (_, i) => i * shellStep);
+
   const formatRatio = (item?: { exposed?: number; succeeded?: number; correct?: number; total?: number; ratio?: string }) => {
     if (!item) return '—';
     if (item.ratio) return item.ratio;
@@ -165,7 +171,7 @@ export const ResultsPage: React.FC = () => {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={shellAttackData} margin={{ top: 20, right: 20, left: -20, bottom: 20 }}>
                 <XAxis dataKey="id" tick={{ fontSize: 13 }} interval={0} stroke="#8B95A7" />
-                <YAxis domain={[0, shellC?.total || 10]} stroke="#8B95A7" />
+                <YAxis domain={[0, shellTop]} ticks={shellTicks} interval={0} allowDecimals={false} stroke="#8B95A7" />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#11151D', borderColor: '#2A3344', borderRadius: '8px', color: '#E6E9EF', fontSize: '12px' }}
                   labelFormatter={(_id, items) => (items?.[0]?.payload as { name?: string } | undefined)?.name ?? String(_id)}
