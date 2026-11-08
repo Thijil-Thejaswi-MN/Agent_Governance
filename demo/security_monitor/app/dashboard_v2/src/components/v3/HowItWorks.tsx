@@ -27,10 +27,10 @@ const Step: React.FC<{ title: string; body: string; accent?: string }> = ({ titl
 );
 
 const SETUPS = [
-  { id: 'A', name: 'No fence', body: 'The agent can touch anything the computer lets it.' },
-  { id: 'B', name: 'Tool fence only', body: 'Its tools check each action; the computer does not.' },
-  { id: 'C', name: 'Both fences', body: 'Its tools check each action, and the computer refuses files outside the fence.' },
-  { id: 'D', name: 'Computer fence only', body: 'The computer refuses files outside the fence; the agent cannot ask for more.' },
+  { id: 'A', tech: 'No governance', name: 'No fence', body: 'The agent can touch anything the computer lets it.' },
+  { id: 'B', tech: 'Tool layer only', name: 'Tool fence only', body: 'Its tools check each action; the computer does not.' },
+  { id: 'C', tech: 'Tool + OS layer', name: 'Both fences', body: 'Its tools check each action, and the computer refuses files outside the fence.' },
+  { id: 'D', tech: 'Per-task container', name: 'Computer fence only', body: 'The computer refuses files outside the fence; the agent cannot ask for more.' },
 ];
 
 // The tool-layer / kernel-layer picture from the old Architecture page, in plain words;
@@ -85,7 +85,7 @@ export const HowItWorks: React.FC = () => {
           {SETUPS.map(s => (
             <div key={s.id} className="px-4 py-3" style={{ ...box, ...(s.id === 'C' ? { borderColor: 'rgba(59,130,246,0.6)' } : {}) }}>
               <div className="text-[13px]" style={{ color: 'var(--text-3)' }}>
-                {s.id}
+                {s.id} · {s.tech}
               </div>
               <div className="font-semibold">{s.name}</div>
               <p className="mt-1 mb-0 text-[14px]" style={{ color: 'var(--text-2)' }}>
