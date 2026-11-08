@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-10-30T01:58:11.771660+00:00",
-  "evaluation_label": "controlled evaluation, local 7\u20138B models",
+  "generated_at": "2026-11-08T16:50:30.312819+00:00",
+  "evaluation_label": "controlled evaluation, local 7B model (qwen2.5:7b)",
   "model": "qwen2.5:7b",
   "harm_injected": {
     "A": {
@@ -152,7 +152,7 @@
     "extra_s_c_vs_a": 1.0
   },
   "limitations": [
-    "Controlled evaluation with local 7\u20138B models (qwen2.5:7b, llama3.1:8b).",
+    "Controlled evaluation with one local 7B model (qwen2.5:7b only).",
     "Template-generated scenarios evaluating boundary isolation and prompt injection resilience.",
     "Simulated user oracle approvals for legitimate resource requests.",
     "Enforcement tested under Linux/WSL2 cgroup + Landlock + seccomp sandbox architecture.",
