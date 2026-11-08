@@ -86,7 +86,7 @@ export const EventTable: React.FC<{ events: TaskEvent[] }> = ({ events }) => {
               </td>
               <td className="py-1.5 pr-3">{ev.source}</td>
               <td className="py-1.5 pr-3">{ev.kind}</td>
-              <td className="py-1.5 pr-3 break-all">{ev.target}</td>
+              <td className="py-1.5 pr-3 [overflow-wrap:anywhere]">{ev.target}</td>
               <td className="py-1.5 pr-3" style={{ color: ev.prevented ? '#FDA4AF' : ev.verdict === 'INSIDE' ? '#6EE7B7' : 'var(--text)' }}>
                 {ev.verdict}
                 {ev.prevented ? ' (prevented)' : ''}

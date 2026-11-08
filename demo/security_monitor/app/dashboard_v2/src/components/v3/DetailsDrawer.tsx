@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 // The technical layer of every screen. Everything inside carries data-details, so the
@@ -21,7 +22,9 @@ export const DetailsDrawer: React.FC<{
   }, [open, onClose]);
 
   if (!open) return null;
-  return (
+  // Rendered into <body>: an animated page wrapper would otherwise become the containing block
+  // of this fixed overlay and cut the drawer off at the page's height.
+  return createPortal(
     <div className="fixed inset-0 z-40 flex justify-end" data-details>
       <div className="absolute inset-0" style={{ background: 'rgba(3,6,12,0.6)' }} onClick={onClose} aria-hidden="true" />
       <aside
@@ -29,7 +32,7 @@ export const DetailsDrawer: React.FC<{
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="relative h-full w-full sm:w-[640px] max-w-full overflow-y-auto"
+        className="relative h-full max-h-screen w-full sm:w-[640px] max-w-full overflow-y-auto overscroll-contain"
         style={{ background: 'var(--card)', borderLeft: '1px solid var(--line)', animation: 'slideIn .25s ease-out' }}
       >
         <div className="sticky top-0 z-10 flex items-center justify-between gap-3 px-5 py-3" style={{ background: 'var(--card)', borderBottom: '1px solid var(--line)' }}>
@@ -46,7 +49,8 @@ export const DetailsDrawer: React.FC<{
         </div>
         <div className="p-5 space-y-6 text-[14px]">{children}</div>
       </aside>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
@@ -64,7 +68,7 @@ export const KV: React.FC<{ k: string; v: React.ReactNode; id?: string }> = ({ k
     <span className="min-w-[140px]" style={{ color: 'var(--text-3)' }}>
       {k}
     </span>
-    <span id={id} className="mono text-[13px] break-all" style={{ color: 'var(--text)' }}>
+    <span id={id} className="mono text-[13px] min-w-0 [overflow-wrap:anywhere]" style={{ color: 'var(--text)' }}>
       {v}
     </span>
   </div>
