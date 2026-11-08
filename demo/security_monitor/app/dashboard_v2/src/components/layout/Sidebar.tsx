@@ -76,7 +76,7 @@ export const Sidebar: React.FC<{
             badge: waitingCount > 0 ? waitingCount : undefined,
             badgeColor: '#F59E0B',
           },
-          { to: '/records', label: 'Records', icon: icon(FileText) },
+          // No Records: the server does not serve the records summary to team leads.
         ];
       case 'security_reviewer':
         return [
