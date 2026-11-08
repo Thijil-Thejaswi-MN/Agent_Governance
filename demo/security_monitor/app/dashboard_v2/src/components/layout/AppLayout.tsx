@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { LogOut, KeyRound } from 'lucide-react';
+import { LogOut, KeyRound, Shield } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { OperatorAuthModal } from '../common/OperatorAuthModal';
@@ -8,7 +8,7 @@ import { SignInRequired } from '../common/SignInRequired';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../api/client';
 
-// Top nav items matching console v3
+// Home's top bar (Home is the one signed-in page without the sidebar; see test_top_navigation)
 const TOP_NAV = [
   { to: '/run', label: 'Run', end: false },
   { to: '/fleet', label: 'Fleet', end: false },
@@ -24,6 +24,9 @@ export const AppLayout: React.FC = () => {
   const [waitingCount, setWaitingCount] = useState(0);
   const [totalTasks, setTotalTasks] = useState(0);
   const [activeCount, setActiveCount] = useState(0);
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const drawerRef = useRef<HTMLDivElement>(null);
 
   const cleanPath = location.pathname.replace(/\/+$/, '') || '/';
   const isSignInPage = cleanPath === '/signin';
@@ -59,6 +62,16 @@ export const AppLayout: React.FC = () => {
     };
   }, [authEpoch]);
 
+  // The mobile menu closes on navigation and on Escape, and takes focus when it opens.
+  useEffect(() => setMenuOpen(false), [location.pathname]);
+  useEffect(() => {
+    if (!menuOpen) return;
+    drawerRef.current?.querySelector<HTMLElement>('button, a')?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMenuOpen(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [menuOpen]);
+
   if (isSignInPage) {
     return (
       <div className="min-h-screen bg-[#0B0E14] text-[#E6E9EF]">
@@ -72,11 +85,16 @@ export const AppLayout: React.FC = () => {
     );
   }
 
-  // Determine if we should show the full role sidebar (v4 views) or top nav (demo v3 views like Home, Run, Results)
-  const isRoleView = ['/overview', '/team', '/inbox', '/records', '/standing-rules'].includes(cleanPath) || cleanPath.startsWith('/runs/');
+  // Home keeps its own top bar; every other page sits in the v4 sidebar shell.
+  const isHome = cleanPath === '/';
+  const content = (
+    <div key={`${location.pathname}#${authEpoch}`} className="anim-rise">
+      {needsSignIn && !isPublic ? <SignInRequired /> : <Outlet />}
+    </div>
+  );
 
   return (
-    <div className="relative min-h-screen bg-[#0B0E14] text-[#E6E9EF] flex flex-col font-sans overflow-x-hidden">
+    <div className="relative min-h-screen bg-[#0B0E14] text-[#E6E9EF] flex flex-col font-sans overflow-x-clip">
       {/* Demo Data Banner when active */}
       {isDemoDataActive && (
         <div className="bg-[#EF4444] text-white text-[12px] font-bold text-center py-1 select-none tracking-wide z-50">
@@ -91,23 +109,36 @@ export const AppLayout: React.FC = () => {
         Skip to content
       </a>
 
-      {isRoleView ? (
-        <div className="flex flex-1 min-h-screen overflow-x-hidden">
+      {!isHome ? (
+        <div className="flex flex-1 min-h-screen">
           <Sidebar waitingCount={waitingCount} totalTasks={totalTasks} />
           <div className="flex-1 flex flex-col min-w-0">
-            <TopBar activeAgentsCount={activeCount} />
-            <main id="main" className="flex-1 p-6 md:p-8 overflow-y-auto">
-              <div key={`${location.pathname}#${authEpoch}`} className="anim-rise">
-                {needsSignIn && !isPublic ? <SignInRequired /> : <Outlet />}
-              </div>
+            <TopBar activeAgentsCount={activeCount} onMenu={() => setMenuOpen(true)} menuOpen={menuOpen} />
+            <main id="main" className="flex-1 px-4 py-6 md:p-8 min-w-0">
+              {content}
             </main>
           </div>
+
+          {menuOpen && (
+            <div className="fixed inset-0 z-50 flex md:hidden" role="dialog" aria-modal="true" aria-label="Menu" ref={drawerRef}>
+              <div className="absolute inset-0 bg-[rgba(3,6,12,0.65)]" onClick={() => setMenuOpen(false)} aria-hidden="true" />
+              <Sidebar
+                variant="drawer"
+                waitingCount={waitingCount}
+                totalTasks={totalTasks}
+                onClose={() => setMenuOpen(false)}
+              />
+            </div>
+          )}
         </div>
       ) : (
-        <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden">
-          <header className="relative z-20 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 sm:px-10 pt-4 pb-2 sm:py-5 border-b border-[#1F2633] bg-[#0E121A]">
-            <NavLink to="/" className="font-display font-bold text-[18px] no-underline text-[#E6E9EF]">
-              Agent Governance
+        <div className="flex-1 flex flex-col min-h-screen">
+          <header className="relative z-20 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 sm:px-8 py-2.5 sm:py-3 border-b border-[#1F2633] bg-[#0E121A]">
+            <NavLink to="/" className="flex items-center gap-2.5 min-h-[44px] no-underline text-[#E6E9EF] hover:text-[#E6E9EF]">
+              <span className="w-8 h-8 rounded-lg bg-[#3B82F6] flex items-center justify-center text-white flex-shrink-0" aria-hidden="true">
+                <Shield className="w-4 h-4" />
+              </span>
+              <span className="font-bold text-[15px] tracking-tight">Agent Governance</span>
             </NavLink>
             <nav aria-label="Main" className="order-3 sm:order-2 w-full sm:w-auto flex gap-1 overflow-x-auto">
               {TOP_NAV.map(item => (
@@ -116,8 +147,10 @@ export const AppLayout: React.FC = () => {
                   to={item.to}
                   end={item.end}
                   className={({ isActive }) =>
-                    `inline-flex items-center min-h-[44px] px-4 rounded-full text-[15px] no-underline whitespace-nowrap ${
-                      isActive ? 'font-semibold bg-[#1A2232] text-[#E6E9EF]' : 'text-[#8B95A7] hover:text-[#E6E9EF]'
+                    `inline-flex items-center min-h-[44px] sm:min-h-[40px] px-3.5 rounded-lg text-[14px] no-underline whitespace-nowrap transition-colors ${
+                      isActive
+                        ? 'font-semibold bg-[#1A2232] text-[#E6E9EF]'
+                        : 'text-[#A7B0C0] hover:bg-[#141A24] hover:text-[#E6E9EF]'
                     }`
                   }
                 >
@@ -130,14 +163,14 @@ export const AppLayout: React.FC = () => {
                 <>
                   <NavLink
                     to="/overview"
-                    className="text-[13px] text-[#60A5FA] hover:underline mr-2"
+                    className="inline-flex items-center min-h-[44px] px-2 text-[13px] text-[#60A5FA] hover:text-[#93C5FD] no-underline"
                   >
                     Role homes →
                   </NavLink>
                   <button
                     id="sign-out-btn"
                     onClick={removeToken}
-                    className="inline-flex items-center justify-center w-10 h-10 rounded-full text-[#8B95A7] hover:text-[#E6E9EF] bg-transparent border-none cursor-pointer"
+                    className="inline-flex items-center justify-center w-11 h-11 rounded-lg text-[#8B95A7] hover:text-[#E6E9EF] hover:bg-[#1A2232] bg-transparent border-none cursor-pointer"
                     aria-label="Sign out"
                     title="Sign out"
                   >
@@ -148,7 +181,8 @@ export const AppLayout: React.FC = () => {
                 <button
                   id="header-sign-in-btn"
                   onClick={openAuthModal}
-                  className="inline-flex items-center gap-2 min-h-[40px] px-4 rounded-full text-[13px] font-semibold text-[#FDE68A] bg-amber-500/10 border border-amber-500/40 cursor-pointer"
+                  className="btn-ghost min-h-[44px]"
+                  style={{ borderColor: 'rgba(245,158,11,0.45)', color: '#FCD34D' }}
                 >
                   <KeyRound className="w-4 h-4" />
                   Sign in
@@ -157,10 +191,8 @@ export const AppLayout: React.FC = () => {
             </div>
           </header>
 
-          <main id="main" className="flex-1 px-4 py-6 sm:p-8 overflow-x-hidden">
-            <div key={`${location.pathname}#${authEpoch}`} className="anim-rise">
-              {needsSignIn && !isPublic ? <SignInRequired /> : <Outlet />}
-            </div>
+          <main id="main" className="flex-1 px-4 py-6 sm:px-8 sm:py-8 min-w-0">
+            {content}
           </main>
         </div>
       )}
