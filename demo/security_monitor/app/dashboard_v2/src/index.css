@@ -254,6 +254,23 @@
 .page-fade {
   animation: fadeIn 0.35s ease-out both;
 }
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+/* "What happened": a side drawer from 640 px, a bottom sheet below it (the page stays visible, dimmed, above). */
+.details-sheet {
+  animation: slideIn 0.25s ease-out;
+}
+@media (max-width: 639px) {
+  .details-sheet {
+    animation: slideUp 0.25s ease-out;
+  }
+}
 .anim-drawer-left {
   animation: slideInLeft 0.2s ease-out both;
 }
