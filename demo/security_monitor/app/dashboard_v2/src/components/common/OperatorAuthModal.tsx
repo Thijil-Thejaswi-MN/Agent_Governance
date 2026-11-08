@@ -31,14 +31,14 @@ export const OperatorAuthModal: React.FC = () => {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 page-fade" style={{ background: 'rgba(3,6,12,0.72)', backdropFilter: 'blur(6px)' }}>
       <div
         className="w-full max-w-md overflow-hidden"
-        style={{ background: 'var(--card-2)', border: '1px solid rgba(34,211,238,0.3)', borderRadius: 22, boxShadow: '0 20px 60px rgba(34,211,238,0.12)' }}
+        style={{ background: 'var(--card)', border: '1px solid var(--border-strong)', borderRadius: 12, boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="operator-auth-title"
       >
         <div className="flex items-center justify-between gap-3 p-5" style={{ borderBottom: '1px solid var(--line)' }}>
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl" style={{ background: 'rgba(34,211,238,0.12)', color: 'var(--cyan)' }}>
+            <div className="p-2.5 rounded-lg" style={{ background: 'rgba(59,130,246,0.14)', color: '#60A5FA' }}>
               <KeyRound className="w-5 h-5" />
             </div>
             <div>
@@ -83,8 +83,8 @@ export const OperatorAuthModal: React.FC = () => {
                 if (error) setError(null);
               }}
               placeholder="Paste GOVERNANCE_OPERATOR_TOKEN..."
-              className="w-full min-h-[48px] px-4 text-[15px] mono rounded-[14px] outline-none"
-              style={{ background: 'var(--field)', border: '1px solid rgba(148,163,184,0.3)', color: 'var(--text)' }}
+              className="w-full min-h-[44px] px-3 text-[15px] mono rounded-lg outline-none focus:border-[#3B82F6]"
+              style={{ background: 'var(--field)', border: '1px solid var(--border-strong)', color: 'var(--text)' }}
               autoFocus
             />
             {error && (
@@ -100,10 +100,10 @@ export const OperatorAuthModal: React.FC = () => {
           </p>
 
           <div className="flex justify-end gap-2.5 pt-1">
-            <button type="button" onClick={closeAuthModal} className="btn-ghost">
+            <button type="button" onClick={closeAuthModal} className="btn-ghost min-h-[44px] sm:min-h-[40px]">
               Cancel
             </button>
-            <button id="operator-signin-btn" type="submit" disabled={submitting} className="btn-primary">
+            <button id="operator-signin-btn" type="submit" disabled={submitting} className="btn-primary min-h-[44px] sm:min-h-[40px]">
               <ShieldCheck className="w-4 h-4" />
               {submitting ? 'Signing in…' : 'Sign in'}
             </button>
