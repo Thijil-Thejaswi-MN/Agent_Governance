@@ -253,6 +253,9 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
           ) : (
             <p style={{ color: 'var(--text-2)' }}>Not derived yet.</p>
           )}
+          <p className="m-0 text-[13px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
+            Approved files are given to the agent as a read-only copy in granted/. The original path stays blocked.
+          </p>
         </DetailsSection>
 
         {run.expansions.length > 0 && (
