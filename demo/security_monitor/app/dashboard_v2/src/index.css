@@ -20,6 +20,17 @@
     --waiting: #F59E0B;
     --stopped: #EF4444;
 
+    /* Names the developer pages (console v3) still use, mapped onto the v4 palette.
+       --cyan and --blocked keep their v3 values: only the fence picture uses them, and it
+       stays exactly as it was. */
+    --text-2: #A7B0C0;
+    --text-3: #8B95A7;
+    --line: #1F2633;
+    --card-2: #161B26;
+    --field: #0E121A;
+    --cyan: #22D3EE;
+    --blocked: #FB7185;
+
     /* Role colours */
     --role-developer: #60A5FA;
     --role-team-lead: #A78BFA;
@@ -67,6 +78,25 @@
 }
 
 @layer components {
+  /* v3 pages used a display face; in v4 headings are Inter, tight. */
+  .font-display {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    letter-spacing: -0.02em;
+  }
+  .link-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    min-height: 44px;
+    color: #60A5FA;
+    font-size: 15px;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .link-btn:hover {
+    color: #93C5FD;
+  }
   .mono {
     font-family: 'JetBrains Mono', ui-monospace, monospace;
   }
@@ -84,15 +114,18 @@
     padding: 0 16px;
     border-radius: 8px;
     border: none;
-    background: #3B82F6;
+    /* #2563EB, not the #3B82F6 accent: white text needs 4.5:1 (5.2 vs 3.7). */
+    background: #2563EB;
     color: #ffffff;
     font-weight: 600;
     font-size: 14px;
+    text-decoration: none;
     cursor: pointer;
     transition: background-color 0.15s ease, filter 0.15s ease;
   }
   .btn-primary:hover {
-    background: #2563EB;
+    background: #1D4ED8;
+    color: #ffffff;
   }
   .btn-primary:disabled {
     opacity: 0.55;
@@ -111,10 +144,12 @@
     color: var(--text);
     font-weight: 500;
     font-size: 14px;
+    text-decoration: none;
     cursor: pointer;
     transition: background-color 0.15s ease, border-color 0.15s ease;
   }
   .btn-ghost:hover {
+    color: var(--text);
     background: #1F2633;
     border-color: #3B82F6;
   }
@@ -122,6 +157,122 @@
     opacity: 0.55;
     cursor: not-allowed;
   }
+}
+
+/* Keyframes the fence, decision card, dot field and drawers use (dropped in the v4
+   rewrite; restored unchanged, amber/rose as in the fence chips). */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes bob {
+  0%, 100% {
+    transform: translate(-50%, -50%);
+  }
+  50% {
+    transform: translate(-50%, -58%);
+  }
+}
+@keyframes knock {
+  0%, 60%, 100% {
+    transform: translateX(0);
+  }
+  70% {
+    transform: translateX(-22px);
+  }
+  80% {
+    transform: translateX(0);
+  }
+}
+@keyframes ask {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(251, 191, 36, 0), 0 0 30px rgba(251, 191, 36, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(251, 191, 36, 0.18), 0 0 50px rgba(251, 191, 36, 0.4);
+  }
+}
+@keyframes halo {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes twinkle {
+  0%, 100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+@keyframes ping {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+  }
+  100% {
+    box-shadow: 0 0 0 12px rgba(245, 158, 11, 0);
+  }
+}
+@keyframes pingRed {
+  0% {
+    box-shadow: 0 0 0 0 rgba(251, 113, 133, 0.7);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(251, 113, 133, 0);
+  }
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: none;
+  }
+}
+.page-fade {
+  animation: fadeIn 0.35s ease-out both;
+}
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+/* "What happened": a side drawer from 640 px, a bottom sheet below it (the page stays visible, dimmed, above). */
+.details-sheet {
+  animation: slideIn 0.25s ease-out;
+}
+@media (max-width: 639px) {
+  .details-sheet {
+    animation: slideUp 0.25s ease-out;
+  }
+}
+.anim-drawer-left {
+  animation: slideInLeft 0.2s ease-out both;
 }
 
 /* Animations ported from v4 mockups */

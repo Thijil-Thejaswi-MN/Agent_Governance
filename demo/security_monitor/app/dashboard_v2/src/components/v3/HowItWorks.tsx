@@ -4,7 +4,7 @@ import { DetailsDrawer, DetailsSection, KV } from './DetailsDrawer';
 const box: React.CSSProperties = {
   background: 'var(--card-2)',
   border: '1px solid var(--line)',
-  borderRadius: 18,
+  borderRadius: 10,
 };
 
 const Arrow: React.FC = () => (
@@ -15,7 +15,7 @@ const Arrow: React.FC = () => (
   </div>
 );
 
-const Step: React.FC<{ title: string; body: string; accent?: string }> = ({ title, body, accent = 'var(--cyan)' }) => (
+const Step: React.FC<{ title: string; body: string; accent?: string }> = ({ title, body, accent = '#60A5FA' }) => (
   <div className="px-5 py-4 text-center" style={box}>
     <div className="font-display text-[18px] font-bold" style={{ color: accent }}>
       {title}
@@ -27,10 +27,10 @@ const Step: React.FC<{ title: string; body: string; accent?: string }> = ({ titl
 );
 
 const SETUPS = [
-  { id: 'A', name: 'No fence', body: 'The agent can touch anything the computer lets it.' },
-  { id: 'B', name: 'Tool fence only', body: 'Its tools check each action; the computer does not.' },
-  { id: 'C', name: 'Both fences', body: 'Its tools check each action, and the computer refuses files outside the fence.' },
-  { id: 'D', name: 'Computer fence only', body: 'The computer refuses files outside the fence; the agent cannot ask for more.' },
+  { id: 'A', tech: 'No governance', name: 'No fence', body: 'The agent can touch anything the computer lets it.' },
+  { id: 'B', tech: 'Tool layer only', name: 'Tool fence only', body: 'Its tools check each action; the computer does not.' },
+  { id: 'C', tech: 'Tool + OS layer', name: 'Both fences', body: 'Its tools check each action, and the computer refuses files outside the fence.' },
+  { id: 'D', tech: 'Per-task container', name: 'Computer fence only', body: 'The computer refuses files outside the fence; the agent cannot ask for more.' },
 ];
 
 // The tool-layer / kernel-layer picture from the old Architecture page, in plain words;
@@ -53,8 +53,8 @@ export const HowItWorks: React.FC = () => {
         <Arrow />
         <Step title="We draw the fence" body="The files it may read and write and the tools it may use. No network unless the request needs it." />
         <Arrow />
-        <div className="p-4 rounded-[22px] space-y-3" style={{ border: '2px dashed rgba(34,211,238,0.6)' }} aria-label="The agent works inside two layers">
-          <div className="text-center text-[14px] font-semibold" style={{ color: '#A5F3FC' }}>
+        <div className="p-4 rounded-xl space-y-3" style={{ border: '2px dashed rgba(59,130,246,0.6)' }} aria-label="The agent works inside two layers">
+          <div className="text-center text-[14px] font-semibold" style={{ color: '#93C5FD' }}>
             The agent works inside the fence
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -74,8 +74,8 @@ export const HowItWorks: React.FC = () => {
         </div>
         <Arrow />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Step title="You decide extras" body="A request for anything more waits for you. If nobody answers in time, it stays blocked." accent="#FDE68A" />
-          <Step title="A record of every run" body="Checking the record shows whether any entry was changed afterwards." accent="#6EE7B7" />
+          <Step title="You decide extras" body="A request for anything more waits for you. If nobody answers in time, it stays blocked." accent="#FBBF24" />
+          <Step title="A record of every run" body="Checking the record shows whether any entry was changed afterwards." accent="#4ADE80" />
         </div>
       </div>
 
@@ -83,9 +83,9 @@ export const HowItWorks: React.FC = () => {
         <h3 className="m-0 text-[16px] font-semibold">The four setups compared in the tests</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {SETUPS.map(s => (
-            <div key={s.id} className="px-4 py-3" style={{ ...box, ...(s.id === 'C' ? { borderColor: 'rgba(34,211,238,0.55)' } : {}) }}>
+            <div key={s.id} className="px-4 py-3" style={{ ...box, ...(s.id === 'C' ? { borderColor: 'rgba(59,130,246,0.6)' } : {}) }}>
               <div className="text-[13px]" style={{ color: 'var(--text-3)' }}>
-                {s.id}
+                {s.id} · {s.tech}
               </div>
               <div className="font-semibold">{s.name}</div>
               <p className="mt-1 mb-0 text-[14px]" style={{ color: 'var(--text-2)' }}>

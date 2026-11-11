@@ -70,8 +70,8 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
 
   if (run.notFound) {
     return (
-      <div className="max-w-xl mx-auto px-4 py-24 text-center space-y-4">
-        <h1 className="font-display text-[36px] font-bold m-0">We couldn't find that run.</h1>
+      <div className="max-w-xl mx-auto py-20 text-center space-y-4">
+        <h1 className="font-display text-[28px] sm:text-[32px] font-bold m-0">We couldn't find that run.</h1>
         <Link to="/history" className="btn-ghost">
           Go to History
         </Link>
@@ -80,20 +80,15 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
   }
 
   const stepColor = (k: 'ask' | 'work' | 'done') => {
-    if (k === 'ask') return '#6EE7B7';
-    if (k === 'work') return terminal ? '#6EE7B7' : run.state === 'waiting_approval' ? '#FCD34D' : '#67E8F9';
-    return terminal ? (run.state === 'completed' ? '#6EE7B7' : '#FDA4AF') : 'var(--text-3)';
+    if (k === 'ask') return '#4ADE80';
+    if (k === 'work') return terminal ? '#4ADE80' : run.state === 'waiting_approval' ? '#FBBF24' : '#60A5FA';
+    return terminal ? (run.state === 'completed' ? '#4ADE80' : '#F87171') : 'var(--text-3)';
   };
 
   return (
-    <div
-      style={{
-        background: 'radial-gradient(900px 600px at 30% 40%, rgba(34,211,238,0.12), transparent 60%)',
-        minHeight: 'calc(100vh - 88px)',
-      }}
-    >
-      <div className="max-w-[1280px] mx-auto px-4 sm:px-10 flex flex-wrap items-center justify-between gap-3 pt-2">
-        <ol aria-label="Progress" className="flex items-center gap-2.5 text-[14px] list-none p-0 m-0" style={{ color: 'var(--text-3)' }}>
+    <div className="max-w-[1280px]">
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-5 border-b border-[#1F2633]">
+        <ol aria-label="Progress" className="flex flex-wrap items-center gap-2.5 text-[14px] list-none p-0 m-0 min-h-[44px]" style={{ color: 'var(--text-3)' }}>
           {readOnly ? (
             <li>
               <Link to="/history">History</Link> <span aria-hidden="true">/</span> <span style={{ color: 'var(--text-2)' }}>One run</span>
@@ -117,8 +112,8 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
             id="stop-run-btn"
             onClick={requireToken(run.stop)}
             disabled={run.state === 'stopping'}
-            className="btn-ghost"
-            style={{ borderColor: 'rgba(251,113,133,0.5)', color: '#FDA4AF' }}
+            className="btn-ghost min-h-[44px] sm:min-h-[40px]"
+            style={{ borderColor: 'rgba(239,68,68,0.5)', color: '#FCA5A5' }}
           >
             <Square className="w-4 h-4" />
             {run.state === 'stopping' ? 'Stopping…' : 'Stop'}
@@ -126,7 +121,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
         )}
       </div>
 
-      <div className="max-w-[1280px] mx-auto px-4 sm:px-10 pt-6 pb-14 flex flex-wrap items-center gap-10 lg:gap-12">
+      <div className="pt-6 pb-10 flex flex-wrap items-center gap-8 lg:gap-12">
         <div className="flex-[1_1_420px] min-w-0 flex justify-center">
           <Fence inside={insideNames} blocked={blockedNames} requested={requestedNames} live={live} />
         </div>
@@ -136,7 +131,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
             id="run-status"
             data-state={run.state}
             aria-live="polite"
-            className="m-0 font-display font-bold text-[34px] sm:text-[44px] leading-[1.1] tracking-[-1px]"
+            className="m-0 font-display font-bold text-[28px] sm:text-[36px] leading-[1.15] text-[#E6E9EF]"
           >
             {sentence}
           </h1>
@@ -154,7 +149,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
           )}
 
           {!run.pending && !terminal && (
-            <p className="m-0 text-[18px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
+            <p className="m-0 text-[17px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
               It can only touch what is inside the fence. If it needs anything more, it will ask you here.
             </p>
           )}
@@ -163,7 +158,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
             <div className="card p-5" id="output-preview">
               <div className="flex items-center gap-2 text-[15px] font-semibold">
                 <FileText className="w-4 h-4" style={{ color: 'var(--allowed)' }} />
-                {outputs[0].name}
+                <span className="mono text-[14px]">{outputs[0].name}</span>
                 {outputs.length > 1 && (
                   <span className="font-normal" style={{ color: 'var(--text-3)' }}>
                     and {outputs.length - 1} more
@@ -186,20 +181,20 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
               <span
                 id="record-status"
                 data-tone={record.tone}
-                className="inline-flex items-center gap-2 min-h-[44px] px-4 rounded-[14px] text-[15px] font-semibold"
+                className="inline-flex items-center gap-2 min-h-[44px] px-4 rounded-lg text-[14px] font-semibold"
                 style={
                   record.tone === 'ok'
-                    ? { background: 'rgba(52,211,153,0.12)', border: '1px solid rgba(52,211,153,0.45)', color: '#A7F3D0' }
+                    ? { background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.45)', color: '#86EFAC' }
                     : record.tone === 'bad'
-                    ? { background: 'rgba(251,113,133,0.1)', border: '1px solid rgba(251,113,133,0.5)', color: '#FECDD3' }
-                    : { border: '1px solid var(--line)', color: 'var(--text-2)' }
+                    ? { background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.5)', color: '#FECACA' }
+                    : { border: '1px solid var(--border-strong)', color: 'var(--text-2)' }
                 }
               >
                 {record.tone === 'ok' ? <CheckCircle2 className="w-4 h-4" /> : record.tone === 'bad' ? <AlertTriangle className="w-4 h-4" /> : null}
                 {record.text}
               </span>
               {run.receipt?.receipt && run.receipt.available !== false && (
-                <a id="download-record" href={api.getRawReceiptUrl(run.receipt.task_id)} download={`${run.receipt.task_id}_receipt.json`} className="btn-ghost">
+                <a id="download-record" href={api.getRawReceiptUrl(run.receipt.task_id)} download={`${run.receipt.task_id}_receipt.json`} className="btn-ghost min-h-[44px]">
                   <Download className="w-4 h-4" />
                   Download record
                 </a>
@@ -208,7 +203,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
           )}
 
           {run.actionError && (
-            <div id="action-error" role="alert" className="px-4 py-3 rounded-2xl text-[15px]" style={{ background: 'rgba(251,113,133,0.08)', border: '1px solid rgba(251,113,133,0.4)', color: '#FECDD3' }}>
+            <div id="action-error" role="alert" className="px-4 py-3 rounded-xl text-[15px]" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.45)', color: '#FECACA' }}>
               {run.actionError}
             </div>
           )}
@@ -258,6 +253,9 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
           ) : (
             <p style={{ color: 'var(--text-2)' }}>Not derived yet.</p>
           )}
+          <p className="m-0 text-[13px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
+            Approved files are given to the agent as a read-only copy in granted/. The original path stays blocked.
+          </p>
         </DetailsSection>
 
         {run.expansions.length > 0 && (

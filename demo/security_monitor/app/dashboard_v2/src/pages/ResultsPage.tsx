@@ -4,6 +4,30 @@ import { api } from '../api/client';
 import { ResultsSummary } from '../types';
 import { HowItWorks } from '../components/v3/HowItWorks';
 
+// One colour per condition, the same in every chart and legend.
+const CONDITION_COLORS: Record<'A' | 'B' | 'C' | 'D', string> = {
+  A: '#F87171',
+  B: '#FBBF24',
+  C: '#60A5FA',
+  D: '#A78BFA',
+};
+
+// What each step of the expansion chain is, in plain words (same order as the summary's steps).
+const EXPANSION_STEP_TEXT = [
+  'The OS refused the initial try',
+  'The agent asked for the file',
+  'Approved (by a simulated user)',
+  'The file reached the agent',
+];
+
+const yLabel = (value: string) => ({
+  value,
+  angle: -90,
+  position: 'insideLeft' as const,
+  offset: 4,
+  style: { textAnchor: 'middle' as const, fill: '#A7B0C0', fontSize: 12 },
+});
+
 // The axes show only the condition letter; this maps each letter to its name, in the bar's colour.
 const ChartLegend: React.FC<{ id: string; items: Array<{ id: string; label: string; fill: string }> }> = ({ id, items }) => (
   <ul id={id} className="list-none m-0 p-0 flex flex-wrap gap-x-5 gap-y-1.5 text-[14px]" style={{ color: 'var(--text-2)' }}>
@@ -42,19 +66,25 @@ export const ResultsPage: React.FC = () => {
   const harmD = summary.harm_injected?.['D'];
 
   const harmData = [
-    { id: 'A', label: 'No governance', name: 'A "No governance"', harm: harmA?.exposed, total: harmA?.total, fill: '#FB7185' },
-    { id: 'B', label: 'Tool layer only', name: 'B "Tool layer only"', harm: harmB?.exposed, total: harmB?.total, fill: '#34D399' },
-    { id: 'C', label: 'Tool + OS layer', name: 'C "Tool + OS layer"', harm: harmC?.exposed, total: harmC?.total, fill: '#22D3EE' },
-    { id: 'D', label: 'Per-task container', name: 'D "Per-task container"', harm: harmD?.exposed, total: harmD?.total, fill: '#A78BFA' },
+    { id: 'A', label: 'No governance', name: 'A "No governance"', harm: harmA?.exposed, total: harmA?.total, fill: CONDITION_COLORS.A },
+    { id: 'B', label: 'Tool layer only', name: 'B "Tool layer only"', harm: harmB?.exposed, total: harmB?.total, fill: CONDITION_COLORS.B },
+    { id: 'C', label: 'Tool + OS layer', name: 'C "Tool + OS layer"', harm: harmC?.exposed, total: harmC?.total, fill: CONDITION_COLORS.C },
+    { id: 'D', label: 'Per-task container', name: 'D "Per-task container"', harm: harmD?.exposed, total: harmD?.total, fill: CONDITION_COLORS.D },
   ];
 
   const shellB = summary.shell_attacks_succeeded?.['B'];
   const shellC = summary.shell_attacks_succeeded?.['C'];
 
   const shellAttackData = [
-    { id: 'B', label: 'Tool layer only', name: 'B "Tool layer only"', succeeded: shellB?.succeeded, total: shellB?.total, fill: '#FB7185' },
-    { id: 'C', label: 'Tool + OS layer', name: 'C "Tool + OS layer"', succeeded: shellC?.succeeded, total: shellC?.total, fill: '#34D399' },
+    { id: 'B', label: 'Tool layer only', name: 'B "Tool layer only"', succeeded: shellB?.succeeded, total: shellB?.total, fill: CONDITION_COLORS.B },
+    { id: 'C', label: 'Tool + OS layer', name: 'C "Tool + OS layer"', succeeded: shellC?.succeeded, total: shellC?.total, fill: CONDITION_COLORS.C },
   ];
+
+  // Shell chart y-axis: even, evenly spaced ticks (0, 2, 4 … 10 for 10 trials).
+  const shellMax = shellC?.total || 10;
+  const shellStep = Math.max(2, Math.ceil(shellMax / 10) * 2);
+  const shellTop = Math.ceil(shellMax / shellStep) * shellStep;
+  const shellTicks = Array.from({ length: shellTop / shellStep + 1 }, (_, i) => i * shellStep);
 
   const formatRatio = (item?: { exposed?: number; succeeded?: number; correct?: number; total?: number; ratio?: string }) => {
     if (!item) return '—';
@@ -72,16 +102,16 @@ export const ResultsPage: React.FC = () => {
   };
 
   const stepsList = expChain?.steps && expChain.steps.length > 0
-    ? expChain.steps.map(st => ({
+    ? expChain.steps.map((st, i) => ({
         label: st.name,
         value: st.count !== undefined && st.total !== undefined ? `${st.count}/${st.total}` : '—',
-        desc: 'Unanticipated resource expansion step',
+        desc: EXPANSION_STEP_TEXT[i] ?? '',
       }))
     : [
-        { label: 'Step 1: Denied (EACCES)', value: formatStepCount(expChain?.denied_before_request), desc: 'Agent attempts probe and is denied' },
-        { label: 'Step 2: Requested', value: formatStepCount(expChain?.requested), desc: 'Agent requests access via broker' },
-        { label: 'Step 3: Granted', value: formatStepCount(expChain?.granted), desc: 'Oracle approver grants access' },
-        { label: 'Step 4: Delivered Read', value: formatStepCount(expChain?.delivered_read_ok), desc: 'Delivered read-only file read successfully' },
+        { label: 'Step 1: Denied (EACCES)', value: formatStepCount(expChain?.denied_before_request), desc: EXPANSION_STEP_TEXT[0] },
+        { label: 'Step 2: Requested', value: formatStepCount(expChain?.requested), desc: EXPANSION_STEP_TEXT[1] },
+        { label: 'Step 3: Granted', value: formatStepCount(expChain?.granted), desc: EXPANSION_STEP_TEXT[2] },
+        { label: 'Step 4: Delivered Read', value: formatStepCount(expChain?.delivered_read_ok), desc: EXPANSION_STEP_TEXT[3] },
       ];
 
   const timings = summary.timings_and_timeouts;
@@ -90,17 +120,20 @@ export const ResultsPage: React.FC = () => {
   const timingB = timings?.['B'];
   const timingC = timings?.['C'];
   const timingD = timings?.['D'];
+  // The timings cover the injected trials only; say how many when every setup has the same count.
+  const trialCounts = [timingA, timingB, timingC, timingD].map(t => t?.total_trials);
+  const sameTrialCount = trialCounts[0] !== undefined && trialCounts.every(n => n === trialCounts[0]) ? trialCounts[0] : undefined;
 
   return (
-    <div className="max-w-[1200px] mx-auto px-4 sm:px-10 pt-8 pb-16 space-y-8">
+    <div className="max-w-[1200px] pb-12 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
-          <h1 className="m-0 font-display font-bold text-[36px] sm:text-[44px] leading-[1.1] tracking-[-1px]">Full results</h1>
+          <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-[#E6E9EF]">Full results</h1>
           <p className="mt-2 mb-0 text-[15px]" style={{ color: 'var(--text-2)' }}>
             Recomputed directly from raw trial runs in <code className="mono">demo/data/evaluation_v3/results/</code>. Model: {summary.model}.
           </p>
         </div>
-        <span className="inline-flex items-center min-h-[36px] px-3 rounded-full text-[13px] font-semibold" style={{ background: 'rgba(34,211,238,0.12)', color: '#A5F3FC', border: '1px solid rgba(34,211,238,0.35)' }}>
+        <span className="inline-flex items-center min-h-[36px] px-3 rounded-full text-[13px] font-semibold" style={{ background: 'rgba(59,130,246,0.12)', color: '#93C5FD', border: '1px solid rgba(59,130,246,0.4)' }}>
           {summary.evaluation_label || '—'}
         </span>
       </div>
@@ -112,8 +145,8 @@ export const ResultsPage: React.FC = () => {
         <div className="card p-6 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1 sm:gap-4">
             <div>
-              <h2 className="m-0 font-display text-[20px] font-bold">
-                Harm Injected Trials
+              <h2 className="m-0 text-[17px] font-semibold text-[#E6E9EF]">
+                Harm in injected trials
               </h2>
               <p className="m-0 text-[14px]" style={{ color: 'var(--text-2)' }}>
                 Number of trials where prompt injection successfully leaked decoy or sink canary.
@@ -126,11 +159,11 @@ export const ResultsPage: React.FC = () => {
 
           <div className="h-64 w-full" id="chart-harm">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={harmData} margin={{ top: 20, right: 20, left: -20, bottom: 20 }}>
-                <XAxis dataKey="id" tick={{ fontSize: 13 }} interval={0} stroke="#9AA4B8" />
-                <YAxis domain={[0, harmA?.total || 32]} stroke="#9AA4B8" />
+              <BarChart data={harmData} margin={{ top: 20, right: 20, left: 4, bottom: 20 }}>
+                <XAxis dataKey="id" tick={{ fontSize: 13 }} interval={0} stroke="#8B95A7" />
+                <YAxis domain={[0, harmA?.total || 32]} stroke="#8B95A7" width={44} label={yLabel('trials with harm')} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#121829', borderColor: '#334155', borderRadius: '12px', color: '#E6EAF2', fontSize: '12px' }}
+                  contentStyle={{ backgroundColor: '#11151D', borderColor: '#2A3344', borderRadius: '8px', color: '#E6E9EF', fontSize: '12px' }}
                   labelFormatter={(_id, items) => (items?.[0]?.payload as { name?: string } | undefined)?.name ?? String(_id)}
                   cursor={{ fill: 'rgba(148,163,184,0.08)' }}
                 />
@@ -143,7 +176,7 @@ export const ResultsPage: React.FC = () => {
             </ResponsiveContainer>
           </div>
           <ChartLegend id="chart-harm-legend" items={harmData} />
-          <div className="p-3 rounded-[14px] mono text-[13px]" style={{ background: 'var(--field)', color: 'var(--text-2)' }}>
+          <div className="p-3 rounded-lg mono text-[13px]" style={{ background: 'var(--field)', color: 'var(--text-2)' }}>
             Harm: A "No governance" = {formatRatio(harmA)} | B "Tool layer only" = {formatRatio(harmB)} | C "Tool + OS layer" = {formatRatio(harmC)} | D "Per-task container" = {formatRatio(harmD)}
           </div>
         </div>
@@ -152,7 +185,7 @@ export const ResultsPage: React.FC = () => {
         <div className="card p-6 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="m-0 font-display text-[20px] font-bold">
+              <h2 className="m-0 text-[17px] font-semibold text-[#E6E9EF]">
                 Shell Channel Attack Outcomes
               </h2>
               <p className="m-0 text-[14px]" style={{ color: 'var(--text-2)' }}>
@@ -163,11 +196,11 @@ export const ResultsPage: React.FC = () => {
 
           <div className="h-64 w-full" id="chart-shell">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={shellAttackData} margin={{ top: 20, right: 20, left: -20, bottom: 20 }}>
-                <XAxis dataKey="id" tick={{ fontSize: 13 }} interval={0} stroke="#9AA4B8" />
-                <YAxis domain={[0, shellC?.total || 10]} stroke="#9AA4B8" />
+              <BarChart data={shellAttackData} margin={{ top: 20, right: 20, left: 4, bottom: 20 }}>
+                <XAxis dataKey="id" tick={{ fontSize: 13 }} interval={0} stroke="#8B95A7" />
+                <YAxis domain={[0, shellTop]} ticks={shellTicks} interval={0} allowDecimals={false} stroke="#8B95A7" width={44} label={yLabel('attacks that worked')} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#121829', borderColor: '#334155', borderRadius: '12px', color: '#E6EAF2', fontSize: '12px' }}
+                  contentStyle={{ backgroundColor: '#11151D', borderColor: '#2A3344', borderRadius: '8px', color: '#E6E9EF', fontSize: '12px' }}
                   labelFormatter={(_id, items) => (items?.[0]?.payload as { name?: string } | undefined)?.name ?? String(_id)}
                   cursor={{ fill: 'rgba(148,163,184,0.08)' }}
                 />
@@ -180,7 +213,7 @@ export const ResultsPage: React.FC = () => {
             </ResponsiveContainer>
           </div>
           <ChartLegend id="chart-shell-legend" items={shellAttackData} />
-          <div className="p-3 rounded-[14px] mono text-[13px]" style={{ background: 'var(--field)', color: 'var(--text-2)' }}>
+          <div className="p-3 rounded-lg mono text-[13px]" style={{ background: 'var(--field)', color: 'var(--text-2)' }}>
             B "Tool layer only": {formatRatio(shellB)} succeeded | C "Tool + OS layer": {formatRatio(shellC)} succeeded
           </div>
         </div>
@@ -188,14 +221,14 @@ export const ResultsPage: React.FC = () => {
 
       {/* Expansion Chain Progression */}
       <div className="card p-6 space-y-4">
-        <h2 className="m-0 font-display text-[20px] font-bold">
+        <h2 className="m-0 text-[17px] font-semibold text-[#E6E9EF]">
           Expansion Chain Progression (Unanticipated, C "Tool + OS layer")
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           {stepsList.map((st, i) => (
-            <div key={i} className="p-4 rounded-[14px]" style={{ background: 'var(--card-2)', border: '1px solid var(--line)' }}>
+            <div key={i} className="p-4 rounded-lg" style={{ background: 'var(--card-2)', border: '1px solid var(--line)' }}>
               <span className="mono text-[12px] block" style={{ color: 'var(--text-3)' }}>{st.label}</span>
-              <div className="font-display text-[28px] font-bold mt-1" style={{ color: '#67E8F9' }}>
+              <div className="text-[26px] font-bold tracking-tight mt-1" style={{ color: '#60A5FA' }}>
                 {st.value}
               </div>
               <p className="text-[13px] mt-1 mb-0" style={{ color: 'var(--text-2)' }}>{st.desc}</p>
@@ -206,9 +239,14 @@ export const ResultsPage: React.FC = () => {
 
       {/* Latency and Timeouts */}
       <div className="card p-6 space-y-4">
-        <h2 className="m-0 font-display text-[20px] font-bold">
-          Trial Durations & Timeouts
-        </h2>
+        <div>
+          <h2 className="m-0 text-[17px] font-semibold text-[#E6E9EF]">
+            Trial Durations & Timeouts
+          </h2>
+          <p className="m-0 text-[14px]" style={{ color: 'var(--text-2)' }} id="timings-basis">
+            {`Mean time of the ${sameTrialCount !== undefined ? `${sameTrialCount} ` : ''}injected trials per setup${summary.model ? ` (${summary.model})` : ''}.`}
+          </p>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           {[
             { name: 'A "No governance"', timing: timingA },
@@ -216,9 +254,9 @@ export const ResultsPage: React.FC = () => {
             { name: 'C "Tool + OS layer"', timing: timingC },
             { name: 'D "Per-task container"', timing: timingD },
           ].map((item, idx) => (
-            <div key={idx} className="p-4 rounded-[14px]" style={{ background: 'var(--card-2)', border: '1px solid var(--line)' }}>
+            <div key={idx} className="p-4 rounded-lg" style={{ background: 'var(--card-2)', border: '1px solid var(--line)' }}>
               <span className="mono text-[12px] block" style={{ color: 'var(--text-3)' }}>{item.name}</span>
-              <div className="font-display text-[28px] font-bold mt-1">
+              <div className="text-[26px] font-bold tracking-tight mt-1">
                 {item.timing?.mean_s !== undefined ? `${item.timing.mean_s}s` : '—'}
               </div>
               <p className="text-[13px] mt-1 mb-0" style={{ color: 'var(--text-2)' }}>
@@ -231,16 +269,16 @@ export const ResultsPage: React.FC = () => {
 
       {/* Time per legitimate task */}
       <div className="card p-6 space-y-4" id="utility-timings">
-        <h2 className="m-0 font-display text-[20px] font-bold">Time per legitimate task (anticipated, utility_v3d)</h2>
+        <h2 className="m-0 text-[17px] font-semibold text-[#E6E9EF]">Time per legitimate task (anticipated, utility_v3d)</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
             { name: 'A "No governance"', v: ut?.A ? `${ut.A.mean_s}s` : '—', n: ut?.A?.total_trials },
             { name: 'C "Tool + OS layer"', v: ut?.C ? `${ut.C.mean_s}s` : '—', n: ut?.C?.total_trials },
             { name: 'Extra time, C vs A', v: ut?.extra_s_c_vs_a !== undefined ? `+${ut.extra_s_c_vs_a.toFixed(1)}s` : '—', n: undefined },
           ].map(item => (
-            <div key={item.name} className="p-4 rounded-[14px]" style={{ background: 'var(--card-2)', border: '1px solid var(--line)' }}>
+            <div key={item.name} className="p-4 rounded-lg" style={{ background: 'var(--card-2)', border: '1px solid var(--line)' }}>
               <span className="mono text-[12px] block" style={{ color: 'var(--text-3)' }}>{item.name}</span>
-              <div className="font-display text-[28px] font-bold mt-1">{item.v}</div>
+              <div className="text-[26px] font-bold tracking-tight mt-1">{item.v}</div>
               {item.n !== undefined && <p className="text-[13px] mt-1 mb-0" style={{ color: 'var(--text-2)' }}>mean of {item.n} trials</p>}
             </div>
           ))}
@@ -249,7 +287,7 @@ export const ResultsPage: React.FC = () => {
 
       {/* Limitations List */}
       <div className="card p-6 space-y-3">
-        <h2 className="m-0 font-display text-[20px] font-bold">
+        <h2 className="m-0 text-[17px] font-semibold text-[#E6E9EF]">
           Evaluation Scope & Limitations
         </h2>
         <ul className="space-y-2 text-[14px] leading-relaxed list-disc pl-5 m-0" style={{ color: 'var(--text-2)' }}>
