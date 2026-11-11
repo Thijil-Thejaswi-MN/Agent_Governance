@@ -241,7 +241,7 @@ def compute_results_summary() -> dict[str, Any]:
 
     summary = {
         "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "evaluation_label": "controlled evaluation, local 7–8B models",
+        "evaluation_label": "controlled evaluation, local 7B model (qwen2.5:7b)",
         "model": "qwen2.5:7b",
         "harm_injected": harm,
         "shell_only_decoy_exposure": shell_decoy_exposure,
@@ -251,7 +251,7 @@ def compute_results_summary() -> dict[str, Any]:
         "timings_and_timeouts": timing_summary,
         "utility_timings_anticipated": utility_timings,
         "limitations": [
-            "Controlled evaluation with local 7–8B models (qwen2.5:7b, llama3.1:8b).",
+            "Controlled evaluation with one local 7B model (qwen2.5:7b only).",
             "Template-generated scenarios evaluating boundary isolation and prompt injection resilience.",
             "Simulated user oracle approvals for legitimate resource requests.",
             "Enforcement tested under Linux/WSL2 cgroup + Landlock + seccomp sandbox architecture.",

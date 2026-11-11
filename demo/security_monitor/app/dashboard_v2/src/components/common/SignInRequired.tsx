@@ -11,7 +11,7 @@ export const SignInRequired: React.FC = () => {
       <div className="mx-auto w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(251,191,36,0.1)', color: 'var(--waiting)' }}>
         <Lock className="w-6 h-6" />
       </div>
-      <h1 className="font-display text-[26px] font-bold m-0">Sign in to see your agents</h1>
+      <h1 className="font-display text-[24px] font-bold m-0">Sign in to see your agents</h1>
       <p className="text-[16px] m-0" style={{ color: 'var(--text-2)' }}>
         Tasks, prompts, events, receipts and outputs are only served to an authenticated operator.
       </p>
@@ -20,7 +20,7 @@ export const SignInRequired: React.FC = () => {
           The server has no <code>GOVERNANCE_OPERATOR_TOKEN</code> set, so nobody can sign in. Set it and restart the server.
         </p>
       ) : (
-        <button id="sign-in-btn" onClick={openAuthModal} className="btn-primary">
+        <button id="sign-in-btn" onClick={openAuthModal} className="btn-primary min-h-[44px]">
           <KeyRound className="w-4 h-4" />
           Sign in
         </button>

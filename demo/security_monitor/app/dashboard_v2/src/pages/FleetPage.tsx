@@ -40,7 +40,7 @@ export const FleetPage: React.FC = () => {
 
   if (!data) {
     return (
-      <div className="max-w-[1360px] mx-auto px-4 sm:px-10 py-16" style={{ color: 'var(--text-2)' }}>
+      <div className="max-w-[1360px] py-12" style={{ color: 'var(--text-2)' }}>
         {error ? <p role="alert">{error}</p> : <p>Loading…</p>}
       </div>
     );
@@ -55,18 +55,18 @@ export const FleetPage: React.FC = () => {
       : 'Each dot is one running task. Calm dots need nothing from you.';
 
   return (
-    <div style={{ background: 'radial-gradient(1000px 600px at 30% 60%, rgba(34,211,238,0.08), transparent 60%)', minHeight: 'calc(100vh - 88px)' }}>
-      <div className="max-w-[1360px] mx-auto px-4 sm:px-10 pt-6 pb-14 flex flex-wrap gap-10 items-start">
+    <div>
+      <div className="max-w-[1360px] pb-12 flex flex-wrap gap-6 lg:gap-8 items-start">
         <section aria-label="All agents" className="flex-[999_1_620px] min-w-0 flex flex-col gap-5">
-          <h1 id="fleet-headline" data-quiet={quiet} className="m-0 font-display font-bold text-[36px] sm:text-[46px] leading-[1.1] tracking-[-1px]">
+          <h1 id="fleet-headline" data-quiet={quiet} className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-[#E6E9EF]">
             {line1}
             <br />
-            <span style={{ color: data.need_you > 0 ? '#FCD34D' : 'var(--text-2)' }}>{line2}</span>
+            <span style={{ color: data.need_you > 0 ? '#FBBF24' : 'var(--text-2)' }}>{line2}</span>
           </h1>
 
           {dots.length > 0 ? (
             <>
-              <p className="m-0 text-[17px]" style={{ color: 'var(--text-2)' }} id="dot-basis">
+              <p className="m-0 text-[15px]" style={{ color: 'var(--text-2)' }} id="dot-basis">
                 {fieldLabel}
               </p>
               <DotField dots={dots} onOpen={openDot} label={fieldLabel} />
@@ -83,20 +83,20 @@ export const FleetPage: React.FC = () => {
               </div>
             </>
           ) : (
-            <p className="m-0 text-[17px]" style={{ color: 'var(--text-2)' }} id="fleet-empty">
+            <p className="m-0 text-[15px] card px-5 py-6" style={{ color: 'var(--text-2)' }} id="fleet-empty">
               When an agent starts a task, it shows up here. <Link to="/run">Start one</Link>
             </p>
           )}
           {error && (
-            <p className="m-0 text-[14px]" role="alert" style={{ color: '#FDA4AF' }}>
+            <p className="m-0 text-[14px]" role="alert" style={{ color: '#FCA5A5' }}>
               Could not refresh: {error}
             </p>
           )}
         </section>
 
-        <section aria-label="Needs attention" className="flex-[1_1_380px] max-w-[460px] min-w-0 flex flex-col gap-7">
-          <div className="flex flex-col gap-3">
-            <h2 className="m-0 font-display text-[22px] font-bold">Needs you</h2>
+        <section aria-label="Needs attention" className="flex-[1_1_340px] max-w-[460px] min-w-0 flex flex-col gap-4">
+          <div className="card p-5 flex flex-col gap-3">
+            <h2 className="m-0 text-[15px] font-semibold text-[#E6E9EF]">Needs you</h2>
             {data.needs_you.length === 0 ? (
               <p className="m-0 text-[15px]" style={{ color: 'var(--text-2)' }} id="needs-you-empty">
                 Nothing is waiting for a decision.
@@ -106,8 +106,8 @@ export const FleetPage: React.FC = () => {
                 <div
                   key={item.request_id}
                   id={`needs-you-${item.request_id}`}
-                  className="flex items-center gap-3 px-4 py-3.5 rounded-2xl"
-                  style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.45)' }}
+                  className="flex items-center gap-3 px-4 py-3 rounded-xl"
+                  style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.5)' }}
                 >
                   <div className="flex-1 min-w-0">
                     <div className="font-semibold break-words">{needsYouTitle(agentLabel(item.agent_id), item)}</div>
@@ -118,8 +118,8 @@ export const FleetPage: React.FC = () => {
                   <Link
                     id={`review-${item.request_id}`}
                     to={`/run/${item.task_id}`}
-                    className="inline-flex items-center min-h-[44px] px-4 rounded-xl font-bold text-[14px] no-underline pulse-waiting"
-                    style={{ background: '#FBBF24', color: '#1A1203' }}
+                    className="inline-flex items-center min-h-[44px] px-4 rounded-lg font-semibold text-[14px] no-underline pulse-waiting"
+                    style={{ background: '#F59E0B', color: '#1A1203' }}
                   >
                     Review
                   </Link>
@@ -128,8 +128,8 @@ export const FleetPage: React.FC = () => {
             )}
           </div>
 
-          <div className="flex flex-col gap-1">
-            <h2 className="m-0 mb-2 font-display text-[22px] font-bold">Blocked in the last 24 hours</h2>
+          <div className="card p-5 flex flex-col gap-1">
+            <h2 className="m-0 mb-1 text-[15px] font-semibold text-[#E6E9EF]">Blocked in the last 24 hours</h2>
             {data.blocked.groups.length === 0 ? (
               <p className="m-0 text-[15px]" style={{ color: 'var(--text-2)' }} id="blocked-empty">
                 Nothing was blocked.
@@ -140,12 +140,12 @@ export const FleetPage: React.FC = () => {
                   key={g.target_class}
                   data-group={g.target_class}
                   className="flex items-baseline gap-3.5 py-3"
-                  style={i < data.blocked.groups.length - 1 ? { borderBottom: '1px solid rgba(148,163,184,0.14)' } : undefined}
+                  style={i < data.blocked.groups.length - 1 ? { borderBottom: '1px solid var(--border)' } : undefined}
                 >
-                  <span className="font-display text-[26px] font-bold min-w-[48px]" style={{ color: '#FDA4AF' }}>
+                  <span className="text-[24px] font-bold tracking-tight min-w-[48px]" style={{ color: '#F87171' }}>
                     {g.count.toLocaleString('en-US')}
                   </span>
-                  <span className="text-[15px]">{g.label}</span>
+                  <span className="text-[14px] text-[#A7B0C0]">{g.label}</span>
                 </div>
               ))
             )}
@@ -154,7 +154,7 @@ export const FleetPage: React.FC = () => {
             </Link>
           </div>
 
-          <button className="link-btn self-start" onClick={() => setDetailsOpen(true)} id="fleet-details-btn">
+          <button className="link-btn self-start text-[14px]" onClick={() => setDetailsOpen(true)} id="fleet-details-btn">
             Details
           </button>
         </section>

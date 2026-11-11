@@ -5,10 +5,10 @@ import { TaskRecord } from '../types';
 import { outcomeLabel, relativeTime } from '../logic/plain';
 
 const TONE: Record<string, React.CSSProperties> = {
-  ok: { color: '#A7F3D0', border: '1px solid rgba(52,211,153,0.45)' },
-  bad: { color: '#FECDD3', border: '1px solid rgba(251,113,133,0.45)' },
-  wait: { color: '#A5F3FC', border: '1px solid rgba(34,211,238,0.45)' },
-  none: { color: 'var(--text-2)', border: '1px solid var(--line)' },
+  ok: { color: '#86EFAC', background: 'rgba(34,197,94,0.12)' },
+  bad: { color: '#FCA5A5', background: 'rgba(239,68,68,0.12)' },
+  wait: { color: '#93C5FD', background: 'rgba(59,130,246,0.14)' },
+  none: { color: 'var(--text-2)', background: '#1A2232' },
 };
 
 const stoppedCount = (t: TaskRecord) => Math.max(t.prevented_count || 0, t.os_denials_count || 0);
@@ -30,11 +30,11 @@ export const HistoryPage: React.FC = () => {
   const shown = (tasks || []).filter(t => !onlyBlocked || stoppedCount(t) > 0);
 
   return (
-    <div className="max-w-[880px] mx-auto px-4 sm:px-6 pt-8 pb-16 flex flex-col gap-6">
-      <h1 className="m-0 font-display font-bold text-[36px] sm:text-[44px] leading-[1.1] tracking-[-1px]">
+    <div className="max-w-[960px] pb-12 flex flex-col gap-5">
+      <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-[#E6E9EF]">
         {onlyBlocked ? 'Runs where something was stopped.' : 'Past runs.'}
       </h1>
-      <nav aria-label="Filter" className="flex gap-2">
+      <nav aria-label="Filter" className="inline-flex self-start flex-wrap gap-1 p-1 rounded-xl bg-[#11151D] border border-[#1F2633]">
         {[
           { to: '/history', label: 'All', active: !onlyBlocked },
           { to: '/history?filter=blocked', label: 'Something was stopped', active: onlyBlocked },
@@ -43,8 +43,9 @@ export const HistoryPage: React.FC = () => {
             key={f.label}
             to={f.to}
             aria-current={f.active ? 'page' : undefined}
-            className="inline-flex items-center min-h-[44px] px-4 rounded-full text-[14px] no-underline"
-            style={f.active ? { background: 'rgba(34,211,238,0.14)', color: '#A5F3FC', fontWeight: 600 } : { color: 'var(--text-3)', border: '1px solid var(--line)' }}
+            className={`inline-flex items-center min-h-[44px] sm:min-h-[36px] px-3.5 rounded-lg text-[14px] no-underline ${
+              f.active ? 'bg-[#1A2232] text-[#E6E9EF] font-semibold' : 'text-[#A7B0C0] hover:text-[#E6E9EF]'
+            }`}
           >
             {f.label}
           </Link>
@@ -52,7 +53,7 @@ export const HistoryPage: React.FC = () => {
       </nav>
 
       {error && (
-        <p role="alert" style={{ color: '#FDA4AF' }}>
+        <p role="alert" style={{ color: '#FCA5A5' }}>
           {error}
         </p>
       )}
@@ -63,7 +64,7 @@ export const HistoryPage: React.FC = () => {
       )}
       {!tasks && !error && <p style={{ color: 'var(--text-2)' }}>Loading…</p>}
 
-      <ul className="list-none p-0 m-0 flex flex-col gap-2" id="history-list">
+      <ul className="list-none p-0 m-0 flex flex-col rounded-xl overflow-hidden border border-[#1F2633] bg-[#11151D] divide-y divide-[#1F2633] empty:hidden" id="history-list">
         {shown.map(t => {
           const o = outcomeLabel(t.status);
           const stopped = stoppedCount(t);
@@ -72,21 +73,20 @@ export const HistoryPage: React.FC = () => {
               <Link
                 to={`/history/${t.task_id}`}
                 data-task-id={t.task_id}
-                className="flex flex-wrap sm:flex-nowrap items-center gap-x-4 gap-y-1 px-4 sm:px-5 py-4 rounded-[18px] no-underline"
-                style={{ background: 'var(--card)', border: '1px solid var(--line)', color: 'var(--text)' }}
+                className="flex flex-wrap sm:flex-nowrap items-center gap-x-4 gap-y-1.5 px-4 sm:px-5 py-3.5 min-h-[56px] no-underline text-[#E6E9EF] hover:text-[#E6E9EF] hover:bg-[#161B26] transition-colors"
               >
-                <span className="basis-full sm:basis-auto sm:flex-1 min-w-0 truncate text-[16px]" title={t.request_text}>
+                <span className="basis-full sm:basis-auto sm:flex-1 min-w-0 truncate text-[15px]" title={t.request_text}>
                   {t.request_text || '(no request text)'}
                 </span>
                 {stopped > 0 && (
-                  <span className="text-[14px] whitespace-nowrap" style={{ color: '#FDA4AF' }}>
-                    {stopped} stopped
+                  <span className="text-[13px] whitespace-nowrap" style={{ color: '#FCA5A5' }}>
+                    {stopped} {stopped === 1 ? 'refusal' : 'refusals'}
                   </span>
                 )}
-                <span className="text-[13px] font-semibold px-3 py-1 rounded-full whitespace-nowrap" style={TONE[o.tone]}>
+                <span className="text-[12px] font-semibold px-2.5 py-0.5 rounded-full whitespace-nowrap" style={TONE[o.tone]}>
                   {o.text}
                 </span>
-                <span className="text-[14px] whitespace-nowrap" style={{ color: 'var(--text-3)' }}>
+                <span className="text-[13px] whitespace-nowrap sm:min-w-[84px] sm:text-right" style={{ color: 'var(--text-3)' }}>
                   {relativeTime(t.created_at, now)}
                 </span>
               </Link>

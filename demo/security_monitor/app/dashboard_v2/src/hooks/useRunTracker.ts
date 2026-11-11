@@ -2,6 +2,7 @@
 // falls back to stored state, the pending decision, and the end-of-run output and record.
 // Every run ends visibly in a terminal state; nothing is shown that the server did not report.
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { requestCountsRefresh } from '../logic/countsRefresh';
 import { api } from '../api/client';
 import { ExpansionItem, ReceiptResponse, RunOutputFile, TaskBoundary, TaskRecord, TaskStep } from '../types';
 import { RunState, TERMINAL_STATES, isAgentLaunchStep } from '../logic/runView';
@@ -258,6 +259,11 @@ export function useRunTracker(taskId: string | undefined): RunTracker {
     }
   }, [taskId]);
 
+  // The layout's counts (Approvals badge, running chip) follow every state change at once.
+  useEffect(() => {
+    requestCountsRefresh();
+  }, [state]);
+
   const approve = useCallback(
     async (requestId: string) => {
       setDeciding(true);
@@ -274,6 +280,7 @@ export function useRunTracker(taskId: string | undefined): RunTracker {
         setActionError(err.message || 'Could not record the decision.');
       } finally {
         setDeciding(false);
+        requestCountsRefresh();
       }
     },
     [taskId, loadTask, loadExpansions],
@@ -296,6 +303,7 @@ export function useRunTracker(taskId: string | undefined): RunTracker {
         setActionError(err.message || 'Could not record the decision.');
       } finally {
         setDeciding(false);
+        requestCountsRefresh();
       }
     },
     [taskId, loadExpansions],
