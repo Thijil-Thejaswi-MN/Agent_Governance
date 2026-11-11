@@ -7,7 +7,7 @@ Verifies:
    - developer -> /run
    - team_lead -> /team
    - security_reviewer -> /inbox
-   - admin -> /
+   - admin -> /run
    - auditor -> /records
 3. Auditor role has no approval or deny buttons (read-only) and sees the record verification chain.
 4. Security reviewer sees grouped pending requests with Routine vs Look closely badges,
