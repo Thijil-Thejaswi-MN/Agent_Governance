@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Shield, KeyRound, Bot, Users, CheckCircle2, LayoutGrid, FileText } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Role } from '../types';
+import DotField from '../components/effects/DotField';
 
 interface RoleCard {
   role: Role;
@@ -18,7 +19,7 @@ const ROLES: RoleCard[] = [
     role: 'developer',
     title: 'Developer',
     desc: 'Give tasks to your agents and watch them work.',
-    landingText: 'Lands on: Ask & Watch →',
+    landingText: 'Lands on: Run →',
     color: '#60A5FA',
     icon: <Bot className="w-5 h-5" />,
   },
@@ -63,6 +64,16 @@ export const SignInPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [highlightedRole, setHighlightedRole] = useState<Role | null>(null);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setPrefersReducedMotion(mediaQuery.matches);
+    const handler = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
+    mediaQuery.addEventListener('change', handler);
+    return () => mediaQuery.removeEventListener('change', handler);
+  }, []);
 
   const handleSignIn = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -89,16 +100,43 @@ export const SignInPage: React.FC = () => {
 
   return (
     <div className="relative overflow-hidden min-h-screen bg-[#0B0E14] text-[#E6E9EF] font-sans flex flex-col items-center px-6 py-12">
+      {/* Background DotField (disabled under prefers-reduced-motion) */}
+      {!prefersReducedMotion && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            zIndex: 0,
+          }}
+        >
+          <DotField
+            gradientFrom="#3B82F6"
+            gradientTo="#60A5FA"
+            baseOpacity={0.3}
+            glowIntensity={0.4}
+            holdToZoom={false}
+          />
+        </div>
+      )}
+
       {/* Subtle background glow */}
       <div
         className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px] pointer-events-none opacity-20"
         style={{
           background: 'radial-gradient(ellipse at center, rgba(59,130,246,0.3) 0%, transparent 70%)',
+          zIndex: 0,
         }}
       />
 
-      {/* Hero Header */}
-      <div className="relative z-10 flex flex-col items-center gap-3.5 max-w-4xl w-full">
+      {/* Hero Header & content above */}
+      <div
+        className="flex flex-col items-center gap-3.5 max-w-4xl w-full"
+        style={{
+          position: 'relative',
+          zIndex: 1,
+        }}
+      >
         <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#3B82F6] to-[#6366F1] flex items-center justify-center text-white shadow-xl shadow-blue-500/25">
           <Shield className="w-7 h-7" />
         </div>
@@ -166,7 +204,7 @@ export const SignInPage: React.FC = () => {
         {/* Role Explanation Section */}
         <div className="mt-10 w-full flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-[15px] font-bold text-[#E6E9EF]">Your role in Acme Corp</h2>
+            <h2 className="text-[15px] font-bold text-[#E6E9EF]">Your role</h2>
             <span className="text-[12px] text-[#8B95A7]">
               Each role opens on a different home. Your admin assigns roles.
             </span>
