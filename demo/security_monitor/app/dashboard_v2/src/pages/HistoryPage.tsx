@@ -80,7 +80,7 @@ export const HistoryPage: React.FC = () => {
                 </span>
                 {stopped > 0 && (
                   <span className="text-[13px] whitespace-nowrap" style={{ color: '#FCA5A5' }}>
-                    {stopped} stopped
+                    {stopped} {stopped === 1 ? 'refusal' : 'refusals'}
                   </span>
                 )}
                 <span className="text-[12px] font-semibold px-2.5 py-0.5 rounded-full whitespace-nowrap" style={TONE[o.tone]}>
