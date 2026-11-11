@@ -217,7 +217,7 @@ export const Sidebar: React.FC<{
       className={
         isDrawer
           ? 'relative flex w-[280px] max-w-[85vw] h-full bg-[#0E121A] border-r border-[#1F2633] p-4 flex-col gap-4 overflow-y-auto anim-drawer-left'
-          : `hidden sm:flex flex-shrink-0 sticky top-0 h-screen bg-[#0E121A] border-r border-[#1F2633] flex-col gap-4 transition-[width] duration-200 ${
+          : `hidden sm:flex flex-shrink-0 sticky top-0 z-40 h-screen bg-[#0E121A] border-r border-[#1F2633] flex-col gap-4 transition-[width] duration-200 ${
               collapsed ? 'w-16 px-2 py-4 overflow-visible' : 'w-64 p-4 overflow-y-auto'
             }`
       }
@@ -226,7 +226,7 @@ export const Sidebar: React.FC<{
       data-collapsed={collapsed ? 'true' : 'false'}
     >
       {/* Brand header; the collapse toggle is the first control (same element in both states, so focus stays on it) */}
-      <div className={collapsed ? 'flex flex-col items-center gap-3' : 'flex items-center gap-3 px-2 py-1'}>
+      <div className={collapsed ? 'flex flex-col items-center gap-3' : 'flex items-center gap-2.5 pl-2 py-1'}>
         {!isDrawer && (
           <button
             type="button"
@@ -235,7 +235,7 @@ export const Sidebar: React.FC<{
             aria-label={toggleLabel}
             aria-expanded={!collapsed}
             aria-controls="sidebar-rail"
-            className={`group relative inline-flex items-center justify-center w-10 h-10 rounded-lg text-[#A7B0C0] hover:text-[#E6E9EF] hover:bg-[#1A2232] bg-transparent border-none cursor-pointer flex-shrink-0 ${
+            className={`group relative inline-flex items-center justify-center w-10 h-10 sm:w-9 sm:h-9 rounded-lg text-[#A7B0C0] hover:text-[#E6E9EF] hover:bg-[#1A2232] bg-transparent border-none cursor-pointer flex-shrink-0 ${
               collapsed ? '' : 'order-last ml-auto'
             }`}
           >
@@ -248,7 +248,7 @@ export const Sidebar: React.FC<{
         </div>
         {!collapsed && (
           <div className="min-w-0 flex-1">
-            <div className="font-bold text-[15px] text-[#E6E9EF] tracking-tight truncate">Agent Governance</div>
+            <div className="font-bold text-[14px] text-[#E6E9EF] tracking-tight truncate">Agent Governance</div>
             <div className="text-[12px] text-[#8B95A7] truncate">{team ? `${team} team` : 'Organization'}</div>
           </div>
         )}
