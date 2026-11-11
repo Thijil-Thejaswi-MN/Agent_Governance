@@ -50,7 +50,7 @@ def seeded_ids(console_server):
 
 def _screens(ids):
     return [
-        ("home", "/dashboard", "#metric-harm"),
+        ("home", "/dashboard", "#start-run-btn"),  # /dashboard now lands a signed-in admin on Run
         ("ask", "/dashboard/run", "#start-run-btn"),
         ("watch_waiting", f"/dashboard/run/{ids['waiting']}", f"#inline-approval-card-{ids['request']}"),
         ("done", f"/dashboard/run/{ids['done']}", '#run-status[data-state="completed"]'),

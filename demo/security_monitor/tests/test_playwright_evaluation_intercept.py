@@ -139,12 +139,7 @@ def test_evaluation_page_intercepts_altered_summary(page: Page, console_server):
     expect(page.locator("#utility-timings")).to_contain_text("5.6s")
     expect(page.locator("#utility-timings")).to_contain_text("+2.5s")
 
-    # Home renders its two numbers from the same file: harm A -> C out of the total, extra time
-    page.goto(f"{base_url}/dashboard")
-    expect(page.locator("#metric-harm")).to_contain_text("29 → 1")
-    expect(page.locator("#metric-harm")).to_contain_text("out of 35")
-    expect(page.locator("#metric-time")).to_contain_text("+2.5 s")
-    expect(page.locator("#metric-time")).to_contain_text("3.1 s → 5.6 s")
+    # (The marketing Home page that repeated two of these numbers is no longer routed.)
 
 
 

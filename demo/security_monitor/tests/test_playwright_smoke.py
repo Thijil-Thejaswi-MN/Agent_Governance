@@ -1,9 +1,9 @@
 """Playwright smoke test for the Governance Console (v3).
 
 Asserts:
-- Every top-navigation item (Home, Run, Fleet, History) navigates to /dashboard/<page>
+- /dashboard lands the signed-in admin on Run, inside the sidebar shell.
+- Every sidebar item (Run, Fleet, History, Results) navigates to /dashboard/<page>
   (no doubled basename) and shows that page's headline; the active item is marked.
-- Results is linked from Home.
 - Every v2 route redirects to its new home, so existing links keep working.
 - A hard reload on a deep link still renders the page (server fallback routing).
 """
@@ -29,7 +29,7 @@ NAV = [
     ("Run", "/dashboard/run", "What should the agent do?"),
     ("Fleet", "/dashboard/fleet", "at work|All quiet"),
     ("History", "/dashboard/history", "Past runs"),
-    ("Home", "/dashboard", "AI agents should only touch"),
+    ("Results", "/dashboard/results", "Full results"),
 ]
 
 REDIRECTS = [
@@ -39,8 +39,8 @@ REDIRECTS = [
     ("/dashboard/activity", "/dashboard/fleet"),
     ("/dashboard/agents", "/dashboard/fleet"),
     ("/dashboard/evaluation", "/dashboard/results"),
-    ("/dashboard/architecture", "/dashboard"),
-    ("/dashboard/no-such-page", "/dashboard"),
+    ("/dashboard/architecture", "/dashboard/run"),  # via /dashboard, which lands the admin on Run
+    ("/dashboard/no-such-page", "/dashboard/run"),
 ]
 
 
@@ -48,12 +48,12 @@ def test_top_navigation(page: Page, console_server):
     base_url = console_server.url
     sign_in(page, console_server)
     page.goto(f"{base_url}/dashboard")
-    expect(page).to_have_url(re.compile(r"/dashboard/?$"))
-    expect(page.locator("h1")).to_contain_text("AI agents should only touch")
-    expect(page.locator("aside, [data-sidebar]")).to_have_count(0)
+    expect(page).to_have_url(re.compile(r"/dashboard/run/?$"))
+    expect(page.locator("h1")).to_contain_text("What should the agent do?")
+    expect(page.locator('aside[data-sidebar="rail"]')).to_be_visible()
 
     nav = page.get_by_role("navigation", name="Main")
-    expect(nav.get_by_role("link")).to_have_count(4)
+    expect(nav.get_by_role("link")).to_have_count(8)  # admin: 4 role homes + Run, History, Fleet, Results
     for name, url, heading in NAV:
         link = nav.get_by_role("link", name=name, exact=True)
         link.click()
@@ -61,11 +61,6 @@ def test_top_navigation(page: Page, console_server):
         assert "/dashboard/dashboard" not in page.url, f"Doubled basename detected in {page.url}"
         expect(page.locator("h1")).to_contain_text(re.compile(heading))
         expect(link).to_have_attribute("aria-current", "page")
-
-    # Results is linked from Home.
-    page.locator("#see-results").click()
-    expect(page).to_have_url(re.compile(r"/dashboard/results/?$"))
-    expect(page.locator("h1")).to_contain_text("Full results")
 
 
 @pytest.mark.parametrize("old,new", REDIRECTS)
