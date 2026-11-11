@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 interface TopBarProps {
   breadcrumb?: string;
   activeAgentsCount?: number;
-  /** Opens the sidebar as a drawer below md. */
+  /** Opens the sidebar as a drawer below sm (640 px). */
   onMenu?: () => void;
   menuOpen?: boolean;
 }
@@ -38,9 +38,9 @@ export const TopBar: React.FC<TopBarProps> = ({ breadcrumb, activeAgentsCount = 
   };
 
   return (
-    <header className="sticky top-0 z-30 flex items-center justify-between gap-3 px-4 md:px-6 min-h-[56px] py-2 border-b border-[#1F2633] bg-[#0E121A] md:bg-gradient-to-b md:from-[#0E121A] md:to-[#0B0E14] select-none">
+    <header className="sticky top-0 z-30 flex items-center justify-between gap-3 px-4 md:px-6 min-h-[56px] py-2 border-b border-[#1F2633] bg-[#0E121A] sm:bg-gradient-to-b sm:from-[#0E121A] sm:to-[#0B0E14] select-none">
       {/* Below md: menu button and brand (the sidebar is a drawer there) */}
-      <div className="flex md:hidden items-center gap-2 min-w-0">
+      <div className="flex sm:hidden items-center gap-2 min-w-0">
         <button
           type="button"
           id="open-menu-btn"
@@ -58,7 +58,7 @@ export const TopBar: React.FC<TopBarProps> = ({ breadcrumb, activeAgentsCount = 
       </div>
 
       {/* Breadcrumb */}
-      <div className="hidden md:flex text-[13px] text-[#8B95A7] items-center gap-1.5 truncate">
+      <div className="hidden sm:flex text-[13px] text-[#8B95A7] items-center gap-1.5 truncate">
         {getBreadcrumb()}
       </div>
 
