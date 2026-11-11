@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Shield, KeyRound, Bot, Users, CheckCircle2, LayoutGrid, FileText } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Role } from '../types';
+import { roleHome } from '../logic/journey';
 import DotField from '../components/effects/DotField';
 
 interface RoleCard {
@@ -43,7 +44,7 @@ const ROLES: RoleCard[] = [
     role: 'admin',
     title: 'Admin',
     desc: 'Every agent, team and rule in one place.',
-    landingText: 'Lands on: Organization overview →',
+    landingText: 'Lands on: Run →',
     color: '#34D399',
     icon: <LayoutGrid className="w-5 h-5" />,
   },
@@ -85,7 +86,7 @@ export const SignInPage: React.FC = () => {
     try {
       const res = await saveToken(tokenInput.trim());
       const userRole: Role = (res?.user?.role as Role) || 'admin';
-      const destination = res?.landing_route || (userRole === 'team_lead' ? '/team' : userRole === 'security_reviewer' ? '/inbox' : userRole === 'auditor' ? '/records' : userRole === 'developer' ? '/run' : '/');
+      const destination = roleHome(userRole);
 
       // Highlight the matching role card for 1 second, then redirect
       setHighlightedRole(userRole);

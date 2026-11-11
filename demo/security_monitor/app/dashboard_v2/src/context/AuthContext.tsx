@@ -14,6 +14,8 @@ interface AuthContextType {
   isModalOpen: boolean;
   needsSignIn: boolean;
   authEpoch: number;
+  /** The first auth-status request has answered (or failed). */
+  authChecked: boolean;
   saveToken: (token: string) => Promise<{ user?: UserSession; landing_route?: string }>;
   removeToken: () => void;
   openAuthModal: () => void;
@@ -32,6 +34,7 @@ const AuthContext = createContext<AuthContextType>({
   isModalOpen: false,
   needsSignIn: false,
   authEpoch: 0,
+  authChecked: false,
   saveToken: async () => ({}),
   removeToken: () => {},
   openAuthModal: () => {},
@@ -49,6 +52,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isConfigured, setIsConfigured] = useState<boolean | null>(null);
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [authEpoch, setAuthEpoch] = useState(0);
+  const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
     const onUnauthorized = () => setNeedsSignIn(true);
@@ -86,7 +90,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
         }
       })
-      .catch(() => setIsConfigured(null));
+      .catch(() => setIsConfigured(null))
+      .finally(() => setAuthChecked(true));
   }, [authEpoch]);
 
   const saveToken = async (newToken: string) => {
@@ -133,6 +138,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isModalOpen,
         needsSignIn,
         authEpoch,
+        authChecked,
         saveToken,
         removeToken,
         openAuthModal,
