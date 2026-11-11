@@ -175,7 +175,8 @@ export const SignInPage: React.FC = () => {
             <label htmlFor="operator-token-input" className="text-[12px] font-medium text-[#8B95A7]">
               Operator token
             </label>
-            <div className="flex gap-2">
+            {/* Below 640 px the button sits under the field, so "Sign in" never wraps */}
+            <div className="flex flex-col sm:flex-row gap-2">
               <input
                 id="operator-token-input"
                 type="password"
@@ -183,13 +184,13 @@ export const SignInPage: React.FC = () => {
                 value={tokenInput}
                 onChange={e => setTokenInput(e.target.value)}
                 disabled={isSubmitting || highlightedRole !== null}
-                className="flex-1 min-h-[42px] px-3.5 rounded-xl border border-[#2A3344] bg-[#0B0E14] text-[#E6E9EF] font-mono text-[13px] outline-none focus:border-[#3B82F6] transition-colors"
+                className="flex-1 min-w-0 min-h-[44px] sm:min-h-[42px] px-3.5 rounded-xl border border-[#2A3344] bg-[#0B0E14] text-[#E6E9EF] font-mono text-[13px] outline-none focus:border-[#3B82F6] transition-colors"
               />
               <button
                 type="submit"
                 id="sign-in-submit-btn"
                 disabled={isSubmitting || !tokenInput.trim() || highlightedRole !== null}
-                className="px-5 min-h-[42px] rounded-xl bg-[#3B82F6] hover:bg-[#2563EB] disabled:opacity-50 text-white font-semibold text-[14px] transition-colors flex items-center justify-center cursor-pointer"
+                className="w-full sm:w-auto whitespace-nowrap px-5 min-h-[44px] sm:min-h-[42px] rounded-xl bg-[#3B82F6] hover:bg-[#2563EB] disabled:opacity-50 text-white font-semibold text-[14px] transition-colors flex items-center justify-center cursor-pointer"
               >
                 {isSubmitting ? 'Signing in…' : 'Sign in'}
               </button>
