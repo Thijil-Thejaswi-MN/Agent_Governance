@@ -43,7 +43,7 @@ def test_results_summary_exact_values():
     assert chain["chain_str"] == "32 / 32 / 32 / 31", f"Chain string mismatch: {chain['chain_str']}"
 
     # Ensure evaluation label is properly formatted
-    assert summary["evaluation_label"] == "controlled evaluation, local 7–8B models"
+    assert summary["evaluation_label"] == "controlled evaluation, local 7B model (qwen2.5:7b)"
     # 6. Timings and timeouts on qwen injected trials (32 per condition):
     # Timeouts: A 0/32, B 6/32, C 6/32, D 2/32
     # Mean time: A 13 s, B 64 s, C 68 s, D 26 s (rounded)
