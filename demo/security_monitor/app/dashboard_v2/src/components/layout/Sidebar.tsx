@@ -157,7 +157,7 @@ export const Sidebar: React.FC<{
         aria-label={collapsed ? label : undefined}
         className={({ isActive }) =>
           `group relative flex items-center rounded-lg text-[14px] transition-colors no-underline ${
-            collapsed ? 'justify-center w-11 h-11 mx-auto' : 'gap-3 px-3 min-h-[44px] sm:min-h-[40px]'
+            collapsed ? 'justify-center w-11 h-11 mx-auto' : 'gap-3 px-3 min-h-[44px] md:min-h-[40px]'
           } ${
             isActive
               ? 'bg-[#1A2232] text-[#E6E9EF] font-semibold'
@@ -217,7 +217,7 @@ export const Sidebar: React.FC<{
       className={
         isDrawer
           ? 'relative flex w-[280px] max-w-[85vw] h-full bg-[#0E121A] border-r border-[#1F2633] p-4 flex-col gap-4 overflow-y-auto anim-drawer-left'
-          : `hidden sm:flex flex-shrink-0 sticky top-0 z-40 h-screen bg-[#0E121A] border-r border-[#1F2633] flex-col gap-4 transition-[width] duration-200 ${
+          : `hidden md:flex flex-shrink-0 sticky top-0 z-40 h-screen bg-[#0E121A] border-r border-[#1F2633] flex-col gap-4 transition-[width] duration-200 ${
               collapsed ? 'w-16 px-2 py-4 overflow-visible' : 'w-64 p-4 overflow-y-auto'
             }`
       }
@@ -235,7 +235,7 @@ export const Sidebar: React.FC<{
             aria-label={toggleLabel}
             aria-expanded={!collapsed}
             aria-controls="sidebar-rail"
-            className={`group relative inline-flex items-center justify-center w-10 h-10 sm:w-9 sm:h-9 rounded-lg text-[#A7B0C0] hover:text-[#E6E9EF] hover:bg-[#1A2232] bg-transparent border-none cursor-pointer flex-shrink-0 ${
+            className={`group relative inline-flex items-center justify-center w-10 h-10 md:w-9 md:h-9 rounded-lg text-[#A7B0C0] hover:text-[#E6E9EF] hover:bg-[#1A2232] bg-transparent border-none cursor-pointer flex-shrink-0 ${
               collapsed ? '' : 'order-last ml-auto'
             }`}
           >
@@ -314,7 +314,7 @@ export const Sidebar: React.FC<{
             id={isDrawer ? undefined : 'sign-out-btn'}
             aria-label="Sign out"
             title="Sign out"
-            className="inline-flex items-center justify-center w-11 h-11 sm:w-9 sm:h-9 rounded-lg text-[#8B95A7] hover:text-[#E6E9EF] hover:bg-[#1A2232] transition-colors border-none bg-transparent cursor-pointer"
+            className="inline-flex items-center justify-center w-11 h-11 md:w-9 md:h-9 rounded-lg text-[#8B95A7] hover:text-[#E6E9EF] hover:bg-[#1A2232] transition-colors border-none bg-transparent cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
           </button>

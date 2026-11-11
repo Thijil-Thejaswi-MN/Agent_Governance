@@ -127,7 +127,7 @@ export const AppLayout: React.FC = () => {
         </div>
 
         {menuOpen && (
-          <div className="fixed inset-0 z-50 flex sm:hidden" role="dialog" aria-modal="true" aria-label="Menu" ref={drawerRef}>
+          <div className="fixed inset-0 z-50 flex md:hidden" role="dialog" aria-modal="true" aria-label="Menu" ref={drawerRef}>
             <div className="absolute inset-0 bg-[rgba(3,6,12,0.65)]" onClick={() => setMenuOpen(false)} aria-hidden="true" />
             <Sidebar
               variant="drawer"
