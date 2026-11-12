@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  draftFromParams,
   draftProblems,
   responseLabel,
   ruleIdFromDecider,
@@ -70,5 +71,14 @@ describe('decider names', () => {
     expect(ruleIdFromDecider('standing_rule:rule_ab12')).toBe('rule_ab12');
     expect(ruleIdFromDecider('operator:admin')).toBeNull();
     expect(ruleIdFromDecider(null)).toBeNull();
+  });
+});
+
+describe('prefill from a blocked action', () => {
+  const base: RuleDraft = { agent_or_profile: '*', action: 'file_read', target: '', response: 'allow', expiry_days: 30 };
+  it('takes known values and ignores unknown ones', () => {
+    const p = new URLSearchParams({ agent: 'b', action: 'network', target: 'localhost:9', response: 'block' });
+    expect(draftFromParams(p, base)).toEqual({ ...base, agent_or_profile: 'b', action: 'network', target: 'localhost:9', response: 'block' });
+    expect(draftFromParams(new URLSearchParams({ action: 'run_command', response: 'maybe' }), base)).toEqual(base);
   });
 });

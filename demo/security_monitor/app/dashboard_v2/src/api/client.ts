@@ -21,6 +21,7 @@ import {
 import type { RuleDraft } from '../logic/rules';
 import type { ApprovalScope, ExpansionPreview } from '../logic/approval';
 import type { TaskReport } from '../logic/report';
+import type { Incident, IncidentDetail } from '../logic/incidents';
 
 const API_BASE = '/api/governance';
 
@@ -148,6 +149,9 @@ export const api = {
   },
 
   getRawReceiptUrl: (taskId: string) => `${API_BASE}/tasks/${taskId}/receipt/raw`,
+  getIncidents: () => request<{ incidents: Incident[]; total: number; can_make_rule: boolean }>(`${API_BASE}/incidents`),
+  getIncident: (taskId: string, incidentId: string) =>
+    request<IncidentDetail>(`${API_BASE}/incidents/${encodeURIComponent(taskId)}/${encodeURIComponent(incidentId)}`),
   getTaskReport: (taskId: string) => request<TaskReport>(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/report`),
   getTaskReportCsvUrl: (taskId: string) => `${API_BASE}/tasks/${encodeURIComponent(taskId)}/report.csv`,
 

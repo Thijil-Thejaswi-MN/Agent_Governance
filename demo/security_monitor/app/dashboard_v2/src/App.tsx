@@ -31,6 +31,7 @@ const RunInvestigationPage = React.lazy(() =>
 const StandingRulesPage = React.lazy(() =>
   import('./pages/StandingRulesPage').then(m => ({ default: m.StandingRulesPage }))
 );
+const IncidentsPage = React.lazy(() => import('./pages/IncidentsPage').then(m => ({ default: m.IncidentsPage })));
 const ReportPage = React.lazy(() => import('./pages/ReportPage').then(m => ({ default: m.ReportPage })));
 const SignInPage = React.lazy(() =>
   import('./pages/SignInPage').then(m => ({ default: m.SignInPage }))
@@ -86,6 +87,7 @@ export const App: React.FC = () => {
             <Route path="history/:taskId" element={page(<WatchPage readOnly />)} />
             <Route path="results" element={page(<ResultsPage />)} />
             <Route path="report/:taskId" element={page(<ReportPage />)} />
+            <Route path="incidents" element={page(<IncidentsPage />)} />
 
             {/* v2 and v3 compatibility redirects */}
             <Route path="tasks" element={<Navigate to="/history" replace />} />

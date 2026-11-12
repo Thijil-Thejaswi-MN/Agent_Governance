@@ -15,8 +15,7 @@ import {
   KeyRound,
   X,
   PanelLeftClose,
-  PanelLeftOpen,
-} from 'lucide-react';
+  PanelLeftOpen, ShieldX } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Role } from '../../types';
 
@@ -130,6 +129,7 @@ export const Sidebar: React.FC<{
   const consoleItems: NavItem[] = [
     ...(!hasToken || CAN_START_RUN.includes(currentRole) ? [{ to: '/run', label: 'Run', icon: icon(Play) }] : []),
     { to: '/history', label: 'History', icon: icon(History) },
+    { to: '/incidents', label: 'Incidents', icon: icon(ShieldX) },
     { to: '/fleet', label: 'Fleet', icon: icon(LayoutGrid) },
     { to: '/results', label: 'Results', icon: icon(BarChart3) },
   ];

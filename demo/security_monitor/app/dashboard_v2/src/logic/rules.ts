@@ -107,3 +107,16 @@ export function ruleIdFromDecider(decider: string | null | undefined): string | 
   if (!decider || !decider.startsWith('standing_rule:')) return null;
   return decider.slice('standing_rule:'.length) || null;
 }
+
+/** A draft from ?agent=&action=&target=&response= (unknown values keep the defaults). */
+export function draftFromParams(p: URLSearchParams, base: RuleDraft): RuleDraft {
+  const action = p.get('action');
+  const response = p.get('response');
+  return {
+    ...base,
+    agent_or_profile: p.get('agent')?.trim() || base.agent_or_profile,
+    action: ACTIONS.some(a => a.value === action) ? (action as RuleAction) : base.action,
+    target: p.get('target')?.trim() || base.target,
+    response: RESPONSES.some(r => r.value === response) ? (response as RuleResponse) : base.response,
+  };
+}

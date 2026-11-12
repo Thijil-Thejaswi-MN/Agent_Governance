@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { StandingRule } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { EmptyState, ErrorState, LoadingState } from '../components/common/States';
 import { ResponseChip, RuleSentence } from '../components/policy/RuleBits';
-import { ACTIONS, RESPONSES, RuleDraft, draftProblems, ruleState, sortRules } from '../logic/rules';
+import { ACTIONS, RESPONSES, RuleDraft, draftFromParams, draftProblems, ruleState, sortRules } from '../logic/rules';
 
 const EMPTY_DRAFT: RuleDraft = { agent_or_profile: '*', action: 'file_read', target: '', response: 'allow', expiry_days: 30 };
 
@@ -20,7 +21,10 @@ export const StandingRulesPage: React.FC = () => {
   const [canManage, setCanManage] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [draft, setDraft] = useState<RuleDraft>(EMPTY_DRAFT);
+  const [params] = useSearchParams();
+  // "Make this a rule" (Incidents) opens this page with the form filled in.
+  const [draft, setDraft] = useState<RuleDraft>(() => draftFromParams(params, EMPTY_DRAFT));
+  const prefilled = !!params.get('target');
   const [saving, setSaving] = useState(false);
   const [touched, setTouched] = useState(false);
 
@@ -111,6 +115,11 @@ export const StandingRulesPage: React.FC = () => {
           className="card p-5 flex flex-col gap-4"
         >
           <h2 className="m-0 text-[17px] font-semibold text-[#E6E9EF]">Add a rule</h2>
+          {prefilled && (
+            <p id="rule-prefilled" className="m-0 text-[14px]" style={{ color: 'var(--text-2)' }}>
+              Filled in from a blocked action. Check it, then save.
+            </p>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <label className="flex flex-col gap-1.5 text-[13px]" style={{ color: 'var(--text-2)' }}>
               Agent (* for every agent)
