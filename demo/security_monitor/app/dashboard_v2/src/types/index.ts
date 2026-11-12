@@ -303,16 +303,8 @@ export interface PendingGroup {
   created_at_max: string;
 }
 
-export interface StandingRule {
-  rule_id: string;
-  agent_id: string;
-  resource_type: string;
-  normalized_target: string;
-  owner: string;
-  created_at: string;
-  expires_at: string;
-  team?: string | null;
-}
+// Shape returned by /standing-rules (see logic/rules.ts for wording).
+export type { PolicyRule as StandingRule } from '../logic/rules';
 
 export interface RecordsSummary {
   total: number;

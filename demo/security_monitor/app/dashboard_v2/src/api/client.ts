@@ -18,6 +18,7 @@ import {
   PendingGroup,
   StandingRule,
 } from '../types';
+import type { RuleDraft } from '../logic/rules';
 
 const API_BASE = '/api/governance';
 
@@ -217,10 +218,11 @@ export const api = {
 
   // Inbox & Batch Operations
   getPendingGroups: () => request<{ groups: PendingGroup[]; total_waiting: number }>(`${API_BASE}/inbox/pending`),
-  batchApprove: (payload: { request_ids: string[]; reason?: string; create_rule?: boolean }) =>
-    request<{ approved_count: number; rule_created?: StandingRule }>(`${API_BASE}/expansions/batch-approve`, {
+  batchApprove: ({ create_rule, ...rest }: { request_ids: string[]; reason?: string; create_rule?: boolean }) =>
+    request<{ approved_count: number; standing_rule?: StandingRule | null }>(`${API_BASE}/expansions/batch-approve`, {
       method: 'POST',
-      body: JSON.stringify(payload),
+      // The server's field is create_standing_rule.
+      body: JSON.stringify({ ...rest, create_standing_rule: !!create_rule }),
     }),
   batchDeny: (payload: { request_ids: string[]; reason: string }) =>
     request<{ denied_count: number }>(`${API_BASE}/expansions/batch-deny`, {
@@ -229,9 +231,15 @@ export const api = {
     }),
 
   // Standing Rules
-  getStandingRules: () => request<{ rules: StandingRule[]; enabled: boolean }>(`${API_BASE}/standing-rules`),
+  getStandingRules: () =>
+    request<{ rules: StandingRule[]; enabled: boolean; can_manage: boolean }>(`${API_BASE}/standing-rules`),
+  createStandingRule: (payload: RuleDraft & { team?: string | null }) =>
+    request<StandingRule>(`${API_BASE}/standing-rules`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   expireStandingRule: (ruleId: string) =>
-    request<{ expired: boolean }>(`${API_BASE}/standing-rules/${ruleId}/expire`, {
+    request<{ status: string; rule_id: string }>(`${API_BASE}/standing-rules/${ruleId}/expire`, {
       method: 'POST',
     }),
 

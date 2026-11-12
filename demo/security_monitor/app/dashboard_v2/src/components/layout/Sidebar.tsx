@@ -94,7 +94,7 @@ export const Sidebar: React.FC<{
             badgeColor: '#FBBF24',
             end: true,
           },
-          { to: '/standing-rules', label: 'Standing rules', icon: icon(Sliders) },
+          { to: '/standing-rules', label: 'Policies', icon: icon(Sliders) },
           { to: '/records', label: 'Records', icon: icon(FileText) },
         ];
       case 'auditor':
@@ -107,7 +107,7 @@ export const Sidebar: React.FC<{
             badgeColor: '#8B95A7',
             end: true,
           },
-          { to: '/standing-rules', label: 'Standing rules', icon: icon(Sliders) },
+          { to: '/standing-rules', label: 'Policies', icon: icon(Sliders) },
         ];
       case 'admin':
       default:
@@ -120,7 +120,7 @@ export const Sidebar: React.FC<{
             badge: waitingCount > 0 ? waitingCount : undefined,
             badgeColor: '#F59E0B',
           },
-          { to: '/standing-rules', label: 'Standing rules', icon: icon(Sliders) },
+          { to: '/standing-rules', label: 'Policies', icon: icon(Sliders) },
           { to: '/records', label: 'Records', icon: icon(FileText) },
         ];
     }
