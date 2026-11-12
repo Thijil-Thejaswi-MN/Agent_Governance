@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import { PendingGroup, StandingRule } from '../types';
+import { ExpansionItem, PendingGroup } from '../types';
+import { countDecided, formatDuration, isRule, isTimeout, medianDecisionSeconds } from '../logic/teamStats';
 import { useAuth } from '../context/AuthContext';
 import { ShieldAlert, CheckCircle, XCircle, Sliders, AlertTriangle } from 'lucide-react';
 
@@ -15,9 +16,14 @@ export const InboxPage: React.FC = () => {
   const [actionError, setActionError] = useState<string | null>(null);
   const [denyReason, setDenyReason] = useState('');
   const [isDenying, setIsDenying] = useState(false);
+  const [decided, setDecided] = useState<ExpansionItem[] | null>(null);
 
   const fetchInbox = async () => {
     try {
+      api
+        .getExpansions()
+        .then(all => setDecided(all.filter(e => e.status !== 'PENDING')))
+        .catch(() => setDecided(null));
       const res = await api.getPendingGroups();
       setGroups(res.groups || []);
       setTotalWaiting(res.total_waiting || 0);
@@ -75,6 +81,10 @@ export const InboxPage: React.FC = () => {
   const activeGroups = groups;
   const currentSelected = selectedGroup || (activeGroups.length > 0 ? activeGroups[0] : null);
   const countToDisplay = totalWaiting || activeGroups.reduce((a, b) => a + b.count, 0);
+  const nowMs = Date.now();
+  const medianSec = decided ? medianDecisionSeconds(decided, nowMs) : null;
+  const timedOut = decided ? countDecided(decided, isTimeout, nowMs) : 0;
+  const byRules = decided ? countDecided(decided, isRule, nowMs) : 0;
 
   return (
     <div className="flex flex-col gap-6 font-sans">
@@ -100,26 +110,26 @@ export const InboxPage: React.FC = () => {
 
         <div className="p-4 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col justify-between anim-rise">
           <div className="text-[12px] font-medium text-[#8B95A7]">Median time to decide</div>
-          <div className="mt-2 text-3xl font-bold text-[#E6E9EF] tracking-tight">
-            {groups.length > 0 ? '1m 48s' : '—'}
+          <div id="kpi-median-decision" className="mt-2 text-3xl font-bold text-[#E6E9EF] tracking-tight">
+            {formatDuration(medianSec)}
           </div>
-          <div className="mt-1 text-[12px] text-[#8B95A7]">{groups.length > 0 ? 'last 24 hours' : 'No recent decisions'}</div>
+          <div className="mt-1 text-[12px] text-[#8B95A7]">{medianSec == null ? 'No decisions by a person in the last 24 hours' : 'decisions by a person, last 24 hours'}</div>
         </div>
 
         <div className="p-4 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col justify-between anim-rise">
           <div className="text-[12px] font-medium text-[#8B95A7]">Timed out, stayed blocked</div>
-          <div className="mt-2 text-3xl font-bold text-[#22C55E] tracking-tight">
-            0
+          <div id="kpi-timed-out" className="mt-2 text-3xl font-bold tracking-tight" style={{ color: timedOut ? '#FBBF24' : '#E6E9EF' }}>
+            {decided ? timedOut : '—'}
           </div>
-          <div className="mt-1 text-[12px] text-[#8B95A7]">no timed-out actions</div>
+          <div className="mt-1 text-[12px] text-[#8B95A7]">last 24 hours</div>
         </div>
 
         <div className="p-4 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col justify-between anim-rise">
           <div className="text-[12px] font-medium text-[#8B95A7]">Handled by standing rules</div>
-          <div className="mt-2 text-3xl font-bold text-[#22C55E] tracking-tight">
-            0
+          <div id="kpi-by-rules" className="mt-2 text-3xl font-bold text-[#E6E9EF] tracking-tight">
+            {decided ? byRules : '—'}
           </div>
-          <div className="mt-1 text-[12px] text-[#8B95A7]">standing rules active</div>
+          <div className="mt-1 text-[12px] text-[#8B95A7]">last 24 hours</div>
         </div>
       </section>
 
@@ -258,7 +268,7 @@ export const InboxPage: React.FC = () => {
                   <b className="text-[#E6E9EF]">{currentSelected.normalized_target}</b>
                   <br />
                   <span className="text-[#8B95A7]">Expires in</span> 30 days ·{' '}
-                  <span className="text-[#8B95A7]">Owner</span> {user?.name || 'Security Reviewer'}
+                  <span className="text-[#8B95A7]">Owner</span> {user?.name ?? '—'}
                 </div>
               </div>
             )}
