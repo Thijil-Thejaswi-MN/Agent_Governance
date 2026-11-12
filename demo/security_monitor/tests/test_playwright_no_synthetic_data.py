@@ -110,6 +110,9 @@ def test_overview_shows_a_seeded_agent(page: Page, console_server):
     page.goto(f"{console_server.url}/dashboard/overview")
     expect(page.locator('[data-view="individual"] [data-agent="overview_bot"]')).to_have_attribute("data-state", "asking")
     expect(page.locator("#actions-chart")).to_be_visible()
+    # The seeded blocked action draws a visible bar in its hour.
+    heights = page.locator('#actions-chart [data-bar="stopped"]').evaluate_all("els => els.map(e => e.getBoundingClientRect().height)")
+    assert max(heights) > 4
     body = page.locator("body").inner_text()
     assert [p for p in OVERVIEW_PLACEHOLDERS if p in body] == []
 

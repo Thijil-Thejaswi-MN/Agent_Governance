@@ -158,10 +158,10 @@ export const AdminOverviewPage: React.FC = () => {
             <table className="w-full text-left text-[13px] border-collapse">
               <thead>
                 <tr className="border-b border-[#1F2633] text-[#8B95A7] text-[12px]">
-                  <th className="pb-2 font-normal">Team</th>
-                  <th className="pb-2 font-normal">Agents</th>
-                  <th className="pb-2 font-normal">Active</th>
-                  <th className="pb-2 font-normal">Waiting</th>
+                  <th className="pb-2 pr-3 font-normal">Team</th>
+                  <th className="pb-2 pr-3 font-normal">Agents</th>
+                  <th className="pb-2 pr-3 font-normal">Active</th>
+                  <th className="pb-2 pr-3 font-normal">Waiting</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#1F2633]">
@@ -202,13 +202,13 @@ export const AdminOverviewPage: React.FC = () => {
                 {hours.map(h => (
                   <div
                     key={h.hour}
-                    className="flex-1 flex flex-col justify-end min-w-0"
+                    className="flex-1 h-full flex flex-col justify-end min-w-0"
                     title={`${String(h.hour).padStart(2, '0')}:00 · ${h.allowed} allowed, ${h.stopped} stopped, ${h.asked} asked`}
                     data-hour={h.hour}
                   >
-                    <div style={{ height: `${(h.asked / peak) * 100}%`, background: '#F59E0B' }} />
-                    <div style={{ height: `${(h.stopped / peak) * 100}%`, background: '#EF4444' }} />
-                    <div style={{ height: `${(h.allowed / peak) * 100}%`, background: '#3B82F6' }} />
+                    <div data-bar="asked" style={{ height: `${(h.asked / peak) * 100}%`, background: '#F59E0B' }} />
+                    <div data-bar="stopped" style={{ height: `${(h.stopped / peak) * 100}%`, background: '#EF4444' }} />
+                    <div data-bar="allowed" style={{ height: `${(h.allowed / peak) * 100}%`, background: '#3B82F6' }} />
                   </div>
                 ))}
               </div>
@@ -264,19 +264,19 @@ export const AdminOverviewPage: React.FC = () => {
             <table className="w-full text-left text-[13px] border-collapse">
               <thead>
                 <tr className="border-b border-[#1F2633] text-[#8B95A7] text-[12px]">
-                  <th className="pb-2 font-normal">Pattern</th>
-                  <th className="pb-2 font-normal">Agents</th>
-                  <th className="pb-2 font-normal">Stops</th>
-                  <th className="pb-2 font-normal">Stopped by</th>
+                  <th className="pb-2 pr-3 font-normal">Pattern</th>
+                  <th className="pb-2 pr-3 font-normal">Agents</th>
+                  <th className="pb-2 pr-3 font-normal">Stops</th>
+                  <th className="pb-2 pr-3 font-normal">Stopped by</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#1F2633]">
                 {fleet.blocked.groups.map(g => (
                   <tr key={g.target_class}>
-                    <td className="py-2.5 text-[#E6E9EF]">{g.label}</td>
+                    <td className="py-2.5 pr-3 text-[#E6E9EF]">{g.label}</td>
                     <td className="py-2.5">{g.agent_count}</td>
-                    <td className="py-2.5 text-[#F87171] font-semibold">{g.count}</td>
-                    <td className="py-2.5 text-[#A7B0C0]">{Object.keys(g.by_layer).map(layerLabel).join(', ') || '—'}</td>
+                    <td className="py-2.5 pr-3 text-[#F87171] font-semibold">{g.count}</td>
+                    <td className="py-2.5 pr-3 text-[#A7B0C0]">{Object.keys(g.by_layer).map(layerLabel).join(', ') || '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -295,19 +295,19 @@ export const AdminOverviewPage: React.FC = () => {
             <table className="w-full text-left text-[13px] border-collapse">
               <thead>
                 <tr className="border-b border-[#1F2633] text-[#8B95A7] text-[12px]">
-                  <th className="pb-2 font-normal">Agent</th>
-                  <th className="pb-2 font-normal">Team</th>
-                  <th className="pb-2 font-normal">Status</th>
-                  <th className="pb-2 font-normal">Stops</th>
+                  <th className="pb-2 pr-3 font-normal">Agent</th>
+                  <th className="pb-2 pr-3 font-normal">Team</th>
+                  <th className="pb-2 pr-3 font-normal">Status</th>
+                  <th className="pb-2 pr-3 font-normal">Stops</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#1F2633]">
                 {watch.map(r => (
                   <tr key={r.agentId}>
-                    <td className="py-2.5 font-mono text-[#E6E9EF]">{r.agentId}</td>
-                    <td className="py-2.5 text-[#A7B0C0]">{teamOf.get(r.agentId) || '—'}</td>
+                    <td className="py-2.5 pr-3 font-mono text-[#E6E9EF]">{r.agentId}</td>
+                    <td className="py-2.5 pr-3 text-[#A7B0C0]">{teamOf.get(r.agentId) || '—'}</td>
                     <td className="py-2.5">{r.running ? 'running' : 'idle'}</td>
-                    <td className="py-2.5 text-[#F87171] font-semibold">{r.stops}</td>
+                    <td className="py-2.5 pr-3 text-[#F87171] font-semibold">{r.stops}</td>
                   </tr>
                 ))}
               </tbody>
