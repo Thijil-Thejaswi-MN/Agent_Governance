@@ -58,6 +58,7 @@ from .standing_rules import (
 from .rule_watcher import StandingRuleWatcher, decide_with_rules
 from .standing_rules import is_high_risk_or_escalated
 from .workspace_read import file_preview
+from .task_report import build_task_report, report_to_csv
 from .storage import GovernanceStorage
 
 _default_storage = GovernanceStorage()
@@ -808,6 +809,11 @@ async def get_task_receipt(task_id: str, request: Request = None) -> dict[str, A
     if not PermissionMatrix.can_download_or_verify_record(user, task.owner, task.team):
         raise HTTPException(status_code=403, detail="Forbidden: You do not have permission to view or verify this receipt.")
 
+    return _receipt_check(task_id)
+
+
+def _receipt_check(task_id: str) -> dict[str, Any]:
+    """Loads the stored receipt for a task and recomputes its SHA-256 hash chain."""
     receipts_dir_env = os.getenv("RECEIPTS_DIR")
     if receipts_dir_env:
         receipts_dir = Path(receipts_dir_env)
@@ -869,6 +875,53 @@ async def get_task_receipt(task_id: str, request: Request = None) -> dict[str, A
         "file_sha256": file_sha256,
         "final_hash": final_hash,
     }
+
+
+@governance_router.get("/tasks/{task_id}/report")
+async def get_task_report(task_id: str, request: Request = None) -> dict[str, Any]:
+    """One-page task report: requester, boundary, approvals (who and when), blocked actions
+    and the record's hash-chain check. Read only; same permission as the record."""
+    return _task_report(task_id, request)
+
+
+@governance_router.get("/tasks/{task_id}/report.csv")
+async def get_task_report_csv(task_id: str, request: Request = None) -> Response:
+    report = _task_report(task_id, request)
+    safe_id = "".join(c for c in task_id if c.isalnum() or c in "_-")[:80] or "task"
+    return Response(
+        content=report_to_csv(report),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="task_report_{safe_id}.csv"'},
+    )
+
+
+def _task_report(task_id: str, request: Request | None) -> dict[str, Any]:
+    user = get_current_user_session(request)
+    storage = get_storage()
+    task = storage.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if not PermissionMatrix.can_download_or_verify_record(user, task.owner, task.team):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have permission to view this report.")
+    rc = _receipt_check(task_id)
+    receipt_events = (rc.get("receipt") or {}).get("events") or []
+    record = {
+        "available": rc.get("available", False),
+        "verified": rc.get("verified", False),
+        "message": rc.get("verification_message"),
+        "final_hash": rc.get("final_hash"),
+        "event_count": len(receipt_events),
+    }
+    events = _build_unified_task_events(task_id, storage.get_events_for_task(task_id))
+    return build_task_report(
+        task=task,
+        first_boundary=storage.get_boundary(task_id, version=1),
+        last_boundary=storage.get_boundary(task_id),
+        expansions=storage.list_expansion_requests(task_id=task_id),
+        events=events,
+        record=record,
+        generated_at=datetime.now(timezone.utc).isoformat(),
+    )
 
 
 @governance_router.get("/tasks/{task_id}/receipt/raw")
