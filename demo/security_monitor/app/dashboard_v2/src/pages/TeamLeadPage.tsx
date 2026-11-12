@@ -4,7 +4,7 @@ import { api } from '../api/client';
 import { ExpansionItem, RecordsSummary, TaskEvent, TaskRecord } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { EmptyState, ErrorState, LoadingState } from '../components/common/States';
-import { needsYouReason } from '../logic/plain';
+import { needsYouSentence } from '../logic/plain';
 import { HourCell, agentRows, hourlyHeat, startOfLocalDay } from '../logic/teamStats';
 import { loadTodayEvents } from '../api/events';
 
@@ -236,7 +236,7 @@ export const TeamLeadPage: React.FC = () => {
                     <span className="font-mono text-[#C7D2FE]">{req.agent_id}</span> wants <b>{req.resource_target}</b>
                   </div>
                   <div className="text-[12px]" style={{ color: req.escalated_by_provenance ? '#FCA5A5' : '#A7B0C0' }}>
-                    It {needsYouReason(req)}.
+                    {needsYouSentence(req)}
                   </div>
                   <div className="mt-1">
                     <button

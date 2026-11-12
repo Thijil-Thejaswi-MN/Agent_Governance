@@ -154,6 +154,12 @@ export function needsYouReason(exp: {
   return 'not part of the request it was given';
 }
 
+/** The same reason as a sentence: "It learned of it from inside notes.txt." */
+export function needsYouSentence(exp: Parameters<typeof needsYouReason>[0]): string {
+  const r = needsYouReason(exp);
+  return r.startsWith('not ') ? `It is ${r}.` : `It ${r}.`;
+}
+
 export function formatCountdown(secondsLeft: number): string {
   if (secondsLeft <= 0) return 'Time is up. It stays blocked.';
   const s = Math.ceil(secondsLeft);

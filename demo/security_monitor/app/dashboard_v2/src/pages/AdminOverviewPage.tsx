@@ -17,7 +17,7 @@ import {
   teamGroups,
 } from '../logic/overview';
 import { layerLabel } from '../logic/report';
-import { needsYouReason } from '../logic/plain';
+import { needsYouSentence } from '../logic/plain';
 
 const STATE: Record<AgentState, { color: string; label: string }> = {
   asking: { color: '#F59E0B', label: 'asking you' },
@@ -244,7 +244,7 @@ export const AdminOverviewPage: React.FC = () => {
                   <span className="text-[13px] font-semibold text-[#E6E9EF] [overflow-wrap:anywhere]">
                     {exp.agent_id} → {exp.resource_target}
                   </span>
-                  <span className="text-[12px] text-[#A7B0C0]">It {needsYouReason(exp)}.</span>
+                  <span className="text-[12px] text-[#A7B0C0]">{needsYouSentence(exp)}</span>
                 </button>
               ))}
             </div>
