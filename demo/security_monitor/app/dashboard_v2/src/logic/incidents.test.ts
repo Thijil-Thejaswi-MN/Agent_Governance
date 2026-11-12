@@ -23,7 +23,13 @@ describe('incident wording', () => {
         layer: 'broker',
         followup: { request_id: 'e', status: 'DENIED', decided_by: 'timeout_fail_closed', decided_by_label: 'No one in time (stayed blocked)', decided_at: null, single_use: false },
       }),
-    ).toContain('stayed blocked');
+    ).toBe('Refused by the tool broker. Then it asked; no one decided in time, so it stayed blocked.');
+    expect(
+      responseTaken({
+        layer: 'broker',
+        followup: { request_id: 'e', status: 'DENIED', decided_by: 'operator:ana', decided_by_label: 'ana (operator)', decided_at: null, single_use: false },
+      }),
+    ).toBe('Refused by the tool broker. Then it asked, and it stayed blocked. Decided by ana (operator).');
   });
 
   it('never guesses the mention', () => {

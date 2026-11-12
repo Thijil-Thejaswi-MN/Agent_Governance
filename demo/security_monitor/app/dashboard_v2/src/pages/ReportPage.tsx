@@ -48,8 +48,8 @@ export const ReportSheet: React.FC<{ report: TaskReport }> = ({ report }) => {
         <Fact k="Agent" v={t.agent_id} mono />
         <Fact k="Outcome" v={outcomeLabel(t.status).text} id="report-outcome" />
         <Fact k="Team" v={t.team || '—'} />
-        <Fact k="Started" v={formatWhen(t.started_at || t.created_at)} />
-        <Fact k="Ended" v={formatWhen(t.completed_at)} />
+        <Fact k="Started" v={formatWhen(t.started_at || t.created_at)} nowrap />
+        <Fact k="Ended" v={formatWhen(t.completed_at)} nowrap />
         <Fact k="Approvals" v={String(report.approvals.length)} />
         <Fact k="Blocked actions" v={String(report.blocked.length)} />
       </section>
@@ -175,12 +175,12 @@ export const ReportPage: React.FC = () => {
   );
 };
 
-const Fact: React.FC<{ k: string; v: string; mono?: boolean; id?: string }> = ({ k, v, mono, id }) => (
+const Fact: React.FC<{ k: string; v: string; mono?: boolean; id?: string; nowrap?: boolean }> = ({ k, v, mono, id, nowrap }) => (
   <div className="flex flex-col min-w-0">
     <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>
       {k}
     </span>
-    <span id={id} className={`text-[#E6E9EF] [overflow-wrap:anywhere] ${mono ? 'font-mono text-[13px]' : ''}`}>
+    <span id={id} className={`text-[#E6E9EF] ${nowrap ? 'whitespace-nowrap' : '[overflow-wrap:anywhere]'} ${mono ? 'font-mono text-[13px]' : ''}`}>
       {v}
     </span>
   </div>
