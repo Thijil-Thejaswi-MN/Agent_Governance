@@ -420,3 +420,62 @@
 .pulse-waiting {
   animation: ask 2.4s ease-in-out infinite;
 }
+
+/* Printing (task report): only the page content, on white paper, one page where possible. */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+  :root {
+    color-scheme: light !important;
+    background: #fff !important;
+  }
+  aside[data-sidebar],
+  header[data-topbar],
+  [data-print-hide] {
+    display: none !important;
+  }
+  html,
+  body,
+  #root,
+  #root > div,
+  main#main {
+    background: #fff !important;
+    color: #111 !important;
+  }
+  main#main {
+    padding: 0 !important;
+  }
+  .anim-rise {
+    animation: none !important;
+    transform: none !important;
+  }
+  .report-sheet {
+    background: #fff !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    font-size: 11px !important;
+    gap: 10px !important;
+  }
+  .report-sheet,
+  .report-sheet * {
+    color: #111 !important;
+    border-color: #d4d4d8 !important;
+  }
+  .report-sheet h1 {
+    font-size: 17px !important;
+  }
+  .report-sheet .font-mono,
+  .report-sheet td,
+  .report-sheet th {
+    font-size: 10.5px !important;
+  }
+  .report-sheet [data-tone='ok'] {
+    color: #15803d !important;
+  }
+  .report-sheet [data-tone='bad'] {
+    color: #b91c1c !important;
+  }
+}

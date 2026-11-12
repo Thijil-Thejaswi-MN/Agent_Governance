@@ -6,6 +6,8 @@ import { requestCountsRefresh } from '../logic/countsRefresh';
 import { api } from '../api/client';
 import { ExpansionItem, ReceiptResponse, RunOutputFile, TaskBoundary, TaskRecord, TaskStep } from '../types';
 import { RunState, TERMINAL_STATES, isAgentLaunchStep } from '../logic/runView';
+import { ApprovalScope, SCOPE_REASON } from '../logic/approval';
+import { ruleSentenceText } from '../logic/rules';
 
 // No step for this long (or a stream error) -> stop trusting the stream and read stored state.
 const STREAM_STALL_MS = 20000;
@@ -34,8 +36,10 @@ export interface RunTracker {
   receiptLoaded: boolean;
   actionError: string | null;
   deciding: boolean;
+  /** One line about the last decision when it did more than allow (e.g. a rule was saved). */
+  decisionNote: string | null;
   stop: () => Promise<void>;
-  approve: (requestId: string) => Promise<void>;
+  approve: (requestId: string, scope?: ApprovalScope) => Promise<void>;
   deny: (requestId: string, reason: string) => Promise<void>;
 }
 
@@ -55,6 +59,7 @@ export function useRunTracker(taskId: string | undefined): RunTracker {
   const [receiptLoaded, setReceiptLoaded] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
+  const [decisionNote, setDecisionNote] = useState<string | null>(null);
 
   const concludedRef = useRef<string | null>(null);
   const stateRef = useRef<RunState>('preparing');
@@ -265,11 +270,14 @@ export function useRunTracker(taskId: string | undefined): RunTracker {
   }, [state]);
 
   const approve = useCallback(
-    async (requestId: string) => {
+    async (requestId: string, scope: ApprovalScope = 'run') => {
       setDeciding(true);
       setActionError(null);
+      setDecisionNote(null);
       try {
-        await api.approveExpansion(requestId, { decided_by: 'operator', reason: 'Allowed for this run in the console' });
+        const res = await api.approveExpansion(requestId, { decided_by: 'operator', reason: SCOPE_REASON[scope], scope });
+        if (scope === 'once') setDecisionNote('Allowed once. The copy is removed after the agent’s first read (detected by the monitor).');
+        if (res.standing_rule) setDecisionNote(`Rule saved: ${ruleSentenceText(res.standing_rule)}`);
         setPending(null);
         setState(s => (s === 'waiting_approval' ? 'running' : s));
         if (taskId) {
@@ -325,6 +333,7 @@ export function useRunTracker(taskId: string | undefined): RunTracker {
     receiptLoaded,
     actionError,
     deciding,
+    decisionNote,
     stop,
     approve,
     deny,

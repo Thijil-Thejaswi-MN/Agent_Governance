@@ -1,9 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import { PendingGroup, StandingRule } from '../types';
+import { ExpansionItem, PendingGroup } from '../types';
+import { countDecided, formatDuration, isRule, isTimeout, medianDecisionSeconds } from '../logic/teamStats';
 import { useAuth } from '../context/AuthContext';
 import { ShieldAlert, CheckCircle, XCircle, Sliders, AlertTriangle } from 'lucide-react';
+
+const groupTarget = (g: PendingGroup) => g.target ?? g.normalized_target ?? '';
+const groupRunPath = (g: PendingGroup) => {
+  const taskId = g.requests?.[0]?.task_id;
+  return taskId ? `/run/${taskId}` : '/fleet';
+};
 
 export const InboxPage: React.FC = () => {
   const navigate = useNavigate();
@@ -15,9 +22,14 @@ export const InboxPage: React.FC = () => {
   const [actionError, setActionError] = useState<string | null>(null);
   const [denyReason, setDenyReason] = useState('');
   const [isDenying, setIsDenying] = useState(false);
+  const [decided, setDecided] = useState<ExpansionItem[] | null>(null);
 
   const fetchInbox = async () => {
     try {
+      api
+        .getExpansions()
+        .then(all => setDecided(all.filter(e => e.status !== 'PENDING')))
+        .catch(() => setDecided(null));
       const res = await api.getPendingGroups();
       setGroups(res.groups || []);
       setTotalWaiting(res.total_waiting || 0);
@@ -75,6 +87,10 @@ export const InboxPage: React.FC = () => {
   const activeGroups = groups;
   const currentSelected = selectedGroup || (activeGroups.length > 0 ? activeGroups[0] : null);
   const countToDisplay = totalWaiting || activeGroups.reduce((a, b) => a + b.count, 0);
+  const nowMs = Date.now();
+  const medianSec = decided ? medianDecisionSeconds(decided, nowMs) : null;
+  const timedOut = decided ? countDecided(decided, isTimeout, nowMs) : 0;
+  const byRules = decided ? countDecided(decided, isRule, nowMs) : 0;
 
   return (
     <div className="flex flex-col gap-6 font-sans">
@@ -100,26 +116,26 @@ export const InboxPage: React.FC = () => {
 
         <div className="p-4 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col justify-between anim-rise">
           <div className="text-[12px] font-medium text-[#8B95A7]">Median time to decide</div>
-          <div className="mt-2 text-3xl font-bold text-[#E6E9EF] tracking-tight">
-            {groups.length > 0 ? '1m 48s' : '—'}
+          <div id="kpi-median-decision" className="mt-2 text-3xl font-bold text-[#E6E9EF] tracking-tight">
+            {formatDuration(medianSec)}
           </div>
-          <div className="mt-1 text-[12px] text-[#8B95A7]">{groups.length > 0 ? 'last 24 hours' : 'No recent decisions'}</div>
+          <div className="mt-1 text-[12px] text-[#8B95A7]">{medianSec == null ? 'No decisions by a person in the last 24 hours' : 'decisions by a person, last 24 hours'}</div>
         </div>
 
         <div className="p-4 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col justify-between anim-rise">
           <div className="text-[12px] font-medium text-[#8B95A7]">Timed out, stayed blocked</div>
-          <div className="mt-2 text-3xl font-bold text-[#22C55E] tracking-tight">
-            0
+          <div id="kpi-timed-out" className="mt-2 text-3xl font-bold tracking-tight" style={{ color: timedOut ? '#FBBF24' : '#E6E9EF' }}>
+            {decided ? timedOut : '—'}
           </div>
-          <div className="mt-1 text-[12px] text-[#8B95A7]">no timed-out actions</div>
+          <div className="mt-1 text-[12px] text-[#8B95A7]">last 24 hours</div>
         </div>
 
         <div className="p-4 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col justify-between anim-rise">
           <div className="text-[12px] font-medium text-[#8B95A7]">Handled by standing rules</div>
-          <div className="mt-2 text-3xl font-bold text-[#22C55E] tracking-tight">
-            0
+          <div id="kpi-by-rules" className="mt-2 text-3xl font-bold text-[#E6E9EF] tracking-tight">
+            {decided ? byRules : '—'}
           </div>
-          <div className="mt-1 text-[12px] text-[#8B95A7]">standing rules active</div>
+          <div className="mt-1 text-[12px] text-[#8B95A7]">last 24 hours</div>
         </div>
       </section>
 
@@ -137,7 +153,7 @@ export const InboxPage: React.FC = () => {
           <div className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
             <span className="font-semibold text-[#E6E9EF]">Grouped requests</span>
             <span className="text-[12px] text-[#8B95A7]">
-              Each request expires in 2:00 and stays blocked if no one decides.
+              A request that no one decides in time stays blocked.
             </span>
           </div>
 
@@ -165,7 +181,7 @@ export const InboxPage: React.FC = () => {
                     <div className="text-[14px] text-[#E6E9EF]">
                       <span className="font-mono text-[#C7D2FE] font-medium">{g.agent_id}</span>{' '}
                       <span className="text-[#A7B0C0]">wants to access</span>{' '}
-                      <span className="font-mono font-bold text-[#E6E9EF]">{g.normalized_target}</span>
+                      <span className="font-mono font-bold text-[#E6E9EF]">{groupTarget(g)}</span>
                     </div>
                     <div className="mt-1 text-[12px] text-[#8B95A7]">
                       {isEscalated
@@ -196,7 +212,7 @@ export const InboxPage: React.FC = () => {
                     </button>
                     {isEscalated ? (
                       <button
-                        onClick={() => navigate(`/runs/${g.request_ids[0] || ''}`)}
+                        onClick={() => navigate(groupRunPath(g))}
                         className="px-3 py-1.5 rounded-lg border border-[#F59E0B] text-[#FBBF24] bg-transparent hover:bg-amber-950/20 font-semibold text-[13px] cursor-pointer"
                         title="Provenance-escalated requests cannot be batch-allowed"
                       >
@@ -224,12 +240,12 @@ export const InboxPage: React.FC = () => {
               Selected · {currentSelected.count} Requests
             </div>
             <div className="text-lg font-bold text-[#E6E9EF]">
-              {currentSelected.agent_id} wants {currentSelected.normalized_target}
+              {currentSelected.agent_id} wants {groupTarget(currentSelected)}
             </div>
             <p className="text-[13px] text-[#A7B0C0] leading-relaxed m-0">
               {currentSelected.escalated_by_provenance
-                ? 'It only learned about this file from inside another file. Batch allow is disabled; inspect the run investigation.'
-                : `${currentSelected.count} runs asked for the same target. Named directly in task requests.`}
+                ? 'It only learned about this file from inside another file. Batch allow is off; open the run to decide.'
+                : `${currentSelected.count} ${currentSelected.count === 1 ? 'request asks' : 'requests ask'} for the same target.`}
             </p>
 
             <div className="flex flex-col gap-1.5 text-[13px] pt-2 border-t border-[#1F2633]">
@@ -239,7 +255,7 @@ export const InboxPage: React.FC = () => {
               </div>
               <div className="flex justify-between">
                 <span className="text-[#8B95A7]">Target</span>
-                <span className="font-mono text-[#E6E9EF]">{currentSelected.normalized_target}</span>
+                <span className="font-mono text-[#E6E9EF]">{groupTarget(currentSelected)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-[#8B95A7]">Risk flag</span>
@@ -255,10 +271,10 @@ export const InboxPage: React.FC = () => {
                 <div className="font-semibold text-[13px] text-[#E6E9EF]">Make this a standing rule?</div>
                 <div className="p-3 rounded-lg bg-[#0B0E14] border border-[#1F2633] text-[12px] text-[#A7B0C0] leading-relaxed">
                   Allow <b className="text-[#E6E9EF]">{currentSelected.agent_id}</b> to access{' '}
-                  <b className="text-[#E6E9EF]">{currentSelected.normalized_target}</b>
+                  <b className="text-[#E6E9EF]">{groupTarget(currentSelected)}</b>
                   <br />
                   <span className="text-[#8B95A7]">Expires in</span> 30 days ·{' '}
-                  <span className="text-[#8B95A7]">Owner</span> {user?.name || 'Security Reviewer'}
+                  <span className="text-[#8B95A7]">Owner</span> {user?.name ?? '—'}
                 </div>
               </div>
             )}
@@ -293,10 +309,10 @@ export const InboxPage: React.FC = () => {
               <div className="flex flex-wrap gap-2 pt-2 border-t border-[#1F2633]">
                 {currentSelected.escalated_by_provenance ? (
                   <button
-                    onClick={() => navigate(`/runs/${currentSelected.request_ids[0] || ''}`)}
+                    onClick={() => navigate(groupRunPath(currentSelected))}
                     className="flex-1 min-h-[36px] px-3 rounded-lg bg-[#3B82F6] hover:bg-[#2563EB] text-white font-semibold text-[13px] border-none cursor-pointer"
                   >
-                    Review in investigation →
+                    Open the run →
                   </button>
                 ) : (
                   <>

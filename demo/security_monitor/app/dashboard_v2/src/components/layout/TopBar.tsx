@@ -26,7 +26,11 @@ export const TopBar: React.FC<TopBarProps> = ({ breadcrumb, activeAgentsCount = 
       if (path.startsWith('records')) return 'Compliance / Records';
       if (path.startsWith('runs/')) return 'Run investigation';
       if (path.startsWith('run')) return 'Run';
-      if (path.startsWith('standing-rules')) return 'Security / Standing rules';
+      if (path.startsWith('standing-rules')) return 'Security / Policies';
+      if (path.startsWith('report/')) return 'History / Task report';
+      if (path.startsWith('overview')) return 'Overview';
+      if (path.startsWith('incidents')) return 'Incidents';
+      if (path.startsWith('inventory')) return 'Agent Inventory';
       if (path.startsWith('history/')) return 'History / One run';
       if (path.startsWith('history')) return 'History';
       if (path.startsWith('fleet')) return 'Fleet';
@@ -38,7 +42,7 @@ export const TopBar: React.FC<TopBarProps> = ({ breadcrumb, activeAgentsCount = 
   };
 
   return (
-    <header className="sticky top-0 z-30 flex items-center justify-between gap-3 px-4 md:px-6 min-h-[56px] py-2 border-b border-[#1F2633] bg-[#0E121A] md:bg-gradient-to-b md:from-[#0E121A] md:to-[#0B0E14] select-none">
+    <header data-topbar className="sticky top-0 z-30 flex items-center justify-between gap-3 px-4 md:px-6 min-h-[56px] py-2 border-b border-[#1F2633] bg-[#0E121A] md:bg-gradient-to-b md:from-[#0E121A] md:to-[#0B0E14] select-none">
       {/* Below md: menu button and brand (the sidebar is a drawer there) */}
       <div className="flex md:hidden items-center gap-2 min-w-0">
         <button

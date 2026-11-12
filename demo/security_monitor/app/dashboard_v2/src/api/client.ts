@@ -18,6 +18,10 @@ import {
   PendingGroup,
   StandingRule,
 } from '../types';
+import type { RuleDraft } from '../logic/rules';
+import type { ApprovalScope, ExpansionPreview } from '../logic/approval';
+import type { TaskReport } from '../logic/report';
+import type { Incident, IncidentDetail } from '../logic/incidents';
 
 const API_BASE = '/api/governance';
 
@@ -115,8 +119,11 @@ export const api = {
     return request<ExpansionItem[]>(`${API_BASE}/expansions${qs ? `?${qs}` : ''}`);
   },
 
-  approveExpansion: (requestId: string, payload: { decided_by: string; reason?: string }) =>
-    request<{ status: string; new_boundary: TaskBoundary }>(`${API_BASE}/expansions/${requestId}/approve`, {
+  getExpansionPreview: (requestId: string) =>
+    request<ExpansionPreview>(`${API_BASE}/expansions/${encodeURIComponent(requestId)}/preview`),
+
+  approveExpansion: (requestId: string, payload: { decided_by: string; reason?: string; scope?: ApprovalScope }) =>
+    request<{ status: string; scope?: ApprovalScope; new_boundary: TaskBoundary; standing_rule?: StandingRule | null }>(`${API_BASE}/expansions/${requestId}/approve`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
@@ -142,6 +149,11 @@ export const api = {
   },
 
   getRawReceiptUrl: (taskId: string) => `${API_BASE}/tasks/${taskId}/receipt/raw`,
+  getIncidents: () => request<{ incidents: Incident[]; total: number; can_make_rule: boolean }>(`${API_BASE}/incidents`),
+  getIncident: (taskId: string, incidentId: string) =>
+    request<IncidentDetail>(`${API_BASE}/incidents/${encodeURIComponent(taskId)}/${encodeURIComponent(incidentId)}`),
+  getTaskReport: (taskId: string) => request<TaskReport>(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/report`),
+  getTaskReportCsvUrl: (taskId: string) => `${API_BASE}/tasks/${encodeURIComponent(taskId)}/report.csv`,
 
   // Inventory & Alerts
   getInventory: () => request<AgentInventoryItem[]>(`${API_BASE}/inventory`),
@@ -217,10 +229,11 @@ export const api = {
 
   // Inbox & Batch Operations
   getPendingGroups: () => request<{ groups: PendingGroup[]; total_waiting: number }>(`${API_BASE}/inbox/pending`),
-  batchApprove: (payload: { request_ids: string[]; reason?: string; create_rule?: boolean }) =>
-    request<{ approved_count: number; rule_created?: StandingRule }>(`${API_BASE}/expansions/batch-approve`, {
+  batchApprove: ({ create_rule, ...rest }: { request_ids: string[]; reason?: string; create_rule?: boolean }) =>
+    request<{ approved_count: number; standing_rule?: StandingRule | null }>(`${API_BASE}/expansions/batch-approve`, {
       method: 'POST',
-      body: JSON.stringify(payload),
+      // The server's field is create_standing_rule.
+      body: JSON.stringify({ ...rest, create_standing_rule: !!create_rule }),
     }),
   batchDeny: (payload: { request_ids: string[]; reason: string }) =>
     request<{ denied_count: number }>(`${API_BASE}/expansions/batch-deny`, {
@@ -229,9 +242,15 @@ export const api = {
     }),
 
   // Standing Rules
-  getStandingRules: () => request<{ rules: StandingRule[]; enabled: boolean }>(`${API_BASE}/standing-rules`),
+  getStandingRules: () =>
+    request<{ rules: StandingRule[]; enabled: boolean; can_manage: boolean }>(`${API_BASE}/standing-rules`),
+  createStandingRule: (payload: RuleDraft & { team?: string | null }) =>
+    request<StandingRule>(`${API_BASE}/standing-rules`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   expireStandingRule: (ruleId: string) =>
-    request<{ expired: boolean }>(`${API_BASE}/standing-rules/${ruleId}/expire`, {
+    request<{ status: string; rule_id: string }>(`${API_BASE}/standing-rules/${ruleId}/expire`, {
       method: 'POST',
     }),
 

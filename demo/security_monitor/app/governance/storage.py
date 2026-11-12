@@ -224,6 +224,14 @@ class GovernanceStorage:
                 )
             """)
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_task_steps_task ON task_steps (task_id, step_number)")
+            # 9. Standing rules (Console v4): saved so they survive a restart
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS governance_standing_rules (
+                    rule_id TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL,
+                    rule_json TEXT NOT NULL
+                )
+            """)
             try:
                 cursor.execute("ALTER TABLE governance_tasks ADD COLUMN owner TEXT")
             except Exception:
@@ -788,3 +796,37 @@ class GovernanceStorage:
                 }
                 for r in rows
             ]
+
+    # --- Standing Rules (stored as JSON; matched only by standing_rules.match_rule) ---
+    def save_standing_rule(self, rule: dict[str, Any]) -> None:
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO governance_standing_rules (rule_id, created_at, rule_json) VALUES (?, ?, ?)
+                ON CONFLICT(rule_id) DO UPDATE SET rule_json=excluded.rule_json
+                """,
+                (rule["rule_id"], rule.get("created_at", ""), json.dumps(rule)),
+            )
+            conn.commit()
+
+    def list_standing_rules(self) -> list[dict[str, Any]]:
+        with self.get_connection() as conn:
+            rows = conn.execute(
+                "SELECT rule_json FROM governance_standing_rules ORDER BY created_at, rule_id"
+            ).fetchall()
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            try:
+                out.append(json.loads(r["rule_json"]))
+            except (TypeError, ValueError):
+                continue
+        return out
+
+    def mark_expansion_single_use(self, request_id: str) -> None:
+        """Marks a still-pending request as single-use before it is approved ("Allow once")."""
+        with self.get_connection() as conn:
+            conn.execute(
+                "UPDATE governance_expansions SET single_use = 1 WHERE request_id = ? AND status = 'PENDING'",
+                (request_id,),
+            )
+            conn.commit()

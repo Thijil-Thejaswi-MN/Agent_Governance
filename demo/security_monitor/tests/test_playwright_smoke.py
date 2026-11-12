@@ -53,7 +53,7 @@ def test_top_navigation(page: Page, console_server):
     expect(page.locator('aside[data-sidebar="rail"]')).to_be_visible()
 
     nav = page.get_by_role("navigation", name="Main")
-    expect(nav.get_by_role("link")).to_have_count(8)  # admin: 4 role homes + Run, History, Fleet, Results
+    expect(nav.get_by_role("link")).to_have_count(10)  # admin: Overview, Agents, Approvals, Policies, Run, Fleet, History, Incidents, Records, Results
     for name, url, heading in NAV:
         link = nav.get_by_role("link", name=name, exact=True)
         link.click()

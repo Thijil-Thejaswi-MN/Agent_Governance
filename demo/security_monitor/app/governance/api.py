@@ -38,7 +38,7 @@ from .expansion import ExpansionService
 from .fleet import build_fleet_summary
 from .intake import TaskIntakeService
 from .inventory import AgentInventoryService
-from .models import EnforcementMode, TaskBoundary, TaskLifecycle, TaskRecord
+from .models import EnforcementMode, ExpansionStatus, TaskBoundary, TaskLifecycle, TaskRecord
 from .roles import (
     Role,
     UserSession,
@@ -50,10 +50,16 @@ from .inbox import group_pending
 from .scale import layout_mode, is_demo_data_enabled, get_demo_db_path, get_demo_size
 from .demo_data import seed_demo_database
 from .standing_rules import (
+    RULE_RESPONSES,
     StandingRule,
     match_rule,
     is_standing_rules_enabled,
 )
+from .rule_watcher import StandingRuleWatcher, decide_with_rules
+from .standing_rules import is_high_risk_or_escalated
+from .workspace_read import file_preview
+from .task_report import build_task_report, report_to_csv
+from .incidents import incident_detail, incident_id, is_blocked as _incident_blocked, list_incidents
 from .storage import GovernanceStorage
 
 _default_storage = GovernanceStorage()
@@ -156,6 +162,53 @@ _session_users: dict[str, dict[str, Any]] = {}  # session id -> user session dic
 _sessions_lock = threading.Lock()
 _standing_rules: list[StandingRule] = []
 _standing_rules_lock = threading.Lock()
+_standing_rules_loaded_from: set[str] = set()  # db paths whose saved rules are in _standing_rules
+_rule_watcher: StandingRuleWatcher | None = None
+
+
+def _load_saved_rules() -> None:
+    """Adds rules saved in the current database to the in-memory list (once per database)."""
+    storage = get_storage()
+    with _standing_rules_lock:
+        if storage.db_path in _standing_rules_loaded_from:
+            return
+        _standing_rules_loaded_from.add(storage.db_path)
+        known = {r.rule_id for r in _standing_rules}
+        for d in storage.list_standing_rules():
+            try:
+                rule = StandingRule(**d)
+            except Exception:
+                continue
+            if rule.rule_id not in known:
+                _standing_rules.append(rule)
+
+
+def _save_rule(rule: StandingRule) -> None:
+    get_storage().save_standing_rule(rule.model_dump())
+
+
+def _rules_snapshot() -> list[StandingRule]:
+    _load_saved_rules()
+    with _standing_rules_lock:
+        return [r for r in _standing_rules if r.is_active]
+
+
+def start_rule_watcher() -> bool:
+    """Starts the standing-rule watcher when GOVERNANCE_STANDING_RULES=1. Returns whether it runs."""
+    global _rule_watcher
+    if not is_standing_rules_enabled():
+        return False
+    if _rule_watcher is None:
+        _rule_watcher = StandingRuleWatcher(get_storage, get_expansion_service, _rules_snapshot)
+    _rule_watcher.start()
+    return True
+
+
+def stop_rule_watcher() -> None:
+    global _rule_watcher
+    if _rule_watcher is not None:
+        _rule_watcher.stop()
+        _rule_watcher = None
 
 
 def get_current_user_session(request: Request | None = None) -> UserSession:
@@ -757,6 +810,11 @@ async def get_task_receipt(task_id: str, request: Request = None) -> dict[str, A
     if not PermissionMatrix.can_download_or_verify_record(user, task.owner, task.team):
         raise HTTPException(status_code=403, detail="Forbidden: You do not have permission to view or verify this receipt.")
 
+    return _receipt_check(task_id)
+
+
+def _receipt_check(task_id: str) -> dict[str, Any]:
+    """Loads the stored receipt for a task and recomputes its SHA-256 hash chain."""
     receipts_dir_env = os.getenv("RECEIPTS_DIR")
     if receipts_dir_env:
         receipts_dir = Path(receipts_dir_env)
@@ -818,6 +876,87 @@ async def get_task_receipt(task_id: str, request: Request = None) -> dict[str, A
         "file_sha256": file_sha256,
         "final_hash": final_hash,
     }
+
+
+@governance_router.get("/tasks/{task_id}/report")
+async def get_task_report(task_id: str, request: Request = None) -> dict[str, Any]:
+    """One-page task report: requester, boundary, approvals (who and when), blocked actions
+    and the record's hash-chain check. Read only; same permission as the record."""
+    return _task_report(task_id, request)
+
+
+@governance_router.get("/tasks/{task_id}/report.csv")
+async def get_task_report_csv(task_id: str, request: Request = None) -> Response:
+    report = _task_report(task_id, request)
+    safe_id = "".join(c for c in task_id if c.isalnum() or c in "_-")[:80] or "task"
+    return Response(
+        content=report_to_csv(report),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="task_report_{safe_id}.csv"'},
+    )
+
+
+def _task_report(task_id: str, request: Request | None) -> dict[str, Any]:
+    user = get_current_user_session(request)
+    storage = get_storage()
+    task = storage.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if not PermissionMatrix.can_download_or_verify_record(user, task.owner, task.team):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have permission to view this report.")
+    rc = _receipt_check(task_id)
+    receipt_events = (rc.get("receipt") or {}).get("events") or []
+    record = {
+        "available": rc.get("available", False),
+        "verified": rc.get("verified", False),
+        "message": rc.get("verification_message"),
+        "final_hash": rc.get("final_hash"),
+        "event_count": len(receipt_events),
+    }
+    events = _build_unified_task_events(task_id, storage.get_events_for_task(task_id))
+    return build_task_report(
+        task=task,
+        first_boundary=storage.get_boundary(task_id, version=1),
+        last_boundary=storage.get_boundary(task_id),
+        expansions=storage.list_expansion_requests(task_id=task_id),
+        events=events,
+        record=record,
+        generated_at=datetime.now(timezone.utc).isoformat(),
+    )
+
+
+@governance_router.get("/incidents")
+async def get_incidents(request: Request = None, limit: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
+    """Blocked actions across the runs this person may see, newest first (read only)."""
+    user = get_current_user_session(request)
+    storage = get_storage()
+    tasks = [t for t in storage.list_tasks() if PermissionMatrix.can_view_run(user, t.owner, t.team)]
+    items = list_incidents(
+        tasks, lambda tid: _build_unified_task_events(tid, storage.get_events_for_task(tid)), limit=limit
+    )
+    return {"incidents": items, "total": len(items), "can_make_rule": PermissionMatrix.can_manage_standing_rules(user)}
+
+
+@governance_router.get("/incidents/{task_id}/{event_id}")
+async def get_incident(task_id: str, event_id: str, request: Request = None) -> dict[str, Any]:
+    """One blocked action with what happened next and the line in an earlier-read file of
+    that task's workspace that mentions the target (null when none is found)."""
+    user = get_current_user_session(request)
+    storage = get_storage()
+    task = storage.get_task(task_id)
+    if not task or not PermissionMatrix.can_view_run(user, task.owner, task.team):
+        raise HTTPException(status_code=404, detail="Incident not found")
+    events = _build_unified_task_events(task_id, storage.get_events_for_task(task_id))
+    event = next((e for e in events if incident_id(e) == event_id and _incident_blocked(e)), None)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return incident_detail(
+        task,
+        event,
+        provenance=storage.get_provenance_for_task(task_id),
+        expansions=storage.list_expansion_requests(task_id=task_id),
+        can_make_rule=PermissionMatrix.can_manage_standing_rules(user),
+    )
 
 
 @governance_router.get("/tasks/{task_id}/receipt/raw")
@@ -921,6 +1060,13 @@ class ExpansionSubmission(BaseModel):
 class ExpansionDecision(BaseModel):
     decided_by: str = "operator"  # Ignored by server, kept for client compatibility
     reason: str = ""
+    # Approve only: "once" (single use), "run" (this task) or "always" (this task, plus a
+    # standing rule for this agent and this exact resource).
+    scope: str = "run"
+
+
+APPROVAL_SCOPES = ("once", "run", "always")
+ALWAYS_RULE_DAYS = 30
 
 
 def _parse_iso_ts(ts: Any) -> datetime | None:
@@ -1003,6 +1149,58 @@ async def get_expansion(request_id: str) -> dict[str, Any]:
     return _enrich_expansion_dict(req, storage)
 
 
+@governance_router.get("/expansions/{request_id}/preview")
+async def preview_expansion(request_id: str) -> dict[str, Any]:
+    """What a waiting request is for, in plain terms: name, folder and size (read only;
+    the size is looked up only inside that task's workspace and never read)."""
+    storage = get_storage()
+    req = storage.get_expansion_request(request_id)
+    if not req:
+        raise HTTPException(status_code=404, detail="Expansion request not found")
+    task = storage.get_task(req.task_id)
+    workspace = task.workspace_root if task else None
+    if not workspace:
+        b = storage.get_boundary(req.task_id)
+        workspace = b.workspace_root if b else None
+    out = file_preview(workspace, req.resource_type, req.resource_target)
+    learned = [p.source_target for p in storage.get_provenance_for_task(req.task_id)
+               if _target_mentioned(req.resource_target, p.content_snippet or "")]
+    out.update({
+        "request_id": req.request_id,
+        "resource_type": req.resource_type,
+        "target": req.resource_target,
+        "risk_tier": req.effective_risk_tier.value,
+        "baseline_risk_tier": req.baseline_risk_tier.value,
+        "escalated": bool(req.escalated_by_provenance),
+        "learned_from": learned[0] if learned else None,
+        "rule_possible": not is_high_risk_or_escalated(req),
+    })
+    other = _unused_single_use_grant(storage, req.task_id, exclude=req.request_id)
+    out["once_possible"] = other is None
+    out["once_blocked_by"] = other.resource_target if other else None
+    return out
+
+
+def _unused_single_use_grant(storage: Any, task_id: str, exclude: str | None = None) -> Any:
+    """An approved single-use grant in this task that has not been used yet (the broker
+    tracks single use only for the task's latest grant, so only one may be open at a time)."""
+    for r in storage.list_expansion_requests(task_id=task_id):
+        if r.request_id == exclude:
+            continue
+        if r.single_use and r.status == ExpansionStatus.APPROVED and (r.used_count or 0) == 0:
+            return r
+    return None
+
+
+def _target_mentioned(target: str, snippet: str) -> bool:
+    t = (target or "").strip().replace("\\", "/").lower()
+    if not t or not snippet:
+        return False
+    name = t.rsplit("/", 1)[-1]
+    low = snippet.lower()
+    return t in low or (len(name) >= 3 and name in low)
+
+
 @governance_router.post("/expansions/request")
 async def request_expansion(payload: ExpansionSubmission) -> dict[str, Any]:
     try:
@@ -1015,20 +1213,10 @@ async def request_expansion(payload: ExpansionSubmission) -> dict[str, Any]:
             provenance_enabled=payload.provenance_enabled,
             timeout_seconds=payload.timeout_seconds,
         )
-        if is_standing_rules_enabled():
-            with _standing_rules_lock:
-                active_rules = [r for r in _standing_rules if r.is_active]
+        if is_standing_rules_enabled() and req.status == ExpansionStatus.PENDING:
             storage = get_storage()
-            task = storage.get_task(payload.task_id) if storage else None
-            matched = match_rule(active_rules, req, task_team=task.team if task else None)
-            if matched:
-                get_expansion_service().approve_request(
-                    request_id=req.request_id,
-                    decided_by=f"standing_rule:{matched.rule_id}",
-                    reason=f"Matched standing rule {matched.rule_id}",
-                )
-                req.status = ExpansionStatus.APPROVED
-                req.resolved_by = f"standing_rule:{matched.rule_id}"
+            decide_with_rules(storage, get_expansion_service(), _rules_snapshot())
+            req = storage.get_expansion_request(req.request_id) or req
 
         return req.model_dump()
     except ValueError as e:
@@ -1077,21 +1265,73 @@ async def approve_expansion(
     if not PermissionMatrix.can_decide_request(user, task_team, req.escalated_by_provenance):
         raise HTTPException(status_code=403, detail="Forbidden: Role not authorized to approve this expansion.")
 
+    scope = (payload.scope or "run").strip().lower()
+    if scope not in APPROVAL_SCOPES:
+        raise HTTPException(status_code=422, detail="Scope must be once, run or always.")
+    if scope != "run" and req.status != ExpansionStatus.PENDING:
+        raise HTTPException(status_code=409, detail="This request has already been decided.")
+    if scope == "once":
+        other = _unused_single_use_grant(storage, req.task_id, exclude=request_id)
+        if other is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Allow once is not available: the one-time grant for {other.resource_target} "
+                       "in this run has not been used yet.",
+            )
+    if scope == "always":
+        if not PermissionMatrix.can_manage_standing_rules(user):
+            raise HTTPException(status_code=403, detail="Only a security reviewer or an admin can make a standing rule.")
+        if is_high_risk_or_escalated(req):
+            raise HTTPException(
+                status_code=422,
+                detail="A rule can't cover this request: high-risk requests, and requests prompted by a file "
+                       "the agent read, always go to a person.",
+            )
+
     try:
         if user.role == Role.ADMIN or user.name == os.getenv("GOVERNANCE_OPERATOR_NAME", "operator"):
             approver = f"operator:{user.name}"
         else:
             approver = f"{user.role.value}:{user.name}"
+        if scope == "once":
+            storage.mark_expansion_single_use(request_id)
+        default_reason = {
+            "once": "Allowed once in the console",
+            "run": "",
+            "always": "Allowed for this run; a standing rule now covers it for this agent",
+        }[scope]
         new_boundary = get_expansion_service().approve_request(
             request_id=request_id,
             approved_by=approver,
-            reason=payload.reason,
+            reason=payload.reason or default_reason,
         )
+        created_rule = None
+        if scope == "always":
+            now = datetime.now(timezone.utc)
+            rule = StandingRule(
+                rule_id=f"rule_{uuid.uuid4().hex[:8]}",
+                agent_or_profile=req.agent_id,
+                action=req.resource_type,
+                target=req.resource_target.strip().replace("\\", "/"),
+                owner=user.name,
+                created_at=now.isoformat(),
+                expires_at=(now + timedelta(days=ALWAYS_RULE_DAYS)).isoformat(),
+                team=task_team or user.team,
+                is_active=True,
+                response="allow",
+            )
+            _load_saved_rules()
+            with _standing_rules_lock:
+                _standing_rules.append(rule)
+            _save_rule(rule)
+            created_rule = rule.model_dump()
         req = get_storage().get_expansion_request(request_id)
         return {
             "status": "APPROVED",
+            "scope": scope,
             "request": req.model_dump() if req else None,
             "new_boundary": new_boundary.model_dump(),
+            "standing_rule": created_rule,
         }
     except PermissionError as pe:
         # Agent self-approval attempt strictly forbidden
@@ -1210,6 +1450,7 @@ async def batch_approve_expansions(
         )
         with _standing_rules_lock:
             _standing_rules.append(new_rule)
+        _save_rule(new_rule)
         created_rule = new_rule.model_dump()
 
     return {"status": "SUCCESS", "approved_count": len(results), "results": results, "standing_rule": created_rule}
@@ -1267,16 +1508,42 @@ class StandingRuleCreateRequest(BaseModel):
     target: str
     expiry_days: int = 90
     team: str | None = None
+    response: str = "allow"  # allow (allow and log) | ask | block
+
+
+RULE_ACTIONS = ("file_read", "file_write", "network", "peer_agent")
+
+
+def _validated_rule_fields(payload: StandingRuleCreateRequest) -> tuple[str, str, str, str]:
+    agent = payload.agent_or_profile.strip()
+    action = payload.action.strip()
+    target = payload.target.strip().replace("\\", "/")
+    response = payload.response.strip().lower()
+    if not agent:
+        raise HTTPException(status_code=422, detail="Name the agent this rule is for (or * for every agent).")
+    if action not in RULE_ACTIONS:
+        raise HTTPException(status_code=422, detail=f"Action must be one of {', '.join(RULE_ACTIONS)}.")
+    if not target or any(c in target for c in ("*", "?", "[", "]")):
+        raise HTTPException(status_code=422, detail="Give one exact file, address or agent; patterns are not allowed.")
+    if response not in RULE_RESPONSES:
+        raise HTTPException(status_code=422, detail="Response must be allow, ask or block.")
+    return agent, action, target, response
 
 
 @governance_router.get("/standing-rules")
-async def list_standing_rules(request: Request) -> list[dict[str, Any]]:
-    """Lists standing rules (auditor, reviewer, admin)."""
+async def list_standing_rules(request: Request) -> dict[str, Any]:
+    """Lists standing rules (auditor, reviewer, admin) and whether they are switched on."""
     user = get_current_user_session(request)
     if not PermissionMatrix.can_view_standing_rules(user):
         raise HTTPException(status_code=403, detail="Forbidden: Cannot view standing rules.")
+    _load_saved_rules()
     with _standing_rules_lock:
-        return [r.model_dump() for r in _standing_rules]
+        rules = [r.model_dump() for r in _standing_rules]
+    return {
+        "rules": rules,
+        "enabled": is_standing_rules_enabled(),
+        "can_manage": PermissionMatrix.can_manage_standing_rules(user),
+    }
 
 
 @governance_router.post("/standing-rules")
@@ -1289,22 +1556,26 @@ async def create_standing_rule_endpoint(
     if not user or not PermissionMatrix.can_manage_standing_rules(user):
         raise HTTPException(status_code=403, detail="Forbidden: Cannot manage standing rules.")
 
+    agent, action, target, response = _validated_rule_fields(payload)
     days = min(max(1, payload.expiry_days), 90)
     now = datetime.now(timezone.utc)
     expires_at = (now + timedelta(days=days)).isoformat()
     rule = StandingRule(
         rule_id=f"rule_{uuid.uuid4().hex[:8]}",
-        agent_or_profile=payload.agent_or_profile,
-        action=payload.action,
-        target=payload.target,
+        agent_or_profile=agent,
+        action=action,
+        target=target,
         owner=user.name,
         created_at=now.isoformat(),
         expires_at=expires_at,
         team=payload.team or user.team,
         is_active=True,
+        response=response,
     )
+    _load_saved_rules()
     with _standing_rules_lock:
         _standing_rules.append(rule)
+    _save_rule(rule)
     return rule.model_dump()
 
 
@@ -1317,11 +1588,14 @@ async def expire_standing_rule(
     user = authenticate_token(_token)
     if not user or not PermissionMatrix.can_manage_standing_rules(user):
         raise HTTPException(status_code=403, detail="Forbidden: Cannot manage standing rules.")
+    _load_saved_rules()
     with _standing_rules_lock:
-        for r in _standing_rules:
-            if r.rule_id == rule_id:
-                r.is_active = False
-                return {"status": "EXPIRED", "rule_id": rule_id}
+        found = next((r for r in _standing_rules if r.rule_id == rule_id), None)
+        if found:
+            found.is_active = False
+    if found:
+        _save_rule(found)
+        return {"status": "EXPIRED", "rule_id": rule_id}
     raise HTTPException(status_code=404, detail="Rule not found.")
 
 

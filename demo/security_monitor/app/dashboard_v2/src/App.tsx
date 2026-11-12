@@ -25,12 +25,12 @@ const InboxPage = React.lazy(() =>
 const RecordsPage = React.lazy(() =>
   import('./pages/RecordsPage').then(m => ({ default: m.RecordsPage }))
 );
-const RunInvestigationPage = React.lazy(() =>
-  import('./pages/RunInvestigationPage').then(m => ({ default: m.RunInvestigationPage }))
-);
 const StandingRulesPage = React.lazy(() =>
   import('./pages/StandingRulesPage').then(m => ({ default: m.StandingRulesPage }))
 );
+const IncidentsPage = React.lazy(() => import('./pages/IncidentsPage').then(m => ({ default: m.IncidentsPage })));
+const InventoryPage = React.lazy(() => import('./pages/InventoryPage').then(m => ({ default: m.InventoryPage })));
+const ReportPage = React.lazy(() => import('./pages/ReportPage').then(m => ({ default: m.ReportPage })));
 const SignInPage = React.lazy(() =>
   import('./pages/SignInPage').then(m => ({ default: m.SignInPage }))
 );
@@ -48,6 +48,11 @@ const RootRedirect: React.FC = () => {
   const { authChecked, hasToken, user } = useAuth();
   const to = rootRedirect({ authChecked, hasToken, role: user?.role ?? null });
   return to ? <Navigate to={to} replace /> : <PageLoader />;
+};
+
+const RunRedirect: React.FC = () => {
+  const { taskId } = useParams<{ taskId: string }>();
+  return <Navigate to={`/run/${taskId}`} replace />;
 };
 
 const TaskRedirect: React.FC = () => {
@@ -77,13 +82,18 @@ export const App: React.FC = () => {
             <Route path="run/:taskId" element={page(<WatchPage />)} />
 
             {/* Shared run investigation */}
-            <Route path="runs/:taskId" element={page(<RunInvestigationPage />)} />
+            {/* The old investigation page (pages/RunInvestigationPage.tsx, kept, not routed) showed
+                placeholder values; the Run page shows the same run from real data. */}
+            <Route path="runs/:taskId" element={<RunRedirect />} />
 
             {/* Fleet, History, Results */}
             <Route path="fleet" element={page(<FleetPage />)} />
             <Route path="history" element={page(<HistoryPage />)} />
             <Route path="history/:taskId" element={page(<WatchPage readOnly />)} />
             <Route path="results" element={page(<ResultsPage />)} />
+            <Route path="report/:taskId" element={page(<ReportPage />)} />
+            <Route path="incidents" element={page(<IncidentsPage />)} />
+            <Route path="inventory" element={page(<InventoryPage />)} />
 
             {/* v2 and v3 compatibility redirects */}
             <Route path="tasks" element={<Navigate to="/history" replace />} />

@@ -82,7 +82,7 @@ def test_reviewer_inbox_screen(page: Page, console_server):
     page.goto(f"{console_server.url}/dashboard/inbox")
     expect(page.locator("body")).to_contain_text("requests are waiting")
     expect(page.locator("body")).to_contain_text("Grouped requests")
-    expect(page.locator("body")).to_contain_text("Standing rules")
+    expect(page.locator("body")).to_contain_text("Policies")
 
 
 def test_auditor_records_screen_readonly(page: Page, console_server):

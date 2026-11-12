@@ -28,7 +28,7 @@ const uniq = (xs: string[]) => [...new Set(xs.filter(Boolean))];
 
 export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }) => {
   const { taskId } = useParams<{ taskId: string }>();
-  const { hasToken, openAuthModal } = useAuth();
+  const { hasToken, openAuthModal, role } = useAuth();
   const run = useRunTracker(taskId);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [events, setEvents] = useState<TaskEvent[]>([]);
@@ -143,7 +143,8 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
               triedBefore={attempts.some(a => a.name === fileName(run.pending!.resource_target))}
               deciding={run.deciding}
               readOnly={readOnly}
-              onAllow={requireToken(() => run.approve(run.pending!.request_id))}
+              canManageRules={role === 'admin' || role === 'security_reviewer'}
+              onAllow={scope => (hasToken ? run.approve(run.pending!.request_id, scope) : openAuthModal())}
               onDeny={reason => (hasToken ? run.deny(run.pending!.request_id, reason) : openAuthModal())}
             />
           )}
@@ -202,6 +203,12 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
             </div>
           )}
 
+          {run.decisionNote && !run.pending && (
+            <p id="decision-note" role="status" className="m-0 text-[15px] leading-relaxed" style={{ color: '#BBF7D0' }}>
+              {run.decisionNote}
+            </p>
+          )}
+
           {run.actionError && (
             <div id="action-error" role="alert" className="px-4 py-3 rounded-xl text-[15px]" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.45)', color: '#FECACA' }}>
               {run.actionError}
@@ -212,6 +219,11 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
             <button id="show-what-happened" className="link-btn" onClick={() => setDetailsOpen(true)}>
               Show what happened ({run.steps.length} {run.steps.length === 1 ? 'step' : 'steps'})
             </button>
+            {terminal && taskId && (
+              <Link id="task-report-link" to={`/report/${taskId}`} className="text-[15px] inline-flex items-center min-h-[44px]">
+                Task report
+              </Link>
+            )}
             {terminal && !readOnly && (
               <Link to="/run" className="text-[15px] inline-flex items-center min-h-[44px]">
                 Start another

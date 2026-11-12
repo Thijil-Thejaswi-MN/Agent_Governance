@@ -31,6 +31,14 @@ class StandingRule(BaseModel):
     expires_at: str
     team: str | None = None
     is_active: bool = True
+    # What the rule does with a matching request that would otherwise wait for a person:
+    # "allow" (allow and log), "ask" (always ask a person) or "block". Old rules were allow-only.
+    response: str = "allow"
+
+
+RULE_RESPONSES = ("allow", "ask", "block")
+# When several rules match one request, the strictest response wins.
+RULE_PRECEDENCE = ("block", "ask", "allow")
 
 
 def is_standing_rules_enabled() -> bool:
@@ -102,4 +110,22 @@ def match_rule(
         if rule_target_norm == target_norm:
             return rule
 
+    return None
+
+
+def pick_rule(
+    rules: list[StandingRule],
+    req: ExpansionRequest,
+    task_team: str | None = None,
+    now: datetime.datetime | None = None,
+) -> StandingRule | None:
+    """The rule that decides `req`, strictest response first (block, then ask, then allow).
+    Returns None for HIGH risk and provenance-escalated requests, and when rules are off.
+    """
+    if not is_standing_rules_enabled() or is_high_risk_or_escalated(req):
+        return None
+    for response in RULE_PRECEDENCE:
+        matched = match_rule([r for r in rules if r.response == response], req, task_team=task_team, now=now)
+        if matched:
+            return matched
     return None

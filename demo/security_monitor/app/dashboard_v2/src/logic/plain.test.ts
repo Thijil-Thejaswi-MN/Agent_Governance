@@ -181,3 +181,12 @@ describe('boundary version label', () => {
     expect(boundaryVersionLabel(2, 1)).not.toMatch(/^v\d/);
   });
 });
+
+describe('needs-you sentence', () => {
+  it('is a whole sentence for each reason', async () => {
+    const { needsYouSentence } = await import('./plain');
+    expect(needsYouSentence({})).toBe('It is not part of the request it was given.');
+    expect(needsYouSentence({ escalated_by_provenance: true })).toBe('It asked after reading content that did not come from you.');
+    expect(needsYouSentence({ learned_from: 'input/notes.txt' })).toBe('It learned of it from inside notes.txt.');
+  });
+});
