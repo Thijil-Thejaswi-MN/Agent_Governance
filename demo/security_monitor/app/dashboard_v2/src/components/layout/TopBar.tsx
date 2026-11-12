@@ -29,6 +29,7 @@ export const TopBar: React.FC<TopBarProps> = ({ breadcrumb, activeAgentsCount = 
       if (path.startsWith('standing-rules')) return 'Security / Policies';
       if (path.startsWith('report/')) return 'History / Task report';
       if (path.startsWith('incidents')) return 'Incidents';
+      if (path.startsWith('inventory')) return 'Agent Inventory';
       if (path.startsWith('history/')) return 'History / One run';
       if (path.startsWith('history')) return 'History';
       if (path.startsWith('fleet')) return 'Fleet';

@@ -15,9 +15,25 @@ import {
   KeyRound,
   X,
   PanelLeftClose,
-  PanelLeftOpen, ShieldX } from 'lucide-react';
+  PanelLeftOpen,
+  ShieldX,
+  Bot,
+} from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Role } from '../../types';
+
+type GroupKey = 'overview' | 'inventory' | 'governance' | 'runtime' | 'incidents' | 'audit' | 'settings';
+
+// The order and names of the sidebar groups. Settings has no page yet, so it never shows.
+const GROUPS: { key: GroupKey; label: string }[] = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'inventory', label: 'Agent Inventory' },
+  { key: 'governance', label: 'Governance' },
+  { key: 'runtime', label: 'Runtime Monitoring' },
+  { key: 'incidents', label: 'Incidents' },
+  { key: 'audit', label: 'Audit & Reports' },
+  { key: 'settings', label: 'Settings' },
+];
 
 interface NavItem {
   to: string;
@@ -65,76 +81,35 @@ export const Sidebar: React.FC<{
     .toUpperCase()
     .slice(0, 2);
 
-  // The role homes each role already had (Run and History now live in the console list below).
-  const getRoleItems = (): NavItem[] => {
-    if (!hasToken) return [];
-    switch (currentRole) {
-      case 'developer':
-        return [];
-      case 'team_lead':
-        return [
-          { to: '/team', label: 'Team overview', icon: icon(Layers), end: true },
-          {
-            to: '/inbox',
-            label: 'Needs you',
-            icon: icon(AlertOctagon),
-            badge: waitingCount > 0 ? waitingCount : undefined,
-            badgeColor: '#F59E0B',
-          },
-          // No Records: the server does not serve the records summary to team leads.
-        ];
-      case 'security_reviewer':
-        return [
-          {
-            to: '/inbox',
-            label: 'Inbox',
-            icon: icon(Inbox),
-            badge: waitingCount > 0 ? waitingCount : undefined,
-            badgeColor: '#FBBF24',
-            end: true,
-          },
-          { to: '/standing-rules', label: 'Policies', icon: icon(Sliders) },
-          { to: '/records', label: 'Records', icon: icon(FileText) },
-        ];
-      case 'auditor':
-        return [
-          {
-            to: '/records',
-            label: 'Records',
-            icon: icon(FileText),
-            badge: totalTasks > 0 ? totalTasks : undefined,
-            badgeColor: '#8B95A7',
-            end: true,
-          },
-          { to: '/standing-rules', label: 'Policies', icon: icon(Sliders) },
-        ];
-      case 'admin':
-      default:
-        return [
-          { to: '/overview', label: 'Overview', icon: icon(Layers), end: true },
-          {
-            to: '/inbox',
-            label: 'Approvals',
-            icon: icon(Inbox),
-            badge: waitingCount > 0 ? waitingCount : undefined,
-            badgeColor: '#F59E0B',
-          },
-          { to: '/standing-rules', label: 'Policies', icon: icon(Sliders) },
-          { to: '/records', label: 'Records', icon: icon(FileText) },
-        ];
-    }
-  };
-
-  // The developer pages, the same for every role; Run only where the server lets the role start one.
-  const consoleItems: NavItem[] = [
-    ...(!hasToken || CAN_START_RUN.includes(currentRole) ? [{ to: '/run', label: 'Run', icon: icon(Play) }] : []),
-    { to: '/history', label: 'History', icon: icon(History) },
-    { to: '/incidents', label: 'Incidents', icon: icon(ShieldX) },
-    { to: '/fleet', label: 'Fleet', icon: icon(LayoutGrid) },
-    { to: '/results', label: 'Results', icon: icon(BarChart3) },
-  ];
-
-  const roleItems = getRoleItems();
+  // One list, grouped. Each role sees only the items it had before (plus Agents and Incidents);
+  // routes are unchanged. Groups with no items for a role are not shown.
+  const waitingBadge = (color: string) => ({ badge: waitingCount > 0 ? waitingCount : undefined, badgeColor: color });
+  const items: (NavItem & { group: GroupKey })[] = [];
+  const add = (group: GroupKey, item: NavItem) => items.push({ ...item, group });
+  const signedIn = hasToken;
+  if (signedIn && currentRole === 'admin') add('overview', { to: '/overview', label: 'Overview', icon: icon(Layers), end: true });
+  if (signedIn && currentRole === 'team_lead') add('overview', { to: '/team', label: 'Team overview', icon: icon(Layers), end: true });
+  if (signedIn) add('inventory', { to: '/inventory', label: 'Agents', icon: icon(Bot) });
+  if (signedIn && currentRole === 'admin') add('governance', { to: '/inbox', label: 'Approvals', icon: icon(Inbox), ...waitingBadge('#F59E0B') });
+  if (signedIn && currentRole === 'team_lead') add('governance', { to: '/inbox', label: 'Needs you', icon: icon(AlertOctagon), ...waitingBadge('#F59E0B') });
+  if (signedIn && currentRole === 'security_reviewer') add('governance', { to: '/inbox', label: 'Inbox', icon: icon(Inbox), end: true, ...waitingBadge('#FBBF24') });
+  if (signedIn && ['admin', 'security_reviewer', 'auditor'].includes(currentRole))
+    add('governance', { to: '/standing-rules', label: 'Policies', icon: icon(Sliders) });
+  // Run only where the server lets the role start one.
+  if (!signedIn || CAN_START_RUN.includes(currentRole)) add('runtime', { to: '/run', label: 'Run', icon: icon(Play) });
+  add('runtime', { to: '/fleet', label: 'Fleet', icon: icon(LayoutGrid) });
+  add('runtime', { to: '/history', label: 'History', icon: icon(History) });
+  add('incidents', { to: '/incidents', label: 'Incidents', icon: icon(ShieldX) });
+  // No Records for team leads: the server does not serve the records summary to them.
+  if (signedIn && ['admin', 'security_reviewer', 'auditor'].includes(currentRole))
+    add('audit', {
+      to: '/records',
+      label: 'Records',
+      icon: icon(FileText),
+      ...(currentRole === 'auditor' ? { badge: totalTasks > 0 ? totalTasks : undefined, badgeColor: '#8B95A7', end: true } : {}),
+    });
+  add('audit', { to: '/results', label: 'Results', icon: icon(BarChart3) });
+  const groups = GROUPS.map(g => ({ ...g, items: items.filter(i => i.group === g.key) })).filter(g => g.items.length > 0);
 
   // Collapsed: a tooltip beside the icon, shown on hover and on keyboard focus.
   const tooltip = (text: string) => (
@@ -264,18 +239,20 @@ export const Sidebar: React.FC<{
         )}
       </div>
 
-      {/* Nav List */}
-      <nav aria-label="Main" className={`flex flex-col gap-1 mt-2 ${collapsed ? 'items-stretch' : ''}`}>
-        {roleItems.map(renderItem)}
-        {roleItems.length > 0 &&
-          (collapsed ? (
-            <div aria-hidden="true" className="mx-3 my-2 border-t border-[#1F2633]" />
-          ) : (
-            <div className="px-3 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-wider text-[#8B95A7]" aria-hidden="true">
-              Agents
-            </div>
-          ))}
-        {consoleItems.map(renderItem)}
+      {/* Nav list, in groups */}
+      <nav aria-label="Main" className={`flex flex-col mt-1 ${collapsed ? 'items-stretch gap-1' : 'gap-0.5'}`}>
+        {groups.map((g, gi) => (
+          <div key={g.key} role="group" aria-label={g.label} data-nav-group={g.key} className="flex flex-col gap-1">
+            {collapsed ? (
+              gi > 0 && <div aria-hidden="true" className="mx-3 my-1.5 border-t border-[#1F2633]" />
+            ) : (
+              <div className={`px-3 ${gi > 0 ? 'pt-3' : 'pt-1'} pb-1 text-[11px] font-semibold uppercase tracking-wider text-[#8B95A7]`} aria-hidden="true">
+                {g.label}
+              </div>
+            )}
+            {g.items.map(renderItem)}
+          </div>
+        ))}
       </nav>
 
       {/* User Chip, or sign-in when there is no session */}
