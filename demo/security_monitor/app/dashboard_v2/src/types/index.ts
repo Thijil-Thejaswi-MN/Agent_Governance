@@ -292,6 +292,9 @@ export interface UserSession {
 
 export interface PendingGroup {
   group_key: string;
+  /** The server's field; older code read normalized_target. */
+  target?: string;
+  requests?: { request_id: string; task_id: string }[];
   agent_id: string;
   resource_type: string;
   normalized_target: string;

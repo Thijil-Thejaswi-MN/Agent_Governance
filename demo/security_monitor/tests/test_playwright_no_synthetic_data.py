@@ -69,3 +69,17 @@ def test_heatmap_marks_the_real_hour(page: Page, console_server):
     expect(row.locator(f'[data-hour="{hour}"]')).to_have_attribute("data-cell", "stopped")
     # Every other hour of this row is not "stopped".
     assert row.locator('[data-cell="stopped"]').count() == 1
+
+
+def test_inbox_shows_the_real_target_and_opens_the_run(page: Page, console_server):
+    task_id, _ = seed_waiting_task(console_server.db_path, f"inbox_{int(time.time() * 1000)}", agent_id="inbox_bot",
+                                   target="input/inbox_only.csv")
+    _sign_in(page, console_server.url, console_server.token)
+    page.goto(f"{console_server.url}/dashboard/inbox")
+    group = page.locator("text=inbox_bot").first
+    expect(group).to_be_visible()
+    group.click()
+    expect(page.locator("body")).to_contain_text("input/inbox_only.csv")
+    assert "expires in 2:00" not in page.locator("body").inner_text()
+    page.get_by_role("button", name="Open the run →").click()
+    page.wait_for_url(f"**/dashboard/run/{task_id}")
