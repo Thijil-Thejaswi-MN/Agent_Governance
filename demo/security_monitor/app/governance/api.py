@@ -38,7 +38,7 @@ from .expansion import ExpansionService
 from .fleet import build_fleet_summary
 from .intake import TaskIntakeService
 from .inventory import AgentInventoryService
-from .models import EnforcementMode, TaskBoundary, TaskLifecycle, TaskRecord
+from .models import EnforcementMode, ExpansionStatus, TaskBoundary, TaskLifecycle, TaskRecord
 from .roles import (
     Role,
     UserSession,
@@ -56,6 +56,8 @@ from .standing_rules import (
     is_standing_rules_enabled,
 )
 from .rule_watcher import StandingRuleWatcher, decide_with_rules
+from .standing_rules import is_high_risk_or_escalated
+from .workspace_read import file_preview
 from .storage import GovernanceStorage
 
 _default_storage = GovernanceStorage()
@@ -970,6 +972,13 @@ class ExpansionSubmission(BaseModel):
 class ExpansionDecision(BaseModel):
     decided_by: str = "operator"  # Ignored by server, kept for client compatibility
     reason: str = ""
+    # Approve only: "once" (single use), "run" (this task) or "always" (this task, plus a
+    # standing rule for this agent and this exact resource).
+    scope: str = "run"
+
+
+APPROVAL_SCOPES = ("once", "run", "always")
+ALWAYS_RULE_DAYS = 30
 
 
 def _parse_iso_ts(ts: Any) -> datetime | None:
@@ -1052,6 +1061,44 @@ async def get_expansion(request_id: str) -> dict[str, Any]:
     return _enrich_expansion_dict(req, storage)
 
 
+@governance_router.get("/expansions/{request_id}/preview")
+async def preview_expansion(request_id: str) -> dict[str, Any]:
+    """What a waiting request is for, in plain terms: name, folder and size (read only;
+    the size is looked up only inside that task's workspace and never read)."""
+    storage = get_storage()
+    req = storage.get_expansion_request(request_id)
+    if not req:
+        raise HTTPException(status_code=404, detail="Expansion request not found")
+    task = storage.get_task(req.task_id)
+    workspace = task.workspace_root if task else None
+    if not workspace:
+        b = storage.get_boundary(req.task_id)
+        workspace = b.workspace_root if b else None
+    out = file_preview(workspace, req.resource_type, req.resource_target)
+    learned = [p.source_target for p in storage.get_provenance_for_task(req.task_id)
+               if _target_mentioned(req.resource_target, p.content_snippet or "")]
+    out.update({
+        "request_id": req.request_id,
+        "resource_type": req.resource_type,
+        "target": req.resource_target,
+        "risk_tier": req.effective_risk_tier.value,
+        "baseline_risk_tier": req.baseline_risk_tier.value,
+        "escalated": bool(req.escalated_by_provenance),
+        "learned_from": learned[0] if learned else None,
+        "rule_possible": not is_high_risk_or_escalated(req),
+    })
+    return out
+
+
+def _target_mentioned(target: str, snippet: str) -> bool:
+    t = (target or "").strip().replace("\\", "/").lower()
+    if not t or not snippet:
+        return False
+    name = t.rsplit("/", 1)[-1]
+    low = snippet.lower()
+    return t in low or (len(name) >= 3 and name in low)
+
+
 @governance_router.post("/expansions/request")
 async def request_expansion(payload: ExpansionSubmission) -> dict[str, Any]:
     try:
@@ -1116,21 +1163,65 @@ async def approve_expansion(
     if not PermissionMatrix.can_decide_request(user, task_team, req.escalated_by_provenance):
         raise HTTPException(status_code=403, detail="Forbidden: Role not authorized to approve this expansion.")
 
+    scope = (payload.scope or "run").strip().lower()
+    if scope not in APPROVAL_SCOPES:
+        raise HTTPException(status_code=422, detail="Scope must be once, run or always.")
+    if scope != "run" and req.status != ExpansionStatus.PENDING:
+        raise HTTPException(status_code=409, detail="This request has already been decided.")
+    if scope == "always":
+        if not PermissionMatrix.can_manage_standing_rules(user):
+            raise HTTPException(status_code=403, detail="Only a security reviewer or an admin can make a standing rule.")
+        if is_high_risk_or_escalated(req):
+            raise HTTPException(
+                status_code=422,
+                detail="A rule can't cover this request: high-risk requests, and requests prompted by a file "
+                       "the agent read, always go to a person.",
+            )
+
     try:
         if user.role == Role.ADMIN or user.name == os.getenv("GOVERNANCE_OPERATOR_NAME", "operator"):
             approver = f"operator:{user.name}"
         else:
             approver = f"{user.role.value}:{user.name}"
+        if scope == "once":
+            storage.mark_expansion_single_use(request_id)
+        default_reason = {
+            "once": "Allowed once in the console",
+            "run": "",
+            "always": "Allowed for this run; a standing rule now covers it for this agent",
+        }[scope]
         new_boundary = get_expansion_service().approve_request(
             request_id=request_id,
             approved_by=approver,
-            reason=payload.reason,
+            reason=payload.reason or default_reason,
         )
+        created_rule = None
+        if scope == "always":
+            now = datetime.now(timezone.utc)
+            rule = StandingRule(
+                rule_id=f"rule_{uuid.uuid4().hex[:8]}",
+                agent_or_profile=req.agent_id,
+                action=req.resource_type,
+                target=req.resource_target.strip().replace("\\", "/"),
+                owner=user.name,
+                created_at=now.isoformat(),
+                expires_at=(now + timedelta(days=ALWAYS_RULE_DAYS)).isoformat(),
+                team=task_team or user.team,
+                is_active=True,
+                response="allow",
+            )
+            _load_saved_rules()
+            with _standing_rules_lock:
+                _standing_rules.append(rule)
+            _save_rule(rule)
+            created_rule = rule.model_dump()
         req = get_storage().get_expansion_request(request_id)
         return {
             "status": "APPROVED",
+            "scope": scope,
             "request": req.model_dump() if req else None,
             "new_boundary": new_boundary.model_dump(),
+            "standing_rule": created_rule,
         }
     except PermissionError as pe:
         # Agent self-approval attempt strictly forbidden
