@@ -41,6 +41,23 @@ def resolve_inside(workspace_root: str | Path | None, rel: str | None) -> Path |
     return candidate
 
 
+def _inside_any_form(workspace_root: str | Path | None, path_str: str | None) -> Path | None:
+    """Like resolve_inside, but an absolute path is also accepted when it resolves (symlinks
+    followed) inside the workspace; agents may pass either form."""
+    if not workspace_root or not path_str:
+        return None
+    raw = str(path_str).strip().replace("\\", "/")
+    if raw.startswith("/") and "\x00" not in raw:
+        try:
+            root = Path(workspace_root).resolve(strict=True)
+            candidate = Path(raw).resolve(strict=False)
+            rel = candidate.relative_to(root)
+        except (ValueError, OSError, RuntimeError):
+            return None
+        return resolve_inside(root, str(rel)) if str(rel) not in ("", ".") else None
+    return resolve_inside(workspace_root, raw)
+
+
 def file_preview(workspace_root: str | Path | None, resource_type: str, target: str) -> dict[str, Any]:
     """Name, folder and size of a requested file, without reading it."""
     norm = str(target or "").strip().replace("\\", "/")
@@ -92,7 +109,7 @@ def find_mention(workspace_root: str | Path | None, files: list[str], target: st
         return None
     seen: set[Path] = set()
     for rel in files:
-        path = resolve_inside(workspace_root, rel)
+        path = _inside_any_form(workspace_root, rel)
         if path is None or path in seen:
             continue
         seen.add(path)

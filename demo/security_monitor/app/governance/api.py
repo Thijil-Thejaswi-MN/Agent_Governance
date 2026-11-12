@@ -59,6 +59,7 @@ from .rule_watcher import StandingRuleWatcher, decide_with_rules
 from .standing_rules import is_high_risk_or_escalated
 from .workspace_read import file_preview
 from .task_report import build_task_report, report_to_csv
+from .incidents import incident_detail, incident_id, is_blocked as _incident_blocked, list_incidents
 from .storage import GovernanceStorage
 
 _default_storage = GovernanceStorage()
@@ -921,6 +922,40 @@ def _task_report(task_id: str, request: Request | None) -> dict[str, Any]:
         events=events,
         record=record,
         generated_at=datetime.now(timezone.utc).isoformat(),
+    )
+
+
+@governance_router.get("/incidents")
+async def get_incidents(request: Request = None, limit: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
+    """Blocked actions across the runs this person may see, newest first (read only)."""
+    user = get_current_user_session(request)
+    storage = get_storage()
+    tasks = [t for t in storage.list_tasks() if PermissionMatrix.can_view_run(user, t.owner, t.team)]
+    items = list_incidents(
+        tasks, lambda tid: _build_unified_task_events(tid, storage.get_events_for_task(tid)), limit=limit
+    )
+    return {"incidents": items, "total": len(items), "can_make_rule": PermissionMatrix.can_manage_standing_rules(user)}
+
+
+@governance_router.get("/incidents/{task_id}/{event_id}")
+async def get_incident(task_id: str, event_id: str, request: Request = None) -> dict[str, Any]:
+    """One blocked action with what happened next and the line in an earlier-read file of
+    that task's workspace that mentions the target (null when none is found)."""
+    user = get_current_user_session(request)
+    storage = get_storage()
+    task = storage.get_task(task_id)
+    if not task or not PermissionMatrix.can_view_run(user, task.owner, task.team):
+        raise HTTPException(status_code=404, detail="Incident not found")
+    events = _build_unified_task_events(task_id, storage.get_events_for_task(task_id))
+    event = next((e for e in events if incident_id(e) == event_id and _incident_blocked(e)), None)
+    if event is None:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    return incident_detail(
+        task,
+        event,
+        provenance=storage.get_provenance_for_task(task_id),
+        expansions=storage.list_expansion_requests(task_id=task_id),
+        can_make_rule=PermissionMatrix.can_manage_standing_rules(user),
     )
 
 
