@@ -127,8 +127,16 @@ def create_app(
         from ..governance.api import enforce_bind_policy
         enforce_bind_policy(resolve_bind_host())
 
+    @app.on_event("startup")
+    async def start_standing_rule_watcher() -> None:
+        # Off unless GOVERNANCE_STANDING_RULES=1; never on during evaluations.
+        from ..governance.api import start_rule_watcher
+        start_rule_watcher()
+
     @app.on_event("shutdown")
     async def shutdown() -> None:
+        from ..governance.api import stop_rule_watcher
+        stop_rule_watcher()
         await app.state.http_client.aclose()
 
     @app.middleware("http")

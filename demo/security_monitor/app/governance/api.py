@@ -50,10 +50,12 @@ from .inbox import group_pending
 from .scale import layout_mode, is_demo_data_enabled, get_demo_db_path, get_demo_size
 from .demo_data import seed_demo_database
 from .standing_rules import (
+    RULE_RESPONSES,
     StandingRule,
     match_rule,
     is_standing_rules_enabled,
 )
+from .rule_watcher import StandingRuleWatcher, decide_with_rules
 from .storage import GovernanceStorage
 
 _default_storage = GovernanceStorage()
@@ -156,6 +158,53 @@ _session_users: dict[str, dict[str, Any]] = {}  # session id -> user session dic
 _sessions_lock = threading.Lock()
 _standing_rules: list[StandingRule] = []
 _standing_rules_lock = threading.Lock()
+_standing_rules_loaded_from: set[str] = set()  # db paths whose saved rules are in _standing_rules
+_rule_watcher: StandingRuleWatcher | None = None
+
+
+def _load_saved_rules() -> None:
+    """Adds rules saved in the current database to the in-memory list (once per database)."""
+    storage = get_storage()
+    with _standing_rules_lock:
+        if storage.db_path in _standing_rules_loaded_from:
+            return
+        _standing_rules_loaded_from.add(storage.db_path)
+        known = {r.rule_id for r in _standing_rules}
+        for d in storage.list_standing_rules():
+            try:
+                rule = StandingRule(**d)
+            except Exception:
+                continue
+            if rule.rule_id not in known:
+                _standing_rules.append(rule)
+
+
+def _save_rule(rule: StandingRule) -> None:
+    get_storage().save_standing_rule(rule.model_dump())
+
+
+def _rules_snapshot() -> list[StandingRule]:
+    _load_saved_rules()
+    with _standing_rules_lock:
+        return [r for r in _standing_rules if r.is_active]
+
+
+def start_rule_watcher() -> bool:
+    """Starts the standing-rule watcher when GOVERNANCE_STANDING_RULES=1. Returns whether it runs."""
+    global _rule_watcher
+    if not is_standing_rules_enabled():
+        return False
+    if _rule_watcher is None:
+        _rule_watcher = StandingRuleWatcher(get_storage, get_expansion_service, _rules_snapshot)
+    _rule_watcher.start()
+    return True
+
+
+def stop_rule_watcher() -> None:
+    global _rule_watcher
+    if _rule_watcher is not None:
+        _rule_watcher.stop()
+        _rule_watcher = None
 
 
 def get_current_user_session(request: Request | None = None) -> UserSession:
@@ -1015,20 +1064,10 @@ async def request_expansion(payload: ExpansionSubmission) -> dict[str, Any]:
             provenance_enabled=payload.provenance_enabled,
             timeout_seconds=payload.timeout_seconds,
         )
-        if is_standing_rules_enabled():
-            with _standing_rules_lock:
-                active_rules = [r for r in _standing_rules if r.is_active]
+        if is_standing_rules_enabled() and req.status == ExpansionStatus.PENDING:
             storage = get_storage()
-            task = storage.get_task(payload.task_id) if storage else None
-            matched = match_rule(active_rules, req, task_team=task.team if task else None)
-            if matched:
-                get_expansion_service().approve_request(
-                    request_id=req.request_id,
-                    decided_by=f"standing_rule:{matched.rule_id}",
-                    reason=f"Matched standing rule {matched.rule_id}",
-                )
-                req.status = ExpansionStatus.APPROVED
-                req.resolved_by = f"standing_rule:{matched.rule_id}"
+            decide_with_rules(storage, get_expansion_service(), _rules_snapshot())
+            req = storage.get_expansion_request(req.request_id) or req
 
         return req.model_dump()
     except ValueError as e:
@@ -1210,6 +1249,7 @@ async def batch_approve_expansions(
         )
         with _standing_rules_lock:
             _standing_rules.append(new_rule)
+        _save_rule(new_rule)
         created_rule = new_rule.model_dump()
 
     return {"status": "SUCCESS", "approved_count": len(results), "results": results, "standing_rule": created_rule}
@@ -1267,16 +1307,42 @@ class StandingRuleCreateRequest(BaseModel):
     target: str
     expiry_days: int = 90
     team: str | None = None
+    response: str = "allow"  # allow (allow and log) | ask | block
+
+
+RULE_ACTIONS = ("file_read", "file_write", "network", "peer_agent")
+
+
+def _validated_rule_fields(payload: StandingRuleCreateRequest) -> tuple[str, str, str, str]:
+    agent = payload.agent_or_profile.strip()
+    action = payload.action.strip()
+    target = payload.target.strip().replace("\\", "/")
+    response = payload.response.strip().lower()
+    if not agent:
+        raise HTTPException(status_code=422, detail="Name the agent this rule is for (or * for every agent).")
+    if action not in RULE_ACTIONS:
+        raise HTTPException(status_code=422, detail=f"Action must be one of {', '.join(RULE_ACTIONS)}.")
+    if not target or any(c in target for c in ("*", "?", "[", "]")):
+        raise HTTPException(status_code=422, detail="Give one exact file, address or agent; patterns are not allowed.")
+    if response not in RULE_RESPONSES:
+        raise HTTPException(status_code=422, detail="Response must be allow, ask or block.")
+    return agent, action, target, response
 
 
 @governance_router.get("/standing-rules")
-async def list_standing_rules(request: Request) -> list[dict[str, Any]]:
-    """Lists standing rules (auditor, reviewer, admin)."""
+async def list_standing_rules(request: Request) -> dict[str, Any]:
+    """Lists standing rules (auditor, reviewer, admin) and whether they are switched on."""
     user = get_current_user_session(request)
     if not PermissionMatrix.can_view_standing_rules(user):
         raise HTTPException(status_code=403, detail="Forbidden: Cannot view standing rules.")
+    _load_saved_rules()
     with _standing_rules_lock:
-        return [r.model_dump() for r in _standing_rules]
+        rules = [r.model_dump() for r in _standing_rules]
+    return {
+        "rules": rules,
+        "enabled": is_standing_rules_enabled(),
+        "can_manage": PermissionMatrix.can_manage_standing_rules(user),
+    }
 
 
 @governance_router.post("/standing-rules")
@@ -1289,22 +1355,26 @@ async def create_standing_rule_endpoint(
     if not user or not PermissionMatrix.can_manage_standing_rules(user):
         raise HTTPException(status_code=403, detail="Forbidden: Cannot manage standing rules.")
 
+    agent, action, target, response = _validated_rule_fields(payload)
     days = min(max(1, payload.expiry_days), 90)
     now = datetime.now(timezone.utc)
     expires_at = (now + timedelta(days=days)).isoformat()
     rule = StandingRule(
         rule_id=f"rule_{uuid.uuid4().hex[:8]}",
-        agent_or_profile=payload.agent_or_profile,
-        action=payload.action,
-        target=payload.target,
+        agent_or_profile=agent,
+        action=action,
+        target=target,
         owner=user.name,
         created_at=now.isoformat(),
         expires_at=expires_at,
         team=payload.team or user.team,
         is_active=True,
+        response=response,
     )
+    _load_saved_rules()
     with _standing_rules_lock:
         _standing_rules.append(rule)
+    _save_rule(rule)
     return rule.model_dump()
 
 
@@ -1317,11 +1387,14 @@ async def expire_standing_rule(
     user = authenticate_token(_token)
     if not user or not PermissionMatrix.can_manage_standing_rules(user):
         raise HTTPException(status_code=403, detail="Forbidden: Cannot manage standing rules.")
+    _load_saved_rules()
     with _standing_rules_lock:
-        for r in _standing_rules:
-            if r.rule_id == rule_id:
-                r.is_active = False
-                return {"status": "EXPIRED", "rule_id": rule_id}
+        found = next((r for r in _standing_rules if r.rule_id == rule_id), None)
+        if found:
+            found.is_active = False
+    if found:
+        _save_rule(found)
+        return {"status": "EXPIRED", "rule_id": rule_id}
     raise HTTPException(status_code=404, detail="Rule not found.")
 
 

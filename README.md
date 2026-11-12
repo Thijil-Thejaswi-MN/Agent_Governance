@@ -368,8 +368,10 @@ After the setup above, build the console once and start the server (details in [
 export GOVERNANCE_OPERATOR_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
 echo "operator token: $GOVERNANCE_OPERATOR_TOKEN"
 export GOVERNANCE_DB_PATH="$HOME/agent_workspaces/governance.db" RECEIPTS_DIR="$HOME/agent_workspaces/receipts"
-python -m uvicorn demo.security_monitor.app.gateway.server:app --host 127.0.0.1 --port 8000
+GOVERNANCE_STANDING_RULES=1 python -m uvicorn demo.security_monitor.app.gateway.server:app --host 127.0.0.1 --port 8000
 ```
+
+`GOVERNANCE_STANDING_RULES=1` is set for this demo command only; without it (the default, and always during evaluations) standing rules are saved and listed but decide nothing. With it, a small watcher in the server decides waiting requests that match a rule on the **Policies** page (Allow and log, Ask, or Block), through the same approve and deny calls a person uses, and records each decision with the rule ID and its owner. It runs outside the tool broker and never decides HIGH-risk or provenance-escalated requests; those always wait for a person.
 
 Open `http://127.0.0.1:8000/dashboard` and press **Try it**. Sign in with the token, press **Needs one more file**, keep the model `scripted (deterministic)` (or pick `qwen2.5:7b`) and press **Start**. When the agent asks for `target_metrics.csv`, press **Allow for this run**; the run ends with "Done. 1 attempt was stopped." and "Record checked: no entries changed". **Fleet** shows the waiting decision while it is open, and **History** keeps the run.
 
