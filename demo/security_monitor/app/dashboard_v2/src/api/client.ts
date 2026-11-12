@@ -20,6 +20,7 @@ import {
 } from '../types';
 import type { RuleDraft } from '../logic/rules';
 import type { ApprovalScope, ExpansionPreview } from '../logic/approval';
+import type { TaskReport } from '../logic/report';
 
 const API_BASE = '/api/governance';
 
@@ -147,6 +148,8 @@ export const api = {
   },
 
   getRawReceiptUrl: (taskId: string) => `${API_BASE}/tasks/${taskId}/receipt/raw`,
+  getTaskReport: (taskId: string) => request<TaskReport>(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/report`),
+  getTaskReportCsvUrl: (taskId: string) => `${API_BASE}/tasks/${encodeURIComponent(taskId)}/report.csv`,
 
   // Inventory & Alerts
   getInventory: () => request<AgentInventoryItem[]>(`${API_BASE}/inventory`),

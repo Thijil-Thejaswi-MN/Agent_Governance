@@ -219,6 +219,11 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
             <button id="show-what-happened" className="link-btn" onClick={() => setDetailsOpen(true)}>
               Show what happened ({run.steps.length} {run.steps.length === 1 ? 'step' : 'steps'})
             </button>
+            {terminal && taskId && (
+              <Link id="task-report-link" to={`/report/${taskId}`} className="text-[15px] inline-flex items-center min-h-[44px]">
+                Task report
+              </Link>
+            )}
             {terminal && !readOnly && (
               <Link to="/run" className="text-[15px] inline-flex items-center min-h-[44px]">
                 Start another
