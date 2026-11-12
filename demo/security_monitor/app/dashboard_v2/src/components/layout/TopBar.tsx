@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 interface TopBarProps {
   breadcrumb?: string;
   activeAgentsCount?: number;
-  /** Opens the sidebar as a drawer below md. */
+  /** Opens the sidebar as a drawer below md (768 px). */
   onMenu?: () => void;
   menuOpen?: boolean;
 }

@@ -3,8 +3,9 @@ import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppLayout } from './components/layout/AppLayout';
 
-// Pages
-const HomePage = React.lazy(() => import('./pages/HomePage').then(m => ({ default: m.HomePage })));
+import { rootRedirect } from './logic/journey';
+
+// Pages (the old marketing Home page, pages/HomePage.tsx, is kept but no longer routed)
 const AskPage = React.lazy(() => import('./pages/AskPage').then(m => ({ default: m.AskPage })));
 const WatchPage = React.lazy(() => import('./pages/WatchPage').then(m => ({ default: m.WatchPage })));
 const FleetPage = React.lazy(() => import('./pages/FleetPage').then(m => ({ default: m.FleetPage })));
@@ -42,6 +43,13 @@ const PageLoader: React.FC = () => (
 
 const page = (el: React.ReactNode) => <Suspense fallback={<PageLoader />}>{el}</Suspense>;
 
+// /dashboard: sign-in without a session, otherwise the role's home (developer and admin: Run).
+const RootRedirect: React.FC = () => {
+  const { authChecked, hasToken, user } = useAuth();
+  const to = rootRedirect({ authChecked, hasToken, role: user?.role ?? null });
+  return to ? <Navigate to={to} replace /> : <PageLoader />;
+};
+
 const TaskRedirect: React.FC = () => {
   const { taskId } = useParams<{ taskId: string }>();
   return <Navigate to={`/history/${taskId}`} replace />;
@@ -53,8 +61,8 @@ export const App: React.FC = () => {
       <BrowserRouter basename="/dashboard">
         <Routes>
           <Route element={<AppLayout />}>
-            {/* The v3 Home page with condition cards and demo description */}
-            <Route index element={page(<HomePage />)} />
+            {/* One way in: sign-in, then the role's home */}
+            <Route index element={<RootRedirect />} />
 
             {/* v4 Role Homes */}
             <Route path="signin" element={page(<SignInPage />)} />
