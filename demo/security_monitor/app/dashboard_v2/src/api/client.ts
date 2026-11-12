@@ -19,6 +19,7 @@ import {
   StandingRule,
 } from '../types';
 import type { RuleDraft } from '../logic/rules';
+import type { ApprovalScope, ExpansionPreview } from '../logic/approval';
 
 const API_BASE = '/api/governance';
 
@@ -116,8 +117,11 @@ export const api = {
     return request<ExpansionItem[]>(`${API_BASE}/expansions${qs ? `?${qs}` : ''}`);
   },
 
-  approveExpansion: (requestId: string, payload: { decided_by: string; reason?: string }) =>
-    request<{ status: string; new_boundary: TaskBoundary }>(`${API_BASE}/expansions/${requestId}/approve`, {
+  getExpansionPreview: (requestId: string) =>
+    request<ExpansionPreview>(`${API_BASE}/expansions/${encodeURIComponent(requestId)}/preview`),
+
+  approveExpansion: (requestId: string, payload: { decided_by: string; reason?: string; scope?: ApprovalScope }) =>
+    request<{ status: string; scope?: ApprovalScope; new_boundary: TaskBoundary; standing_rule?: StandingRule | null }>(`${API_BASE}/expansions/${requestId}/approve`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),

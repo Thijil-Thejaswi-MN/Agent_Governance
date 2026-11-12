@@ -28,7 +28,7 @@ const uniq = (xs: string[]) => [...new Set(xs.filter(Boolean))];
 
 export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }) => {
   const { taskId } = useParams<{ taskId: string }>();
-  const { hasToken, openAuthModal } = useAuth();
+  const { hasToken, openAuthModal, role } = useAuth();
   const run = useRunTracker(taskId);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [events, setEvents] = useState<TaskEvent[]>([]);
@@ -143,7 +143,8 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
               triedBefore={attempts.some(a => a.name === fileName(run.pending!.resource_target))}
               deciding={run.deciding}
               readOnly={readOnly}
-              onAllow={requireToken(() => run.approve(run.pending!.request_id))}
+              canManageRules={role === 'admin' || role === 'security_reviewer'}
+              onAllow={scope => (hasToken ? run.approve(run.pending!.request_id, scope) : openAuthModal())}
               onDeny={reason => (hasToken ? run.deny(run.pending!.request_id, reason) : openAuthModal())}
             />
           )}
@@ -200,6 +201,12 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
                 </a>
               )}
             </div>
+          )}
+
+          {run.decisionNote && !run.pending && (
+            <p id="decision-note" role="status" className="m-0 text-[15px] leading-relaxed" style={{ color: '#BBF7D0' }}>
+              {run.decisionNote}
+            </p>
           )}
 
           {run.actionError && (
