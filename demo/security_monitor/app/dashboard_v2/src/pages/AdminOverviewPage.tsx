@@ -116,7 +116,7 @@ export const AdminOverviewPage: React.FC = () => {
       </section>
 
       <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
-        <Kpi id="kpi-active" label="Active agents" value={String(dots.filter(d => d.state !== 'idle').length)} sub={dots.length ? `${dots.length} agents in all` : 'No agents yet'} />
+        <Kpi id="kpi-active" label="Active agents" value={String(dots.filter(d => d.state !== 'idle').length)} sub={dots.length ? `${dots.length} ${dots.length === 1 ? 'agent' : 'agents'} in all` : 'No agents yet'} />
         <Kpi id="kpi-runs" label="Runs, last 24 hours" value={String(runs24.length)} sub={medianRun == null ? 'No finished runs' : `median ${formatDuration(medianRun)}`} />
         <Kpi id="kpi-stopped" label="Actions stopped" value={String(stopped24)} sub="last 24 hours" color={stopped24 ? '#EF4444' : '#E6E9EF'} />
         <Kpi id="kpi-waiting" label="Waiting for a decision" value={String(pending.length)} sub={pending.length ? 'see the list below' : 'nothing waiting'} color={pending.length ? '#FBBF24' : '#E6E9EF'} />

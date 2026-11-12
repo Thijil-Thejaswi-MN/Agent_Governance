@@ -92,7 +92,7 @@ def test_incidents(page: Page, console_server, tmp_path):
     expect(item).to_contain_text("Attempted, not successful")
     item.get_by_role("button").first.click()
     expect(page.locator(f"#incident-response-{ev_m}")).to_have_text(
-        "Refused by the tool broker. Then it asked, and it stayed blocked (test_lead_operator (operator)).")
+        "Refused by the tool broker. Then it asked, and it stayed blocked. Decided by test_lead_operator (operator).")
     mention = page.locator(f"#incident-mention-{ev_m}")
     expect(mention).to_have_attribute("data-known", "true")
     expect(mention).to_have_text("input/briefing.txt, line 2")

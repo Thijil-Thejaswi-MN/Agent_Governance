@@ -36,5 +36,7 @@ describe('report wording', () => {
   it('formats missing times as a dash', () => {
     expect(formatWhen(null)).toBe('—');
     expect(formatWhen('nope')).toBe('—');
+    expect(formatWhen(new Date(2026, 10, 12, 16, 30, 42).toISOString())).toBe('12 Nov 2026, 16:30:42');
+    expect(formatWhen(new Date(2026, 0, 5, 9, 3, 7).toISOString())).toBe('5 Jan 2026, 09:03:07');
   });
 });

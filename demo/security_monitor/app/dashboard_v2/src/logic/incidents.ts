@@ -70,7 +70,9 @@ export function responseTaken(d: Pick<IncidentDetail, 'layer' | 'followup'>): st
   if (f.status === 'PENDING') return `${first} Then it asked; the request is waiting.`;
   if (f.status === 'APPROVED')
     return `${first} Then it asked, and it was ${f.single_use ? 'allowed once' : 'allowed for this run'} by ${f.decided_by_label}.`;
-  return `${first} Then it asked, and it stayed blocked (${f.decided_by_label}).`;
+  // No nested brackets: the decider goes in its own sentence.
+  if (f.decided_by === 'timeout_fail_closed') return `${first} Then it asked; no one decided in time, so it stayed blocked.`;
+  return `${first} Then it asked, and it stayed blocked. Decided by ${f.decided_by_label}.`;
 }
 
 export function mentionText(d: Pick<IncidentDetail, 'mention' | 'files_searched'>): { known: boolean; text: string } {
