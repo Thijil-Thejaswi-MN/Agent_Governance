@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { EmptyState, ErrorState, LoadingState } from '../components/common/States';
 import { needsYouReason } from '../logic/plain';
 import { HourCell, agentRows, hourlyHeat, startOfLocalDay } from '../logic/teamStats';
+import { loadTodayEvents } from '../api/events';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
 
@@ -15,19 +16,6 @@ const CELL: Record<HourCell, { bg: string; label: string }> = {
   asked: { bg: '#F59E0B', label: 'asked for something' },
   stopped: { bg: '#EF4444', label: 'stopped at the fence' },
 };
-
-/** Today's events, oldest first, up to 5 pages of 500. */
-async function loadTodayEvents(now: number): Promise<TaskEvent[]> {
-  let since = new Date(startOfLocalDay(now)).toISOString();
-  const out: TaskEvent[] = [];
-  for (let i = 0; i < 5; i++) {
-    const res = await api.getEvents(since, 500);
-    out.push(...res.events);
-    if (res.events.length < 500 || !res.cursor || res.cursor === since) break;
-    since = res.cursor;
-  }
-  return out;
-}
 
 export const TeamLeadPage: React.FC = () => {
   const navigate = useNavigate();

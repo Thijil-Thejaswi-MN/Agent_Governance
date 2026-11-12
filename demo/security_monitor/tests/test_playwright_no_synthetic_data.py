@@ -83,3 +83,40 @@ def test_inbox_shows_the_real_target_and_opens_the_run(page: Page, console_serve
     assert "expires in 2:00" not in page.locator("body").inner_text()
     page.get_by_role("button", name="Open the run →").click()
     page.wait_for_url(f"**/dashboard/run/{task_id}")
+
+
+OVERVIEW_PLACEHOLDERS = ["Finance (42)", "Sales (210)", "Core Eng", "4.1% vs yesterday", "median 7.4 s", "41 stops",
+                         "finance-report-bot", "support-triage", "pastebin.com", "github.com/acme", "crm.acme.io"]
+
+
+def test_empty_overview_shows_no_invented_values(page: Page, empty_console_server):
+    _sign_in(page, empty_console_server.url, empty_console_server.token)
+    page.goto(f"{empty_console_server.url}/dashboard/overview")
+    expect(page.locator("h1")).to_have_text("Overview")
+    expect(page.locator("#overview-sentence")).to_have_text("No runs in the last 24 hours.")
+    expect(page.locator("#kpi-active [data-value]")).to_have_text("0")
+    expect(page.locator("#kpi-runs")).to_contain_text("No finished runs")
+    expect(page.locator("#kpi-records [data-value]")).to_have_text("—")
+    for el in ("#map-empty", "#actions-empty", "#waiting-empty", "#patterns-empty", "#watch-empty"):
+        expect(page.locator(el)).to_be_visible()
+    body = page.locator("body").inner_text()
+    assert [p for p in OVERVIEW_PLACEHOLDERS if p in body] == []
+    save_evidence(page, "overview_empty")
+
+
+def test_overview_shows_a_seeded_agent(page: Page, console_server):
+    seed_waiting_task(console_server.db_path, f"ov_{int(time.time() * 1000)}", agent_id="overview_bot")
+    _sign_in(page, console_server.url, console_server.token)
+    page.goto(f"{console_server.url}/dashboard/overview")
+    expect(page.locator('[data-view="individual"] [data-agent="overview_bot"]')).to_have_attribute("data-state", "asking")
+    expect(page.locator("#actions-chart")).to_be_visible()
+    body = page.locator("body").inner_text()
+    assert [p for p in OVERVIEW_PLACEHOLDERS if p in body] == []
+
+
+def test_old_investigation_route_opens_the_run_page(page: Page, console_server):
+    task_id, _ = seed_waiting_task(console_server.db_path, f"inv_{int(time.time() * 1000)}")
+    _sign_in(page, console_server.url, console_server.token)
+    page.goto(f"{console_server.url}/dashboard/runs/{task_id}")
+    page.wait_for_url(f"**/dashboard/run/{task_id}")
+    assert "task_demo" not in page.locator("body").inner_text()

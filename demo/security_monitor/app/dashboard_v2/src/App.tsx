@@ -25,9 +25,6 @@ const InboxPage = React.lazy(() =>
 const RecordsPage = React.lazy(() =>
   import('./pages/RecordsPage').then(m => ({ default: m.RecordsPage }))
 );
-const RunInvestigationPage = React.lazy(() =>
-  import('./pages/RunInvestigationPage').then(m => ({ default: m.RunInvestigationPage }))
-);
 const StandingRulesPage = React.lazy(() =>
   import('./pages/StandingRulesPage').then(m => ({ default: m.StandingRulesPage }))
 );
@@ -50,6 +47,11 @@ const RootRedirect: React.FC = () => {
   const { authChecked, hasToken, user } = useAuth();
   const to = rootRedirect({ authChecked, hasToken, role: user?.role ?? null });
   return to ? <Navigate to={to} replace /> : <PageLoader />;
+};
+
+const RunRedirect: React.FC = () => {
+  const { taskId } = useParams<{ taskId: string }>();
+  return <Navigate to={`/run/${taskId}`} replace />;
 };
 
 const TaskRedirect: React.FC = () => {
@@ -79,7 +81,9 @@ export const App: React.FC = () => {
             <Route path="run/:taskId" element={page(<WatchPage />)} />
 
             {/* Shared run investigation */}
-            <Route path="runs/:taskId" element={page(<RunInvestigationPage />)} />
+            {/* The old investigation page (pages/RunInvestigationPage.tsx, kept, not routed) showed
+                placeholder values; the Run page shows the same run from real data. */}
+            <Route path="runs/:taskId" element={<RunRedirect />} />
 
             {/* Fleet, History, Results */}
             <Route path="fleet" element={page(<FleetPage />)} />
