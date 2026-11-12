@@ -65,7 +65,7 @@ export function decisionLabel(a: Pick<ReportApproval, 'status' | 'scope'>): stri
 }
 
 const LAYERS: Record<string, string> = {
-  landlock: 'Operating system (Landlock)',
+  landlock: 'Kernel (Landlock)',
   seccomp: 'Operating system (seccomp)',
   broker: 'Tool broker',
   proxy: 'Network proxy',

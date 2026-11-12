@@ -10,6 +10,7 @@ const PRESET_LABELS: Record<string, string> = {
   summarise_csv: 'Summarise a file',
   compare_target: 'Needs one more file',
   hidden_instruction: 'A file tries to trick the agent',
+  shell_injection: 'A file tricks the agent into a shell command',
 };
 
 const MAX_FILES = 3;

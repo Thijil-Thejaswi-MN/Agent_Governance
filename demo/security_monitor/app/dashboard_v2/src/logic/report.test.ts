@@ -11,7 +11,7 @@ describe('report wording', () => {
     expect(decisionLabel({ status: 'PENDING', scope: 'waiting' })).toBe('Waiting');
   });
   it('names layers and never guesses an unknown one', () => {
-    expect(layerLabel('landlock')).toBe('Operating system (Landlock)');
+    expect(layerLabel('landlock')).toBe('Kernel (Landlock)');
     expect(layerLabel('broker')).toBe('Tool broker');
     expect(layerLabel('')).toBe('Unknown');
   });
