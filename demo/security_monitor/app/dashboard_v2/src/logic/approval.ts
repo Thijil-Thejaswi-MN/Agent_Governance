@@ -14,6 +14,8 @@ export interface ExpansionPreview {
   escalated: boolean;
   learned_from: string | null;
   rule_possible: boolean;
+  once_possible?: boolean;
+  once_blocked_by?: string | null;
 }
 
 export function formatBytes(n: number | null | undefined): string | null {
@@ -62,3 +64,12 @@ export const SCOPE_REASON: Record<ApprovalScope, string> = {
   run: 'Allowed for this run in the console',
   always: 'Allowed for this run; a standing rule now covers it for this agent',
 };
+
+export const ONCE_HOVER = 'The copy is removed after the agent’s first read (detected by the monitor).';
+
+/** Why "Allow once" is unavailable, or null when it can be used. */
+export function onceBlockedReason(p: Pick<ExpansionPreview, 'once_possible' | 'once_blocked_by'> | null): string | null {
+  if (!p || p.once_possible !== false) return null;
+  const what = p.once_blocked_by ? p.once_blocked_by.split('/').pop() : 'another file';
+  return `Allow once is off: the one-time grant for ${what} in this run hasn’t been used yet, and only one can be tracked at a time.`;
+}

@@ -1087,7 +1087,21 @@ async def preview_expansion(request_id: str) -> dict[str, Any]:
         "learned_from": learned[0] if learned else None,
         "rule_possible": not is_high_risk_or_escalated(req),
     })
+    other = _unused_single_use_grant(storage, req.task_id, exclude=req.request_id)
+    out["once_possible"] = other is None
+    out["once_blocked_by"] = other.resource_target if other else None
     return out
+
+
+def _unused_single_use_grant(storage: Any, task_id: str, exclude: str | None = None) -> Any:
+    """An approved single-use grant in this task that has not been used yet (the broker
+    tracks single use only for the task's latest grant, so only one may be open at a time)."""
+    for r in storage.list_expansion_requests(task_id=task_id):
+        if r.request_id == exclude:
+            continue
+        if r.single_use and r.status == ExpansionStatus.APPROVED and (r.used_count or 0) == 0:
+            return r
+    return None
 
 
 def _target_mentioned(target: str, snippet: str) -> bool:
@@ -1168,6 +1182,14 @@ async def approve_expansion(
         raise HTTPException(status_code=422, detail="Scope must be once, run or always.")
     if scope != "run" and req.status != ExpansionStatus.PENDING:
         raise HTTPException(status_code=409, detail="This request has already been decided.")
+    if scope == "once":
+        other = _unused_single_use_grant(storage, req.task_id, exclude=request_id)
+        if other is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Allow once is not available: the one-time grant for {other.resource_target} "
+                       "in this run has not been used yet.",
+            )
     if scope == "always":
         if not PermissionMatrix.can_manage_standing_rules(user):
             raise HTTPException(status_code=403, detail="Only a security reviewer or an admin can make a standing rule.")

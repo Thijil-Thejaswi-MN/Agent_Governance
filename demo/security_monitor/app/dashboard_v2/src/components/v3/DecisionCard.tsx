@@ -4,7 +4,15 @@ import { ExpansionItem } from '../../types';
 import { api } from '../../api/client';
 import { decisionLead, decisionWarning, formatCountdown, secondsLeft } from '../../logic/plain';
 import { fileName } from '../../logic/runView';
-import { ApprovalScope, ExpansionPreview, alwaysBlockedReason, previewFacts, riskLabel } from '../../logic/approval';
+import {
+  ApprovalScope,
+  ExpansionPreview,
+  ONCE_HOVER,
+  alwaysBlockedReason,
+  onceBlockedReason,
+  previewFacts,
+  riskLabel,
+} from '../../logic/approval';
 
 const TIER_STYLE: Record<string, React.CSSProperties> = {
   LOW: { color: '#86EFAC', background: 'rgba(34,197,94,0.12)', borderColor: 'rgba(34,197,94,0.35)' },
@@ -82,6 +90,7 @@ export const DecisionCard: React.FC<{
     canManageRules,
     rulePossible: preview ? preview.rule_possible : exp.escalated_by_provenance ? false : null,
   });
+  const onceWhyNot = onceBlockedReason(preview);
 
   return (
     <div id={`inline-approval-card-${exp.request_id}`} className="flex flex-col gap-5" data-state="waiting">
@@ -121,11 +130,12 @@ export const DecisionCard: React.FC<{
             <button
               id={`allow-once-btn-${exp.request_id}`}
               type="button"
-              disabled={deciding}
+              disabled={deciding || !!onceWhyNot}
               onClick={() => onAllow('once')}
-              className="btn-ghost flex-1 sm:flex-none"
+              className="btn-ghost flex-1 sm:flex-none disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ minHeight: 52, padding: '0 22px' }}
-              title="The agent can open it one time; the copy is then removed."
+              title={onceWhyNot ?? ONCE_HOVER}
+              aria-describedby={onceWhyNot ? `once-why-${exp.request_id}` : undefined}
             >
               Allow once
             </button>
@@ -140,6 +150,11 @@ export const DecisionCard: React.FC<{
               Block
             </button>
           </div>
+          {onceWhyNot && (
+            <span id={`once-why-${exp.request_id}`} className="text-[13px] leading-snug" style={{ color: 'var(--text-3)' }}>
+              {onceWhyNot}
+            </span>
+          )}
           <div className="flex flex-col gap-1.5">
             <button
               id={`always-btn-${exp.request_id}`}

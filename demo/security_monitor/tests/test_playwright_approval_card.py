@@ -120,3 +120,18 @@ def test_card_preview_and_scopes(page: Page, console_server, tmp_path):
     once = storage.get_expansion_request(esc_req)
     assert once.status == ExpansionStatus.APPROVED and once.single_use is True
     assert once.reason == "Allowed once in the console"
+
+    # A second request in the same run: Allow once stays off while the first one-time grant is unused.
+    second = f"exp_card2_{stamp}"
+    storage.save_expansion_request(ExpansionRequest(
+        request_id=second, task_id=esc_task, agent_id="finance_bot", resource_type="file_read",
+        resource_target="input/costs.csv", justification="need the costs", baseline_risk_tier=RiskTier.MEDIUM,
+        effective_risk_tier=RiskTier.MEDIUM, status=ExpansionStatus.PENDING,
+        created_at=datetime.datetime.now(datetime.timezone.utc).isoformat(), timeout_seconds=600))
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.reload()
+    card2 = page.locator(f"#inline-approval-card-{second}")
+    expect(card2).to_be_visible()
+    expect(card2.locator(f"#allow-once-btn-{second}")).to_be_disabled()
+    expect(card2.locator(f"#once-why-{second}")).to_contain_text("quarterly_revenue.csv")
+    expect(card2.locator(f"#inline-approve-btn-{second}")).to_be_enabled()

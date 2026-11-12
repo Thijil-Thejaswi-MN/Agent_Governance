@@ -52,6 +52,10 @@ describe('request preview', () => {
 });
 
 describe('decision card', () => {
+  it('Allow once carries the hover note', () => {
+    expect(card()).toContain('title="The copy is removed after the agent’s first read (detected by the monitor)."');
+  });
+
   it('offers the four decisions in order', () => {
     const html = card({ canManageRules: true });
     const order = ['inline-approve-btn-exp_1', 'allow-once-btn-exp_1', 'deny-btn-exp_1', 'always-btn-exp_1'].map(id =>

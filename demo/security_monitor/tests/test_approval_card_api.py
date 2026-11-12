@@ -234,3 +234,20 @@ def test_request_endpoint_with_rules_on_uses_the_watcher(env, monkeypatch):
                      "resource_target": "docs/notes.txt", "justification": "need it", "provenance_enabled": False})
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "APPROVED" and r.json()["resolved_by"] == f"standing_rule:{rule_id}"
+
+
+def test_allow_once_unavailable_while_another_one_time_grant_is_unused(env):
+    c, storage, _, _ = env
+    first = _req(storage, "docs/notes.txt")
+    second = _req(storage, "docs/other.txt")
+    assert c.get(f"/api/governance/expansions/{second}/preview", headers=ADMIN).json()["once_possible"] is True
+    assert c.post(f"/api/governance/expansions/{first}/approve", headers=ADMIN, json={"scope": "once"}).status_code == 200
+    body = c.get(f"/api/governance/expansions/{second}/preview", headers=ADMIN).json()
+    assert body["once_possible"] is False and body["once_blocked_by"] == "docs/notes.txt"
+    r = c.post(f"/api/governance/expansions/{second}/approve", headers=ADMIN, json={"scope": "once"})
+    assert r.status_code == 409 and "docs/notes.txt" in r.json()["detail"]
+    assert storage.get_expansion_request(second).status == ExpansionStatus.PENDING
+    # Once the first grant has been used, Allow once is available again.
+    storage.increment_expansion_usage(first)
+    assert c.get(f"/api/governance/expansions/{second}/preview", headers=ADMIN).json()["once_possible"] is True
+    assert c.post(f"/api/governance/expansions/{second}/approve", headers=ADMIN, json={"scope": "once"}).status_code == 200

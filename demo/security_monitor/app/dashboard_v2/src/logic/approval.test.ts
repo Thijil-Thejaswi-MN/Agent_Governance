@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alwaysBlockedReason, formatBytes, previewFacts, riskLabel } from './approval';
+import { alwaysBlockedReason, formatBytes, onceBlockedReason, previewFacts, riskLabel } from './approval';
 
 describe('sizes', () => {
   it('formats bytes in plain units', () => {
@@ -42,5 +42,13 @@ describe('risk and rules', () => {
     expect(alwaysBlockedReason({ canManageRules: true, rulePossible: false })).toContain('always go to a person');
     expect(alwaysBlockedReason({ canManageRules: false, rulePossible: true })).toContain('security reviewer or an admin');
     expect(alwaysBlockedReason({ canManageRules: true, rulePossible: null })).toBeNull();
+  });
+});
+
+describe('allow once', () => {
+  it('is available unless another one-time grant is unused', () => {
+    expect(onceBlockedReason(null)).toBeNull();
+    expect(onceBlockedReason({ once_possible: true })).toBeNull();
+    expect(onceBlockedReason({ once_possible: false, once_blocked_by: 'docs/notes.txt' })).toContain('notes.txt');
   });
 });
