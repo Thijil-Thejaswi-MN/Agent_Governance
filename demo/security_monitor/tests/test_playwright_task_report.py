@@ -53,7 +53,7 @@ def seed_finished_run(server, suffix: str) -> str:
     tid = f"task_report_{suffix}"
     s.save_task(TaskRecord(task_id=tid, request_text="Summarise the Q3 minutes", request_hash="h",
                            agent_id="minutes_bot", workspace_root="/tmp/ws_report", status=TaskLifecycle.COMPLETED,
-                           created_at=ts(300), started_at=ts(298), completed_at=ts(200), owner="Ana Dev", team="core"))
+                           created_at=ts(300), started_at=ts(298), completed_at=ts(200), owner="Ana Dev", team="core", requested_by="Thijil"))
     s.save_boundary(TaskBoundary(task_id=tid, version=1, workspace_root="/tmp/ws_report",
                                  files_read=["input/minutes.txt"], files_write=["output/summary.md"], tools=["read_file"]))
     s.save_boundary(TaskBoundary(task_id=tid, version=2, workspace_root="/tmp/ws_report",
@@ -97,7 +97,8 @@ def test_task_report(page: Page, console_server):
 
     sheet = page.locator("#report-sheet")
     expect(sheet).to_be_visible()
-    expect(page.locator("#report-requester")).to_have_text("Ana Dev")
+    expect(page.locator("#report-requester")).to_have_text("Thijil")
+    expect(page.locator("#report-agent-owner")).to_have_text("Ana Dev (core)")
     expect(page.locator("#report-outcome")).to_have_text("Done")
     expect(page.locator("#report-boundary")).to_contain_text("docs/agenda.txt")
     expect(page.locator("#report-approvals")).to_contain_text("Allowed for this run")
@@ -120,7 +121,7 @@ def test_task_report(page: Page, console_server):
     with page.expect_download() as dl:
         page.locator("#report-json-btn").click()
     data = json.loads(dl.value.path().read_text())
-    assert data["task"]["requester"] == "Ana Dev" and data["record"]["verified"] is True
+    assert data["task"]["requester"] == "Thijil" and data["record"]["verified"] is True
     assert dl.value.suggested_filename == f"task_report_{tid}.json"
 
     with page.expect_download() as dl:

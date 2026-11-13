@@ -91,6 +91,7 @@ class TaskRecord(BaseModel):
     owner: str | None = None
     team: str | None = None
     condition: str | None = None
+    requested_by: str | None = None  # the signed-in person who started the run
 
 
 class GovernanceEvent(BaseModel):

@@ -801,6 +801,7 @@ class ActiveRunManager:
                 canary=canary,
                 owner=chosen_owner,
                 team=chosen_team,
+                requester=owner or "operator",
                 boundary_model="v1.1",
                 network=preset_network,
             )

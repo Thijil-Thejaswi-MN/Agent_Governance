@@ -652,7 +652,8 @@ class TaskLauncher:
             self.storage.save_boundary(boundary)
         if spec.condition:
             task.condition = spec.condition
-            self.storage.save_task(task)
+        task.requested_by = spec.requester
+        self.storage.save_task(task)
         return task, boundary
 
     # --- main ---
