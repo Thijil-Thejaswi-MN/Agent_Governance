@@ -1679,6 +1679,8 @@ async def get_run_presets() -> list[dict[str, Any]]:
             "description": p["description"],
             "prompt": p["prompt"],
             "files": p["files"],
+            # Comparison mode (kernel lock off) is only offered for presets that plant decoys.
+            "comparable": bool(p.get("decoys")),
         }
         for p in PRESETS.values()
     ]
