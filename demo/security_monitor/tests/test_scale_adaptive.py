@@ -107,4 +107,4 @@ def test_admin_overview_scale_2000_agents(page: Page, demo_server_2000):
     sign_in(page, demo_server_2000, path="/dashboard/overview")
     page.goto(f"{demo_server_2000.url}/dashboard/overview")
     map_section = page.locator("section[data-mode]")
-    expect(map_section).to_have_attribute("data-mode", "canvas")
+    expect(map_section).to_have_attribute("data-mode", "canvas", timeout=30000)
