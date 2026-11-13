@@ -26,6 +26,18 @@ export interface BlockedAttempt {
   stepNumber: number;
 }
 
+// A boundary entry as a fence label. A wildcard entry ("input/*", "src/**") is shown as its
+// folder with what it covers, never as a bare "*".
+export function boundaryLabel(entry: string): string {
+  const e = (entry || '').trim().replace(/\\/g, '/');
+  const star = e.search(/[*?[]/);
+  if (star === -1) return fileName(e);
+  const dir = e.slice(0, star).replace(/\/+$/, '');
+  const deep = e.includes('**');
+  const what = deep ? 'all files and subfolders' : 'all files';
+  return dir ? `${dir}/ (${what})` : `task folder (${what})`;
+}
+
 export function fileName(path: string): string {
   const p = (path || '').trim().replace(/[\\/]+$/, '');
   if (/^https?:\/\//i.test(p)) {

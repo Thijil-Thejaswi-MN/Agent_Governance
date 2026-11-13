@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TaskStep } from '../types';
-import { agentStarted, blockedAttempts, fileName, justBlocked, outputsFromSteps } from './runView';
+import { agentStarted, blockedAttempts, boundaryLabel, fileName, justBlocked, outputsFromSteps } from './runView';
 
 let n = 0;
 const step = (kind: string, verdict: string, summary: string, extra: Partial<TaskStep> = {}): TaskStep => ({
@@ -83,5 +83,16 @@ describe('agentStarted and outputs', () => {
       step('output', 'ALLOW', 'Output file written: output/summary.txt', { detail: 'v2' }),
     ]);
     expect(out).toEqual([{ path: 'output/summary.txt', name: 'summary.txt', content: 'v2' }]);
+  });
+});
+
+describe('boundaryLabel', () => {
+  it('names plain files by their file name', () => {
+    expect(boundaryLabel('input/sales_data.csv')).toBe('sales_data.csv');
+  });
+  it('never shows a bare wildcard', () => {
+    expect(boundaryLabel('input/*')).toBe('input/ (all files)');
+    expect(boundaryLabel('src/**')).toBe('src/ (all files and subfolders)');
+    expect(boundaryLabel('*')).toBe('task folder (all files)');
   });
 });
