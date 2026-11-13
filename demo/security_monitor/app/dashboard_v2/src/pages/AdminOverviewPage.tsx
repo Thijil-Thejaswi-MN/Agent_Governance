@@ -43,12 +43,16 @@ export const AdminOverviewPage: React.FC = () => {
     const load = async () => {
       const t = Date.now();
       try {
-        // Tasks and decisions first, so the page draws at once; events and patterns follow.
-        const [taskList, exps] = await Promise.all([api.getTasks(), api.getExpansions().catch(() => [] as ExpansionItem[])]);
+        const [taskList, exps, evts] = await Promise.all([
+          api.getTasks(),
+          api.getExpansions().catch(() => [] as ExpansionItem[]),
+          loadRecentEvents(t).catch(() => [] as TaskEvent[]),
+        ]);
         if (!mounted) return;
         setTasks(taskList);
         setAllExps(exps);
         setPending(exps.filter(e => e.status === 'PENDING'));
+        if (evts) setEvents(evts);
         setNow(t);
         setError(null);
       } catch (err: any) {
@@ -58,13 +62,11 @@ export const AdminOverviewPage: React.FC = () => {
       if (slowBusy) return;
       slowBusy = true;
       Promise.all([
-        loadRecentEvents(t).catch(() => null),
         api.getFleetSummary().catch(() => null),
         api.getRecordsSummary().catch(() => null),
-      ]).then(([evts, fl, rec]) => {
+      ]).then(([fl, rec]) => {
         slowBusy = false;
         if (!mounted) return;
-        if (evts) setEvents(evts);
         setFleet(fl);
         setRecordsSummary(rec);
       });

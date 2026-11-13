@@ -505,3 +505,21 @@ The organization views are a console design for scale. The evaluation measured o
 | ![Team Lead](ui_review/v4/03_team_lead_desktop.png) | ![Auditor Records](ui_review/v4/05_auditor_records_desktop.png) |
 
 
+
+### A2A Agent Card Discovery
+
+Agent Governance supports discovering local A2A agents via their A2A Agent Cards served on loopback (`127.0.0.1`):
+
+1. **Start a local sample agent outside the fence:**
+   For example, Google's `helloworld` or custom A2A agent on port 9999:
+   ```bash
+   python -m uvicorn app:app --host 127.0.0.1 --port 9999
+   ```
+
+2. **Card Discovery Endpoint:**
+   The agent exposes its card at `http://127.0.0.1:9999/.well-known/agent-card.json` (or `/.well-known/agent.json`). Card schema requires `name`, `description`, and `skills`. Non-local URLs and malformed cards fail closed.
+
+3. **Console Inventory:**
+   Navigate to `/dashboard/inventory` ("Agents"). The discovered agent appears under **Discovered A2A Agents** with its name, provider, description, skills, and governance state:
+   - **Not governed yet**: Discovered via its local card, but has not yet run inside our fence.
+   - **Governed**: Has executed one or more tasks safely inside the Agent Governance fence.

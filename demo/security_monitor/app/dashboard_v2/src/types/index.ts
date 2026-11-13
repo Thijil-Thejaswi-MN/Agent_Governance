@@ -154,11 +154,17 @@ export interface ResultsSummary {
 
 export interface AgentInventoryItem {
   agent_id: string;
-  declared_role?: string;
-  status: 'GOVERNED' | 'SHADOW';
+  name?: string;
+  owner?: string;
+  classification?: string;
+  status: string;
   active_task_id?: string;
   last_seen?: string;
   reputation_score?: number;
+  description?: string | null;
+  skills?: string[];
+  governance_state?: string | null;
+  metadata?: Record<string, any>;
 }
 
 
