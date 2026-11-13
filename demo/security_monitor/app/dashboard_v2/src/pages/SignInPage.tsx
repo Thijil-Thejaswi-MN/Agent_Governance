@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, KeyRound, Bot, Users, CheckCircle2, LayoutGrid, FileText } from 'lucide-react';
+import { Shield, Bot, Users, CheckCircle2, LayoutGrid, FileText } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Role } from '../types';
 import { roleHome } from '../logic/journey';
@@ -11,7 +11,6 @@ interface RoleCard {
   title: string;
   desc: string;
   landingText: string;
-  color: string;
   icon: React.ReactNode;
 }
 
@@ -21,40 +20,35 @@ const ROLES: RoleCard[] = [
     title: 'Developer',
     desc: 'Give tasks to your agents and watch them work.',
     landingText: 'Lands on: Run →',
-    color: '#60A5FA',
-    icon: <Bot className="w-5 h-5" />,
+    icon: <Bot className="w-4 h-4" />,
   },
   {
     role: 'team_lead',
     title: 'Team lead',
     desc: "See your team's agents. Approve their requests.",
     landingText: 'Lands on: Team overview →',
-    color: '#A78BFA',
-    icon: <Users className="w-5 h-5" />,
+    icon: <Users className="w-4 h-4" />,
   },
   {
     role: 'security_reviewer',
     title: 'Security reviewer',
     desc: 'Decide on requests. Turn repeats into rules.',
     landingText: 'Lands on: Approvals inbox →',
-    color: '#FBBF24',
-    icon: <CheckCircle2 className="w-5 h-5" />,
+    icon: <CheckCircle2 className="w-4 h-4" />,
   },
   {
     role: 'admin',
     title: 'Admin',
     desc: 'Every agent, team and rule in one place.',
     landingText: 'Lands on: Run →',
-    color: '#34D399',
-    icon: <LayoutGrid className="w-5 h-5" />,
+    icon: <LayoutGrid className="w-4 h-4" />,
   },
   {
     role: 'auditor',
     title: 'Auditor',
     desc: 'Check hash chains, export activity, review decisions.',
     landingText: 'Lands on: Records →',
-    color: '#F472B6',
-    icon: <FileText className="w-5 h-5" />,
+    icon: <FileText className="w-4 h-4" />,
   },
 ];
 
@@ -66,14 +60,24 @@ export const SignInPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [highlightedRole, setHighlightedRole] = useState<Role | null>(null);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const [isLightMode, setIsLightMode] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return;
-    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    setPrefersReducedMotion(mediaQuery.matches);
-    const handler = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
-    mediaQuery.addEventListener('change', handler);
-    return () => mediaQuery.removeEventListener('change', handler);
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setPrefersReducedMotion(motionQuery.matches);
+    const motionHandler = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
+    motionQuery.addEventListener('change', motionHandler);
+
+    const colorQuery = window.matchMedia('(prefers-color-scheme: light)');
+    setIsLightMode(colorQuery.matches);
+    const colorHandler = (e: MediaQueryListEvent) => setIsLightMode(e.matches);
+    colorQuery.addEventListener('change', colorHandler);
+
+    return () => {
+      motionQuery.removeEventListener('change', motionHandler);
+      colorQuery.removeEventListener('change', colorHandler);
+    };
   }, []);
 
   const handleSignIn = async (e?: React.FormEvent) => {
@@ -100,7 +104,42 @@ export const SignInPage: React.FC = () => {
   };
 
   return (
-    <div className="relative overflow-hidden min-h-screen bg-[#0B0E14] text-[#E6E9EF] font-sans flex flex-col items-center px-6 py-12">
+    <div className="signin-root relative overflow-x-hidden min-h-screen font-sans flex flex-col items-center px-4 sm:px-6 py-10 sm:py-14">
+      <style>{`
+        .signin-root {
+          --sn-bg: #0B0E14;
+          --sn-card: #11151D;
+          --sn-raised: #161B26;
+          --sn-border: #1F2633;
+          --sn-border-focus: #3B82F6;
+          --sn-text: #E6E9EF;
+          --sn-text-secondary: #949DB0;
+          --sn-text-muted: #646E82;
+          --sn-input-bg: #080A0F;
+          --sn-sso-bg: #131722;
+          --sn-role-bg: #11151D;
+          --sn-role-icon-bg: #161B26;
+          background-color: var(--sn-bg);
+          color: var(--sn-text);
+        }
+        @media (prefers-color-scheme: light) {
+          .signin-root {
+            --sn-bg: #F8FAFC;
+            --sn-card: #FFFFFF;
+            --sn-raised: #F1F5F9;
+            --sn-border: #E2E8F0;
+            --sn-border-focus: #2563EB;
+            --sn-text: #0F172A;
+            --sn-text-secondary: #475569;
+            --sn-text-muted: #64748B;
+            --sn-input-bg: #FFFFFF;
+            --sn-sso-bg: #F8FAFC;
+            --sn-role-bg: #FFFFFF;
+            --sn-role-icon-bg: #F1F5F9;
+          }
+        }
+      `}</style>
+
       {/* Background DotField (disabled under prefers-reduced-motion) */}
       {!prefersReducedMotion && (
         <div
@@ -112,67 +151,59 @@ export const SignInPage: React.FC = () => {
           }}
         >
           <DotField
-            gradientFrom="#3B82F6"
-            gradientTo="#60A5FA"
-            baseOpacity={0.3}
-            glowIntensity={0.4}
+            gradientFrom={isLightMode ? '#2563EB' : '#3B82F6'}
+            gradientTo={isLightMode ? '#3B82F6' : '#60A5FA'}
+            baseOpacity={isLightMode ? 0.16 : 0.12}
+            glowIntensity={0.06}
+            lightMode={isLightMode}
             holdToZoom={false}
           />
         </div>
       )}
 
-      {/* Subtle background glow */}
+      {/* Hero Header & content */}
       <div
-        className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[500px] pointer-events-none opacity-20"
-        style={{
-          background: 'radial-gradient(ellipse at center, rgba(59,130,246,0.3) 0%, transparent 70%)',
-          zIndex: 0,
-        }}
-      />
-
-      {/* Hero Header & content above */}
-      <div
-        className="flex flex-col items-center gap-3.5 max-w-4xl w-full"
+        className="flex flex-col items-center gap-3 max-w-4xl w-full"
         style={{
           position: 'relative',
           zIndex: 1,
         }}
       >
-        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#3B82F6] to-[#6366F1] flex items-center justify-center text-white shadow-xl shadow-blue-500/25">
-          <Shield className="w-7 h-7" />
+        <div className="w-10 h-10 rounded-xl bg-[var(--sn-raised)] border border-[var(--sn-border)] flex items-center justify-center text-[#3B82F6] transition-colors">
+          <Shield className="w-5 h-5" strokeWidth={1.75} />
         </div>
-        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-center">
+        <h1 className="text-2xl sm:text-[28px] font-semibold tracking-tight text-center text-[var(--sn-text)]">
           Sign in to Agent Governance
         </h1>
-        <p className="text-[#A7B0C0] text-base text-center max-w-lg">
+        <p className="text-[var(--sn-text-secondary)] text-[13px] sm:text-[14px] text-center max-w-md leading-relaxed">
           Every agent only touches what its task needs. Choose how you work today.
         </p>
 
         {/* Sign In Box */}
-        <div className="mt-6 w-full max-w-md p-6 rounded-2xl bg-[#11151D] border border-[#1F2633] shadow-2xl flex flex-col gap-4">
+        <div className="mt-5 w-full max-w-[420px] p-6 rounded-2xl bg-[var(--sn-card)] border border-[var(--sn-border)] flex flex-col gap-4 shadow-sm transition-colors">
           {/* SSO button - disabled as specified */}
           <button
             type="button"
             disabled
-            className="w-full min-h-[44px] rounded-xl border border-[#2A3344] bg-[#161B26] text-[#8B95A7] font-semibold text-[14px] flex items-center justify-center gap-2 cursor-not-allowed opacity-60"
+            className="w-full min-h-[44px] rounded-xl border border-[var(--sn-border)] bg-[var(--sn-sso-bg)] text-[var(--sn-text-muted)] font-medium text-[13px] flex items-center justify-center gap-2 cursor-not-allowed opacity-75"
             title="Not configured on this install"
           >
-            <Shield className="w-4 h-4" />
+            <Shield className="w-4 h-4 text-[var(--sn-text-muted)]" />
             Continue with company sign-in (SSO)
           </button>
-          <div className="text-[11px] text-center text-[#6B7487] -mt-2">
+          <div className="text-[11px] text-center text-[var(--sn-text-muted)] -mt-2">
             Not configured on this install
           </div>
 
-          <div className="flex items-center gap-3 text-[12px] text-[#6B7487] my-1">
-            <span className="flex-1 h-px bg-[#1F2633]" />
+          <div className="flex items-center gap-3 text-[11px] text-[var(--sn-text-muted)] my-0.5 font-mono tracking-wider uppercase">
+            <span className="flex-1 h-px bg-[var(--sn-border)]" />
             <span>or, on a local install</span>
-            <span className="flex-1 h-px bg-[#1F2633]" />
+            <span className="flex-1 h-px bg-[var(--sn-border)]" />
           </div>
 
           {/* Operator Token Form */}
           <form onSubmit={handleSignIn} className="flex flex-col gap-2">
-            <label htmlFor="operator-token-input" className="text-[12px] font-medium text-[#8B95A7]">
+            <label htmlFor="operator-token-input" className="text-[12px] font-medium text-[var(--sn-text-secondary)]">
               Operator token
             </label>
             {/* Below 640 px the button sits under the field, so "Sign in" never wraps */}
@@ -184,19 +215,19 @@ export const SignInPage: React.FC = () => {
                 value={tokenInput}
                 onChange={e => setTokenInput(e.target.value)}
                 disabled={isSubmitting || highlightedRole !== null}
-                className="flex-1 min-w-0 min-h-[44px] sm:min-h-[42px] px-3.5 rounded-xl border border-[#2A3344] bg-[#0B0E14] text-[#E6E9EF] font-mono text-[13px] outline-none focus:border-[#3B82F6] transition-colors"
+                className="flex-1 min-w-0 min-h-[44px] sm:min-h-[42px] px-3.5 rounded-xl border border-[var(--sn-border)] bg-[var(--sn-input-bg)] text-[var(--sn-text)] font-mono text-[13px] placeholder:text-[var(--sn-text-muted)] outline-none focus:border-[var(--sn-border-focus)] focus:ring-1 focus:ring-[var(--sn-border-focus)] transition-colors"
               />
               <button
                 type="submit"
                 id="sign-in-submit-btn"
                 disabled={isSubmitting || !tokenInput.trim() || highlightedRole !== null}
-                className="w-full sm:w-auto whitespace-nowrap px-5 min-h-[44px] sm:min-h-[42px] rounded-xl bg-[#3B82F6] hover:bg-[#2563EB] disabled:opacity-50 text-white font-semibold text-[14px] transition-colors flex items-center justify-center cursor-pointer"
+                className="w-full sm:w-auto whitespace-nowrap px-5 min-h-[44px] sm:min-h-[42px] rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] disabled:opacity-50 text-white font-medium text-[13px] transition-colors flex items-center justify-center cursor-pointer shadow-sm"
               >
                 {isSubmitting ? 'Signing in…' : 'Sign in'}
               </button>
             </div>
             {error && (
-              <div className="text-[12px] text-[#EF4444] mt-1 font-medium">
+              <div className="text-[12px] text-red-500 mt-1 font-medium">
                 {error}
               </div>
             )}
@@ -204,38 +235,37 @@ export const SignInPage: React.FC = () => {
         </div>
 
         {/* Role Explanation Section */}
-        <div className="mt-10 w-full flex flex-col gap-3">
+        <div className="mt-8 w-full max-w-4xl flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-[15px] font-bold text-[#E6E9EF]">Your role</h2>
-            <span className="text-[12px] text-[#8B95A7]">
+            <h2 className="text-[14px] font-semibold text-[var(--sn-text)]">Your role</h2>
+            <span className="text-[12px] text-[var(--sn-text-muted)]">
               Each role opens on a different home. Your admin assigns roles.
             </span>
           </div>
 
           {/* Role Cards Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5 mt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mt-1">
             {ROLES.map(r => {
               const isMatch = highlightedRole === r.role;
               return (
                 <div
                   key={r.role}
-                  className={`relative p-5 rounded-xl bg-[#11151D] border transition-all duration-300 flex flex-col gap-3 select-none ${
+                  className={`relative p-4 rounded-xl border transition-all duration-200 flex flex-col gap-2.5 select-none ${
                     isMatch
-                      ? 'border-[#3B82F6] ring-2 ring-[#3B82F6] shadow-lg shadow-blue-500/20 scale-105 bg-[#161F30]'
-                      : 'border-[#1F2633] hover:border-[#2A3344]'
+                      ? 'border-[#2563EB] ring-1 ring-[#2563EB] bg-[var(--sn-raised)]'
+                      : 'border-[var(--sn-border)] bg-[var(--sn-role-bg)] hover:border-[var(--sn-border-focus)]'
                   }`}
                 >
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ backgroundColor: `${r.color}22`, color: r.color }}
-                  >
+                  <div className="w-8 h-8 rounded-lg bg-[var(--sn-role-icon-bg)] text-[var(--sn-text-secondary)] border border-[var(--sn-border)] flex items-center justify-center flex-shrink-0 transition-colors">
                     {r.icon}
                   </div>
                   <div>
-                    <div className="font-bold text-[15px] text-[#E6E9EF]">{r.title}</div>
-                    <div className="text-[13px] text-[#A7B0C0] leading-snug mt-1.5">{r.desc}</div>
+                    <div className="font-semibold text-[14px] text-[var(--sn-text)]">{r.title}</div>
+                    <div className="text-[12px] text-[var(--sn-text-secondary)] leading-snug mt-1">{r.desc}</div>
                   </div>
-                  <div className="mt-auto pt-2 text-[12px] font-semibold" style={{ color: r.color }}>
+                  <div className={`mt-auto pt-2 text-[11px] font-medium transition-colors ${
+                    isMatch ? 'text-[#2563EB]' : 'text-[var(--sn-text-muted)]'
+                  }`}>
                     {r.landingText}
                   </div>
                 </div>
@@ -247,4 +277,3 @@ export const SignInPage: React.FC = () => {
     </div>
   );
 };
-
