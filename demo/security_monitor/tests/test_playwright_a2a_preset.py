@@ -53,7 +53,7 @@ def test_a2a_preset_playwright(page: Page, a2a_console_server, tmp_path: Path):
     # Select the A2A agent preset
     preset_btn = page.locator("#preset-a2a_agent")
     expect(preset_btn).to_be_visible(timeout=10000)
-    expect(preset_btn).to_have_text("Google A2A travel planner inside fence")
+    expect(preset_btn).to_have_text("Travel planner agent (modelled on Google a2a-samples)")
     preset_btn.click()
 
     page.locator("#model-selector").select_option("scripted")

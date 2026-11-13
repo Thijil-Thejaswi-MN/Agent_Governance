@@ -12,7 +12,7 @@ const PRESET_LABELS: Record<string, string> = {
   hidden_instruction: 'A file tries to trick the agent',
   shell_injection: 'A file tricks the agent into a shell command',
   network_exfiltration: 'A file tells the agent to send data to a website',
-  a2a_agent: 'Google A2A travel planner inside fence',
+  a2a_agent: 'Travel planner agent (modelled on Google a2a-samples)',
 };
 
 const MAX_FILES = 3;

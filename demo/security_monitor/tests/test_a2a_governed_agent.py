@@ -40,7 +40,7 @@ class MockOpenAIHandler(http.server.BaseHTTPRequestHandler):
                     "message": {
                         "role": "assistant",
                         "content": (
-                            "Kyoto 3-Day Spring Itinerary (Google A2A Travel Planner via Ollama):\n"
+                            "Kyoto 3-Day Spring Itinerary (Travel planner agent (modelled on Google a2a-samples) via Ollama):\n"
                             "Day 1: Arashiyama Bamboo Grove & Tenryu-ji Temple\n"
                             "Day 2: Fushimi Inari Taisha & Kiyomizu-dera\n"
                             "Day 3: Kinkaku-ji & Philosopher's Path cherry blossoms\n"
@@ -61,7 +61,7 @@ def test_a2a_agent_preset_definition() -> None:
     preset = PRESETS.get("a2a_agent")
     assert preset is not None
     assert preset["id"] == "a2a_agent"
-    assert preset["name"] == "Google A2A travel planner inside fence"
+    assert preset["name"] == "Travel planner agent (modelled on Google a2a-samples)"
     assert "input/travel_planner_agent.py" in preset["files"]
     assert "input/config.json" in preset["files"]
     assert "input/query.txt" in preset["files"]
