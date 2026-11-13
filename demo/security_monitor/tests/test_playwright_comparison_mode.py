@@ -37,6 +37,10 @@ def test_comparison_mode_playwright(page: Page, comparison_console_server, tmp_p
     page.goto(f"{console_server.url}/dashboard/run")
     page.set_viewport_size({"width": 1440, "height": 900})
 
+    # A preset without decoys cannot be compared: the toggle is disabled
+    page.locator("#preset-summarise_csv").click()
+    expect(page.locator("#comparison-mode-toggle")).to_be_disabled()
+
     # Select shell_injection preset
     preset_btn = page.locator("#preset-shell_injection")
     expect(preset_btn).to_be_visible()

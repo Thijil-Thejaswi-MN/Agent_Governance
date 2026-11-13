@@ -196,6 +196,7 @@ export interface RunPreset {
   description: string;
   prompt: string;
   files: Record<string, string>;
+  comparable?: boolean;
 }
 
 export interface BoundaryPreviewResponse {

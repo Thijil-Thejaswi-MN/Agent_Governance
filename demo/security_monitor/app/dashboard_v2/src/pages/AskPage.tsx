@@ -96,8 +96,11 @@ export const AskPage: React.FC = () => {
     return () => clearTimeout(t);
   }, [prompt, presetId, files]);
 
+  const canCompare = !!presets.find(p => p.id === presetId)?.comparable;
+
   const choosePreset = (p: RunPreset) => {
     setPresetId(p.id);
+    if (!p.comparable) setComparisonMode(false);
     setPrompt(p.prompt);
     setFiles({ ...p.files });
     setError(null);
@@ -133,12 +136,12 @@ export const AskPage: React.FC = () => {
     try {
       const presetFiles = presets.find(p => p.id === presetId)?.files || {};
       const hasUploadedFiles = Object.keys(files).some(k => !(k in presetFiles) || files[k] !== presetFiles[k]);
-      if (comparisonMode && (!presetId || presetId === 'custom' || hasUploadedFiles)) {
+      if (comparisonMode && canCompare && (!presetId || presetId === 'custom' || hasUploadedFiles)) {
         setError('Comparison mode requires a preset with decoys; custom requests or uploaded files are not allowed.');
         setStarting(false);
         return;
       }
-      const res = await api.startRun({ prompt: prompt.trim(), preset: presetId, model, files, agent_id: agentId, comparison_mode: comparisonMode });
+      const res = await api.startRun({ prompt: prompt.trim(), preset: presetId, model, files, agent_id: agentId, comparison_mode: comparisonMode && canCompare });
       navigate(`/run/${res.task_id}`);
     } catch (err: any) {
       // Nothing was started: stay here and say why.
@@ -217,15 +220,23 @@ export const AskPage: React.FC = () => {
               </select>
             </label>
             {role === 'admin' && (
-              <label className="flex items-center gap-2 text-[13px] text-[#FBBF24] cursor-pointer">
+              <label
+                className={`flex items-center gap-2 text-[13px] text-[#FBBF24] ${canCompare ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}
+                title={canCompare ? undefined : 'Pick one of the "A file tries to trick the agent" examples to compare'}
+              >
                 <input
                   type="checkbox"
                   id="comparison-mode-toggle"
-                  checked={comparisonMode}
-                  onChange={e => setComparisonMode(e.target.checked)}
+                  checked={comparisonMode && canCompare}
+                  disabled={!canCompare}
+                  onChange={e => {
+                    setComparisonMode(e.target.checked);
+                    setError(null);
+                  }}
                   className="rounded border-[#F59E0B]/40 bg-[#0E121A] text-[#F59E0B] focus:ring-[#F59E0B]"
                 />
                 <span>Comparison mode: kernel lock off, for demonstration</span>
+                {!canCompare && <span className="text-[#8B95A7]">(only for the trick examples)</span>}
               </label>
             )}
           </div>
