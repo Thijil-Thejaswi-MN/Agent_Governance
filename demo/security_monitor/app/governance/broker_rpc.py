@@ -454,6 +454,12 @@ class BrokerRPCServer:
                 "delivery": deliv_dup,
             }
 
+        # A decision already made in this run is not asked again: a block stays a block, and an
+        # approved file that does not exist in the task folder is reported as missing.
+        repeat = self._repeat_decision(rtype, target, just)
+        if repeat is not None:
+            return repeat
+
         timeout_s = getattr(self.broker, "default_approval_timeout", None)
         if timeout_s is not None:
             res = self.broker.request_access(token, rtype, target, just, timeout_seconds=timeout_s)
@@ -461,6 +467,8 @@ class BrokerRPCServer:
             res = self.broker.request_access(token, rtype, target, just)
         if self.delivery is not None:
             res["delivery"] = self.delivery.deliver(self.task_id, rtype, target, bool(res.get("granted")))
+            if res.get("granted") and res["delivery"].get("reason") == "source_missing_or_outside_workspace":
+                res["message"] = f"'{target}' was approved, but no such file exists in the task folder."
         status_val = res.get("status") or ("APPROVED" if res.get("granted") else "DENIED")
         approver_val = res.get("approved_by") or ("operator" if res.get("granted") else "policy")
         reason_val = res.get("reason") or ("Granted" if res.get("granted") else "Denied")
@@ -474,6 +482,102 @@ class BrokerRPCServer:
             source_label="enforced",
         )
         return res
+
+    @staticmethod
+    def _norm_target(target: str) -> str:
+        t = str(target).strip().replace("\\", "/")
+        if t.startswith("granted/"):
+            t = t[len("granted/"):]
+        while t.startswith("./"):
+            t = t[2:]
+        return t
+
+    def _repeat_decision(self, rtype: str, target: str, just: str) -> dict[str, Any] | None:
+        """Returns an immediate answer when this run already decided on the same resource.
+
+        DENIED (by a person, a rule or the fail-closed timeout) stays denied for the rest of
+        the run, so a blocked request is never shown to the person again. An approved file read
+        whose file does not exist in the task folder is answered "not found" instead of creating
+        a new pending request. Single-use approvals are not reused."""
+        norm = self._norm_target(target)
+        prior = sorted(
+            (r for r in self.broker.storage.list_expansion_requests(task_id=self.task_id)
+             if r.resource_type == rtype and self._norm_target(r.resource_target) == norm
+             and r.status in (ExpansionStatus.APPROVED, ExpansionStatus.DENIED)
+             and not str(r.resolved_by or "").startswith(("duplicate_of:", "repeat_of:"))),
+            key=lambda r: r.created_at,
+        )
+        if not prior:
+            return None
+        last = prior[-1]  # the most recent decision on this resource
+        if last.status == ExpansionStatus.DENIED:
+            granted, status = False, f"repeat_of:{last.request_id}:denied"
+            message = (f"Already denied earlier in this run (by {last.resolved_by}). "
+                       "You will not be asked again; continue without this resource.")
+            step = f"Not asked again: {target} was already blocked in this run"
+        elif (last.status == ExpansionStatus.APPROVED and rtype == "file_read" and not last.single_use
+              and self.delivery is not None and ".." not in norm.split("/") and not norm.startswith("/")
+              and not (self.delivery.ws / norm).is_file() and not (self.delivery.granted / norm).is_file()):
+            granted, status = False, f"repeat_of:{last.request_id}:not_found"
+            message = f"'{target}' was approved, but no such file exists in the task folder."
+            step = f"Not asked again: {target} was approved but does not exist in the task folder"
+        else:
+            return None
+
+        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        # Audited like any other request (it appears in the receipt), but resolved at once.
+        self.broker.storage.save_expansion_request(ExpansionRequest(
+            request_id=f"exp_req_rep_{uuid.uuid4().hex[:8]}",
+            task_id=self.task_id,
+            agent_id=last.agent_id,
+            resource_type=rtype,
+            resource_target=target,
+            justification=just,
+            baseline_risk_tier=last.baseline_risk_tier,
+            effective_risk_tier=last.effective_risk_tier,
+            escalated_by_provenance=last.escalated_by_provenance,
+            status=ExpansionStatus.DENIED,
+            created_at=now_utc,
+            resolved_at=now_utc,
+            resolved_by=f"repeat_of:{last.request_id}",
+            reason=message,
+            single_use=False,
+            timeout_seconds=0.0,
+        ))
+        self.broker.storage.record_event(GovernanceEvent(
+            event_id=f"gov_ev_{uuid.uuid4().hex[:12]}",
+            timestamp=now_utc,
+            source=EventSource.TOOL_BROKER,
+            task_id=self.task_id,
+            agent_id=last.agent_id,
+            kind="request_access",
+            target=target,
+            details={"resource_type": rtype, "justification": just, "status": status, "granted": granted},
+            verdict=EventVerdict.OUTSIDE,
+            risk_tier=last.effective_risk_tier,
+            action_taken=TaskAction.BLOCK_ACTION,
+            prevented=True,
+            rule_matched=status,
+            boundary_version=None,
+        ))
+        self.broker.storage.record_task_step(
+            self.task_id, kind="expansion", layer="broker", verdict="BLOCK_ACTION",
+            summary=step, detail=f"Earlier decision: {last.request_id} ({last.status.value} by {last.resolved_by})",
+            source_label="enforced",
+        )
+        return {
+            "granted": False,
+            "status": status,
+            "message": message,
+            "resource_type": rtype,
+            "resource_target": target,
+            "baseline_risk": last.baseline_risk_tier.value,
+            "effective_risk": last.effective_risk_tier.value,
+            "baseline_risk_tier": last.baseline_risk_tier.value,
+            "effective_risk_tier": last.effective_risk_tier.value,
+            "escalated_by_provenance": last.escalated_by_provenance,
+            "delivery": {"type": "none", "reason": status.split(":")[-1]},
+        }
 
     def _h_run_command_check(self, token: str, p: dict[str, Any]) -> Any:
         cmd = _str_param(p, "command", 8192)

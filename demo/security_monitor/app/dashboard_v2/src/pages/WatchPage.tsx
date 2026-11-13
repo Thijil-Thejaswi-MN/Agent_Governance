@@ -10,7 +10,7 @@ import { DecisionCard } from '../components/v3/DecisionCard';
 import { DetailsDrawer, DetailsSection, KV } from '../components/v3/DetailsDrawer';
 import { EventTable, TechnicalTimeline } from '../components/v3/TechnicalTimeline';
 import { boundaryVersionLabel, receiptSentence, statusSentence } from '../logic/plain';
-import { agentStarted, blockedAttempts, fileName, isTerminal, justBlocked, outputsFromSteps } from '../logic/runView';
+import { agentStarted, blockedAttempts, fileName, isTerminal, justBlocked, outputsFromSteps, OutputPreview } from '../logic/runView';
 
 const STATUS_LABELS: Record<string, string> = {
   idle: 'Idle',
@@ -31,6 +31,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
   const { hasToken, openAuthModal, role } = useAuth();
   const run = useRunTracker(taskId);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [outputOpen, setOutputOpen] = useState(false);
   const [events, setEvents] = useState<TaskEvent[]>([]);
 
   const terminal = isTerminal(run.state);
@@ -61,8 +62,8 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
     endReason: run.endReason,
   });
 
-  const outputs = run.outputFiles.length
-    ? run.outputFiles.map(f => ({ path: f.path, name: f.name || fileName(f.path), content: f.content }))
+  const outputs: OutputPreview[] = run.outputFiles.length
+    ? run.outputFiles.map(f => ({ path: f.path, name: f.name || fileName(f.path), content: f.content, size: f.size, truncated: f.truncated }))
     : outputsFromSteps(run.steps);
   const record = receiptSentence(run.receipt, run.receiptLoaded);
 
@@ -167,7 +168,20 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
           )}
 
           {terminal && outputs.length > 0 && (
-            <div className="card p-5" id="output-preview">
+            <div
+              className="card p-5 cursor-pointer hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+              id="output-preview"
+              role="button"
+              tabIndex={0}
+              aria-label={`Open ${outputs[0].name}`}
+              onClick={() => setOutputOpen(true)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setOutputOpen(true);
+                }
+              }}
+            >
               <div className="flex items-center gap-2 text-[15px] font-semibold">
                 <FileText className="w-4 h-4" style={{ color: 'var(--allowed)' }} />
                 <span className="mono text-[14px]">{outputs[0].name}</span>
@@ -176,9 +190,12 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
                     and {outputs.length - 1} more
                   </span>
                 )}
+                <span className="ml-auto text-[13px] font-normal" style={{ color: 'var(--text-3)' }}>
+                  Open
+                </span>
               </div>
               <pre className="mt-3 mb-0 whitespace-pre-wrap text-[15px] leading-relaxed max-h-48 overflow-y-auto" style={{ fontFamily: 'Inter, sans-serif', color: 'var(--text)' }}>
-                {outputs[0].content}
+                {outputs[0].content || '(empty file)'}
               </pre>
             </div>
           )}
@@ -243,6 +260,35 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
           </div>
         </section>
       </div>
+
+      <DetailsDrawer open={outputOpen} title="Output files" onClose={() => setOutputOpen(false)} id="output-drawer">
+        {outputs.map(f => (
+          <DetailsSection key={f.path} title={f.path}>
+            <div className="flex items-center gap-3 mb-2 text-[13px]" style={{ color: 'var(--text-3)' }}>
+              {typeof f.size === 'number' && <span>{f.size} bytes</span>}
+              {f.truncated && <span>Showing the first 20,000 bytes</span>}
+              <button
+                type="button"
+                className="ml-auto inline-flex items-center gap-1.5 underline"
+                style={{ color: 'var(--text-2)' }}
+                onClick={() => {
+                  const url = URL.createObjectURL(new Blob([f.content || ''], { type: 'text/plain;charset=utf-8' }));
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = f.name;
+                  a.click();
+                  setTimeout(() => URL.revokeObjectURL(url), 1000);
+                }}
+              >
+                <Download className="w-3.5 h-3.5" /> Download
+              </button>
+            </div>
+            <pre className="m-0 whitespace-pre-wrap text-[14px] leading-relaxed mono" style={{ color: 'var(--text)' }}>
+              {f.content || '(empty file)'}
+            </pre>
+          </DetailsSection>
+        ))}
+      </DetailsDrawer>
 
       <DetailsDrawer open={detailsOpen} title="What happened" onClose={() => setDetailsOpen(false)}>
         <DetailsSection title="Run">

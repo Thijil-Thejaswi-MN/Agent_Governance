@@ -114,6 +114,8 @@ export interface OutputPreview {
   path: string;
   name: string;
   content: string;
+  size?: number;
+  truncated?: boolean;
 }
 
 export function outputsFromSteps(steps: TaskStep[]): OutputPreview[] {
