@@ -57,7 +57,7 @@ export const ReportSheet: React.FC<{ report: TaskReport }> = ({ report }) => {
         <Fact k="Requested by" v={t.requester || '—'} id="report-requester" />
         <Fact k="Agent" v={t.agent_id} mono />
         <Fact k="Outcome" v={outcomeLabel(t.status).text} id="report-outcome" />
-        <Fact k="Team" v={t.team || '—'} />
+        <Fact k="Agent owner" v={t.agent_owner ? `${t.agent_owner}${t.team ? ` (${t.team})` : ''}` : t.team || '—'} id="report-agent-owner" />
         <Fact k="Started" v={formatWhen(t.started_at || t.created_at)} nowrap />
         <Fact k="Ended" v={formatWhen(t.completed_at)} nowrap />
         <Fact k="Approvals" v={String(report.approvals.length)} />

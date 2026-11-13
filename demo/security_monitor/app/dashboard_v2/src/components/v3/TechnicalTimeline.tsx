@@ -11,6 +11,16 @@ const verdictColor = (v: string) =>
     ? '#6EE7B7'
     : 'var(--text-2)';
 
+// Server timestamps are UTC ISO strings; show them as the viewer's local clock time.
+// A timestamp without a zone suffix is treated as UTC.
+export const localClock = (ts: string | null | undefined): string => {
+  if (!ts) return '';
+  const iso = /[zZ]|[+-]\d{2}:?\d{2}$/.test(ts) ? ts : `${ts}Z`;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return ts;
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+};
+
 // Every stored step with its source label and layer, exactly as the server recorded it.
 export const TechnicalTimeline: React.FC<{ steps: TaskStep[] }> = ({ steps }) => {
   const [open, setOpen] = useState<Record<number, boolean>>({});
@@ -32,7 +42,7 @@ export const TechnicalTimeline: React.FC<{ steps: TaskStep[] }> = ({ steps }) =>
             </span>
             <span style={{ color: verdictColor(step.verdict) }}>{step.verdict}</span>
             <span className="ml-auto" style={{ color: 'var(--text-3)' }}>
-              {step.timestamp.split('T')[1]?.slice(0, 8) || step.timestamp}
+              {localClock(step.timestamp)}
             </span>
           </div>
           <div className="mt-1.5 text-[14px]" style={{ color: 'var(--text)' }}>
@@ -82,7 +92,7 @@ export const EventTable: React.FC<{ events: TaskEvent[] }> = ({ events }) => {
           {events.map((ev, i) => (
             <tr key={ev.event_id || i}>
               <td className="py-1.5 pr-3 whitespace-nowrap" style={{ color: 'var(--text-3)' }}>
-                {(ev.timestamp || '').split('T')[1]?.slice(0, 8) || ev.timestamp}
+                {localClock(ev.timestamp)}
               </td>
               <td className="py-1.5 pr-3">{ev.source}</td>
               <td className="py-1.5 pr-3">{ev.kind}</td>

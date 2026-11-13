@@ -65,7 +65,7 @@ def env(tmp_path: Path, monkeypatch):
     s.save_task(TaskRecord(task_id="t_rep", request_text="=SUM(A1) summarise the minutes", request_hash="h",
                            agent_id="notes_bot", workspace_root=str(tmp_path), status=TaskLifecycle.COMPLETED,
                            created_at="2026-11-12T10:00:00+00:00", completed_at="2026-11-12T10:05:00+00:00",
-                           owner="Ana Dev", team="core"))
+                           owner="Ana Dev", team="core", requested_by="Thijil"))
     s.save_boundary(TaskBoundary(task_id="t_rep", version=1, workspace_root=str(tmp_path),
                                  files_read=["input/minutes.txt"], files_write=["output/summary.md"], tools=["read_file"]))
     s.save_boundary(TaskBoundary(task_id="t_rep", version=2, workspace_root=str(tmp_path),
@@ -109,7 +109,7 @@ def test_report_has_every_section(env):
     r = c.get("/api/governance/tasks/t_rep/report", headers=ADMIN)
     assert r.status_code == 200, r.text
     rep = r.json()
-    assert rep["task"]["requester"] == "Ana Dev" and rep["task"]["agent_id"] == "notes_bot"
+    assert rep["task"]["requester"] == "Thijil" and rep["task"]["agent_owner"] == "Ana Dev" and rep["task"]["agent_id"] == "notes_bot"
     assert rep["boundary"]["initial"]["files_read"] == ["input/minutes.txt"]
     assert rep["boundary"]["final"]["version"] == 2 and "docs/notes.txt" in rep["boundary"]["final"]["files_read"]
     by_id = {a["request_id"]: a for a in rep["approvals"]}
