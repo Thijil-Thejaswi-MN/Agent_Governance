@@ -225,10 +225,27 @@ export interface RunModelsResponse {
   ollama_reachable?: boolean;
 }
 
+export interface ConfiguredAgent {
+  id: string;
+  name: string;
+  owner: string;
+  team: string;
+  description: string;
+}
+
+export interface ActiveRunTask {
+  task_id: string;
+  agent_id?: string;
+  elapsed_seconds: number;
+}
+
 export interface ActiveRunInfo {
   active: boolean;
   task_id: string | null;
   elapsed_seconds: number;
+  active_count?: number;
+  max_concurrent?: number;
+  active_tasks?: ActiveRunTask[];
 }
 
 export type DotState = 'working' | 'waiting' | 'blocked' | 'idle' | 'no_task';

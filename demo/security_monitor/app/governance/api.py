@@ -30,6 +30,8 @@ from .run_manager import (
     PRESETS,
     RunPrerequisitesError,
     fetch_available_models,
+    get_configured_agents,
+    load_agents_config,
     get_run_manager,
     preview_run_boundary,
 )
@@ -1646,7 +1648,14 @@ class RunStartRequest(BaseModel):
     prompt: str
     preset: str | None = None
     model: str = "qwen2.5:7b"
+    agent_id: str | None = None
     files: dict[str, str] = Field(default_factory=dict)
+
+
+@governance_router.get("/run/agents")
+async def get_run_agents() -> list[dict[str, Any]]:
+    """Returns the list of selectable named agents for running tasks."""
+    return get_configured_agents()
 
 
 @governance_router.get("/run/models")
@@ -1709,6 +1718,14 @@ async def start_governed_task_run(
     if not PermissionMatrix.can_start_run(user):
         raise HTTPException(status_code=403, detail="Forbidden: Role not authorized to start a run.")
 
+    if req.agent_id is not None:
+        valid_agents = load_agents_config()
+        if req.agent_id not in valid_agents:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid agent_id '{req.agent_id}'. Must be one of: {list(valid_agents.keys())}",
+            )
+
     storage = get_storage()
     manager = get_run_manager()
 
@@ -1721,6 +1738,7 @@ async def start_governed_task_run(
             files=req.files,
             owner=user.name,
             team=user.team,
+            agent_id=req.agent_id,
         )
         return {
             "task_id": task_id,

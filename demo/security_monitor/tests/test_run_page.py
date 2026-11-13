@@ -115,27 +115,40 @@ def test_start_run_token_enforcement(test_env):
     assert resp_stop.status_code == 401
 
 
-def test_second_concurrent_run_refused(test_env):
+def test_fourth_concurrent_run_refused(test_env):
+    from demo.security_monitor.app.governance.run_manager import ActiveRunSlot
+    from demo.security_monitor.app.governance.launcher import TaskSpec, TaskLauncher
+
     client: TestClient = test_env["client"]
     mgr = get_run_manager()
 
-    # Simulate an active run in manager
-    mgr._active_task_id = "task_running_1"
+    # Simulate 3 active runs in manager
     stop_event = threading.Event()
-    def dummy_worker():
-        stop_event.wait(timeout=2.0)
-    t = threading.Thread(target=dummy_worker)
-    mgr._active_thread = t
-    t.start()
+    threads = []
+    for i in range(3):
+        t = threading.Thread(target=lambda: stop_event.wait(timeout=2.0))
+        t.start()
+        threads.append(t)
+        tid = f"task_running_{i}"
+        slot = ActiveRunSlot(
+            task_id=tid,
+            launcher=TaskLauncher(test_env["storage"]),
+            thread=t,
+            spec=TaskSpec(prompt="test", agent_id=f"agent_{i}"),
+            start_time=time.monotonic(),
+            cancel_event=threading.Event(),
+        )
+        mgr._runs[tid] = slot
 
     try:
         assert mgr.is_active()
+        assert mgr.get_active_info()["active_count"] == 3
 
-        # Second run should be refused with 409
+        # 4th run should be refused with 409
         resp = client.post(
             "/api/governance/run",
             json={
-                "prompt": "Second task attempt",
+                "prompt": "Fourth task attempt",
                 "preset": "summarise_csv",
                 "model": "scripted",
                 "files": {},
@@ -143,10 +156,12 @@ def test_second_concurrent_run_refused(test_env):
             headers={"X-Operator-Token": "test_run_token"},
         )
         assert resp.status_code == 409
-        assert "Another task run is currently active" in resp.json()["detail"]
+        assert "Maximum concurrent runs reached" in resp.json()["detail"]
     finally:
         stop_event.set()
-        t.join()
+        for t in threads:
+            t.join()
+        mgr._runs.clear()
         mgr._active_thread = None
         mgr._active_task_id = None
 

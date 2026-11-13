@@ -13,6 +13,7 @@ import {
   RunOutputFile,
   RunModelsResponse,
   ActiveRunInfo,
+  ConfiguredAgent,
   FleetSummary,
   Role,
   PendingGroup,
@@ -202,13 +203,14 @@ export const api = {
   // Run Execution
   getRunPresets: () => request<RunPreset[]>(`${API_BASE}/run/presets`),
   getRunModels: () => request<RunModelsResponse>(`${API_BASE}/run/models`),
+  getRunAgents: () => request<ConfiguredAgent[]>(`${API_BASE}/run/agents`),
   getActiveRun: () => request<ActiveRunInfo>(`${API_BASE}/run/active`),
   previewRun: (payload: { prompt: string; preset?: string; files?: Record<string, string> }) =>
     request<BoundaryPreviewResponse>(`${API_BASE}/run/preview`, {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  startRun: (payload: { prompt: string; preset?: string; model?: string; files?: Record<string, string> }) =>
+  startRun: (payload: { prompt: string; preset?: string; model?: string; files?: Record<string, string>; agent_id?: string }) =>
     request<{ task_id: string; status: string; message: string }>(`${API_BASE}/run`, {
       method: 'POST',
       body: JSON.stringify(payload),
