@@ -107,6 +107,7 @@ class TaskSpec:
     use_eval_world: bool = False
     owner: str | None = None
     team: str | None = None
+    network: list[str] = field(default_factory=list)
     # "v1": the frozen M6 path (BoundaryDerivationV1, BoundaryEvaluator, compile_landlock_rules),
     # kept as the default for the evaluation harness. "v1.1": the M7 path (BoundaryDerivationV1_1;
     # broker and Landlock both compiled from resolve_boundary). Selected by the Run page and the CLI.
@@ -637,6 +638,9 @@ class TaskLauncher:
         )
         if spec.files_read is not None:
             boundary.files_read = list(spec.files_read)
+            self.storage.save_boundary(boundary)
+        if spec.network:
+            boundary.network = sorted(set(boundary.network) | set(spec.network))
             self.storage.save_boundary(boundary)
         if spec.tools_schema:
             boundary.tools = sorted(t["function"]["name"] for t in spec.tools_schema)
