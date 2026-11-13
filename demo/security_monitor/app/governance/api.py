@@ -674,6 +674,8 @@ async def list_tasks(request: Request = None) -> list[dict[str, Any]]:
             "os_denials_count": summary["os_denials_count"],
             "compliance_pct": summary["compliance_pct"],
             "llm_provider": llm_provider,
+            "condition": getattr(t, "condition", None),
+            "comparison_mode": getattr(t, "condition", None) == "B",
         })
     return output
 
@@ -710,6 +712,8 @@ async def get_task_detail(task_id: str, request: Request = None) -> dict[str, An
 
     task_dict = task.model_dump()
     task_dict["llm_provider"] = llm_provider
+    task_dict["condition"] = getattr(task, "condition", None)
+    task_dict["comparison_mode"] = getattr(task, "condition", None) == "B" 
 
     return {
         "task": task_dict,
@@ -1016,7 +1020,7 @@ async def get_alerts() -> list[dict[str, Any]]:
 async def get_fleet_summary() -> dict[str, Any]:
     """Agents at work, waiting decisions and grouped blocked actions (Fleet page). Reads only."""
     storage = get_storage()
-    tasks = storage.list_tasks()
+    tasks = [t for t in storage.list_tasks() if getattr(t, "condition", None) != "B"]
     task_dicts = [
         {
             "task_id": t.task_id,
@@ -1650,6 +1654,7 @@ class RunStartRequest(BaseModel):
     model: str = "qwen2.5:7b"
     agent_id: str | None = None
     files: dict[str, str] = Field(default_factory=dict)
+    comparison_mode: bool = False
 
 
 @governance_router.get("/run/agents")
@@ -1718,6 +1723,22 @@ async def start_governed_task_run(
     if not PermissionMatrix.can_start_run(user):
         raise HTTPException(status_code=403, detail="Forbidden: Role not authorized to start a run.")
 
+    if req.comparison_mode:
+        if user.role != Role.ADMIN:
+            raise HTTPException(status_code=403, detail="Forbidden: Comparison mode requires admin role.")
+        if not req.preset or req.preset not in PRESETS or not PRESETS[req.preset].get("decoys"):
+            raise HTTPException(
+                status_code=422,
+                detail="Comparison mode requires a preset with decoys; custom requests are not allowed.",
+            )
+        if req.files:
+            preset_files = PRESETS[req.preset].get("files", {})
+            if any(k not in preset_files or req.files[k] != preset_files[k] for k in req.files):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Comparison mode does not allow uploaded files.",
+                )
+
     if req.agent_id is not None:
         valid_agents = load_agents_config()
         if req.agent_id not in valid_agents:
@@ -1739,11 +1760,17 @@ async def start_governed_task_run(
             owner=user.name,
             team=user.team,
             agent_id=req.agent_id,
+            comparison_mode=req.comparison_mode,
+        )
+        msg = (
+            "Task execution initiated under comparison mode (Condition B: kernel lock off)."
+            if req.comparison_mode
+            else "Task execution initiated under Condition C sandbox."
         )
         return {
             "task_id": task_id,
             "status": "preparing",
-            "message": "Task execution initiated under Condition C sandbox.",
+            "message": msg,
         }
     except ValueError as ve:
         raise HTTPException(status_code=422, detail=str(ve))

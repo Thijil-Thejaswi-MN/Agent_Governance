@@ -89,14 +89,25 @@ def build_task_report(
             "reason": r.reason,
         })
     blocked = []
-    for e in sorted((e for e in events if is_blocked(e)), key=lambda x: x.get("timestamp") or ""):
-        blocked.append({
-            "timestamp": e.get("timestamp"),
-            "kind": e.get("kind"),
-            "target": e.get("target"),
-            "layer": event_layer(e),
-            "rule": e.get("rule_matched"),
-        })
+    is_comp = getattr(task, "condition", None) == "B"
+    for e in sorted(events, key=lambda x: x.get("timestamp") or ""):
+        if is_comp and e.get("verdict") == "OUTSIDE":
+            blocked.append({
+                "timestamp": e.get("timestamp"),
+                "kind": e.get("kind"),
+                "target": e.get("target"),
+                "layer": "comparison_unlocked",
+                "rule": e.get("rule_matched"),
+                "comparison_note": "Comparison run: decoy was read (would be blocked by the kernel lock)",
+            })
+        elif is_blocked(e):
+            blocked.append({
+                "timestamp": e.get("timestamp"),
+                "kind": e.get("kind"),
+                "target": e.get("target"),
+                "layer": event_layer(e),
+                "rule": e.get("rule_matched"),
+            })
     return {
         "generated_at": generated_at,
         "task": {
@@ -109,6 +120,8 @@ def build_task_report(
             "created_at": task.created_at,
             "started_at": task.started_at,
             "completed_at": task.completed_at,
+            "condition": getattr(task, "condition", None),
+            "comparison_mode": getattr(task, "condition", None) == "B",
         },
         "boundary": {
             "initial": _boundary_dict(first_boundary),
@@ -152,7 +165,8 @@ def report_to_csv(report: dict[str, Any]) -> str:
         row("approval", a["decided_at"] or a["asked_at"], a["decided_by_label"], a["resource_type"], a["target"],
             f"{a['status']} ({a['scope']})", a["reason"] or "")
     for b in report["blocked"]:
-        row("blocked", b["timestamp"], b["layer"], b["kind"], b["target"], "attempted, not successful", b["rule"] or "")
+        outcome = "Comparison run: decoy was read (would be blocked by the kernel lock)" if b.get("layer") == "comparison_unlocked" else "attempted, not successful"
+        row("blocked", b["timestamp"], b["layer"], b["kind"], b["target"], outcome, b["rule"] or "")
     rec = report["record"]
     row("record", report["generated_at"], "hash-chain check", "", rec.get("final_hash") or "",
         "verified" if rec.get("verified") else ("no record" if not rec.get("available") else "does not verify"),

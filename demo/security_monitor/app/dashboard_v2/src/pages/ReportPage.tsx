@@ -31,6 +31,16 @@ export const ReportSheet: React.FC<{ report: TaskReport }> = ({ report }) => {
 
   return (
     <article id="report-sheet" className="report-sheet card p-6 sm:p-8 flex flex-col gap-6 text-[14px] leading-relaxed">
+      {(report.task.comparison_mode || report.task.condition === 'B') && (
+        <div
+          id="comparison-report-banner"
+          role="status"
+          className="px-4 py-3 rounded-xl border border-[#F59E0B]/40 bg-[rgba(245,158,11,0.10)] text-[#FBBF24] text-[15px] font-medium flex items-center gap-2.5"
+        >
+          <span className="font-bold">Notice:</span>
+          <span>Comparison run: kernel lock off, for demonstration</span>
+        </div>
+      )}
       <header className="flex flex-col gap-1 border-b border-[#1F2633] pb-4">
         <p className="m-0 text-[12px] uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
           Task report
@@ -94,8 +104,12 @@ export const ReportSheet: React.FC<{ report: TaskReport }> = ({ report }) => {
             head={['Tried', 'Stopped by', 'Result', 'When']}
             rows={blocked.shown.map(b => [
               <span className="font-mono [overflow-wrap:anywhere]">{b.target || '—'}</span>,
-              layerLabel(b.layer),
-              'Attempted, not successful',
+              b.layer === 'comparison_unlocked'
+                ? 'Kernel lock off (comparison mode)'
+                : layerLabel(b.layer),
+              b.layer === 'comparison_unlocked'
+                ? 'Comparison run: decoy was read (would be blocked by the kernel lock)'
+                : 'Attempted, not successful',
               formatWhen(b.timestamp),
             ])}
             more={blocked.more}

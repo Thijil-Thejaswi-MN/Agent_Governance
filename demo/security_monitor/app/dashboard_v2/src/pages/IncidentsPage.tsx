@@ -120,13 +120,24 @@ export const IncidentsPage: React.FC = () => {
                     </span>
                     <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]" style={{ color: 'var(--text-2)' }}>
                       <span>{formatWhen(i.timestamp)}</span>
-                      <span>Stopped by: {stoppedBy(i.layer)}</span>
-                      <span
-                        className="inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-semibold"
-                        style={{ color: '#FCA5A5', background: 'rgba(239,68,68,0.12)' }}
-                      >
-                        Attempted, not successful
-                      </span>
+                      {i.comparison_mode || i.layer === 'comparison_unlocked' ? (
+                        <span
+                          data-incident-label="comparison"
+                          className="inline-flex items-center px-2 py-0.5 rounded text-[12px] font-semibold text-[#FBBF24] bg-[rgba(245,158,11,0.12)] border border-[rgba(245,158,11,0.25)]"
+                        >
+                          Comparison run: decoy was read (would be blocked by the kernel lock)
+                        </span>
+                      ) : (
+                        <>
+                          <span>Stopped by: {stoppedBy(i.layer)}</span>
+                          <span
+                            className="inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-semibold"
+                            style={{ color: '#FCA5A5', background: 'rgba(239,68,68,0.12)' }}
+                          >
+                            Attempted, not successful
+                          </span>
+                        </>
+                      )}
                     </span>
                   </span>
                   {isOpen ? (

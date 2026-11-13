@@ -49,8 +49,9 @@ class AgentInventoryService:
         """
         inventory: dict[str, AgentInventoryItem] = {}
 
-        # 1. Inspect all tasks
-        tasks = self.storage.list_tasks()
+        # 1. Inspect all tasks (excluding comparison runs)
+        comparison_task_ids = {t.task_id for t in self.storage.list_tasks() if getattr(t, "condition", None) == "B"}
+        tasks = [t for t in self.storage.list_tasks() if t.task_id not in comparison_task_ids]
         active_task_by_agent: dict[str, tuple[str, int]] = {}
         for t in tasks:
             if t.status == TaskLifecycle.ACTIVE:
@@ -81,6 +82,8 @@ class AgentInventoryService:
                 action = r["action_taken"]
                 rule = r["rule_matched"]
                 task_id = r["task_id"]
+                if task_id in comparison_task_ids:
+                    continue
 
                 # If agent was seen without a task or not yet in inventory, classify as SHADOW
                 if agent_id not in inventory:
@@ -122,6 +125,7 @@ class AgentInventoryService:
     def get_alerts(self) -> list[dict[str, Any]]:
         """Returns live security and compliance alerts from stored events."""
         alerts = []
+        comparison_task_ids = {t.task_id for t in self.storage.list_tasks() if getattr(t, "condition", None) == "B"}
         with self.storage.get_connection() as conn:
             # Query violations and shadow detections
             rows = conn.execute(
@@ -133,6 +137,8 @@ class AgentInventoryService:
             ).fetchall()
 
             for r in rows:
+                if r["task_id"] in comparison_task_ids:
+                    continue
                 alerts.append({
                     "event_id": r["event_id"],
                     "timestamp": r["timestamp"],

@@ -24,6 +24,8 @@ export interface TaskRecord {
   compliance_pct: number;
   llm_provider?: string;
   os_denials_count?: number;
+  condition?: string | null;
+  comparison_mode?: boolean;
 }
 
 export interface TaskBoundary {

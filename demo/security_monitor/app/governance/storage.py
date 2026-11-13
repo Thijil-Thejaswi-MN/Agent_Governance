@@ -97,11 +97,16 @@ class GovernanceStorage:
                     current_boundary_version INTEGER DEFAULT 1,
                     pid INTEGER,
                     owner TEXT,
-                    team TEXT
+                    team TEXT,
+                    condition TEXT
                 )
             """)
 
             # 2. Task Boundaries (versioned contracts)
+            try:
+                cursor.execute("ALTER TABLE governance_tasks ADD COLUMN condition TEXT")
+            except Exception:
+                pass
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS governance_boundaries (
                     task_id TEXT NOT NULL,
@@ -249,8 +254,8 @@ class GovernanceStorage:
                 """
                 INSERT INTO governance_tasks (
                     task_id, request_text, request_hash, agent_id, workspace_root,
-                    status, created_at, started_at, completed_at, current_boundary_version, pid, owner, team
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    status, created_at, started_at, completed_at, current_boundary_version, pid, owner, team, condition
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(task_id) DO UPDATE SET
                     status=excluded.status,
                     started_at=coalesce(excluded.started_at, governance_tasks.started_at),
@@ -258,7 +263,8 @@ class GovernanceStorage:
                     current_boundary_version=excluded.current_boundary_version,
                     pid=coalesce(excluded.pid, governance_tasks.pid),
                     owner=coalesce(excluded.owner, governance_tasks.owner),
-                    team=coalesce(excluded.team, governance_tasks.team)
+                    team=coalesce(excluded.team, governance_tasks.team),
+                    condition=coalesce(excluded.condition, governance_tasks.condition)
                 """,
                 (
                     task.task_id,
@@ -274,6 +280,7 @@ class GovernanceStorage:
                     task.pid,
                     task.owner,
                     task.team,
+                    getattr(task, "condition", None),
                 ),
             )
             conn.commit()
@@ -298,6 +305,7 @@ class GovernanceStorage:
                 pid=row["pid"],
                 owner=row["owner"] if "owner" in keys else None,
                 team=row["team"] if "team" in keys else None,
+                condition=row["condition"] if "condition" in keys else None,
             )
 
     def list_tasks(self) -> list[TaskRecord]:
@@ -321,6 +329,7 @@ class GovernanceStorage:
                         pid=r["pid"],
                         owner=r["owner"] if "owner" in k else None,
                         team=r["team"] if "team" in k else None,
+                        condition=r["condition"] if "condition" in k else None,
                     )
                 )
             return out

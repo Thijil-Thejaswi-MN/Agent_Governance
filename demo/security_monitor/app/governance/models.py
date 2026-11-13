@@ -90,6 +90,7 @@ class TaskRecord(BaseModel):
     pid: int | None = None
     owner: str | None = None
     team: str | None = None
+    condition: str | None = None
 
 
 class GovernanceEvent(BaseModel):

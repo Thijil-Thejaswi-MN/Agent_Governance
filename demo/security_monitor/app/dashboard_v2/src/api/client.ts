@@ -210,7 +210,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  startRun: (payload: { prompt: string; preset?: string; model?: string; files?: Record<string, string>; agent_id?: string }) =>
+  startRun: (payload: { prompt: string; preset?: string; model?: string; files?: Record<string, string>; agent_id?: string; comparison_mode?: boolean }) =>
     request<{ task_id: string; status: string; message: string }>(`${API_BASE}/run`, {
       method: 'POST',
       body: JSON.stringify(payload),

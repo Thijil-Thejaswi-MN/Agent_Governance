@@ -571,6 +571,8 @@ class TaskLauncher:
         receipt_path: Path | None = None
         if task is not None:
             t = self.storage.get_task(task.task_id) or task
+            if spec.condition:
+                t.condition = spec.condition
             t.status = TaskLifecycle.TERMINATED
             t.completed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
             self.storage.save_task(t)
@@ -644,6 +646,9 @@ class TaskLauncher:
             boundary.tools = sorted(set(boundary.tools) | set(spec.declared_tools))
             boundary.metadata["tools_declared_by_requester"] = sorted(spec.declared_tools)
             self.storage.save_boundary(boundary)
+        if spec.condition:
+            task.condition = spec.condition
+            self.storage.save_task(task)
         return task, boundary
 
     # --- main ---

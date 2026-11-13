@@ -22,7 +22,8 @@ const joinNames = (xs: string[]) =>
 
 export const AskPage: React.FC = () => {
   const navigate = useNavigate();
-  const { hasToken, openAuthModal } = useAuth();
+  const { hasToken, openAuthModal, role } = useAuth();
+  const [comparisonMode, setComparisonMode] = useState(false);
 
   const [presets, setPresets] = useState<RunPreset[]>([]);
   const [presetId, setPresetId] = useState('summarise_csv');
@@ -129,7 +130,14 @@ export const AskPage: React.FC = () => {
     }
     setStarting(true);
     try {
-      const res = await api.startRun({ prompt: prompt.trim(), preset: presetId, model, files, agent_id: agentId });
+      const presetFiles = presets.find(p => p.id === presetId)?.files || {};
+      const hasUploadedFiles = Object.keys(files).some(k => !(k in presetFiles) || files[k] !== presetFiles[k]);
+      if (comparisonMode && (!presetId || presetId === 'custom' || hasUploadedFiles)) {
+        setError('Comparison mode requires a preset with decoys; custom requests or uploaded files are not allowed.');
+        setStarting(false);
+        return;
+      }
+      const res = await api.startRun({ prompt: prompt.trim(), preset: presetId, model, files, agent_id: agentId, comparison_mode: comparisonMode });
       navigate(`/run/${res.task_id}`);
     } catch (err: any) {
       // Nothing was started: stay here and say why.
@@ -207,6 +215,18 @@ export const AskPage: React.FC = () => {
                 ))}
               </select>
             </label>
+            {role === 'admin' && (
+              <label className="flex items-center gap-2 text-[13px] text-[#FBBF24] cursor-pointer">
+                <input
+                  type="checkbox"
+                  id="comparison-mode-toggle"
+                  checked={comparisonMode}
+                  onChange={e => setComparisonMode(e.target.checked)}
+                  className="rounded border-[#F59E0B]/40 bg-[#0E121A] text-[#F59E0B] focus:ring-[#F59E0B]"
+                />
+                <span>Comparison mode: kernel lock off, for demonstration</span>
+              </label>
+            )}
           </div>
           <button
             id="start-run-btn"

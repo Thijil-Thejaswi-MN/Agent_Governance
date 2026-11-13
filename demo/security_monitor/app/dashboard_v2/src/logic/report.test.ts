@@ -13,6 +13,7 @@ describe('report wording', () => {
   it('names layers and never guesses an unknown one', () => {
     expect(layerLabel('landlock')).toBe('Kernel (Landlock)');
     expect(layerLabel('broker')).toBe('Tool broker');
+    expect(layerLabel('comparison_unlocked')).toBe('Kernel lock off (comparison mode)');
     expect(layerLabel('')).toBe('Unknown');
   });
   it('states the record check', () => {

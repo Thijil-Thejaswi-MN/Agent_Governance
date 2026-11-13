@@ -420,6 +420,8 @@ def _record_run_failure(storage: GovernanceStorage, spec: TaskSpec, error: str) 
             workspace_root="",
             created_at=now,
         )
+    if spec.condition:
+        t.condition = spec.condition
     t.status = TaskLifecycle.FAILED
     t.completed_at = now
     storage.save_task(t)
@@ -553,6 +555,7 @@ class ActiveRunManager:
         owner: str | None = None,
         team: str | None = None,
         agent_id: str | None = None,
+        comparison_mode: bool = False,
     ) -> str:
         model = validate_model(model)  # outside the lock: may query Ollama
         with self._lock:
@@ -614,12 +617,13 @@ class ActiveRunManager:
             decoys = list(preset.get("decoys", [])) if preset else []
             canary = f"CANARY_{uuid.uuid4().hex[:16]}" if decoys else ""
 
+            condition = "B" if comparison_mode else "C"
             spec = TaskSpec(
                 task_id=task_id,
                 prompt=prompt,
                 agent_id=chosen_agent_id,
                 enforcement_mode=EnforcementMode.ENFORCE.value,
-                condition="C",
+                condition=condition,
                 use_eval_world=True,
                 approval_policy="operator",
                 approval_timeout_s=120.0,

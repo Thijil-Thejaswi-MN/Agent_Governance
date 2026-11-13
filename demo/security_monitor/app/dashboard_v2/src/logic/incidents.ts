@@ -14,6 +14,8 @@ export interface Incident {
   rule_matched: string | null;
   result: 'attempted_not_successful';
   rule_action: RuleAction | null;
+  comparison_mode?: boolean;
+  comparison_note?: string;
 }
 
 export interface IncidentDetail extends Incident {
@@ -59,10 +61,14 @@ const REFUSED_BY: Record<string, string> = {
   proxy: 'the network proxy',
   gateway: 'the agent gateway',
   sensor: 'the operating system monitor',
+  comparison_unlocked: 'no one (comparison mode: kernel lock off)',
 };
 
 /** What the system did, in order: refused, then (maybe) a person or rule decided. */
 export function responseTaken(d: Pick<IncidentDetail, 'layer' | 'followup'>): string {
+  if (d.layer === 'comparison_unlocked') {
+    return 'Comparison run: decoy was read (would be blocked by the kernel lock).';
+  }
   const by = REFUSED_BY[(d.layer || '').toLowerCase()];
   const first = by ? `Refused by ${by}.` : 'Refused.';
   const f = d.followup;
