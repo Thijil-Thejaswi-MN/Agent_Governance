@@ -963,3 +963,54 @@ def test_request_access_traversal_rejection_and_duplicate_audit(tmp_path: Path) 
         assert decisions["reference/target.csv"] == "APPROVED"
     finally:
         _cleanup(res)
+
+
+@linux_only
+@needs_scope
+def test_request_access_not_asked_again_after_decision(tmp_path: Path) -> None:
+    """A run never asks the person twice about the same resource:
+    1. After a denial, a repeat request is answered "denied" at once (no new pending request).
+    2. An approved file that does not exist in the task folder is reported as not found, and a
+       repeat request is answered at once instead of asking again.
+    Both repeats are still audited as expansion requests (resolved_by repeat_of:<id>)."""
+    from demo.security_monitor.app.governance.launcher import TaskLauncher, TaskSpec
+    from demo.security_monitor.app.governance.storage import GovernanceStorage
+    from demo.security_monitor.app.governance.models import ExpansionStatus
+
+    storage = GovernanceStorage(tmp_path / "gov.db")
+    launcher = TaskLauncher(storage)
+    spec = TaskSpec(
+        prompt="Process input/data.csv and write output/summary.txt.",
+        inputs={"input/data.csv": "id,val\n1,10\n"},
+        output_targets=["output/summary.txt"],
+        files_read=["input/data.csv"],
+        condition="C",
+        approval_policy="oracle",
+        oracle_allowed=["missing.txt"],
+        llm={"provider": "scripted", "steps": [
+            {"tool": "request_access", "args": {"resource_type": "file_read", "resource_target": "secret.txt", "justification": "a"}},
+            {"tool": "request_access", "args": {"resource_type": "file_read", "resource_target": "./secret.txt", "justification": "b"}},
+            {"tool": "request_access", "args": {"resource_type": "file_read", "resource_target": "missing.txt", "justification": "c"}},
+            {"tool": "request_access", "args": {"resource_type": "file_read", "resource_target": "missing.txt", "justification": "d"}},
+            {"final": "done"},
+        ]}
+    )
+    res = launcher.run(spec)
+    try:
+        h = [s["output"] for s in res.shim_result["tool_history"]]
+        assert len(h) == 4
+        assert h[0]["granted"] is False
+        assert h[1]["granted"] is False and h[1]["status"].endswith(":denied")
+        assert "will not be asked again" in h[1]["message"]
+        assert h[2]["granted"] is True and "no such file" in h[2]["message"]
+        assert h[3]["granted"] is False and h[3]["status"].endswith(":not_found")
+
+        reqs = storage.list_expansion_requests(task_id=res.task_id)
+        assert not [r for r in reqs if r.status == ExpansionStatus.PENDING]
+        secret = sorted((r for r in reqs if r.resource_target.endswith("secret.txt")), key=lambda r: r.created_at)
+        assert len(secret) == 2 and secret[1].resolved_by.startswith("repeat_of:")
+        missing = sorted((r for r in reqs if r.resource_target == "missing.txt"), key=lambda r: r.created_at)
+        assert len(missing) == 2 and missing[1].resolved_by.startswith("repeat_of:")
+        assert len(res.receipt.get("expansions", [])) == 4
+    finally:
+        _cleanup(res)

@@ -1894,12 +1894,15 @@ async def get_task_steps_poll(task_id: str, after: int = 0) -> list[dict[str, An
 
 
 @governance_router.get("/run/{task_id}/output")
-async def get_task_output_files(task_id: str) -> dict[str, Any]:
-    """Reads output files produced in workspace output/ directory."""
+async def get_task_output_files(task_id: str, request: Request = None) -> dict[str, Any]:
+    """Reads output files produced in workspace output/ directory (same visibility as the run)."""
+    user = get_current_user_session(request)
     storage = get_storage()
     task = storage.get_task(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    if not PermissionMatrix.can_view_run(user, task.owner, task.team):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have permission to view this run.")
 
     ws_root = task.workspace_root
     if not ws_root:
