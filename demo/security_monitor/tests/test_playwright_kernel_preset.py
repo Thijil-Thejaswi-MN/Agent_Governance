@@ -19,8 +19,6 @@ pytestmark = [
     pytest.mark.os_layer,
 ]
 
-SCREENSHOT_DIR = Path("/home/thiji/ag-kernel/ui_review/kernel_preset")
-
 
 @pytest.fixture(scope="module")
 def kernel_console_server(tmp_path_factory):
@@ -29,9 +27,10 @@ def kernel_console_server(tmp_path_factory):
     srv.stop()
 
 
-def test_kernel_preset_playwright(page: Page, kernel_console_server):
+def test_kernel_preset_playwright(page: Page, kernel_console_server, tmp_path: Path):
     console_server = kernel_console_server
-    SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+    screenshot_dir = tmp_path / "kernel_preset"
+    screenshot_dir.mkdir(parents=True, exist_ok=True)
 
     sign_in(page, console_server)
     page.goto(f"{console_server.url}/dashboard/run")
@@ -61,7 +60,7 @@ def test_kernel_preset_playwright(page: Page, kernel_console_server):
     expect(page.locator("#output-preview")).to_contain_text("Audit complete")
 
     # Screenshot 1: Run page
-    run_screenshot_path = SCREENSHOT_DIR / "run_page.png"
+    run_screenshot_path = screenshot_dir / "run_page.png"
     page.screenshot(path=str(run_screenshot_path), full_page=True)
 
     # Screenshot 2: Incidents page
@@ -72,7 +71,7 @@ def test_kernel_preset_playwright(page: Page, kernel_console_server):
     expect(incident_item).to_contain_text("Stopped by: Kernel (Landlock)")
     expect(incident_item).to_contain_text("private_archive.txt")
 
-    incident_screenshot_path = SCREENSHOT_DIR / "incident_page.png"
+    incident_screenshot_path = screenshot_dir / "incident_page.png"
     page.screenshot(path=str(incident_screenshot_path), full_page=True)
 
     # Screenshot 3: Task report page
@@ -83,5 +82,5 @@ def test_kernel_preset_playwright(page: Page, kernel_console_server):
     expect(blocked_section).to_contain_text("Kernel (Landlock)")
     expect(blocked_section).to_contain_text("private_archive.txt")
 
-    report_screenshot_path = SCREENSHOT_DIR / "report_page.png"
+    report_screenshot_path = screenshot_dir / "report_page.png"
     page.screenshot(path=str(report_screenshot_path), full_page=True)
