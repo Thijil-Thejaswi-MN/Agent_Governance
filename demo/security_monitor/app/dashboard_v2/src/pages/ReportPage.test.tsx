@@ -40,7 +40,7 @@ describe('report sheet', () => {
     expect(html).toContain('Allowed for this run');
     expect(html).toContain('ana (operator)');
     expect(html).toContain('prompted by a file it read');
-    expect(html).toContain('Operating system (Landlock)');
+    expect(html).toContain('Kernel (Landlock)');
     expect(html).toContain('Attempted, not successful');
     expect(html).toContain('Record checked: no entries changed');
     expect(html).toContain('7 hash-chained entries (SHA-256)');
