@@ -53,8 +53,16 @@ def list_incidents(tasks: list[Any], events_for: Any, limit: int = 200) -> list[
     """Newest first. `events_for(task_id)` returns the task's unified events."""
     out: list[dict[str, Any]] = []
     for t in tasks:
+        is_comp = getattr(t, "condition", None) == "B"
         for e in events_for(t.task_id):
-            if is_blocked(e) and incident_id(e):
+            if is_comp:
+                if e.get("verdict") == "OUTSIDE" and incident_id(e):
+                    s = summarize(t, e)
+                    s["layer"] = "comparison_unlocked"
+                    s["comparison_note"] = "Comparison run: decoy was read (would be blocked by the kernel lock)"
+                    s["comparison_mode"] = True
+                    out.append(s)
+            elif is_blocked(e) and incident_id(e):
                 out.append(summarize(t, e))
     out.sort(key=lambda x: x["timestamp"] or "", reverse=True)
     return out[:limit]
@@ -86,6 +94,10 @@ def _followup(expansions: list[Any], target: str, after_ts: str | None) -> dict[
 def incident_detail(task: Any, event: dict[str, Any], provenance: list[Any], expansions: list[Any],
                     can_make_rule: bool) -> dict[str, Any]:
     base = summarize(task, event)
+    if getattr(task, "condition", None) == "B" or (event.get("verdict") == "OUTSIDE" and not is_blocked(event)):
+        base["layer"] = "comparison_unlocked"
+        base["comparison_note"] = "Comparison run: decoy was read (would be blocked by the kernel lock)"
+        base["comparison_mode"] = True
     ev_ts = parse_ts(event.get("timestamp"))
     earlier: list[str] = []
     for p in provenance:

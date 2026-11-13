@@ -121,6 +121,17 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
         )}
       </div>
 
+      {(run.task?.comparison_mode || run.task?.condition === 'B') && (
+        <div
+          id="comparison-run-banner"
+          role="status"
+          className="mt-4 px-4 py-3 rounded-xl border border-[#F59E0B]/40 bg-[rgba(245,158,11,0.10)] text-[#FBBF24] text-[15px] font-medium flex items-center gap-2.5"
+        >
+          <AlertTriangle className="w-5 h-5 shrink-0 text-[#F59E0B]" />
+          <span>Comparison run: kernel lock off, for demonstration</span>
+        </div>
+      )}
+
       <div className="pt-6 pb-10 flex flex-wrap items-center gap-8 lg:gap-12">
         <div className="flex-[1_1_420px] min-w-0 flex justify-center">
           <Fence inside={insideNames} blocked={blockedNames} requested={requestedNames} live={live} />

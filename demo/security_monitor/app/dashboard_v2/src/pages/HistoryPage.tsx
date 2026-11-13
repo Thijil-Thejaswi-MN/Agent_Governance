@@ -83,6 +83,14 @@ export const HistoryPage: React.FC = () => {
                     {stopped} {stopped === 1 ? 'refusal' : 'refusals'}
                   </span>
                 )}
+                {(t.comparison_mode || t.condition === 'B') && (
+                  <span
+                    data-badge="comparison"
+                    className="text-[12px] font-semibold px-2.5 py-0.5 rounded-full whitespace-nowrap bg-[#F59E0B]/15 text-[#FBBF24] border border-[#F59E0B]/30"
+                  >
+                    Comparison
+                  </span>
+                )}
                 <span className="text-[12px] font-semibold px-2.5 py-0.5 rounded-full whitespace-nowrap" style={TONE[o.tone]}>
                   {o.text}
                 </span>

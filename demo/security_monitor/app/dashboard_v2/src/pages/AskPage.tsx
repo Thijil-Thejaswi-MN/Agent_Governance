@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
-import { BoundaryPreviewResponse, RunPreset } from '../types';
+import { BoundaryPreviewResponse, RunPreset, ConfiguredAgent, ActiveRunTask } from '../types';
 import { fileName } from '../logic/runView';
 
 // Plain names for the existing presets (the ids and their prompts are the server's).
@@ -11,6 +11,7 @@ const PRESET_LABELS: Record<string, string> = {
   compare_target: 'Needs one more file',
   hidden_instruction: 'A file tries to trick the agent',
   shell_injection: 'A file tricks the agent into a shell command',
+  network_exfiltration: 'A file tells the agent to send data to a website',
 };
 
 const MAX_FILES = 3;
@@ -21,16 +22,25 @@ const joinNames = (xs: string[]) =>
 
 export const AskPage: React.FC = () => {
   const navigate = useNavigate();
-  const { hasToken, openAuthModal } = useAuth();
+  const { hasToken, openAuthModal, role } = useAuth();
+  const [comparisonMode, setComparisonMode] = useState(false);
 
   const [presets, setPresets] = useState<RunPreset[]>([]);
   const [presetId, setPresetId] = useState('summarise_csv');
   const [models, setModels] = useState<string[]>(['scripted']);
   const [model, setModel] = useState('scripted');
+  const [agents, setAgents] = useState<ConfiguredAgent[]>([
+    { id: 'finance_bot', name: 'Finance Bot', owner: 'Ana Dev', team: 'finance', description: 'Financial analysis' },
+    { id: 'notes_bot', name: 'Notes Bot', owner: 'Ravi K', team: 'core', description: 'Documentation' },
+    { id: 'brief_bot', name: 'Brief Bot', owner: 'Meena R', team: 'legal', description: 'Legal briefing' },
+  ]);
+  const [agentId, setAgentId] = useState<string>('finance_bot');
   const [prompt, setPrompt] = useState('');
   const [files, setFiles] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<BoundaryPreviewResponse | null>(null);
   const [activeTask, setActiveTask] = useState<string | null>(null);
+  const [activeCount, setActiveCount] = useState<number>(0);
+  const [activeTasks, setActiveTasks] = useState<ActiveRunTask[]>([]);
 
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,8 +52,13 @@ export const AskPage: React.FC = () => {
   const [fileError, setFileError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([api.getRunPresets(), api.getRunModels(), api.getActiveRun()])
-      .then(([ps, ms, active]) => {
+    Promise.all([
+      api.getRunPresets(),
+      api.getRunModels(),
+      api.getActiveRun(),
+      api.getRunAgents().catch(() => [] as ConfiguredAgent[]),
+    ])
+      .then(([ps, ms, active, ags]) => {
         setPresets(ps);
         const all = [...ms.models];
         if (!all.includes('scripted')) all.push('scripted');
@@ -55,7 +70,15 @@ export const AskPage: React.FC = () => {
           setPrompt(first.prompt);
           setFiles({ ...first.files });
         }
-        if (active.active && active.task_id) setActiveTask(active.task_id);
+        if (ags && ags.length > 0) {
+          setAgents(ags);
+          setAgentId(prev => (ags.some(a => a.id === prev) ? prev : ags[0].id));
+        }
+        if (active.active && active.task_id) {
+          setActiveTask(active.task_id);
+          setActiveCount(active.active_count ?? 1);
+          if (active.active_tasks) setActiveTasks(active.active_tasks);
+        }
       })
       .catch(err => console.error('Failed to load run configuration:', err));
   }, []);
@@ -107,7 +130,14 @@ export const AskPage: React.FC = () => {
     }
     setStarting(true);
     try {
-      const res = await api.startRun({ prompt: prompt.trim(), preset: presetId, model, files });
+      const presetFiles = presets.find(p => p.id === presetId)?.files || {};
+      const hasUploadedFiles = Object.keys(files).some(k => !(k in presetFiles) || files[k] !== presetFiles[k]);
+      if (comparisonMode && (!presetId || presetId === 'custom' || hasUploadedFiles)) {
+        setError('Comparison mode requires a preset with decoys; custom requests or uploaded files are not allowed.');
+        setStarting(false);
+        return;
+      }
+      const res = await api.startRun({ prompt: prompt.trim(), preset: presetId, model, files, agent_id: agentId, comparison_mode: comparisonMode });
       navigate(`/run/${res.task_id}`);
     } catch (err: any) {
       // Nothing was started: stay here and say why.
@@ -134,11 +164,26 @@ export const AskPage: React.FC = () => {
         </p>
       </div>
 
-      {activeTask && (
-        <div id="active-run-banner" className="w-full px-4 py-3 rounded-xl text-[15px] text-left text-[#E6E9EF] bg-[rgba(59,130,246,0.10)] border border-[rgba(59,130,246,0.45)]">
-          An agent is already working. Only one runs at a time. <Link to={`/run/${activeTask}`}>Watch it</Link>
+      {activeCount >= 3 ? (
+        <div id="active-run-banner" className="w-full px-4 py-3 rounded-xl text-[15px] text-left text-[#F59E0B] bg-[rgba(245,158,11,0.10)] border border-[rgba(245,158,11,0.45)]">
+          Maximum concurrent runs reached (3 active runs). Please wait for an active run to complete.
         </div>
-      )}
+      ) : activeCount > 0 ? (
+        <div id="active-run-banner" className="w-full px-4 py-3 rounded-xl text-[15px] text-left text-[#E6E9EF] bg-[rgba(59,130,246,0.10)] border border-[rgba(59,130,246,0.45)] flex items-center justify-between">
+          <span>{activeCount} agent(s) currently working ({3 - activeCount} slot(s) available).</span>
+          <div className="flex items-center gap-2">
+            {activeTasks.length > 0 ? (
+              activeTasks.map(t => (
+                <Link key={t.task_id} to={`/run/${t.task_id}`} className="text-[#3B82F6] hover:underline font-mono text-[13px]">
+                  Watch {t.agent_id || t.task_id.slice(0, 8)}
+                </Link>
+              ))
+            ) : (
+              activeTask && <Link to={`/run/${activeTask}`} className="text-[#3B82F6] hover:underline font-mono text-[13px]">Watch active run</Link>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       <div className="card w-full flex flex-col gap-3 p-3 sm:p-4 text-left border-[#2A3344] focus-within:border-[#3B82F6] transition-colors">
         <label htmlFor="prompt-input" className="sr-only">
@@ -153,22 +198,42 @@ export const AskPage: React.FC = () => {
           className="w-full resize-none border-none outline-none bg-transparent text-[16px] sm:text-[17px] leading-normal p-2 text-[#E6E9EF] placeholder-[#6B7487]"
         />
         <div className="flex flex-wrap items-center justify-between gap-3 px-1 pt-3 border-t border-[#1F2633]">
-          <label className="flex items-center gap-2 text-[14px] text-[#A7B0C0]">
-            Model
-            <select
-              id="model-selector"
-              value={model}
-              onChange={e => setModel(e.target.value)}
-              className="min-h-[44px] sm:min-h-[40px] px-3 rounded-lg text-[14px] outline-none bg-[#0E121A] text-[#E6E9EF] border border-[#2A3344] focus:border-[#3B82F6]"
-            >
-              {models.map(m => (
-                <option key={m} value={m}>
-                  {m === 'scripted' ? 'scripted (deterministic)' : m}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button id="start-run-btn" onClick={start} disabled={starting} className="btn-primary min-h-[44px] sm:min-h-[40px] px-6">
+          <div className="flex flex-wrap items-center gap-4">
+            <AgentSelector agents={agents} value={agentId} onChange={setAgentId} />
+            <label className="flex items-center gap-2 text-[14px] text-[#A7B0C0]">
+              Model
+              <select
+                id="model-selector"
+                value={model}
+                onChange={e => setModel(e.target.value)}
+                className="min-h-[44px] sm:min-h-[40px] px-3 rounded-lg text-[14px] outline-none bg-[#0E121A] text-[#E6E9EF] border border-[#2A3344] focus:border-[#3B82F6]"
+              >
+                {models.map(m => (
+                  <option key={m} value={m}>
+                    {m === 'scripted' ? 'scripted (deterministic)' : m}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {role === 'admin' && (
+              <label className="flex items-center gap-2 text-[13px] text-[#FBBF24] cursor-pointer">
+                <input
+                  type="checkbox"
+                  id="comparison-mode-toggle"
+                  checked={comparisonMode}
+                  onChange={e => setComparisonMode(e.target.checked)}
+                  className="rounded border-[#F59E0B]/40 bg-[#0E121A] text-[#F59E0B] focus:ring-[#F59E0B]"
+                />
+                <span>Comparison mode: kernel lock off, for demonstration</span>
+              </label>
+            )}
+          </div>
+          <button
+            id="start-run-btn"
+            onClick={start}
+            disabled={starting || activeCount >= 3}
+            className="btn-primary min-h-[44px] sm:min-h-[40px] px-6"
+          >
             {starting ? 'Starting…' : 'Start'}
           </button>
         </div>
@@ -274,3 +339,31 @@ export const AskPage: React.FC = () => {
     </div>
   );
 };
+
+export function AgentSelector({
+  agents,
+  value,
+  onChange,
+}: {
+  agents: { id: string; name: string; team?: string }[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  return (
+    <label className="flex items-center gap-2 text-[14px] text-[#A7B0C0]">
+      Agent
+      <select
+        id="agent-selector"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="min-h-[44px] sm:min-h-[40px] px-3 rounded-lg text-[14px] outline-none bg-[#0E121A] text-[#E6E9EF] border border-[#2A3344] focus:border-[#3B82F6]"
+      >
+        {agents.map(a => (
+          <option key={a.id} value={a.id}>
+            {a.name} ({a.team || 'core'})
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}

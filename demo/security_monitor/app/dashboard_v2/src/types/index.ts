@@ -24,6 +24,8 @@ export interface TaskRecord {
   compliance_pct: number;
   llm_provider?: string;
   os_denials_count?: number;
+  condition?: string | null;
+  comparison_mode?: boolean;
 }
 
 export interface TaskBoundary {
@@ -152,11 +154,17 @@ export interface ResultsSummary {
 
 export interface AgentInventoryItem {
   agent_id: string;
-  declared_role?: string;
-  status: 'GOVERNED' | 'SHADOW';
+  name?: string;
+  owner?: string;
+  classification?: string;
+  status: string;
   active_task_id?: string;
   last_seen?: string;
   reputation_score?: number;
+  description?: string | null;
+  skills?: string[];
+  governance_state?: string | null;
+  metadata?: Record<string, any>;
 }
 
 
@@ -225,10 +233,27 @@ export interface RunModelsResponse {
   ollama_reachable?: boolean;
 }
 
+export interface ConfiguredAgent {
+  id: string;
+  name: string;
+  owner: string;
+  team: string;
+  description: string;
+}
+
+export interface ActiveRunTask {
+  task_id: string;
+  agent_id?: string;
+  elapsed_seconds: number;
+}
+
 export interface ActiveRunInfo {
   active: boolean;
   task_id: string | null;
   elapsed_seconds: number;
+  active_count?: number;
+  max_concurrent?: number;
+  active_tasks?: ActiveRunTask[];
 }
 
 export type DotState = 'working' | 'waiting' | 'blocked' | 'idle' | 'no_task';

@@ -9,6 +9,9 @@ describe('incident wording', () => {
   });
 
   it('says what the system did', () => {
+    expect(responseTaken({ layer: 'comparison_unlocked', followup: null })).toBe(
+      'Comparison run: decoy was read (would be blocked by the kernel lock).',
+    );
     expect(responseTaken({ layer: 'landlock', followup: null })).toBe(
       'Refused by the operating system (Landlock). It did not ask for it.',
     );

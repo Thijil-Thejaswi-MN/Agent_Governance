@@ -146,6 +146,79 @@ def run_audit_sink_server(port: int, sink_log_fd: int, canary: str) -> None:
     server.serve_forever()
 
 
+
+def _pump_bridge_select(s1: socket.socket, s2: socket.socket) -> None:
+    import select
+    s1.setblocking(False)
+    s2.setblocking(False)
+    sockets = [s1, s2]
+    peer = {s1: s2, s2: s1}
+    while sockets:
+        try:
+            r, _, x = select.select(sockets, [], sockets, 10.0)
+        except OSError:
+            break
+        if x or not r:
+            break
+        for s in r:
+            try:
+                data = s.recv(4096)
+                if not data:
+                    try:
+                        peer[s].shutdown(socket.SHUT_WR)
+                    except OSError:
+                        pass
+                    sockets.remove(s)
+                    continue
+                peer[s].sendall(data)
+            except OSError:
+                sockets.clear()
+                break
+    try:
+        s1.close()
+    except OSError:
+        pass
+    try:
+        s2.close()
+    except OSError:
+        pass
+
+
+def run_host_proxy_bridge(uds_path: str, proxy_port: int) -> None:
+    import threading
+    if os.path.exists(uds_path):
+        try:
+            os.unlink(uds_path)
+        except OSError:
+            pass
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(uds_path)
+    server.listen(16)
+    while True:
+        try:
+            client, _ = server.accept()
+            upstream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            upstream.connect(("127.0.0.1", proxy_port))
+            threading.Thread(target=_pump_bridge_select, args=(client, upstream), daemon=True).start()
+        except Exception:
+            break
+
+
+def run_child_proxy_bridge(uds_path: str, proxy_port: int) -> None:
+    import threading
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(("127.0.0.1", proxy_port))
+    server.listen(16)
+    while True:
+        try:
+            client, _ = server.accept()
+            upstream = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            upstream.connect(uds_path)
+            threading.Thread(target=_pump_bridge_select, args=(client, upstream), daemon=True).start()
+        except Exception:
+            break
+
 def bring_up_loopback() -> None:
     try:
         subprocess.run(["ip", "link", "set", "lo", "up"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -484,6 +557,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--canary", required=True, help="unique canary token")
     ap.add_argument("--sink-log", required=True, help="path to audit sink JSONL log")
     ap.add_argument("--sink-port", type=int, default=8099)
+    ap.add_argument("--proxy-port", type=int, default=0)
     ap.add_argument("--condition", default="C", help="condition (A, B, C, D)")
     ap.add_argument("--abort-file", default=None)
     ap.add_argument("--fs-diff-out", default=None)
@@ -513,6 +587,38 @@ def main(argv: list[str] | None = None) -> int:
         os.makedirs(os.path.dirname(os.path.realpath(args.abort_file)), exist_ok=True)
         abort_fd = os.open(args.abort_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
 
+    host_bridge_pid = -1
+    child_bridge_pid = -1
+    uds_path = os.path.join(workspace, ".proxy_bridge.sock")
+
+    def _cleanup_bridges() -> None:
+        if host_bridge_pid > 0:
+            try:
+                os.kill(host_bridge_pid, signal.SIGTERM)
+                os.waitpid(host_bridge_pid, 0)
+            except OSError:
+                pass
+        if child_bridge_pid > 0:
+            try:
+                os.kill(child_bridge_pid, signal.SIGTERM)
+                os.waitpid(child_bridge_pid, 0)
+            except OSError:
+                pass
+        if os.path.exists(uds_path):
+            try:
+                os.unlink(uds_path)
+            except OSError:
+                pass
+
+    if args.proxy_port > 0:
+        host_bridge_pid = os.fork()
+        if host_bridge_pid == 0:
+            try:
+                run_host_proxy_bridge(uds_path, args.proxy_port)
+            except Exception:
+                pass
+            sys.exit(0)
+
     try:
         sink_log_fd = setup_world(real_home, workspace, args.sink_log)
     except Exception as ex:
@@ -520,8 +626,19 @@ def main(argv: list[str] | None = None) -> int:
             os.write(abort_fd, f"setup_world_failed: {ex}\n".encode("utf-8"))
             os.close(abort_fd)
             abort_fd = -1
+        _cleanup_bridges()
         print(f"EVAL_WORLD_ERROR: setup_world failed: {ex}", file=sys.stderr)
         return 40
+
+    if args.proxy_port > 0:
+        child_bridge_pid = os.fork()
+        if child_bridge_pid == 0:
+            try:
+                run_child_proxy_bridge(uds_path, args.proxy_port)
+            except Exception:
+                pass
+            sys.exit(0)
+        time.sleep(0.05)
 
     seed_decoys(decoys, args.canary, real_home)
     baseline_snap = snapshot_filesystem(real_home, workspace)
@@ -537,6 +654,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         perform_pretrial_checks(real_home, args.sink_port, args.condition, args.simulate_fail)
     except PretrialCheckError as pe:
+        _cleanup_bridges()
         os.kill(sink_pid, signal.SIGTERM)
         os.waitpid(sink_pid, 0)
         if abort_fd >= 0:
@@ -547,6 +665,7 @@ def main(argv: list[str] | None = None) -> int:
         return 42
 
     if not child:
+        _cleanup_bridges()
         os.kill(sink_pid, signal.SIGTERM)
         os.waitpid(sink_pid, 0)
         if abort_fd >= 0:
@@ -580,6 +699,7 @@ def main(argv: list[str] | None = None) -> int:
         os.close(abort_fd)
         abort_fd = -1
 
+    _cleanup_bridges()
     try:
         os.kill(sink_pid, signal.SIGTERM)
         os.waitpid(sink_pid, 0)

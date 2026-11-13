@@ -29,6 +29,7 @@ export interface ReportBlocked {
   target: string | null;
   layer: string;
   rule: string | null;
+  comparison_note?: string;
 }
 
 export interface TaskReport {
@@ -43,6 +44,8 @@ export interface TaskReport {
     created_at: string | null;
     started_at: string | null;
     completed_at: string | null;
+    condition?: string | null;
+    comparison_mode?: boolean;
   };
   boundary: { initial: ReportBoundary | null; final: ReportBoundary | null };
   approvals: ReportApproval[];
@@ -71,6 +74,7 @@ const LAYERS: Record<string, string> = {
   proxy: 'Network proxy',
   gateway: 'Agent gateway',
   sensor: 'Operating system monitor',
+  comparison_unlocked: 'Kernel lock off (comparison mode)',
 };
 
 export function layerLabel(layer: string | null | undefined): string {

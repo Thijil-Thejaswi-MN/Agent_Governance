@@ -571,6 +571,8 @@ class TaskLauncher:
         receipt_path: Path | None = None
         if task is not None:
             t = self.storage.get_task(task.task_id) or task
+            if spec.condition:
+                t.condition = spec.condition
             t.status = TaskLifecycle.TERMINATED
             t.completed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
             self.storage.save_task(t)
@@ -644,6 +646,9 @@ class TaskLauncher:
             boundary.tools = sorted(set(boundary.tools) | set(spec.declared_tools))
             boundary.metadata["tools_declared_by_requester"] = sorted(spec.declared_tools)
             self.storage.save_boundary(boundary)
+        if spec.condition:
+            task.condition = spec.condition
+            self.storage.save_task(task)
         return task, boundary
 
     # --- main ---
@@ -840,6 +845,14 @@ class TaskLauncher:
             f"GOVERNANCE_TASK_FD={task_r}",
             f"GOVERNANCE_RESULT_FD={result_w}",
             f"GOVERNANCE_BROKER_SOCK={ws / BROKER_SOCKET_NAME}",
+            f"HTTP_PROXY=http://127.0.0.1:{proxy_port}",
+            f"HTTPS_PROXY=http://127.0.0.1:{proxy_port}",
+            f"http_proxy=http://127.0.0.1:{proxy_port}",
+            f"https_proxy=http://127.0.0.1:{proxy_port}",
+            "NO_PROXY=localhost,127.0.0.1",
+            "no_proxy=localhost,127.0.0.1",
+            f"GOVERNANCE_PROXY_PORT={proxy_port}",
+            f"GOVERNANCE_PROXY_TOKEN={token}",
         ]
 
         world_cmd = []
@@ -855,6 +868,7 @@ class TaskLauncher:
                 "--fs-diff-out", str(control / "fs_diff.json"),
                 "--condition", cond or "C",
                 "--abort-file", str(control / "eval_world_abort.txt"),
+                *(["--proxy-port", str(proxy_port)] if proxy_port else []),
                 "--",
             ]
 

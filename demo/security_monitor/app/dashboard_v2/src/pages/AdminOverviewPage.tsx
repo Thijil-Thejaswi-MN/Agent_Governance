@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { loadRecentEvents } from '../api/events';
+import { startOfLocalDay } from '../logic/teamStats';
 import { ExpansionItem, FleetSummary, RecordsSummary, TaskEvent, TaskRecord } from '../types';
 import { EmptyState, ErrorState, LoadingState } from '../components/common/States';
 import { formatDuration, agentRows } from '../logic/teamStats';
@@ -43,12 +44,17 @@ export const AdminOverviewPage: React.FC = () => {
     const load = async () => {
       const t = Date.now();
       try {
-        // Tasks and decisions first, so the page draws at once; events and patterns follow.
-        const [taskList, exps] = await Promise.all([api.getTasks(), api.getExpansions().catch(() => [] as ExpansionItem[])]);
+        const since = new Date(Math.min(startOfLocalDay(t), t - 24 * 3600_000)).toISOString();
+        const [taskList, exps, firstEvents] = await Promise.all([
+          api.getTasks(),
+          api.getExpansions().catch(() => [] as ExpansionItem[]),
+          api.getEvents(since, 500).catch(() => ({ events: [] as TaskEvent[], cursor: null })),
+        ]);
         if (!mounted) return;
         setTasks(taskList);
         setAllExps(exps);
         setPending(exps.filter(e => e.status === 'PENDING'));
+        if (firstEvents?.events?.length) setEvents(firstEvents.events);
         setNow(t);
         setError(null);
       } catch (err: any) {
@@ -57,16 +63,16 @@ export const AdminOverviewPage: React.FC = () => {
       }
       if (slowBusy) return;
       slowBusy = true;
-      Promise.all([
-        loadRecentEvents(t).catch(() => null),
-        api.getFleetSummary().catch(() => null),
-        api.getRecordsSummary().catch(() => null),
-      ]).then(([evts, fl, rec]) => {
+      loadRecentEvents(t).then(evts => {
+        if (mounted && evts) setEvents(evts);
+      }).catch(() => null);
+      api.getFleetSummary().then(fl => {
+        if (mounted) setFleet(fl);
+      }).catch(() => null);
+      api.getRecordsSummary().then(rec => {
+        if (mounted) setRecordsSummary(rec);
+      }).catch(() => null).finally(() => {
         slowBusy = false;
-        if (!mounted) return;
-        if (evts) setEvents(evts);
-        setFleet(fl);
-        setRecordsSummary(rec);
       });
     };
     load();
@@ -80,19 +86,23 @@ export const AdminOverviewPage: React.FC = () => {
   if (error && !tasks) return <ErrorState message={error} id="overview-error" />;
   if (!tasks) return <LoadingState label="Loading the overview…" id="overview-loading" />;
 
-  const runs24 = runsInLast24h(tasks, now);
+  const overviewTasks = (tasks ?? []).filter(t => !t.comparison_mode && t.condition !== 'B');
+  const comparisonTaskIds = new Set((tasks ?? []).filter(t => t.comparison_mode || t.condition === 'B').map(t => t.task_id));
+  const overviewEvents = events.filter(e => !comparisonTaskIds.has(e.task_id));
+
+  const runs24 = runsInLast24h(overviewTasks, now);
   const agents24 = new Set(runs24.map(t => t.agent_id)).size;
-  const runningTasks = tasks.filter(t => t.status === 'ACTIVE' || t.status === 'RUNNING').length;
-  const stopped24 = stoppedInLast24h(events, now);
-  const medianRun = medianRunSeconds(tasks, now);
-  const dots = agentDots(tasks, pending, events, now);
+  const runningTasks = overviewTasks.filter(t => t.status === 'ACTIVE' || t.status === 'RUNNING').length;
+  const stopped24 = stoppedInLast24h(overviewEvents, now);
+  const medianRun = medianRunSeconds(overviewTasks, now);
+  const dots = agentDots(overviewTasks, pending, overviewEvents, now);
   const teams = teamGroups(dots);
-  const hours = actionsPerHour(events, allExps, now);
+  const hours = actionsPerHour(overviewEvents, allExps, now);
   const peak = Math.max(1, ...hours.map(h => h.allowed + h.stopped + h.asked));
   const anyToday = hours.some(h => h.allowed + h.stopped + h.asked > 0);
   const mode = mapMode(runningTasks);
-  const watch = agentRows(tasks).filter(r => r.stops > 0).slice(0, 5);
-  const teamOf = new Map(tasks.map(t => [t.agent_id, t.team || null]));
+  const watch = agentRows(overviewTasks).filter(r => r.stops > 0).slice(0, 5);
+  const teamOf = new Map(overviewTasks.map(t => [t.agent_id, t.team || null]));
 
   return (
     <div className="flex flex-col gap-6 font-sans">
