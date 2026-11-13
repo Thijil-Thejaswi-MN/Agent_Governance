@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { loadRecentEvents } from '../api/events';
+import { startOfLocalDay } from '../logic/teamStats';
 import { ExpansionItem, FleetSummary, RecordsSummary, TaskEvent, TaskRecord } from '../types';
 import { EmptyState, ErrorState, LoadingState } from '../components/common/States';
 import { formatDuration, agentRows } from '../logic/teamStats';
@@ -43,16 +44,17 @@ export const AdminOverviewPage: React.FC = () => {
     const load = async () => {
       const t = Date.now();
       try {
-        const [taskList, exps, evts] = await Promise.all([
+        const since = new Date(Math.min(startOfLocalDay(t), t - 24 * 3600_000)).toISOString();
+        const [taskList, exps, firstEvents] = await Promise.all([
           api.getTasks(),
           api.getExpansions().catch(() => [] as ExpansionItem[]),
-          loadRecentEvents(t).catch(() => [] as TaskEvent[]),
+          api.getEvents(since, 500).catch(() => ({ events: [] as TaskEvent[], cursor: null })),
         ]);
         if (!mounted) return;
         setTasks(taskList);
         setAllExps(exps);
         setPending(exps.filter(e => e.status === 'PENDING'));
-        if (evts) setEvents(evts);
+        if (firstEvents?.events?.length) setEvents(firstEvents.events);
         setNow(t);
         setError(null);
       } catch (err: any) {
@@ -61,14 +63,16 @@ export const AdminOverviewPage: React.FC = () => {
       }
       if (slowBusy) return;
       slowBusy = true;
-      Promise.all([
-        api.getFleetSummary().catch(() => null),
-        api.getRecordsSummary().catch(() => null),
-      ]).then(([fl, rec]) => {
+      loadRecentEvents(t).then(evts => {
+        if (mounted && evts) setEvents(evts);
+      }).catch(() => null);
+      api.getFleetSummary().then(fl => {
+        if (mounted) setFleet(fl);
+      }).catch(() => null);
+      api.getRecordsSummary().then(rec => {
+        if (mounted) setRecordsSummary(rec);
+      }).catch(() => null).finally(() => {
         slowBusy = false;
-        if (!mounted) return;
-        setFleet(fl);
-        setRecordsSummary(rec);
       });
     };
     load();
