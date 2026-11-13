@@ -10,7 +10,7 @@ import { DecisionCard } from '../components/v3/DecisionCard';
 import { DetailsDrawer, DetailsSection, KV } from '../components/v3/DetailsDrawer';
 import { EventTable, TechnicalTimeline } from '../components/v3/TechnicalTimeline';
 import { boundaryVersionLabel, receiptSentence, statusSentence } from '../logic/plain';
-import { agentStarted, blockedAttempts, fileName, isTerminal, justBlocked, outputsFromSteps, OutputPreview } from '../logic/runView';
+import { agentStarted, blockedAttempts, boundaryLabel, fileName, isTerminal, justBlocked, outputsFromSteps, OutputPreview } from '../logic/runView';
 
 const STATUS_LABELS: Record<string, string> = {
   idle: 'Idle',
@@ -46,7 +46,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
   const lastBlock = useMemo(() => justBlocked(run.steps), [run.steps]);
   const started = agentStarted(run.steps);
 
-  const insideNames = uniq([...(run.boundary?.files_read || []), ...(run.boundary?.files_write || [])].map(fileName));
+  const insideNames = uniq([...(run.boundary?.files_read || []), ...(run.boundary?.files_write || [])].map(boundaryLabel));
   const requestedNames = run.pending ? [fileName(run.pending.resource_target)] : [];
   const deniedNames = run.expansions.filter(e => e.status === 'DENIED').map(e => fileName(e.resource_target));
   const blockedNames = uniq([...attempts.map(a => (a.action === 'run' ? 'a command' : a.name)), ...deniedNames]).filter(
