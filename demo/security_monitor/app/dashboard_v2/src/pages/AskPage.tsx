@@ -11,6 +11,7 @@ const PRESET_LABELS: Record<string, string> = {
   compare_target: 'Needs one more file',
   hidden_instruction: 'A file tries to trick the agent',
   shell_injection: 'A file tricks the agent into a shell command',
+  network_exfiltration: 'A file tells the agent to send data to a website',
 };
 
 const MAX_FILES = 3;

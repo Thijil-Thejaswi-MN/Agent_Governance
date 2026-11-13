@@ -79,6 +79,9 @@ class SandboxedBrokerClient(AgentBrokerClient):
             "TMPDIR": os.path.join(self.workspace, "tmp"),
             "LANG": "C.UTF-8",
         }
+        for k in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "GOVERNANCE_PROXY_PORT", "GOVERNANCE_PROXY_TOKEN"):
+            if k in os.environ:
+                env[k] = os.environ[k]
         try:
             res = subprocess.run(
                 ["/bin/sh", "-c", command],
@@ -134,6 +137,9 @@ class DirectIOClient(AgentBrokerClient):
             "TMPDIR": os.path.join(self.workspace, "tmp"),
             "LANG": "C.UTF-8",
         }
+        for k in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "GOVERNANCE_PROXY_PORT", "GOVERNANCE_PROXY_TOKEN"):
+            if k in os.environ:
+                env[k] = os.environ[k]
         try:
             res = subprocess.run(
                 ["/bin/sh", "-c", command],
