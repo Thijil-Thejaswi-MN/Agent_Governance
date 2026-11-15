@@ -50,6 +50,12 @@ def load_agents_config() -> dict[str, dict[str, Any]]:
     }
 
 
+def _governed_tool_names() -> list[str]:
+    from .llm_agent import GOVERNED_TOOLS_SCHEMA
+
+    return [t["function"]["name"] for t in GOVERNED_TOOLS_SCHEMA]
+
+
 def get_configured_agents() -> list[dict[str, Any]]:
     cfg = load_agents_config()
     out = []
@@ -62,6 +68,8 @@ def get_configured_agents() -> list[dict[str, Any]]:
             "description": info.get("description", ""),
             # The model the agent runs on; a run may override it (e.g. 'scripted' for a repeatable demo).
             "model": info.get("model", DEFAULT_AGENT_MODEL),
+            # The tools its agent loop offers the model; the broker checks every call against the task boundary.
+            "tools": info.get("tools") or _governed_tool_names(),
         })
     return out
 

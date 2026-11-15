@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 'recharts';
 import { api } from '../api/client';
 import { ResultsSummary } from '../types';
@@ -57,7 +58,14 @@ export const ResultsPage: React.FC = () => {
   }
 
   if (!summary) {
-    return <div className="p-8 text-center" style={{ color: 'var(--text-2)' }}>Results summary not available.</div>;
+    return (
+      <div className="p-8 text-center flex flex-col items-center gap-3" style={{ color: 'var(--text-2)' }}>
+        Results summary not available.
+        <Link to="/evidence" id="open-evidence" className="underline" style={{ color: '#93C5FD' }}>
+          Open the recorded evidence
+        </Link>
+      </div>
+    );
   }
 
   const harmA = summary.harm_injected?.['A'];
@@ -137,6 +145,19 @@ export const ResultsPage: React.FC = () => {
           {summary.evaluation_label || '—'}
         </span>
       </div>
+
+      <section className="card p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3" id="evidence-link">
+        <div className="flex flex-col gap-1">
+          <h2 className="m-0 text-[17px] font-semibold text-[#E6E9EF]">See the attacks behind these numbers</h2>
+          <p className="m-0 text-[14px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
+            Pick any attack and see the hidden instruction in its input file, then the exact step where the agent acted on
+            it in each setup, and what came back. Read straight from the raw trial files.
+          </p>
+        </div>
+        <Link to="/evidence" className="btn-primary shrink-0 inline-flex items-center justify-center min-h-[44px] px-4 rounded-lg text-[14px] font-semibold" id="open-evidence">
+          Open the recorded evidence
+        </Link>
+      </section>
 
       <HowItWorks />
 

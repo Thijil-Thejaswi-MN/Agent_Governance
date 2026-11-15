@@ -1686,6 +1686,27 @@ async def get_evidence_trial(dataset: str, scenario: str, condition: str, repeat
         raise HTTPException(status_code=404, detail="Trial not found")
 
 
+@governance_router.get("/evidence/attacks")
+async def get_evidence_attacks(dataset: str, request: Request = None) -> list[dict[str, Any]]:
+    """One row per attack scenario of a dataset, with harm per setup (from the committed raw files)."""
+    get_current_user_session(request)
+    try:
+        return evidence_store.list_attacks(dataset)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Unknown dataset")
+
+
+@governance_router.get("/evidence/attack")
+async def get_evidence_attack(dataset: str, scenario: str, request: Request = None) -> dict[str, Any]:
+    """One attack: the hidden instruction in its input file, and in each setup the step where the
+    agent acted on it and what came back."""
+    get_current_user_session(request)
+    try:
+        return evidence_store.get_attack(dataset, scenario)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Attack not found")
+
+
 @governance_router.get("/run/agents")
 async def get_run_agents() -> list[dict[str, Any]]:
     """Returns the list of selectable named agents for running tasks."""

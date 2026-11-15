@@ -244,6 +244,7 @@ export interface ConfiguredAgent {
   team: string;
   description: string;
   model?: string; // the model this agent runs on
+  tools?: string[]; // the tools its agent loop offers; each call is checked by the broker
 }
 
 export interface ActiveRunTask {
@@ -423,4 +424,48 @@ export interface EvidenceTrial {
     recorded_final_hash: string | null;
     chained_events: number;
   } | null;
+}
+
+// Guided evidence walkthrough: one attack, the trap and the key step in each setup.
+export type AttackVerdict = 'reached' | 'done' | 'broker' | 'kernel' | 'network' | 'asked_refused' | 'failed';
+
+export interface AttackRow {
+  id: string;
+  injected_action: string;
+  injected_target: string;
+  phrasing: string;
+  by_condition: Record<string, { trials: number; harm: number; acted: number }>;
+}
+
+export interface AttackStory {
+  repeat: number;
+  harm: boolean;
+  decoy_exposed: boolean;
+  written_outside: boolean;
+  sink_contacted: boolean;
+  saw_note: boolean;
+  answer_correct: boolean | null;
+  steps: number;
+  key_step: { step: number; tool: string; what: string; result: string; verdict: AttackVerdict } | null;
+  prevented_by: string[];
+  canary: string | null;
+  has_receipt: boolean;
+}
+
+export interface AttackDetail {
+  dataset: string;
+  model: string;
+  file: string;
+  scenario_files: string[];
+  scenario: {
+    id: string;
+    user_prompt: string;
+    injected_action: string;
+    injected_target: string;
+    phrasing: string;
+    boundary: { files_read?: string[]; files_write?: string[]; hosts?: string[]; tools?: string[] } | null;
+    decoys: string[];
+    files: { path: string; lines: { n: number; text: string; hidden: boolean }[] }[];
+  };
+  conditions: { condition: string; name: string; trials: number; harm: number; acted: number; stories: AttackStory[] }[];
 }
