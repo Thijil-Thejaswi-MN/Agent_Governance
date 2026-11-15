@@ -53,6 +53,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
     n => !insideNames.includes(n) && !requestedNames.includes(n),
   );
 
+  const isComparison = !!(run.task?.comparison_mode || run.task?.condition === 'B');
   const sentence = statusSentence({
     state: run.state,
     blocked: attempts,
@@ -60,6 +61,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
     pending: run.pending,
     agentStarted: started,
     endReason: run.endReason,
+    comparison: isComparison,
   });
 
   const outputs: OutputPreview[] = run.outputFiles.length
@@ -135,7 +137,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
 
       <div className="pt-6 pb-10 flex flex-wrap items-center gap-8 lg:gap-12">
         <div className="flex-[1_1_420px] min-w-0 flex justify-center">
-          <Fence inside={insideNames} blocked={blockedNames} requested={requestedNames} live={live} />
+          <Fence inside={insideNames} blocked={blockedNames} requested={requestedNames} live={live} gotThrough={isComparison} />
         </div>
 
         <section aria-label={run.pending ? 'Your decision' : 'What is happening'} className="flex-[1_1_380px] max-w-[540px] min-w-0 flex flex-col gap-5">

@@ -190,3 +190,12 @@ describe('needs-you sentence', () => {
     expect(needsYouSentence({ learned_from: 'input/notes.txt' })).toBe('It learned of it from inside notes.txt.');
   });
 });
+
+describe('comparison runs (kernel lock off)', () => {
+  it('says the attempt got through instead of being stopped', () => {
+    expect(statusSentence({ state: 'completed', blocked: [blockedTarget], comparison: true })).toBe(
+      'Done. With the kernel lock off, 1 attempt got through.',
+    );
+    expect(statusSentence({ state: 'completed', blocked: [], comparison: true })).toBe('Done. The agent stayed inside its fence.');
+  });
+});
