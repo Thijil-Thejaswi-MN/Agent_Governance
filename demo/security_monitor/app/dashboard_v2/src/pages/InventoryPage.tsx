@@ -3,7 +3,7 @@ import { api } from '../api/client';
 import { AgentInventoryItem, ConfiguredAgent, ExpansionItem, TaskRecord } from '../types';
 import { EmptyState, ErrorState, LoadingState } from '../components/common/States';
 import { AgentCard, RISK_RULE, Risk, inventoryCards, riskWhy } from '../logic/inventory';
-import { relativeTime } from '../logic/plain';
+import { outcomeLabel, relativeTime } from '../logic/plain';
 
 const RISK: Record<Risk, { label: string; style: React.CSSProperties }> = {
   high: { label: 'High risk', style: { color: '#FCA5A5', background: 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.4)' } },
@@ -14,11 +14,13 @@ const RISK: Record<Risk, { label: string; style: React.CSSProperties }> = {
 /** One agent. No effects, so tests can render it. */
 export const InventoryCard: React.FC<{ c: AgentCard; now: number }> = ({ c, now }) => {
   const tipId = `risk-rule-${c.agentId}`;
+  const modelsUsed = c.modelsUsed ?? [];
+  const recent = c.recent ?? [];
   return (
-    <li className="card p-4 sm:p-5 flex flex-col gap-3 min-w-0" data-agent={c.agentId} data-risk={c.risk}>
+    <li className="card p-4 sm:p-5 flex flex-col gap-4 min-w-0" data-agent={c.agentId} data-risk={c.risk}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1 min-w-0">
-          {c.name && <span className="text-[16px] font-semibold text-[#E6E9EF]">{c.name}</span>}
+          {c.name && <span className="text-[17px] font-semibold text-[#E6E9EF]">{c.name}</span>}
           <span className={`font-mono [overflow-wrap:anywhere] ${c.name ? 'text-[12px]' : 'text-[15px] font-semibold text-[#E6E9EF]'}`} style={c.name ? { color: 'var(--text-3)' } : undefined}>
             {c.agentId}
           </span>
@@ -46,11 +48,41 @@ export const InventoryCard: React.FC<{ c: AgentCard; now: number }> = ({ c, now 
           </span>
         </span>
       </div>
+
       {c.description && (
-        <p className="m-0 text-[13px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
+        <p className="m-0 text-[14px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
           {c.description}
         </p>
       )}
+
+      {(c.model || (c.tools && c.tools.length > 0)) && (
+        <div className="flex flex-col gap-2 rounded-lg border border-[#2A3344] bg-[#0F1520] p-3" data-agent-setup>
+          {c.model && (
+            <div className="flex items-baseline gap-2 flex-wrap text-[13px]">
+              <span style={{ color: 'var(--text-3)' }}>Runs on</span>
+              <span className="font-mono text-[13px] text-[#E6E9EF]" data-agent-model={c.model}>
+                {c.model}
+              </span>
+              <span style={{ color: 'var(--text-3)' }}>(its model; a run can override it)</span>
+            </div>
+          )}
+          {c.tools && c.tools.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[13px]" style={{ color: 'var(--text-3)' }}>
+                Tools it can call (the broker checks each call)
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {c.tools.map(tool => (
+                  <span key={tool} className="px-2 py-0.5 rounded text-[12px] font-mono bg-[#111827] text-[#CBD5E1] border border-[#334155]" data-tool={tool}>
+                    {tool}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-2 text-[14px]">
         <Fact k="Owner" v={c.owner ?? '—'} />
         <Fact k="Team" v={c.team ?? '—'} />
@@ -59,9 +91,60 @@ export const InventoryCard: React.FC<{ c: AgentCard; now: number }> = ({ c, now 
         <Fact k="Requests" v={c.promptedAsks ? `${c.asks} (${c.promptedAsks} prompted by a file)` : String(c.asks)} />
         <Fact k="Last active" v={relativeTime(c.lastActive, now) || '—'} title={c.lastActive ?? undefined} />
       </dl>
+
+      {modelsUsed.length > 0 && (
+        <p className="m-0 text-[13px]" style={{ color: 'var(--text-3)' }} data-models-used>
+          Models used in its runs:{' '}
+          {modelsUsed.map((m, i) => (
+            <React.Fragment key={m.model}>
+              {i > 0 && ', '}
+              <span className="font-mono" style={{ color: 'var(--text-2)' }}>
+                {m.model}
+              </span>{' '}
+              ({m.runs})
+            </React.Fragment>
+          ))}
+        </p>
+      )}
+
+      {recent.length > 0 && (
+        <div className="flex flex-col gap-1.5 pt-3 border-t border-[#2A3344]" data-recent-runs>
+          <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>
+            Recent runs
+          </span>
+          <ul className="list-none m-0 p-0 flex flex-col gap-1">
+            {recent.map(r => {
+              const o = outcomeLabel(r.status);
+              return (
+                <li key={r.taskId} className="flex items-center gap-2 min-w-0 text-[13px]">
+                  <a href={`/dashboard/report/${r.taskId}`} className="truncate min-w-0 flex-1 text-[#93C5FD] hover:underline" title={r.request || r.taskId}>
+                    {r.request || r.taskId}
+                  </a>
+                  {r.blocked > 0 && (
+                    <span className="shrink-0 text-[12px]" style={{ color: '#F87171' }}>
+                      {r.blocked} blocked
+                    </span>
+                  )}
+                  <span className="shrink-0 text-[12px]" style={{ color: TONE[o.tone] }}>
+                    {o.text}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {(c.comparisonRuns ?? 0) > 0 && (
+        <p className="m-0 text-[12px]" style={{ color: 'var(--text-3)' }} data-comparison-runs>
+          {c.comparisonRuns} comparison {c.comparisonRuns === 1 ? 'run' : 'runs'} (kernel lock off) not counted.
+        </p>
+      )}
     </li>
   );
 };
+
+const TONE: Record<'ok' | 'bad' | 'wait' | 'none', string> = { ok: '#86EFAC', bad: '#FCA5A5', wait: '#FCD34D', none: 'var(--text-3)' };
 
 export const DiscoveredAgentCard: React.FC<{ item: AgentInventoryItem }> = ({ item }) => {
   const isGoverned = item.governance_state === 'Governed';
@@ -189,9 +272,10 @@ export const InventoryPage: React.FC = () => {
             ? 'No agents yet.'
             : `${totalAgents} ${totalAgents === 1 ? 'agent' : 'agents'}.`}
         </h1>
-        <p className="m-0 text-[16px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
-          The agents in the console's agent list, any other agent that has run here, and local A2A agents discovered via
-          Agent Cards. Counts come from real runs; comparison runs (kernel lock off) are not counted.
+        <p className="m-0 text-[16px] leading-relaxed max-w-[860px]" style={{ color: 'var(--text-2)' }}>
+          An agent is an identity we hold accountable: a name, an owner and a team, the model it runs on, and the tools
+          it can call. What it may touch is not part of the agent. Each request sets that, and every tool call is checked
+          against it. Counts come from real runs here; comparison runs (kernel lock off) are not counted.
           {cards.length > 0 && ` ${counts.high} high, ${counts.medium} medium and ${counts.low} low risk.`}
         </p>
       </header>
@@ -201,28 +285,10 @@ export const InventoryPage: React.FC = () => {
         <LoadingState label="Loading agents…" id="inventory-loading" />
       ) : (
         <>
-          {discoveredAgents.length > 0 && (
-            <section className="flex flex-col gap-3" id="discovered-agents-section">
-              <div className="flex items-center justify-between">
-                <h2 className="m-0 font-display font-semibold text-[18px] sm:text-[20px] text-[#E6E9EF]">
-                  Discovered A2A Agents
-                </h2>
-                <span className="text-[13px]" style={{ color: 'var(--text-3)' }}>
-                  Discovered via local Agent Cards
-                </span>
-              </div>
-              <ul id="discovered-agents-list" className="list-none m-0 p-0 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {discoveredAgents.map(a => (
-                  <DiscoveredAgentCard key={a.agent_id} item={a} />
-                ))}
-              </ul>
-            </section>
-          )}
-
           <section className="flex flex-col gap-3" id="governed-agents-section">
             {discoveredAgents.length > 0 && (
               <h2 className="m-0 font-display font-semibold text-[18px] sm:text-[20px] text-[#E6E9EF]">
-                Governed Runs & Activity
+                Our agents
               </h2>
             )}
             {cards.length === 0 ? (
@@ -235,6 +301,24 @@ export const InventoryPage: React.FC = () => {
               </ul>
             )}
           </section>
+
+          {discoveredAgents.length > 0 && (
+            <section className="flex flex-col gap-3" id="discovered-agents-section">
+              <div className="flex items-center justify-between">
+                <h2 className="m-0 font-display font-semibold text-[18px] sm:text-[20px] text-[#E6E9EF]">
+                  Other agents found on this machine
+                </h2>
+                <span className="text-[13px]" style={{ color: 'var(--text-3)' }}>
+                  From their A2A Agent Cards. Not governed until they run inside our boundary.
+                </span>
+              </div>
+              <ul id="discovered-agents-list" className="list-none m-0 p-0 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {discoveredAgents.map(a => (
+                  <DiscoveredAgentCard key={a.agent_id} item={a} />
+                ))}
+              </ul>
+            </section>
+          )}
         </>
       )}
     </div>

@@ -36,10 +36,28 @@ describe('cards', () => {
       ],
       [{ task_id: 't1', escalated_by_provenance: true }, { task_id: 't2' }, { task_id: 't3' }],
     );
-    expect(cards).toEqual([
+    expect(cards).toMatchObject([
       { agentId: 'a', owner: 'Ana', team: 'core', tasks: 2, blocked: 6, asks: 2, promptedAsks: 1, lastActive: '2026-11-12T11:00:00Z', risk: 'high' },
       { agentId: 'b', owner: null, team: null, tasks: 1, blocked: 0, asks: 1, promptedAsks: 0, lastActive: '2026-11-12T12:00:00Z', risk: 'low' },
     ]);
+    expect(cards[0].recent.map(r => [r.taskId, r.blocked])).toEqual([['t2', 4], ['t1', 2]]);
+  });
+  it('counts the models its runs used and keeps comparison runs apart', () => {
+    const [c] = inventoryCards(
+      [
+        { task_id: 'q1', agent_id: 'a', model: 'qwen2.5:7b', created_at: '2026-11-12T09:00:00Z' },
+        { task_id: 'q2', agent_id: 'a', model: 'qwen2.5:7b', created_at: '2026-11-12T10:00:00Z' },
+        { task_id: 's1', agent_id: 'a', model: 'scripted', created_at: '2026-11-12T11:00:00Z', request_text: 'Summarise', status: 'COMPLETED' },
+        { task_id: 'x', agent_id: 'a', model: 'scripted', comparison_mode: true },
+      ],
+      [],
+      [{ id: 'a', name: 'A', owner: 'o', team: 't', description: '', model: 'qwen2.5:7b', tools: ['read_file'] }],
+    );
+    expect(c.modelsUsed).toEqual([{ model: 'qwen2.5:7b', runs: 2 }, { model: 'scripted', runs: 1 }]);
+    expect(c.comparisonRuns).toBe(1);
+    expect(c.tasks).toBe(3);
+    expect(c.recent[0]).toMatchObject({ taskId: 's1', request: 'Summarise', status: 'COMPLETED' });
+    expect(c).toMatchObject({ model: 'qwen2.5:7b', tools: ['read_file'] });
   });
 });
 

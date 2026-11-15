@@ -244,6 +244,7 @@ export interface ConfiguredAgent {
   team: string;
   description: string;
   model?: string; // the model this agent runs on
+  tools?: string[]; // the tools its agent loop offers; each call is checked by the broker
 }
 
 export interface ActiveRunTask {

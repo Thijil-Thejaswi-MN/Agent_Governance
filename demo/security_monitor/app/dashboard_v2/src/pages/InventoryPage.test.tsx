@@ -31,6 +31,26 @@ describe('inventory card', () => {
   });
 });
 
+describe('agent setup and recent runs', () => {
+  it('shows the model, the tools, the models used and links each recent run to its report', () => {
+    const html = renderToStaticMarkup(
+      <InventoryCard
+        now={NOW}
+        c={{
+          agentId: 'finance_bot', name: 'Finance Bot', owner: 'Ana Dev', team: 'finance', tasks: 2, blocked: 1, asks: 0, promptedAsks: 0,
+          lastActive: '2026-11-12T11:00:00Z', risk: 'medium', configured: true, model: 'qwen2.5:7b', tools: ['read_file', 'run_command'],
+          modelsUsed: [{ model: 'qwen2.5:7b', runs: 1 }, { model: 'scripted', runs: 1 }],
+          recent: [{ taskId: 'task_1', request: 'Summarise input/sales_data.csv', status: 'COMPLETED', blocked: 1, at: null }],
+          comparisonRuns: 2,
+        }}
+      />,
+    );
+    for (const s of ['Runs on', 'data-agent-model="qwen2.5:7b"', 'data-tool="run_command"', 'Models used in its runs', 'scripted', 'href="/dashboard/report/task_1"', 'Summarise input/sales_data.csv', '1 blocked', 'Done', '2 comparison runs (kernel lock off) not counted.']) {
+      expect(html).toContain(s);
+    }
+  });
+});
+
 describe('discovered agent card', () => {
   it('renders discovered card with name, description, skills and Not governed yet state', () => {
     const html = renderToStaticMarkup(
