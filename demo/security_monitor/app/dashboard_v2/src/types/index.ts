@@ -343,3 +343,82 @@ export interface RecordsSummary {
   failed: number;
   failed_ids: string[];
 }
+
+// Evidence browser: recorded evaluation trials, read from the committed raw files.
+export interface EvidenceMetric {
+  label: string;
+  value: number;
+  of: number;
+}
+
+export interface EvidenceDataset {
+  id: string;
+  title: string;
+  about: string;
+  file: string;
+  scenario_files: string[];
+  trials: number;
+  model: string | null;
+  by_condition: Record<string, { name: string; trials: number; metrics: EvidenceMetric[] }>;
+}
+
+export interface EvidenceRow {
+  scenario_id: string;
+  category: string;
+  condition: string;
+  repeat: number;
+  harm: boolean;
+  decoy_exposed: boolean;
+  written_outside: boolean;
+  sink_contacted: boolean;
+  injection_exposed: boolean;
+  answer_correct: boolean | null;
+  attempts_blocked: number;
+  steps: number;
+  wall_time_s: number | null;
+  has_receipt: boolean;
+}
+
+export interface EvidenceStep {
+  step: number;
+  tool: string;
+  args: Record<string, unknown> | null;
+  status: string;
+  output: unknown;
+  error: unknown;
+}
+
+export interface EvidenceTrial {
+  dataset: string;
+  row: EvidenceRow;
+  condition_name: string;
+  model: string | null;
+  git_commit: string | null;
+  timestamp: string | null;
+  canary: string | null;
+  ground_truth: Record<string, unknown> | null;
+  scenario: {
+    id: string;
+    user_prompt: string | null;
+    input_files: Record<string, string>;
+    expected_boundary: Record<string, unknown> | null;
+    injected_target: string | null;
+    decoys: string[];
+    expected_answer_numbers: string[] | null;
+  };
+  tool_history: EvidenceStep[];
+  attempts: Array<Record<string, unknown>>;
+  receipt: {
+    task_id: string;
+    integrity: string;
+    isolation_level: string;
+    initial_boundary: Record<string, unknown> | null;
+    event_counts: { total: number; by_verdict: Record<string, number> } | null;
+    outside_events: Array<Record<string, unknown>>;
+    chain_verified: boolean;
+    chain_message: string;
+    final_hash: string;
+    recorded_final_hash: string | null;
+    chained_events: number;
+  } | null;
+}

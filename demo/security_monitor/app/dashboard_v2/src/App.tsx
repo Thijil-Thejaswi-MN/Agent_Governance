@@ -11,6 +11,7 @@ const WatchPage = React.lazy(() => import('./pages/WatchPage').then(m => ({ defa
 const FleetPage = React.lazy(() => import('./pages/FleetPage').then(m => ({ default: m.FleetPage })));
 const HistoryPage = React.lazy(() => import('./pages/HistoryPage').then(m => ({ default: m.HistoryPage })));
 const ResultsPage = React.lazy(() => import('./pages/ResultsPage').then(m => ({ default: m.ResultsPage })));
+const EvidencePage = React.lazy(() => import('./pages/EvidencePage').then(m => ({ default: m.EvidencePage })));
 
 // v4 Role Pages
 const AdminOverviewPage = React.lazy(() =>
@@ -91,6 +92,7 @@ export const App: React.FC = () => {
             <Route path="history" element={page(<HistoryPage />)} />
             <Route path="history/:taskId" element={page(<WatchPage readOnly />)} />
             <Route path="results" element={page(<ResultsPage />)} />
+            <Route path="evidence" element={page(<EvidencePage />)} />
             <Route path="report/:taskId" element={page(<ReportPage />)} />
             <Route path="incidents" element={page(<IncidentsPage />)} />
             <Route path="inventory" element={page(<InventoryPage />)} />

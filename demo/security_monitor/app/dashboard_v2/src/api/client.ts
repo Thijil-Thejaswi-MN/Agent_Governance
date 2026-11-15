@@ -14,6 +14,9 @@ import {
   RunModelsResponse,
   ActiveRunInfo,
   ConfiguredAgent,
+  EvidenceDataset,
+  EvidenceRow,
+  EvidenceTrial,
   FleetSummary,
   Role,
   PendingGroup,
@@ -204,6 +207,12 @@ export const api = {
   getRunPresets: () => request<RunPreset[]>(`${API_BASE}/run/presets`),
   getRunModels: () => request<RunModelsResponse>(`${API_BASE}/run/models`),
   getRunAgents: () => request<ConfiguredAgent[]>(`${API_BASE}/run/agents`),
+  getEvidenceDatasets: () => request<EvidenceDataset[]>(`${API_BASE}/evidence/datasets`),
+  getEvidenceTrials: (dataset: string) => request<EvidenceRow[]>(`${API_BASE}/evidence/trials?dataset=${encodeURIComponent(dataset)}`),
+  getEvidenceTrial: (dataset: string, scenario: string, condition: string, repeat: number) =>
+    request<EvidenceTrial>(
+      `${API_BASE}/evidence/trial?dataset=${encodeURIComponent(dataset)}&scenario=${encodeURIComponent(scenario)}&condition=${encodeURIComponent(condition)}&repeat=${repeat}`,
+    ),
   getActiveRun: () => request<ActiveRunInfo>(`${API_BASE}/run/active`),
   previewRun: (payload: { prompt: string; preset?: string; files?: Record<string, string> }) =>
     request<BoundaryPreviewResponse>(`${API_BASE}/run/preview`, {
