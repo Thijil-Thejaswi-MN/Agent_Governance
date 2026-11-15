@@ -459,6 +459,9 @@ class BrokerRPCServer:
         repeat = self._repeat_decision(rtype, target, just)
         if repeat is not None:
             return repeat
+        already = self._already_allowed(rtype, target)
+        if already is not None:
+            return already
 
         timeout_s = getattr(self.broker, "default_approval_timeout", None)
         if timeout_s is not None:
@@ -491,6 +494,41 @@ class BrokerRPCServer:
         while t.startswith("./"):
             t = t[2:]
         return t
+
+    def _already_allowed(self, rtype: str, target: str) -> dict[str, Any] | None:
+        """A file read the boundary already allows, asked for by a shorter name
+        (e.g. "system_audit.txt" for "input/system_audit.txt"), is answered with the allowed path
+        instead of asking the person about a file the task already has."""
+        if rtype != "file_read":
+            return None
+        norm = self._norm_target(target)
+        if not norm or norm.startswith("/") or ".." in norm.split("/"):
+            return None
+        boundary = self.broker.storage.get_boundary(self.task_id)
+        if not boundary:
+            return None
+        allowed = [f for f in boundary.files_read if "*" not in f and "?" not in f]
+        if norm in allowed:
+            match = norm
+        else:
+            hits = [f for f in allowed if f.endswith("/" + norm)]
+            if len(hits) != 1:
+                return None
+            match = hits[0]
+        self.broker.storage.record_task_step(
+            self.task_id, kind="expansion", layer="broker", verdict="ALLOW",
+            summary=f"Not asked: {target} is already allowed as {match}",
+            detail="The request named a file the boundary already allows, so no approval was needed.",
+            source_label="enforced",
+        )
+        return {
+            "granted": True,
+            "status": "already_in_boundary",
+            "message": f"'{target}' is already allowed for this task. Read it as '{match}'.",
+            "resource_type": rtype,
+            "resource_target": match,
+            "delivery": {"type": "none", "reason": "already_in_boundary", "path": match},
+        }
 
     def _repeat_decision(self, rtype: str, target: str, just: str) -> dict[str, Any] | None:
         """Returns an immediate answer when this run already decided on the same resource.
