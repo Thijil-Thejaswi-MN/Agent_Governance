@@ -30,6 +30,7 @@ export const AskPage: React.FC = () => {
   const [presetId, setPresetId] = useState('summarise_csv');
   const [models, setModels] = useState<string[]>(['scripted']);
   const [model, setModel] = useState('scripted');
+  const [ollamaReachable, setOllamaReachable] = useState(true);
   const [agents, setAgents] = useState<ConfiguredAgent[]>([
     { id: 'finance_bot', name: 'Finance Bot', owner: 'Ana Dev', team: 'finance', description: 'Financial analysis' },
     { id: 'notes_bot', name: 'Notes Bot', owner: 'Ravi K', team: 'core', description: 'Documentation' },
@@ -65,6 +66,7 @@ export const AskPage: React.FC = () => {
         if (!all.includes('scripted')) all.push('scripted');
         setModels(all);
         setModel(ms.default || 'scripted');
+        setOllamaReachable(ms.ollama_reachable !== false);
         const first = ps.find(p => p.id === 'summarise_csv') || ps[0];
         if (first) {
           setPresetId(first.id);
@@ -219,6 +221,7 @@ export const AskPage: React.FC = () => {
                 ))}
               </select>
             </label>
+            <AgentModelNote agent={agents.find(a => a.id === agentId)} model={model} ollamaReachable={ollamaReachable} />
             {role === 'admin' && (
               <label
                 className={`flex items-center gap-2 text-[13px] text-[#FBBF24] ${canCompare ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}
@@ -379,3 +382,22 @@ export function AgentSelector({
     </label>
   );
 }
+
+
+// Agent and model are different things: say so where they are chosen.
+const AgentModelNote: React.FC<{ agent?: ConfiguredAgent; model: string; ollamaReachable: boolean }> = ({ agent, model, ollamaReachable }) => (
+  <div className="basis-full flex flex-col gap-1 text-[13px] leading-relaxed" id="agent-model-note" style={{ color: 'var(--text-3)' }}>
+    <span>
+      <span style={{ color: 'var(--text-2)' }}>Agent</span> = who is accountable
+      {agent ? `: ${agent.name}, owned by ${agent.owner} (${agent.team} team)${agent.description ? `, ${agent.description.charAt(0).toLowerCase()}${agent.description.slice(1)}` : ''}` : ''}.{' '}
+      <span style={{ color: 'var(--text-2)' }}>Model</span> = the brain that drives it
+      {model === 'scripted' ? ': a fixed, repeatable list of steps (no AI)' : `: ${model}, running locally`}.
+      {' '}What it may touch comes from your request, not from the agent.
+    </span>
+    {!ollamaReachable && (
+      <span id="ollama-unreachable" style={{ color: '#FBBF24' }}>
+        Ollama is not running, so only the scripted agent is available. Start Ollama and reload this page.
+      </span>
+    )}
+  </div>
+);
