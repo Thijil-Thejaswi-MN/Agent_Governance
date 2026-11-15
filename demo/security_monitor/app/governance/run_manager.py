@@ -816,6 +816,8 @@ class ActiveRunManager:
             else:
                 # Console runs cap each model reply (the evaluation scripts do not set this).
                 os.environ.setdefault("OLLAMA_MAX_TOKENS", "1024")
+                # Blocked reads tell the model how to ask for the file, so a person gets the choice.
+                os.environ.setdefault("GOVERNANCE_ACCESS_HINT", "1")
                 llm_cfg = {
                     "provider": "ollama",
                     "model": model,

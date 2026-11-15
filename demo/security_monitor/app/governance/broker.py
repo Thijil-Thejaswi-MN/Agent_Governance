@@ -269,7 +269,13 @@ class ToolBroker:
 
         target_display = eval_res.resolved_path or file_path
         if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
-            raise PermissionError(f"Access to file '{target_display}' denied by boundary: {eval_res.rule_matched}")
+            msg = f"Access to file '{target_display}' denied by boundary: {eval_res.rule_matched}"
+            if os.environ.get("GOVERNANCE_ACCESS_HINT") == "1":
+                # Console runs only (the evaluation scripts never set this): say how to ask.
+                msg += (f". If this file is genuinely needed for the user's task, call request_access with "
+                        f"resource_type 'file_read', resource_target '{file_path}' and a short justification; "
+                        f"a person will decide.")
+            raise PermissionError(msg)
 
         # REALEXECUTION (Inside boundary)
         target = Path(eval_res.resolved_path) if eval_res.resolved_path else Path(file_path)

@@ -232,3 +232,24 @@ def test_http_redirect_to_non_allowed_host(edge_storage: GovernanceStorage, edge
     # Broker must re-check redirect hop and block it!
     with pytest.raises(PermissionError, match="denied by boundary"):
         broker.handle_http_redirect(token, orig_url, "https://evil.com/exfiltrate")
+
+
+def test_access_hint_only_when_enabled(edge_storage: GovernanceStorage, edge_workspace: Path, monkeypatch) -> None:
+    """Console runs (GOVERNANCE_ACCESS_HINT=1) tell the model how to ask for a blocked file;
+    without the flag (the evaluation scripts) the message is unchanged."""
+    intake = TaskIntakeService(edge_storage)
+    task, boundary = intake.submit_task("Analyse report.pdf", "agent_alice", str(edge_workspace))
+    token = "tok_edge_hint"
+    edge_storage.save_token(token, task.task_id, task.agent_id)
+    broker = ToolBroker(edge_storage)
+
+    monkeypatch.delenv("GOVERNANCE_ACCESS_HINT", raising=False)
+    with pytest.raises(PermissionError) as plain:
+        broker.read_file(token, "input/../credentials.json")
+    assert "request_access" not in str(plain.value)
+
+    monkeypatch.setenv("GOVERNANCE_ACCESS_HINT", "1")
+    with pytest.raises(PermissionError) as hinted:
+        broker.read_file(token, "input/../credentials.json")
+    assert "denied by boundary" in str(hinted.value)
+    assert "call request_access" in str(hinted.value)
