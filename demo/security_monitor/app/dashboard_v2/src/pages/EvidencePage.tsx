@@ -304,16 +304,36 @@ export const EvidencePage: React.FC = () => {
     api.getEvidenceDatasets().then(setDatasets).catch(e => setError(e?.message || 'Could not load the recorded runs.'));
   }, []);
 
+  const chooseDataset = (id: string) => {
+    if (id === active) return;
+    setScenario(DEFAULT_ATTACK[id]);
+    setActive(id);
+  };
+
   useEffect(() => {
     setAttacks(null);
-    setScenario(DEFAULT_ATTACK[active]);
-    api.getEvidenceAttacks(active).then(setAttacks).catch(e => setError(e?.message || 'Could not load the attacks.'));
+    let live = true;
+    api
+      .getEvidenceAttacks(active)
+      .then(a => live && setAttacks(a))
+      .catch(e => live && setError(e?.message || 'Could not load the attacks.'));
+    return () => {
+      live = false;
+    };
   }, [active]);
 
   useEffect(() => {
     setDetail(null);
     if (!scenario) return;
-    api.getEvidenceAttack(active, scenario).then(setDetail).catch(e => setError(e?.message || 'Could not load the attack.'));
+    // Switching datasets changes both values; only the latest request may set the view.
+    let live = true;
+    api
+      .getEvidenceAttack(active, scenario)
+      .then(d => live && setDetail(d))
+      .catch(e => live && setError(e?.message || 'Could not load the attack.'));
+    return () => {
+      live = false;
+    };
   }, [active, scenario]);
 
   const openTrial = useCallback(
@@ -357,7 +377,7 @@ export const EvidencePage: React.FC = () => {
               type="button"
               data-dataset={d.id}
               aria-pressed={d.id === active}
-              onClick={() => setActive(d.id)}
+              onClick={() => chooseDataset(d.id)}
               className="px-3 py-2 rounded-lg border text-[14px] font-medium text-left"
               style={d.id === active ? { borderColor: '#3B82F6', background: 'rgba(59,130,246,0.12)', color: '#E6E9EF' } : { borderColor: '#2A3344', color: 'var(--text-2)' }}
             >
