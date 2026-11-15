@@ -92,6 +92,7 @@ class TaskRecord(BaseModel):
     team: str | None = None
     condition: str | None = None
     requested_by: str | None = None  # the signed-in person who started the run
+    model: str | None = None  # the model that drove the agent ("scripted" for a fixed step list)
 
 
 class GovernanceEvent(BaseModel):

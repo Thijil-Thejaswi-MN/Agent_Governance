@@ -59,7 +59,8 @@ export const ReportSheet: React.FC<{ report: TaskReport }> = ({ report }) => {
 
       <section aria-label="Run" className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3">
         <Fact k="Requested by" v={t.requester || '—'} id="report-requester" />
-        <Fact k="Agent" v={t.agent_id} mono />
+        <Fact k="Agent" v={t.agent_name || t.agent_id} id="report-agent" />
+        <Fact k="Model" v={t.model || '—'} mono id="report-model" />
         <Fact k="Outcome" v={outcomeLabel(t.status).text} id="report-outcome" />
         <Fact k="Agent owner" v={t.agent_owner ? `${t.agent_owner}${t.team ? ` (${t.team})` : ''}` : t.team || '—'} id="report-agent-owner" />
         <Fact k="Started" v={formatWhen(t.started_at || t.created_at)} nowrap />

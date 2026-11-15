@@ -99,12 +99,13 @@ class GovernanceStorage:
                     owner TEXT,
                     team TEXT,
                     condition TEXT,
-                    requested_by TEXT
+                    requested_by TEXT,
+                    model TEXT
                 )
             """)
 
             # 2. Task Boundaries (versioned contracts)
-            for _col in ("condition", "requested_by"):
+            for _col in ("condition", "requested_by", "model"):
                 try:
                     cursor.execute(f"ALTER TABLE governance_tasks ADD COLUMN {_col} TEXT")
                 except Exception:
@@ -256,8 +257,8 @@ class GovernanceStorage:
                 """
                 INSERT INTO governance_tasks (
                     task_id, request_text, request_hash, agent_id, workspace_root,
-                    status, created_at, started_at, completed_at, current_boundary_version, pid, owner, team, condition, requested_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    status, created_at, started_at, completed_at, current_boundary_version, pid, owner, team, condition, requested_by, model
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(task_id) DO UPDATE SET
                     status=excluded.status,
                     started_at=coalesce(excluded.started_at, governance_tasks.started_at),
@@ -267,7 +268,8 @@ class GovernanceStorage:
                     owner=coalesce(excluded.owner, governance_tasks.owner),
                     team=coalesce(excluded.team, governance_tasks.team),
                     condition=coalesce(excluded.condition, governance_tasks.condition),
-                    requested_by=coalesce(excluded.requested_by, governance_tasks.requested_by)
+                    requested_by=coalesce(excluded.requested_by, governance_tasks.requested_by),
+                    model=coalesce(excluded.model, governance_tasks.model)
                 """,
                 (
                     task.task_id,
@@ -285,6 +287,7 @@ class GovernanceStorage:
                     task.team,
                     getattr(task, "condition", None),
                     getattr(task, "requested_by", None),
+                    getattr(task, "model", None),
                 ),
             )
             conn.commit()
@@ -311,6 +314,7 @@ class GovernanceStorage:
                 team=row["team"] if "team" in keys else None,
                 condition=row["condition"] if "condition" in keys else None,
                 requested_by=row["requested_by"] if "requested_by" in keys else None,
+                model=row["model"] if "model" in keys else None,
             )
 
     def list_tasks(self) -> list[TaskRecord]:
@@ -336,6 +340,7 @@ class GovernanceStorage:
                         team=r["team"] if "team" in k else None,
                         condition=r["condition"] if "condition" in k else None,
                         requested_by=r["requested_by"] if "requested_by" in k else None,
+                        model=r["model"] if "model" in k else None,
                     )
                 )
             return out

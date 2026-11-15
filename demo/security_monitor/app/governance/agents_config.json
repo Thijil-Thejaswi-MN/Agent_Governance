@@ -3,18 +3,21 @@
     "name": "Finance Bot",
     "owner": "Ana Dev",
     "team": "finance",
-    "description": "Financial analysis and revenue reporting"
+    "description": "Financial analysis and revenue reporting",
+    "model": "qwen2.5:7b"
   },
   "notes_bot": {
     "name": "Notes Bot",
     "owner": "Ravi K",
     "team": "core",
-    "description": "Documentation and meeting minutes"
+    "description": "Documentation and meeting minutes",
+    "model": "qwen2.5:7b"
   },
   "brief_bot": {
     "name": "Brief Bot",
     "owner": "Meena R",
     "team": "legal",
-    "description": "Legal briefing and compliance review"
+    "description": "Legal briefing and compliance review",
+    "model": "llama3.1:8b"
   }
 }

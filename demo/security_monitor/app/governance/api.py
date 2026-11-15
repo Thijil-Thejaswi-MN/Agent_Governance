@@ -1652,7 +1652,7 @@ class RunPreviewRequest(BaseModel):
 class RunStartRequest(BaseModel):
     prompt: str
     preset: str | None = None
-    model: str = "qwen2.5:7b"
+    model: str | None = None  # None: the agent's own model
     agent_id: str | None = None
     files: dict[str, str] = Field(default_factory=dict)
     comparison_mode: bool = False
