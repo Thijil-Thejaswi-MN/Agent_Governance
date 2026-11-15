@@ -25,13 +25,15 @@ const outsideStyle = (kind: 'blocked' | 'requested'): React.CSSProperties =>
 export interface FenceProps {
   inside: string[];
   blocked: string[];
+  // Comparison run: the outside attempts were not stopped (kernel lock off).
+  gotThrough?: boolean;
   requested: string[];
   live: boolean;
 }
 
 // The agent in the centre, the files its request allows inside the fence, and what it
 // tried or asked for outside. Names only; full paths are in Details.
-export const Fence: React.FC<FenceProps> = ({ inside, blocked, requested, live }) => {
+export const Fence: React.FC<FenceProps> = ({ inside, blocked, requested, live, gotThrough }) => {
   // At most four chips each side; the fourth becomes "+N more" when there are more.
   const shownInside = inside.length > 4 ? inside.slice(0, 3) : inside;
   const moreInside = inside.length - shownInside.length;
@@ -45,7 +47,7 @@ export const Fence: React.FC<FenceProps> = ({ inside, blocked, requested, live }
   const description = [
     inside.length ? `Inside the fence: ${inside.join(', ')}.` : 'Nothing is inside the fence yet.',
     requested.length ? `Asking for: ${requested.join(', ')}.` : '',
-    blocked.length ? `Stopped outside the fence: ${blocked.join(', ')}.` : '',
+    blocked.length ? (gotThrough ? `Got through with the kernel lock off: ${blocked.join(', ')}.` : `Stopped outside the fence: ${blocked.join(', ')}.`) : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -140,7 +142,7 @@ export const Fence: React.FC<FenceProps> = ({ inside, blocked, requested, live }
         {blocked.length > 0 && (
           <span>
             <span className="inline-block w-2.5 h-2.5 rounded-full mr-1.5" style={{ background: 'var(--blocked)' }} />
-            Stopped
+            {gotThrough ? 'Got through (kernel lock off)' : 'Stopped'}
           </span>
         )}
       </div>

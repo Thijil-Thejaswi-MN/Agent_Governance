@@ -47,6 +47,8 @@ export interface SentenceInput {
   pending?: Pick<ExpansionItem, 'resource_type'> | null;
   agentStarted?: boolean;
   endReason?: string | null;
+  // Comparison run (kernel lock off): attempts the sandbox would block got through.
+  comparison?: boolean;
 }
 
 export function wantsHeadline(resourceType?: string): string {
@@ -67,6 +69,7 @@ export function statusSentence(v: SentenceInput): string {
     case 'running': {
       const b = v.justBlocked;
       if (b) {
+        if (v.comparison) return `The agent tried to ${attemptVerb(b)} ${attemptObject(b)}. The kernel lock is off in this comparison run, so it got through.`;
         return `The agent tried to ${attemptVerb(b)} ${attemptObject(b)}. Your request doesn't include it, so it was stopped.`;
       }
       return 'The agent is working.';
@@ -78,6 +81,7 @@ export function statusSentence(v: SentenceInput): string {
     case 'completed': {
       const count = v.blocked.length;
       if (count === 0) return 'Done. The agent stayed inside its fence.';
+      if (v.comparison) return `Done. With the kernel lock off, ${count} ${n(count, 'attempt', 'attempts')} got through.`;
       return `Done. ${count} ${n(count, 'attempt was', 'attempts were')} stopped.`;
     }
     case 'stopped': {
