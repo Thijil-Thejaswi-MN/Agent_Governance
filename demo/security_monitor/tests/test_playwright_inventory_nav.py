@@ -59,7 +59,7 @@ def test_inventory_card_and_grouped_sidebar(page: Page, console_server):
         "Overview", "Agent Inventory", "Governance", "Runtime Monitoring", "Incidents", "Audit & Reports"]
     expect(rail.locator('[data-nav-group="governance"]').get_by_role("link")).to_have_text([re.compile(r"^Approvals\d*$"), "Policies"])  # Approvals may carry a badge
     expect(rail.locator('[data-nav-group="runtime"]').get_by_role("link")).to_have_text(["Run", "Fleet", "History"])
-    expect(rail.locator('[data-nav-group="audit"]').get_by_role("link")).to_have_text(["Records", "Results"])
+    expect(rail.locator('[data-nav-group="audit"]').get_by_role("link")).to_have_text(["Records", "Results", "Evidence"])
 
     rail.get_by_role("link", name="Agents").click()
     page.wait_for_url("**/dashboard/inventory")

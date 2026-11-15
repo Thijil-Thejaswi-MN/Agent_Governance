@@ -36,6 +36,7 @@ from .run_manager import (
     preview_run_boundary,
 )
 
+from . import evidence as evidence_store
 from .expansion import ExpansionService
 from .fleet import build_fleet_summary
 from .intake import TaskIntakeService
@@ -1655,6 +1656,34 @@ class RunStartRequest(BaseModel):
     agent_id: str | None = None
     files: dict[str, str] = Field(default_factory=dict)
     comparison_mode: bool = False
+
+
+@governance_router.get("/evidence/datasets")
+async def get_evidence_datasets(request: Request = None) -> list[dict[str, Any]]:
+    """The recorded evaluation runs, with counts recomputed from the committed raw trial files."""
+    get_current_user_session(request)
+    return evidence_store.list_datasets()
+
+
+@governance_router.get("/evidence/trials")
+async def get_evidence_trials(dataset: str, request: Request = None) -> list[dict[str, Any]]:
+    """One row per recorded trial of a dataset (read from the committed JSONL file)."""
+    get_current_user_session(request)
+    try:
+        return evidence_store.list_trials(dataset)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Unknown dataset")
+
+
+@governance_router.get("/evidence/trial")
+async def get_evidence_trial(dataset: str, scenario: str, condition: str, repeat: int, request: Request = None) -> dict[str, Any]:
+    """One recorded trial: the scenario, every tool call and its output, the ground truth, and the
+    receipt with its hash chain re-verified."""
+    get_current_user_session(request)
+    try:
+        return evidence_store.get_trial(dataset, scenario, condition, repeat)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Trial not found")
 
 
 @governance_router.get("/run/agents")

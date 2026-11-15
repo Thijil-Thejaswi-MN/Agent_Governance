@@ -18,6 +18,7 @@ import {
   PanelLeftOpen,
   ShieldX,
   Bot,
+  FileSearch,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Role } from '../../types';
@@ -109,6 +110,8 @@ export const Sidebar: React.FC<{
       ...(currentRole === 'auditor' ? { badge: totalTasks > 0 ? totalTasks : undefined, badgeColor: '#8B95A7', end: true } : {}),
     });
   add('audit', { to: '/results', label: 'Results', icon: icon(BarChart3) });
+  // The recorded trials behind the results (the server serves them to signed-in users).
+  if (signedIn) add('audit', { to: '/evidence', label: 'Evidence', icon: icon(FileSearch) });
   const groups = GROUPS.map(g => ({ ...g, items: items.filter(i => i.group === g.key) })).filter(g => g.items.length > 0);
 
   // Collapsed: a tooltip beside the icon, shown on hover and on keyboard focus.
