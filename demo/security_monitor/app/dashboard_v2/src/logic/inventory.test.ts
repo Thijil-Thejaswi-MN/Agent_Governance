@@ -42,3 +42,23 @@ describe('cards', () => {
     ]);
   });
 });
+
+describe('configured agents and comparison runs', () => {
+  const cfg = [{ id: 'finance_bot', name: 'Finance Bot', owner: 'Ana Dev', team: 'finance', description: 'Revenue reports' }];
+  it('lists a configured agent before its first run', () => {
+    const cards = inventoryCards([], [], cfg);
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ agentId: 'finance_bot', name: 'Finance Bot', owner: 'Ana Dev', tasks: 0, blocked: 0, risk: 'low', configured: true });
+  });
+  it('never counts comparison runs', () => {
+    const cards = inventoryCards(
+      [
+        { task_id: 'n', agent_id: 'finance_bot', condition: 'C', prevented_count: 1 },
+        { task_id: 'c', agent_id: 'finance_bot', condition: 'B', prevented_count: 9 },
+      ],
+      [],
+      cfg,
+    );
+    expect(cards[0]).toMatchObject({ tasks: 1, blocked: 1, risk: 'medium' });
+  });
+});

@@ -10,6 +10,17 @@ export interface InvTask {
   completed_at?: string | null;
   prevented_count?: number;
   os_denials_count?: number;
+  condition?: string | null;
+  comparison_mode?: boolean;
+}
+
+/** A named agent from the console's agent list (agents_config.json). */
+export interface InvConfiguredAgent {
+  id: string;
+  name: string;
+  owner: string;
+  team: string;
+  description: string;
 }
 
 export interface InvRequest {
@@ -30,6 +41,10 @@ export interface AgentCard {
   promptedAsks: number;
   lastActive: string | null;
   risk: Risk;
+  // Set for agents in the console's agent list.
+  name?: string;
+  description?: string;
+  configured?: true;
 }
 
 /** The rule, in words, shown on hover. */
@@ -57,9 +72,12 @@ const latest = (...isos: (string | null | undefined)[]) =>
 const RANK: Record<Risk, number> = { high: 0, medium: 1, low: 2 };
 
 /** Owner and team come from the agent's most recent run that names them; missing stays null. */
-export function inventoryCards(tasks: InvTask[], requests: InvRequest[]): AgentCard[] {
+export function inventoryCards(allTasks: InvTask[], requests: InvRequest[], configured: InvConfiguredAgent[] = []): AgentCard[] {
+  // Comparison runs (kernel lock off, for demonstration) never count towards an agent's record.
+  const tasks = allTasks.filter(t => !t.comparison_mode && t.condition !== 'B');
   const agentOfTask = new Map(tasks.map(t => [t.task_id, t.agent_id]));
   const byAgent = new Map<string, InvTask[]>();
+  for (const a of configured) byAgent.set(a.id, []);
   for (const t of tasks) {
     if (!t.agent_id) continue;
     byAgent.set(t.agent_id, [...(byAgent.get(t.agent_id) ?? []), t]);
@@ -71,19 +89,21 @@ export function inventoryCards(tasks: InvTask[], requests: InvRequest[]): AgentC
     const blocked = ts.reduce((n, t) => n + Math.max(t.prevented_count || 0, t.os_denials_count || 0), 0);
     const asks = reqs.length;
     const promptedAsks = reqs.filter(r => r.escalated_by_provenance).length;
+    const cfg = configured.find(a => a.id === agentId);
     cards.push({
       agentId,
-      owner: ordered.find(t => t.owner)?.owner ?? null,
-      team: ordered.find(t => t.team)?.team ?? null,
+      owner: cfg?.owner ?? ordered.find(t => t.owner)?.owner ?? null,
+      team: cfg?.team ?? ordered.find(t => t.team)?.team ?? null,
       tasks: ts.length,
       blocked,
       asks,
       promptedAsks,
       lastActive: latest(...ts.flatMap(t => [t.completed_at, t.started_at, t.created_at])),
       risk: riskOf(blocked, asks, promptedAsks),
+      ...(cfg ? { name: cfg.name, description: cfg.description, configured: true as const } : {}),
     });
   }
   return cards.sort(
-    (a, b) => RANK[a.risk] - RANK[b.risk] || (Date.parse(b.lastActive || '') || 0) - (Date.parse(a.lastActive || '') || 0) || a.agentId.localeCompare(b.agentId),
+    (a, b) => Number(!!b.configured) - Number(!!a.configured) || RANK[a.risk] - RANK[b.risk] || (Date.parse(b.lastActive || '') || 0) - (Date.parse(a.lastActive || '') || 0) || a.agentId.localeCompare(b.agentId),
   );
 }
