@@ -814,6 +814,8 @@ class ActiveRunManager:
                     "steps": steps,
                 }
             else:
+                # Console runs cap each model reply (the evaluation scripts do not set this).
+                os.environ.setdefault("OLLAMA_MAX_TOKENS", "1024")
                 llm_cfg = {
                     "provider": "ollama",
                     "model": model,
