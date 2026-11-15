@@ -40,7 +40,7 @@ describe('cards', () => {
       { agentId: 'a', owner: 'Ana', team: 'core', tasks: 2, blocked: 6, asks: 2, promptedAsks: 1, lastActive: '2026-11-12T11:00:00Z', risk: 'high' },
       { agentId: 'b', owner: null, team: null, tasks: 1, blocked: 0, asks: 1, promptedAsks: 0, lastActive: '2026-11-12T12:00:00Z', risk: 'low' },
     ]);
-    expect(cards[0].recent.map(r => [r.taskId, r.blocked])).toEqual([['t2', 4], ['t1', 2]]);
+    expect(cards[0].recent?.map(r => [r.taskId, r.blocked])).toEqual([['t2', 4], ['t1', 2]]);
   });
   it('counts the models its runs used and keeps comparison runs apart', () => {
     const [c] = inventoryCards(
@@ -56,7 +56,7 @@ describe('cards', () => {
     expect(c.modelsUsed).toEqual([{ model: 'qwen2.5:7b', runs: 2 }, { model: 'scripted', runs: 1 }]);
     expect(c.comparisonRuns).toBe(1);
     expect(c.tasks).toBe(3);
-    expect(c.recent[0]).toMatchObject({ taskId: 's1', request: 'Summarise', status: 'COMPLETED' });
+    expect(c.recent?.[0]).toMatchObject({ taskId: 's1', request: 'Summarise', status: 'COMPLETED' });
     expect(c).toMatchObject({ model: 'qwen2.5:7b', tools: ['read_file'] });
   });
 });
