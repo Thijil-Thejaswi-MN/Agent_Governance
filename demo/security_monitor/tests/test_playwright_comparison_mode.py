@@ -97,7 +97,8 @@ def test_comparison_mode_playwright(page: Page, comparison_console_server, tmp_p
     report_sheet = page.locator("#report-sheet")
     expect(report_sheet).to_be_visible(timeout=10000)
     blocked_section = page.locator("#report-blocked")
-    expect(blocked_section).to_contain_text("Comparison run: decoy was read (would be blocked by the kernel lock)")
+    expect(blocked_section).to_contain_text("got through with the kernel lock off")
+    expect(blocked_section).to_contain_text("Got through: the private file was read")
     expect(blocked_section).to_contain_text("private_archive.txt")
 
     report_screenshot_path = screenshot_dir / "report_comparison_page_1440.png"

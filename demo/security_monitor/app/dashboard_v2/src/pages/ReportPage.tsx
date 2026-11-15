@@ -28,6 +28,10 @@ export const ReportSheet: React.FC<{ report: TaskReport }> = ({ report }) => {
   const added = addedLater(report.boundary);
   const rec = recordLine(report.record);
   const initial = report.boundary.initial;
+  // Comparison run (kernel lock off): attempts outside the boundary were not stopped.
+  const isComparison = !!(report.task.comparison_mode || report.task.condition === 'B');
+  const gotThrough = report.blocked.filter(b => b.layer === 'comparison_unlocked').length;
+  const stopped = report.blocked.length - gotThrough;
 
   return (
     <article id="report-sheet" className="report-sheet card p-6 sm:p-8 flex flex-col gap-6 text-[14px] leading-relaxed">
@@ -61,7 +65,11 @@ export const ReportSheet: React.FC<{ report: TaskReport }> = ({ report }) => {
         <Fact k="Started" v={formatWhen(t.started_at || t.created_at)} nowrap />
         <Fact k="Ended" v={formatWhen(t.completed_at)} nowrap />
         <Fact k="Approvals" v={String(report.approvals.length)} />
-        <Fact k="Blocked actions" v={String(report.blocked.length)} />
+        {isComparison ? (
+          <Fact k="Got through (lock off)" v={String(gotThrough)} />
+        ) : (
+          <Fact k="Blocked actions" v={String(report.blocked.length)} />
+        )}
       </section>
 
       <Section title="Boundary" id="report-boundary">
@@ -96,19 +104,26 @@ export const ReportSheet: React.FC<{ report: TaskReport }> = ({ report }) => {
         )}
       </Section>
 
-      <Section title={`Blocked actions (${report.blocked.length})`} id="report-blocked">
+      <Section
+        title={
+          isComparison
+            ? `Outside the boundary (${report.blocked.length}): ${gotThrough} got through with the kernel lock off${stopped ? `, ${stopped} stopped` : ''}`
+            : `Blocked actions (${report.blocked.length})`
+        }
+        id="report-blocked"
+      >
         {report.blocked.length === 0 ? (
           <p className="m-0" style={{ color: 'var(--text-2)' }}>Nothing was blocked.</p>
         ) : (
           <Table
-            head={['Tried', 'Stopped by', 'Result', 'When']}
+            head={['Tried', isComparison ? 'Layer' : 'Stopped by', 'Result', 'When']}
             rows={blocked.shown.map(b => [
               <span className="font-mono [overflow-wrap:anywhere]">{b.target || '—'}</span>,
               b.layer === 'comparison_unlocked'
-                ? 'Kernel lock off (comparison mode)'
+                ? 'None: kernel lock off (comparison mode)'
                 : layerLabel(b.layer),
               b.layer === 'comparison_unlocked'
-                ? 'Comparison run: decoy was read (would be blocked by the kernel lock)'
+                ? 'Got through: the private file was read (the kernel lock blocks this in a normal run)'
                 : 'Attempted, not successful',
               formatWhen(b.timestamp),
             ])}
