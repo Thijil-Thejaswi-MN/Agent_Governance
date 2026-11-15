@@ -128,6 +128,8 @@ export interface OutputPreview {
   content: string;
   size?: number;
   truncated?: boolean;
+  location?: string;
+  windowsLocation?: string | null;
 }
 
 export function outputsFromSteps(steps: TaskStep[]): OutputPreview[] {

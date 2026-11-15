@@ -225,6 +225,8 @@ export interface RunOutputFile {
   size: number;
   content: string;
   truncated: boolean;
+  location?: string;
+  windows_location?: string | null;
 }
 
 export interface RunModelsResponse {

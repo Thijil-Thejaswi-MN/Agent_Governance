@@ -1928,12 +1928,17 @@ async def get_task_output_files(task_id: str, request: Request = None) -> dict[s
                 except Exception:
                     content = "[Binary or unreadable content]"
                     truncated = False
+                location = str(p.resolve())
+                distro = os.environ.get("WSL_DISTRO_NAME")
                 files.append({
                     "path": rel,
                     "name": p.name,
                     "size": size,
                     "content": content,
                     "truncated": truncated,
+                    # Where the file was saved on disk, and the same place as Windows Explorer sees it.
+                    "location": location,
+                    "windows_location": ("\\\\wsl.localhost\\" + distro + location.replace("/", "\\")) if distro else None,
                 })
 
     return {

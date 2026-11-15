@@ -63,7 +63,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
   });
 
   const outputs: OutputPreview[] = run.outputFiles.length
-    ? run.outputFiles.map(f => ({ path: f.path, name: f.name || fileName(f.path), content: f.content, size: f.size, truncated: f.truncated }))
+    ? run.outputFiles.map(f => ({ path: f.path, name: f.name || fileName(f.path), content: f.content, size: f.size, truncated: f.truncated, location: f.location, windowsLocation: f.windows_location }))
     : outputsFromSteps(run.steps);
   const record = receiptSentence(run.receipt, run.receiptLoaded);
 
@@ -283,6 +283,13 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
                 <Download className="w-3.5 h-3.5" /> Download
               </button>
             </div>
+            {f.location && (
+              <div className="mb-3 text-[13px]" id="output-location">
+                <div style={{ color: 'var(--text-3)' }}>Saved at</div>
+                <PathLine label="Linux" value={f.location} />
+                {f.windowsLocation && <PathLine label="Windows Explorer" value={f.windowsLocation} />}
+              </div>
+            )}
             <pre className="m-0 whitespace-pre-wrap text-[14px] leading-relaxed mono" style={{ color: 'var(--text)' }}>
               {f.content || '(empty file)'}
             </pre>
@@ -381,3 +388,33 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
     </div>
   );
 };
+
+
+// One file location with a copy button (a browser page cannot open a folder by itself;
+// paste the Windows path into File Explorer's address bar).
+function PathLine({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="flex items-start gap-2 mt-1">
+      <span className="shrink-0 w-[132px]" style={{ color: 'var(--text-3)' }}>{label}</span>
+      <code className="mono break-all flex-1" style={{ color: 'var(--text)' }}>{value}</code>
+      <button
+        type="button"
+        className="shrink-0 underline"
+        style={{ color: 'var(--text-2)' }}
+        onClick={() => {
+          try {
+            navigator.clipboard.writeText(value).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            });
+          } catch {
+            // clipboard not available; the path is still visible to select by hand
+          }
+        }}
+      >
+        {copied ? 'Copied' : 'Copy'}
+      </button>
+    </div>
+  );
+}
