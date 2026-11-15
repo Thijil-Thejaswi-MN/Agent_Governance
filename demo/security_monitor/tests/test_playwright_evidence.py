@@ -56,6 +56,8 @@ def test_evidence_walkthrough_from_results(page, console_server):
     drawer = page.locator("#evidence-drawer")
     expect(drawer).to_be_visible()
     expect(drawer.locator('[data-mark="blocked"]').first).to_be_visible()
+    drawer.get_by_role("button", name="Close details").click()
+    expect(drawer).to_be_hidden()
 
     # The full run: four setups for one attack.
     page.locator('#evidence-datasets [data-dataset="full_run"]').click()

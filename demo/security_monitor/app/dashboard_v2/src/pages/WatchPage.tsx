@@ -33,6 +33,13 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [outputOpen, setOutputOpen] = useState(false);
   const [events, setEvents] = useState<TaskEvent[]>([]);
+  const [agentNames, setAgentNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    api
+      .getRunAgents()
+      .then(list => setAgentNames(Object.fromEntries(list.map(a => [a.id, a.name]))))
+      .catch(() => undefined);
+  }, []);
 
   const terminal = isTerminal(run.state);
   const live = !terminal;
@@ -141,6 +148,19 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
         </div>
 
         <section aria-label={run.pending ? 'Your decision' : 'What is happening'} className="flex-[1_1_380px] max-w-[540px] min-w-0 flex flex-col gap-5">
+          {run.task && (
+            <p className="m-0 text-[14px]" id="run-agent-line" style={{ color: 'var(--text-3)' }}>
+              <span style={{ color: 'var(--text-2)' }}>{agentNames[run.task.agent_id] || run.task.agent_id}</span>
+              {run.task.model ? (
+                <>
+                  {' · runs on '}
+                  <span className="mono" style={{ color: 'var(--text-2)' }}>
+                    {run.task.model}
+                  </span>
+                </>
+              ) : null}
+            </p>
+          )}
           <h1
             id="run-status"
             data-state={run.state}
