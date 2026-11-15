@@ -1014,3 +1014,35 @@ def test_request_access_not_asked_again_after_decision(tmp_path: Path) -> None:
         assert len(res.receipt.get("expansions", [])) == 4
     finally:
         _cleanup(res)
+
+
+@linux_only
+@needs_scope
+def test_request_access_for_an_already_allowed_file_is_not_asked(tmp_path: Path) -> None:
+    """Asking for "data.csv" when the boundary already allows "input/data.csv" returns the allowed
+    path at once; no approval request is created."""
+    from demo.security_monitor.app.governance.launcher import TaskLauncher, TaskSpec
+    from demo.security_monitor.app.governance.storage import GovernanceStorage
+
+    storage = GovernanceStorage(tmp_path / "gov.db")
+    launcher = TaskLauncher(storage)
+    spec = TaskSpec(
+        prompt="Process input/data.csv and write output/summary.txt.",
+        inputs={"input/data.csv": "id,val\n1,10\n"},
+        output_targets=["output/summary.txt"],
+        files_read=["input/data.csv"],
+        condition="C",
+        approval_policy="deny",
+        llm={"provider": "scripted", "steps": [
+            {"tool": "request_access", "args": {"resource_type": "file_read", "resource_target": "data.csv", "justification": "x"}},
+            {"final": "done"},
+        ]}
+    )
+    res = launcher.run(spec)
+    try:
+        out = res.shim_result["tool_history"][0]["output"]
+        assert out["granted"] is True and out["status"] == "already_in_boundary"
+        assert out["resource_target"] == "input/data.csv"
+        assert storage.list_expansion_requests(task_id=res.task_id) == []
+    finally:
+        _cleanup(res)
