@@ -728,6 +728,7 @@ class ToolBroker:
                 seed=kwargs.get("seed", 42),
                 num_ctx=num_ctx,
                 base_url=kwargs.get("base_url"),
+                max_tokens=int(kwargs.get("max_tokens") or os.environ.get("OLLAMA_MAX_TOKENS") or 0),
             )
 
         # 3. Live external hosted provider dispatch (OpenAI, Gemini, Anthropic)
@@ -765,8 +766,12 @@ class ToolBroker:
         num_ctx: int = 8192,
         base_url: str | None = None,
         timeout: float = 300.0,
+        max_tokens: int = 0,
     ) -> dict[str, Any]:
-        """Invokes local Ollama via its OpenAI-compatible /v1/chat/completions endpoint with retry support."""
+        """Invokes local Ollama via its OpenAI-compatible /v1/chat/completions endpoint with retry support.
+
+        max_tokens > 0 caps one reply, so a model stuck repeating itself cannot run until the
+        task timeout (0 = no cap, as in the recorded evaluation runs)."""
         import httpx
         import time
         root_url = (base_url or os.environ.get("OLLAMA_BASE_URL") or "http://127.0.0.1:11434").rstrip("/")
@@ -794,6 +799,8 @@ class ToolBroker:
             payload["seed"] = seed
         if tools:
             payload["tools"] = tools
+        if max_tokens and max_tokens > 0:
+            payload["max_tokens"] = max_tokens
 
         max_retries = 3
         for attempt in range(max_retries):
