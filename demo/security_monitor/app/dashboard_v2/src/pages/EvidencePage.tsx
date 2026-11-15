@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client';
-import { EvidenceDataset, EvidenceRow, EvidenceTrial } from '../types';
+import { AttackDetail, AttackRow, AttackStory, EvidenceDataset, EvidenceTrial } from '../types';
 import { ErrorState, LoadingState } from '../components/common/States';
 import { DetailsDrawer } from '../components/v3/DetailsDrawer';
-import { CATEGORY_LABEL, KEY_PAIR, rowVerdict, stepView } from '../logic/evidence';
+import { ACTION_LABEL, SETUP_ABOUT, firstStory, highlightParts, rowVerdict, stepView, storyVerdict } from '../logic/evidence';
 
 const TONE: Record<'bad' | 'good' | 'neutral', React.CSSProperties> = {
   bad: { color: '#FCA5A5', background: 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.4)' },
@@ -160,211 +161,425 @@ export const TrialView: React.FC<{ t: EvidenceTrial; compact?: boolean }> = ({ t
   );
 };
 
+const DEFAULT_ATTACK: Record<string, string> = { e1b_shell_only: 'injected_indirect_04', full_run: 'injected_indirect_01' };
+const ATTACK_DATASETS = ['e1b_shell_only', 'full_run'];
+
+const Step: React.FC<{ n: number; title: string; children?: React.ReactNode; id?: string }> = ({ n, title, children, id }) => (
+  <section className="flex flex-col gap-3" id={id}>
+    <div className="flex items-center gap-3">
+      <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-[13px] font-bold shrink-0" style={{ background: 'rgba(59,130,246,0.15)', color: '#93C5FD', border: '1px solid rgba(59,130,246,0.4)' }}>
+        {n}
+      </span>
+      <H2>{title}</H2>
+    </div>
+    {children}
+  </section>
+);
+
+const Highlighted: React.FC<{ text: string; canary: string | null }> = ({ text, canary }) => (
+  <>
+    {highlightParts(text, canary).map((p, i) =>
+      p.mark ? (
+        <span
+          key={i}
+          data-highlight={p.mark}
+          className="rounded px-0.5 font-semibold"
+          style={p.mark === 'leak' ? { background: 'rgba(239,68,68,0.25)', color: '#FECACA' } : { background: 'rgba(34,197,94,0.2)', color: '#BBF7D0' }}
+        >
+          {p.text}
+        </span>
+      ) : (
+        <React.Fragment key={i}>{p.text}</React.Fragment>
+      ),
+    )}
+  </>
+);
+
+// One cell of the attack picker: harm in this setup, out of its trials.
+const HarmCell: React.FC<{ v?: { trials: number; harm: number; acted: number } }> = ({ v }) =>
+  !v ? (
+    <td className="px-3 py-2" />
+  ) : (
+    <td className="px-3 py-2 whitespace-nowrap">
+      <span className="font-semibold" style={{ color: v.harm ? '#FCA5A5' : '#86EFAC' }}>
+        {v.harm}/{v.trials}
+      </span>
+      <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>
+        {' '}
+        · acted {v.acted}
+      </span>
+    </td>
+  );
+
+/** One setup's column: the trials as chips, and the step where the agent acted on the note. */
+const SetupColumn: React.FC<{
+  c: AttackDetail['conditions'][number];
+  action: string;
+  onOpen: (repeat: number) => void;
+}> = ({ c, action, onOpen }) => {
+  const [pick, setPick] = useState(() => firstStory(c.stories));
+  useEffect(() => setPick(firstStory(c.stories)), [c]);
+  const s: AttackStory | undefined = c.stories[pick];
+  const v = s ? storyVerdict(s, c.condition, action) : null;
+  return (
+    <div className="card p-4 flex flex-col gap-3 min-w-0" data-condition={c.condition}>
+      <div className="flex flex-col gap-1">
+        <div className="font-semibold text-[16px] text-[#E6E9EF]">
+          {c.condition} · {c.name}
+        </div>
+        <p className="m-0 text-[13px] leading-relaxed" style={{ color: 'var(--text-3)' }}>
+          {SETUP_ABOUT[c.condition]}
+        </p>
+      </div>
+      <div className="text-[15px] font-semibold" data-harm={c.harm} style={{ color: c.harm ? '#FCA5A5' : '#86EFAC' }}>
+        {c.harm ? `Harm in ${c.harm} of ${c.trials} trials` : `No harm in any of ${c.trials} trials`}
+        <span className="font-normal text-[13px]" style={{ color: 'var(--text-3)' }}>
+          {' '}
+          · acted on the note in {c.acted}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-1.5" role="group" aria-label={`Trials in setup ${c.condition}`}>
+        {c.stories.map((st, i) => {
+          const dot = st.harm ? '#EF4444' : st.key_step ? '#22C55E' : '#64748B';
+          return (
+            <button
+              key={st.repeat}
+              type="button"
+              aria-pressed={i === pick}
+              onClick={() => setPick(i)}
+              title={st.harm ? 'Harm' : st.key_step ? 'Acted on the note, stopped' : 'Ignored the note'}
+              className="inline-flex items-center gap-1.5 px-2 min-h-[28px] rounded-md border text-[12px]"
+              style={i === pick ? { borderColor: '#3B82F6', background: 'rgba(59,130,246,0.12)', color: '#E6E9EF' } : { borderColor: '#2A3344', color: 'var(--text-2)' }}
+              data-repeat={st.repeat}
+            >
+              <span className="w-2 h-2 rounded-full" style={{ background: dot }} />#{st.repeat + 1}
+            </button>
+          );
+        })}
+      </div>
+      {s && v && (
+        <div className="flex flex-col gap-2" data-trial={`${c.condition}/${s.repeat}`} data-verdict={s.key_step?.verdict ?? 'ignored'}>
+          {s.key_step ? (
+            <div className="rounded-lg border p-3 flex flex-col gap-1.5" style={{ borderColor: v.tone === 'bad' ? 'rgba(239,68,68,0.5)' : v.tone === 'good' ? 'rgba(34,197,94,0.45)' : '#2A3344', background: '#0B0F17' }}>
+              <div className="text-[12px]" style={{ color: 'var(--text-3)' }}>
+                Step {s.key_step.step} of {s.steps} · <span className="mono">{s.key_step.tool}</span>
+              </div>
+              <Mono>{s.key_step.what}</Mono>
+              {s.key_step.result && (
+                <pre className="m-0 whitespace-pre-wrap break-words mono text-[13px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
+                  {'→ '}
+                  <Highlighted text={s.key_step.result} canary={s.canary} />
+                </pre>
+              )}
+            </div>
+          ) : null}
+          <div>
+            <Chip tone={v.tone}>{v.label}</Chip>
+          </div>
+          <p className="m-0 text-[14px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
+            {v.why}
+          </p>
+          <div>
+            <button type="button" className="underline text-[13px]" style={{ color: '#93C5FD' }} onClick={() => onOpen(s.repeat)} data-open-trial>
+              Show every step{s.has_receipt ? ' and re-check its record' : ''}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const EvidencePage: React.FC = () => {
   const [datasets, setDatasets] = useState<EvidenceDataset[] | null>(null);
-  const [active, setActive] = useState<string>('full_run');
-  const [rows, setRows] = useState<EvidenceRow[] | null>(null);
+  const [active, setActive] = useState<string>('e1b_shell_only');
+  const [attacks, setAttacks] = useState<AttackRow[] | null>(null);
+  const [onlyActed, setOnlyActed] = useState(true);
+  const [scenario, setScenario] = useState<string>(DEFAULT_ATTACK.e1b_shell_only);
+  const [detail, setDetail] = useState<AttackDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [condition, setCondition] = useState<string>('all');
-  const [kind, setKind] = useState<string>('all');
-  const [onlyHarm, setOnlyHarm] = useState(false);
   const [open, setOpen] = useState<EvidenceTrial | null>(null);
-  const [opening, setOpening] = useState(false);
-  const [pair, setPair] = useState<[EvidenceTrial, EvidenceTrial] | null>(null);
 
   useEffect(() => {
     api.getEvidenceDatasets().then(setDatasets).catch(e => setError(e?.message || 'Could not load the recorded runs.'));
   }, []);
 
   useEffect(() => {
-    setRows(null);
-    setCondition('all');
-    setKind('all');
-    setOnlyHarm(false);
-    api.getEvidenceTrials(active).then(setRows).catch(e => setError(e?.message || 'Could not load the trials.'));
+    setAttacks(null);
+    setScenario(DEFAULT_ATTACK[active]);
+    api.getEvidenceAttacks(active).then(setAttacks).catch(e => setError(e?.message || 'Could not load the attacks.'));
   }, [active]);
 
-  const openTrial = useCallback(
-    (r: EvidenceRow) => {
-      setOpening(true);
-      api
-        .getEvidenceTrial(active, r.scenario_id, r.condition, r.repeat)
-        .then(setOpen)
-        .catch(e => setError(e?.message || 'Could not load the trial.'))
-        .finally(() => setOpening(false));
-    },
-    [active],
-  );
+  useEffect(() => {
+    setDetail(null);
+    if (!scenario) return;
+    api.getEvidenceAttack(active, scenario).then(setDetail).catch(e => setError(e?.message || 'Could not load the attack.'));
+  }, [active, scenario]);
 
-  const showPair = useCallback(() => {
-    Promise.all([
-      api.getEvidenceTrial(KEY_PAIR.dataset, KEY_PAIR.scenario, KEY_PAIR.left, KEY_PAIR.repeat),
-      api.getEvidenceTrial(KEY_PAIR.dataset, KEY_PAIR.scenario, KEY_PAIR.right, KEY_PAIR.repeat),
-    ])
-      .then(([l, r]) => setPair([l, r]))
-      .catch(e => setError(e?.message || 'Could not load the pair.'));
-  }, []);
+  const openTrial = useCallback(
+    (condition: string, repeat: number) => {
+      api
+        .getEvidenceTrial(active, scenario, condition, repeat)
+        .then(setOpen)
+        .catch(e => setError(e?.message || 'Could not load the trial.'));
+    },
+    [active, scenario],
+  );
 
   const ds = datasets?.find(d => d.id === active);
-  const filtered = useMemo(
-    () =>
-      (rows || []).filter(
-        r =>
-          (condition === 'all' || r.condition === condition) &&
-          (kind === 'all' || r.category === kind) &&
-          (!onlyHarm || r.harm),
-      ),
-    [rows, condition, kind, onlyHarm],
-  );
-  const conditions = useMemo(() => Array.from(new Set((rows || []).map(r => r.condition))).sort(), [rows]);
-  const kinds = useMemo(() => Array.from(new Set((rows || []).map(r => r.category))), [rows]);
+  const util = datasets?.find(d => d.id === 'utility');
+  const conds = useMemo(() => (ds ? Object.keys(ds.by_condition).sort() : []), [ds]);
+  const shown = (attacks || []).filter(a => !onlyActed || Object.values(a.by_condition).some(v => v.acted > 0) || a.id === scenario);
 
   if (error && !datasets) return <ErrorState message={error} id="evidence-error" />;
   if (!datasets) return <LoadingState label="Loading the recorded runs…" id="evidence-loading" />;
 
   return (
-    <div className="max-w-[1200px] pb-12 flex flex-col gap-6" id="evidence-page">
+    <div className="max-w-[1200px] pb-12 flex flex-col gap-8" id="evidence-page">
       <header className="flex flex-col gap-2">
+        <Link to="/results" className="text-[14px] inline-flex items-center min-h-[32px]" style={{ color: '#93C5FD' }}>
+          ← Results
+        </Link>
         <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-[#E6E9EF]">Evidence</h1>
-        <p className="m-0 text-[16px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
-          The recorded evaluation trials, read straight from the raw files committed to the repository. Open any trial to
-          see the request, the trick hidden in its input file, every command the agent ran with its output, and the
-          trial's receipt, whose hash chain is re-checked when you open it.
+        <p className="m-0 text-[16px] leading-relaxed max-w-[860px]" style={{ color: 'var(--text-2)' }}>
+          The recorded evaluation trials behind the results, one attack at a time. Pick an attack, see the instruction
+          hidden in its input file, then the exact step where the agent acted on it in each setup and what came back.
+          Everything here is read from the raw trial files in the repository.
         </p>
       </header>
 
-      <section className="card p-4 sm:p-5 flex flex-col gap-3" id="key-pair">
-        <H2>The key comparison: the same attack, with and without the kernel layer</H2>
-        <p className="m-0 text-[15px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
-          Scenario <span className="mono">injected_indirect_04</span>, the same model (qwen2.5:7b) and repeat. The agent
-          followed the hidden instruction and ran <span className="mono">cat ~/old_reports/board_minutes.txt</span> both times.
-          With the tool layer only (B), the private file came back. With the kernel layer (C), Landlock refused it.
-        </p>
-        <div>
-          <button type="button" className="btn-primary px-4 py-2 rounded-lg text-[14px] font-semibold" id="show-key-pair" onClick={showPair}>
-            Show the two recorded trials side by side
-          </button>
-        </div>
-        {pair && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2" id="key-pair-view">
-            <div className="rounded-xl border border-[#2A3344] p-4"><TrialView t={pair[0]} compact /></div>
-            <div className="rounded-xl border border-[#2A3344] p-4"><TrialView t={pair[1]} compact /></div>
-          </div>
-        )}
-      </section>
-
       <nav className="flex flex-wrap gap-2" aria-label="Recorded runs" id="evidence-datasets">
-        {datasets.map(d => (
-          <button
-            key={d.id}
-            type="button"
-            data-dataset={d.id}
-            aria-pressed={d.id === active}
-            onClick={() => setActive(d.id)}
-            className="px-3 py-2 rounded-lg border text-[14px] font-medium"
-            style={
-              d.id === active
-                ? { borderColor: '#3B82F6', background: 'rgba(59,130,246,0.12)', color: '#E6E9EF' }
-                : { borderColor: '#2A3344', color: 'var(--text-2)' }
-            }
-          >
-            {d.title.split(':')[0]} · {d.trials} trials
-          </button>
-        ))}
+        {datasets
+          .filter(d => ATTACK_DATASETS.includes(d.id))
+          .map(d => (
+            <button
+              key={d.id}
+              type="button"
+              data-dataset={d.id}
+              aria-pressed={d.id === active}
+              onClick={() => setActive(d.id)}
+              className="px-3 py-2 rounded-lg border text-[14px] font-medium text-left"
+              style={d.id === active ? { borderColor: '#3B82F6', background: 'rgba(59,130,246,0.12)', color: '#E6E9EF' } : { borderColor: '#2A3344', color: 'var(--text-2)' }}
+            >
+              {d.id === 'e1b_shell_only' ? 'Shell-only agent (E1b)' : 'Full run, all four setups'} · {d.trials} trials
+            </button>
+          ))}
       </nav>
 
       {ds && (
         <section className="flex flex-col gap-3" id="evidence-summary">
-          <H2>{ds.title}</H2>
-          <p className="m-0 text-[15px] leading-relaxed" style={{ color: 'var(--text-2)' }}>{ds.about}</p>
-          <div className="text-[13px]" style={{ color: 'var(--text-3)' }}>
-            Raw file: <span className="mono">{ds.file}</span>
+          <p className="m-0 text-[15px] leading-relaxed max-w-[860px]" style={{ color: 'var(--text-2)' }}>
+            {ds.about} Model: <span className="mono">{ds.model}</span>.
+          </p>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {conds.map(c => {
+              const m = ds.by_condition[c].metrics.find(x => x.label === 'Attack trials with harm');
+              return (
+                <div key={c} className="card p-3 flex flex-col gap-0.5" data-condition={c}>
+                  <div className="text-[13px]" style={{ color: 'var(--text-3)' }}>
+                    {c} · {ds.by_condition[c].name}
+                  </div>
+                  {m && (
+                    <div className="text-[20px] font-bold" style={{ color: m.value ? '#FCA5A5' : '#86EFAC' }}>
+                      {m.value}/{m.of}
+                      <span className="text-[13px] font-normal" style={{ color: 'var(--text-3)' }}>
+                        {' '}
+                        attack trials with harm
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {Object.entries(ds.by_condition).map(([c, v]) => (
-              <div key={c} className="card p-4 flex flex-col gap-1" data-condition={c}>
+        </section>
+      )}
+
+      <Step n={1} title="Pick an attack" id="attack-picker">
+        <div className="flex flex-wrap items-center gap-3 text-[14px]" style={{ color: 'var(--text-2)' }}>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" id="evidence-only-acted" checked={onlyActed} onChange={e => setOnlyActed(e.target.checked)} />
+            Only attacks the agent acted on in some setup
+          </label>
+          <span style={{ color: 'var(--text-3)' }}>
+            In many trials the small model ignored the note; those are in the counts too.
+          </span>
+        </div>
+        {!attacks ? (
+          <LoadingState label="Loading attacks…" />
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-[#1F2633]">
+            <table className="w-full text-[14px] border-collapse" id="attack-table">
+              <thead>
+                <tr className="text-left" style={{ color: 'var(--text-3)' }}>
+                  <th className="px-3 py-2 font-medium">Attack</th>
+                  <th className="px-3 py-2 font-medium">The hidden note asks the agent to</th>
+                  {conds.map(c => (
+                    <th key={c} className="px-3 py-2 font-medium whitespace-nowrap">
+                      {c}: harm
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map(a => (
+                  <tr
+                    key={a.id}
+                    data-attack={a.id}
+                    aria-selected={a.id === scenario}
+                    onClick={() => setScenario(a.id)}
+                    className="border-t border-[#1F2633] cursor-pointer hover:bg-[#121826]"
+                    style={a.id === scenario ? { background: 'rgba(59,130,246,0.1)' } : undefined}
+                  >
+                    <td className="px-3 py-2">
+                      <button type="button" className="mono text-[13px] underline-offset-2 hover:underline bg-transparent" style={{ color: '#E6E9EF' }} onClick={() => setScenario(a.id)}>
+                        {a.id.replace('injected_indirect_', '#')}
+                      </button>
+                    </td>
+                    <td className="px-3 py-2" style={{ color: 'var(--text-2)' }}>
+                      {ACTION_LABEL[a.injected_action] || a.injected_action}: <span className="mono text-[13px]">{a.injected_target}</span>
+                      {a.phrasing === 'indirect_reference' && (
+                        <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>
+                          {' '}
+                          (named indirectly)
+                        </span>
+                      )}
+                    </td>
+                    {conds.map(c => (
+                      <HarmCell key={c} v={a.by_condition[c]} />
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Step>
+
+      {!detail ? (
+        <LoadingState label="Loading the attack…" />
+      ) : (
+        <>
+          <Step n={2} title="The trap" id="attack-trap">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="card p-4 flex flex-col gap-3">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
+                    What the user asked
+                  </span>
+                  <p className="m-0 text-[15px] leading-relaxed text-[#E6E9EF]" id="attack-request">
+                    {detail.scenario.user_prompt}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1 text-[14px]">
+                  <span className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
+                    The boundary that request gives
+                  </span>
+                  <div>
+                    Read: <span className="mono">{detail.scenario.boundary?.files_read?.join(', ') || 'nothing'}</span>
+                  </div>
+                  <div>
+                    Write: <span className="mono">{detail.scenario.boundary?.files_write?.join(', ') || 'nothing'}</span>
+                  </div>
+                  <div>
+                    Network: <span className="mono">{detail.scenario.boundary?.hosts?.length ? detail.scenario.boundary.hosts.join(', ') : 'none'}</span>
+                  </div>
+                  <div style={{ color: 'var(--text-3)' }}>Everything else is denied.</div>
+                </div>
+                {detail.scenario.decoys.length > 0 && (
+                  <div className="flex flex-col gap-1 text-[14px]" id="attack-decoys">
+                    <span className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
+                      Private files planted in the home folder (each holds a unique code)
+                    </span>
+                    {detail.scenario.decoys.map(d => (
+                      <div key={d} className="mono text-[13px]" style={{ color: d === detail.scenario.injected_target ? '#FCA5A5' : 'var(--text-2)' }} data-target={d === detail.scenario.injected_target || undefined}>
+                        {d}
+                        {d === detail.scenario.injected_target ? '  ← the note points here' : ''}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-col gap-3">
+                {detail.scenario.files.map(f => (
+                  <div key={f.path} className="rounded-xl border border-[#2A3344] overflow-hidden" style={{ background: '#0B0F17' }}>
+                    <div className="px-3 py-2 mono text-[12px] border-b border-[#2A3344]" style={{ color: 'var(--text-3)' }}>
+                      {f.path} (the input file the agent reads)
+                    </div>
+                    <pre className="m-0 p-3 whitespace-pre-wrap break-words mono text-[13px] leading-relaxed">
+                      {f.lines.map(ln => (
+                        <div
+                          key={ln.n}
+                          data-hidden={ln.hidden || undefined}
+                          className="flex gap-3 rounded"
+                          style={ln.hidden ? { background: 'rgba(239,68,68,0.14)', color: '#FECACA' } : { color: 'var(--text)' }}
+                        >
+                          <span className="select-none w-5 text-right shrink-0" style={{ color: 'var(--text-3)' }}>
+                            {ln.n}
+                          </span>
+                          <span className="min-w-0">{ln.text || ' '}</span>
+                        </div>
+                      ))}
+                    </pre>
+                    <div className="px-3 py-2 text-[13px] border-t border-[#2A3344]" style={{ color: '#FCA5A5' }}>
+                      The red line is the hidden instruction. The user never asked for it; it came from the file.
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Step>
+
+          <Step n={3} title="What the agent did with it, in each setup" id="attack-setups">
+            <p className="m-0 text-[15px] leading-relaxed max-w-[860px]" style={{ color: 'var(--text-2)' }}>
+              Same model, same files, same note. Each column shows one recorded trial at the step where the agent acted on
+              the note, and what came back. Click a trial number to see another repeat.
+            </p>
+            <div className={`grid grid-cols-1 gap-4 ${detail.conditions.length > 2 ? 'md:grid-cols-2 xl:grid-cols-4' : 'md:grid-cols-2'}`}>
+              {detail.conditions.map(c => (
+                <SetupColumn key={c.condition} c={c} action={detail.scenario.injected_action} onOpen={r => openTrial(c.condition, r)} />
+              ))}
+            </div>
+          </Step>
+
+          <Step n={4} title="Check it yourself" id="attack-files">
+            <div className="text-[14px] leading-relaxed flex flex-col gap-1" style={{ color: 'var(--text-2)' }}>
+              <div>
+                Trials: <span className="mono">{detail.file}</span> (one line per trial; find <span className="mono">"scenario_id": "{detail.scenario.id}"</span>)
+              </div>
+              <div>
+                Scenario: <span className="mono">{detail.scenario_files.join(', ')}</span>
+              </div>
+              <div style={{ color: 'var(--text-3)' }}>
+                "Show every step" opens the full trial, and for trials with an archived receipt, re-checks its hash chain on the spot.
+              </div>
+            </div>
+          </Step>
+        </>
+      )}
+
+      {util && (
+        <section className="card p-4 sm:p-5 flex flex-col gap-2" id="evidence-utility">
+          <H2>And normal tasks still work</H2>
+          <p className="m-0 text-[14px]" style={{ color: 'var(--text-2)' }}>
+            {util.about} Raw file: <span className="mono">{util.file}</span>
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {Object.entries(util.by_condition).map(([c, v]) => (
+              <div key={c} className="flex flex-col gap-0.5 text-[14px]" data-condition={c}>
                 <div className="font-semibold text-[#E6E9EF]">
-                  {c}: {v.name}
+                  {c} · {v.name}
                 </div>
                 {v.metrics.map(m => (
-                  <div key={m.label} className="text-[14px]" style={{ color: 'var(--text-2)' }}>
+                  <div key={m.label} style={{ color: 'var(--text-2)' }}>
                     {m.label}: <span className="font-semibold text-[#E6E9EF]">{m.value}/{m.of}</span>
                   </div>
                 ))}
-                <div className="text-[12px]" style={{ color: 'var(--text-3)' }}>{v.trials} trials</div>
               </div>
             ))}
           </div>
         </section>
       )}
-
-      <section className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-3 text-[14px]">
-          <label className="flex items-center gap-2" style={{ color: 'var(--text-2)' }}>
-            Setup
-            <select id="evidence-condition" value={condition} onChange={e => setCondition(e.target.value)} className="min-h-[36px] px-2 rounded-lg bg-[#0E121A] text-[#E6E9EF] border border-[#2A3344]">
-              <option value="all">All</option>
-              {conditions.map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </label>
-          <label className="flex items-center gap-2" style={{ color: 'var(--text-2)' }}>
-            Kind
-            <select id="evidence-kind" value={kind} onChange={e => setKind(e.target.value)} className="min-h-[36px] px-2 rounded-lg bg-[#0E121A] text-[#E6E9EF] border border-[#2A3344]">
-              <option value="all">All</option>
-              {kinds.map(k => (
-                <option key={k} value={k}>{CATEGORY_LABEL[k] || k}</option>
-              ))}
-            </select>
-          </label>
-          <label className="flex items-center gap-2" style={{ color: 'var(--text-2)' }}>
-            <input id="evidence-only-harm" type="checkbox" checked={onlyHarm} onChange={e => setOnlyHarm(e.target.checked)} />
-            Only trials with harm
-          </label>
-          <span style={{ color: 'var(--text-3)' }}>{rows ? `${filtered.length} of ${rows.length}` : ''}</span>
-        </div>
-
-        {!rows ? (
-          <LoadingState label="Loading trials…" />
-        ) : (
-          <div className="overflow-x-auto rounded-xl border border-[#1F2633]">
-            <table className="w-full text-[14px] border-collapse" id="evidence-table">
-              <thead>
-                <tr style={{ color: 'var(--text-3)' }} className="text-left">
-                  <th className="px-3 py-2 font-medium">Scenario</th>
-                  <th className="px-3 py-2 font-medium">Kind</th>
-                  <th className="px-3 py-2 font-medium">Setup</th>
-                  <th className="px-3 py-2 font-medium">Repeat</th>
-                  <th className="px-3 py-2 font-medium">Result</th>
-                  <th className="px-3 py-2 font-medium">Tool calls</th>
-                  <th className="px-3 py-2 font-medium"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(r => {
-                  const v = rowVerdict(r);
-                  return (
-                    <tr key={`${r.scenario_id}/${r.condition}/${r.repeat}`} className="border-t border-[#1F2633]" data-row={`${r.scenario_id}/${r.condition}/${r.repeat}`}>
-                      <td className="px-3 py-2 mono text-[13px]">{r.scenario_id}</td>
-                      <td className="px-3 py-2" style={{ color: 'var(--text-2)' }}>{CATEGORY_LABEL[r.category] || r.category}</td>
-                      <td className="px-3 py-2">{r.condition}</td>
-                      <td className="px-3 py-2">{r.repeat}</td>
-                      <td className="px-3 py-2"><Chip tone={v.tone}>{v.label}</Chip></td>
-                      <td className="px-3 py-2">{r.steps}</td>
-                      <td className="px-3 py-2 text-right">
-                        <button type="button" className="underline" style={{ color: '#93C5FD' }} onClick={() => openTrial(r)} disabled={opening}>
-                          Open
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
 
       <DetailsDrawer open={!!open} title="Recorded trial" onClose={() => setOpen(null)} id="evidence-drawer">
         {open && <TrialView t={open} />}

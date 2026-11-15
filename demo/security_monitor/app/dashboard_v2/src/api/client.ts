@@ -14,6 +14,8 @@ import {
   RunModelsResponse,
   ActiveRunInfo,
   ConfiguredAgent,
+  AttackDetail,
+  AttackRow,
   EvidenceDataset,
   EvidenceRow,
   EvidenceTrial,
@@ -207,6 +209,9 @@ export const api = {
   getRunPresets: () => request<RunPreset[]>(`${API_BASE}/run/presets`),
   getRunModels: () => request<RunModelsResponse>(`${API_BASE}/run/models`),
   getRunAgents: () => request<ConfiguredAgent[]>(`${API_BASE}/run/agents`),
+  getEvidenceAttacks: (dataset: string) => request<AttackRow[]>(`${API_BASE}/evidence/attacks?dataset=${encodeURIComponent(dataset)}`),
+  getEvidenceAttack: (dataset: string, scenario: string) =>
+    request<AttackDetail>(`${API_BASE}/evidence/attack?dataset=${encodeURIComponent(dataset)}&scenario=${encodeURIComponent(scenario)}`),
   getEvidenceDatasets: () => request<EvidenceDataset[]>(`${API_BASE}/evidence/datasets`),
   getEvidenceTrials: (dataset: string) => request<EvidenceRow[]>(`${API_BASE}/evidence/trials?dataset=${encodeURIComponent(dataset)}`),
   getEvidenceTrial: (dataset: string, scenario: string, condition: string, repeat: number) =>
