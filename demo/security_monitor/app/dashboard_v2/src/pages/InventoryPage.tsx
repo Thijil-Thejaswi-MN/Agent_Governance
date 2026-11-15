@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
-import { AgentInventoryItem, ExpansionItem, TaskRecord } from '../types';
+import { AgentInventoryItem, ConfiguredAgent, ExpansionItem, TaskRecord } from '../types';
 import { EmptyState, ErrorState, LoadingState } from '../components/common/States';
 import { AgentCard, RISK_RULE, Risk, inventoryCards, riskWhy } from '../logic/inventory';
 import { relativeTime } from '../logic/plain';
@@ -17,7 +17,17 @@ export const InventoryCard: React.FC<{ c: AgentCard; now: number }> = ({ c, now 
   return (
     <li className="card p-4 sm:p-5 flex flex-col gap-3 min-w-0" data-agent={c.agentId} data-risk={c.risk}>
       <div className="flex items-start justify-between gap-3">
-        <span className="font-mono text-[15px] font-semibold text-[#E6E9EF] [overflow-wrap:anywhere] min-w-0">{c.agentId}</span>
+        <div className="flex flex-col gap-1 min-w-0">
+          {c.name && <span className="text-[16px] font-semibold text-[#E6E9EF]">{c.name}</span>}
+          <span className={`font-mono [overflow-wrap:anywhere] ${c.name ? 'text-[12px]' : 'text-[15px] font-semibold text-[#E6E9EF]'}`} style={c.name ? { color: 'var(--text-3)' } : undefined}>
+            {c.agentId}
+          </span>
+          {!c.configured && (
+            <span className="text-[12px]" style={{ color: 'var(--text-3)' }} data-badge="earlier-runs">
+              Seen in earlier runs; not in the agent list
+            </span>
+          )}
+        </div>
         <span className="group relative shrink-0">
           <button
             type="button"
@@ -36,11 +46,16 @@ export const InventoryCard: React.FC<{ c: AgentCard; now: number }> = ({ c, now 
           </span>
         </span>
       </div>
+      {c.description && (
+        <p className="m-0 text-[13px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
+          {c.description}
+        </p>
+      )}
       <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-2 text-[14px]">
         <Fact k="Owner" v={c.owner ?? '—'} />
         <Fact k="Team" v={c.team ?? '—'} />
         <Fact k="Tasks run" v={String(c.tasks)} />
-        <Fact k="Blocked" v={String(c.blocked)} color={c.blocked ? '#F87171' : undefined} />
+        <Fact k="Blocked actions" v={String(c.blocked)} color={c.blocked ? '#F87171' : undefined} />
         <Fact k="Requests" v={c.promptedAsks ? `${c.asks} (${c.promptedAsks} prompted by a file)` : String(c.asks)} />
         <Fact k="Last active" v={relativeTime(c.lastActive, now) || '—'} title={c.lastActive ?? undefined} />
       </dl>
@@ -127,6 +142,7 @@ export const InventoryPage: React.FC = () => {
   const [tasks, setTasks] = useState<TaskRecord[] | null>(null);
   const [requests, setRequests] = useState<ExpansionItem[]>([]);
   const [inventory, setInventory] = useState<AgentInventoryItem[]>([]);
+  const [configured, setConfigured] = useState<ConfiguredAgent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
 
@@ -135,8 +151,10 @@ export const InventoryPage: React.FC = () => {
       api.getTasks(),
       api.getExpansions().catch(() => [] as ExpansionItem[]),
       api.getInventory().catch(() => [] as AgentInventoryItem[]),
+      api.getRunAgents().catch(() => [] as ConfiguredAgent[]),
     ])
-      .then(([ts, rs, inv]) => {
+      .then(([ts, rs, inv, cfg]) => {
+        setConfigured(cfg);
         setTasks(ts);
         setRequests(rs);
         setInventory(inv);
@@ -152,7 +170,7 @@ export const InventoryPage: React.FC = () => {
     return () => clearInterval(t);
   }, [load]);
 
-  const cards = tasks ? inventoryCards(tasks, requests) : [];
+  const cards = tasks ? inventoryCards(tasks, requests, configured) : [];
   const discoveredAgents = inventory.filter(
     item => item.classification === 'DISCOVERED_A2A' || item.metadata?.a2a_card
   );
@@ -172,7 +190,8 @@ export const InventoryPage: React.FC = () => {
             : `${totalAgents} ${totalAgents === 1 ? 'agent' : 'agents'}.`}
         </h1>
         <p className="m-0 text-[16px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
-          Every agent that has run here, from its runs and requests, plus local A2A agents discovered via Agent Cards.
+          The agents in the console's agent list, any other agent that has run here, and local A2A agents discovered via
+          Agent Cards. Counts come from real runs; comparison runs (kernel lock off) are not counted.
           {cards.length > 0 && ` ${counts.high} high, ${counts.medium} medium and ${counts.low} low risk.`}
         </p>
       </header>

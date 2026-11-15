@@ -38,8 +38,12 @@ def _sign_in(page: Page, url: str, token: str) -> None:
 def test_inventory_empty(page: Page, empty_console_server):
     _sign_in(page, empty_console_server.url, empty_console_server.token)
     page.goto(f"{empty_console_server.url}/dashboard/inventory")
-    expect(page.locator("#inventory-headline")).to_have_text("No agents yet.")
-    expect(page.locator("#inventory-empty")).to_be_visible()
+    # No runs yet: only the console's three configured agents, each with zero runs.
+    expect(page.locator("#inventory-headline")).to_have_text("3 agents.")
+    for agent in ("finance_bot", "notes_bot", "brief_bot"):
+        card = page.locator(f'#inventory-list li[data-agent="{agent}"]')
+        expect(card).to_be_visible()
+        expect(card).to_contain_text("Tasks run0")
 
 
 def test_inventory_card_and_grouped_sidebar(page: Page, console_server):
@@ -63,7 +67,7 @@ def test_inventory_card_and_grouped_sidebar(page: Page, console_server):
     expect(card).to_be_visible()
     expect(card).to_have_attribute("data-risk", "medium")
     expect(card).to_contain_text("Tasks run1")
-    expect(card).to_contain_text("Blocked1")
+    expect(card).to_contain_text("Blocked actions1")
     expect(card).to_contain_text("1 (1 prompted by a file)")
     badge = card.get_by_role("button", name="Medium risk")
     badge.hover()
