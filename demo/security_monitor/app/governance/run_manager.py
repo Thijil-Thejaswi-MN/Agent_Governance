@@ -31,6 +31,7 @@ from .storage import GovernanceStorage
 logger = logging.getLogger(__name__)
 
 AGENTS_CONFIG_PATH = Path(__file__).parent / "agents_config.json"
+DEFAULT_AGENT_MODEL = "qwen2.5:7b"
 
 
 def load_agents_config() -> dict[str, dict[str, Any]]:
@@ -43,9 +44,9 @@ def load_agents_config() -> dict[str, dict[str, Any]]:
         except Exception as e:
             logger.warning("Failed to load agents_config.json: %s", e)
     return {
-        "finance_bot": {"name": "Finance Bot", "owner": "Ana Dev", "team": "finance", "description": "Financial analysis and revenue reporting"},
-        "notes_bot": {"name": "Notes Bot", "owner": "Ravi K", "team": "core", "description": "Documentation and meeting minutes"},
-        "brief_bot": {"name": "Brief Bot", "owner": "Meena R", "team": "legal", "description": "Legal briefing and compliance review"},
+        "finance_bot": {"name": "Finance Bot", "owner": "Ana Dev", "team": "finance", "description": "Financial analysis and revenue reporting", "model": "qwen2.5:7b"},
+        "notes_bot": {"name": "Notes Bot", "owner": "Ravi K", "team": "core", "description": "Documentation and meeting minutes", "model": "qwen2.5:7b"},
+        "brief_bot": {"name": "Brief Bot", "owner": "Meena R", "team": "legal", "description": "Legal briefing and compliance review", "model": "llama3.1:8b"},
     }
 
 
@@ -59,6 +60,8 @@ def get_configured_agents() -> list[dict[str, Any]]:
             "owner": info.get("owner", "Engineering"),
             "team": info.get("team", "core"),
             "description": info.get("description", ""),
+            # The model the agent runs on; a run may override it (e.g. 'scripted' for a repeatable demo).
+            "model": info.get("model", DEFAULT_AGENT_MODEL),
         })
     return out
 
@@ -756,7 +759,7 @@ class ActiveRunManager:
         prompt: str,
         storage: GovernanceStorage,
         preset_id: str | None = None,
-        model: str = "qwen2.5:7b",
+        model: str | None = None,
         files: dict[str, str] | None = None,
         workspace_base: Path | None = None,
         launcher_hooks: dict[str, Any] | None = None,
@@ -765,7 +768,18 @@ class ActiveRunManager:
         agent_id: str | None = None,
         comparison_mode: bool = False,
     ) -> str:
-        model = validate_model(model)  # outside the lock: may query Ollama
+        agent_default = not model
+        if agent_default:
+            # No override: the agent's own model.
+            cfg_agent = load_agents_config().get(agent_id or "finance_bot") or {}
+            model = cfg_agent.get("model") or DEFAULT_AGENT_MODEL
+        try:
+            model = validate_model(model)  # outside the lock: may query Ollama
+        except ValueError as err:
+            if not agent_default:
+                raise
+            agent_name = (load_agents_config().get(agent_id or "finance_bot") or {}).get("name", agent_id)
+            raise ValueError(f"{agent_name} runs on '{model}', which is not available here. {err}") from err
         with self._lock:
             self._prune_dead_runs()
             mock_active = self._active_thread is not None and self._active_thread.is_alive()

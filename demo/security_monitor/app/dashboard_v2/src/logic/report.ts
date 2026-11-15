@@ -38,6 +38,8 @@ export interface TaskReport {
     task_id: string;
     request_text: string;
     agent_id: string;
+    agent_name?: string | null;
+    model?: string | null;
     requester: string | null;
     agent_owner?: string | null;
     team: string | null;

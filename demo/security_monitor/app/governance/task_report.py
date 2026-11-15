@@ -10,6 +10,16 @@ from typing import Any
 from .fleet import event_layer, is_blocked
 
 
+def _agent_name(agent_id: str) -> str | None:
+    """The configured display name for an agent id (None for agents not in the list)."""
+    try:
+        from .run_manager import load_agents_config
+
+        return (load_agents_config().get(agent_id) or {}).get("name")
+    except Exception:  # noqa: BLE001 - a report must not fail over a display name
+        return None
+
+
 def _val(x: Any) -> Any:
     return getattr(x, "value", x)
 
@@ -114,8 +124,10 @@ def build_task_report(
             "task_id": task.task_id,
             "request_text": task.request_text,
             "agent_id": task.agent_id,
+            "agent_name": _agent_name(task.agent_id),
             "requester": getattr(task, "requested_by", None),
             "agent_owner": task.owner,
+            "model": getattr(task, "model", None),
             "team": task.team,
             "status": _val(task.status),
             "created_at": task.created_at,

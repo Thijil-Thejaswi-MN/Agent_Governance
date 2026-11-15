@@ -26,6 +26,7 @@ export interface TaskRecord {
   os_denials_count?: number;
   condition?: string | null;
   comparison_mode?: boolean;
+  model?: string | null;
 }
 
 export interface TaskBoundary {
@@ -242,6 +243,7 @@ export interface ConfiguredAgent {
   owner: string;
   team: string;
   description: string;
+  model?: string; // the model this agent runs on
 }
 
 export interface ActiveRunTask {

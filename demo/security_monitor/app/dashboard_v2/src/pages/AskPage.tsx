@@ -29,7 +29,8 @@ export const AskPage: React.FC = () => {
   const [presets, setPresets] = useState<RunPreset[]>([]);
   const [presetId, setPresetId] = useState('summarise_csv');
   const [models, setModels] = useState<string[]>(['scripted']);
-  const [model, setModel] = useState('scripted');
+  // '' = the agent's own model; otherwise an override for this run only.
+  const [modelOverride, setModelOverride] = useState('');
   const [ollamaReachable, setOllamaReachable] = useState(true);
   const [agents, setAgents] = useState<ConfiguredAgent[]>([
     { id: 'finance_bot', name: 'Finance Bot', owner: 'Ana Dev', team: 'finance', description: 'Financial analysis' },
@@ -65,7 +66,6 @@ export const AskPage: React.FC = () => {
         const all = [...ms.models];
         if (!all.includes('scripted')) all.push('scripted');
         setModels(all);
-        setModel(ms.default || 'scripted');
         setOllamaReachable(ms.ollama_reachable !== false);
         const first = ps.find(p => p.id === 'summarise_csv') || ps[0];
         if (first) {
@@ -97,6 +97,14 @@ export const AskPage: React.FC = () => {
     }, 400);
     return () => clearTimeout(t);
   }, [prompt, presetId, files]);
+
+  const chosenAgent = agents.find(a => a.id === agentId);
+  const agentModel = chosenAgent?.model || '';
+  // The agent's model is unavailable (Ollama not running or not installed): fall back to the
+  // scripted steps and say so, rather than refusing to start.
+  const agentModelMissing = !modelOverride && !!agentModel && !models.includes(agentModel);
+  const runModel = modelOverride || (agentModelMissing ? 'scripted' : '');
+  const effectiveModel = runModel || agentModel || 'scripted';
 
   const canCompare = !!presets.find(p => p.id === presetId)?.comparable;
 
@@ -143,7 +151,14 @@ export const AskPage: React.FC = () => {
         setStarting(false);
         return;
       }
-      const res = await api.startRun({ prompt: prompt.trim(), preset: presetId, model, files, agent_id: agentId, comparison_mode: comparisonMode && canCompare });
+      const res = await api.startRun({
+        prompt: prompt.trim(),
+        preset: presetId,
+        ...(runModel ? { model: runModel } : {}),
+        files,
+        agent_id: agentId,
+        comparison_mode: comparisonMode && canCompare,
+      });
       navigate(`/run/${res.task_id}`);
     } catch (err: any) {
       // Nothing was started: stay here and say why.
@@ -210,18 +225,27 @@ export const AskPage: React.FC = () => {
               Model
               <select
                 id="model-selector"
-                value={model}
-                onChange={e => setModel(e.target.value)}
+                value={modelOverride}
+                onChange={e => setModelOverride(e.target.value)}
                 className="min-h-[44px] sm:min-h-[40px] px-3 rounded-lg text-[14px] outline-none bg-[#0E121A] text-[#E6E9EF] border border-[#2A3344] focus:border-[#3B82F6]"
               >
-                {models.map(m => (
-                  <option key={m} value={m}>
-                    {m === 'scripted' ? 'scripted (deterministic)' : m}
-                  </option>
-                ))}
+                <option value="">
+                  {agentModelMissing
+                    ? `scripted (${agentModel} is not available)`
+                    : agentModel
+                    ? `${agentModel} (the agent's own)`
+                    : "the agent's own"}
+                </option>
+                {models
+                  .filter(m => m !== agentModel)
+                  .map(m => (
+                    <option key={m} value={m}>
+                      {m === 'scripted' ? 'scripted: fixed steps, no AI (for repeatable demos)' : `${m} (override for this run)`}
+                    </option>
+                  ))}
               </select>
             </label>
-            <AgentModelNote agent={agents.find(a => a.id === agentId)} model={model} ollamaReachable={ollamaReachable} />
+            <AgentModelNote agent={chosenAgent} model={effectiveModel} overridden={!!runModel} missing={agentModelMissing} ollamaReachable={ollamaReachable} />
             {role === 'admin' && (
               <label
                 className={`flex items-center gap-2 text-[13px] text-[#FBBF24] ${canCompare ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}
@@ -360,7 +384,7 @@ export function AgentSelector({
   value,
   onChange,
 }: {
-  agents: { id: string; name: string; team?: string }[];
+  agents: { id: string; name: string; team?: string; model?: string }[];
   value: string;
   onChange: (id: string) => void;
 }) {
@@ -375,7 +399,7 @@ export function AgentSelector({
       >
         {agents.map(a => (
           <option key={a.id} value={a.id}>
-            {a.name} ({a.team || 'core'})
+            {a.name} ({a.team || 'core'}){a.model ? ` · ${a.model}` : ''}
           </option>
         ))}
       </select>
@@ -384,16 +408,34 @@ export function AgentSelector({
 }
 
 
-// Agent and model are different things: say so where they are chosen.
-const AgentModelNote: React.FC<{ agent?: ConfiguredAgent; model: string; ollamaReachable: boolean }> = ({ agent, model, ollamaReachable }) => (
+// An agent is an accountable identity with its own model; say so where it is chosen.
+const AgentModelNote: React.FC<{
+  agent?: ConfiguredAgent;
+  model: string;
+  overridden: boolean;
+  missing: boolean;
+  ollamaReachable: boolean;
+}> = ({ agent, model, overridden, missing, ollamaReachable }) => (
   <div className="basis-full flex flex-col gap-1 text-[13px] leading-relaxed" id="agent-model-note" style={{ color: 'var(--text-3)' }}>
-    <span>
-      <span style={{ color: 'var(--text-2)' }}>Agent</span> = who is accountable
-      {agent ? `: ${agent.name}, owned by ${agent.owner} (${agent.team} team)${agent.description ? `, ${agent.description.charAt(0).toLowerCase()}${agent.description.slice(1)}` : ''}` : ''}.{' '}
-      <span style={{ color: 'var(--text-2)' }}>Model</span> = the brain that drives it
-      {model === 'scripted' ? ': a fixed, repeatable list of steps (no AI)' : `: ${model}, running locally`}.
-      {' '}What it may touch comes from your request, not from the agent.
-    </span>
+    {agent && (
+      <span>
+        <span style={{ color: 'var(--text-2)' }}>{agent.name}</span>
+        {agent.description ? ` (${agent.description.charAt(0).toLowerCase()}${agent.description.slice(1)})` : ''} is owned by{' '}
+        {agent.owner}, {agent.team} team, and runs on{' '}
+        <span className="mono" style={{ color: 'var(--text-2)' }}>{agent.model || 'qwen2.5:7b'}</span>.
+        {overridden &&
+          (model === 'scripted'
+            ? ' This run replays fixed steps instead (no AI), so it is repeatable.'
+            : ` This run uses ${model} instead.`)}{' '}
+        What it may touch comes from your request, not from the agent.
+      </span>
+    )}
+    {missing && (
+      <span id="agent-model-missing" style={{ color: '#FBBF24' }}>
+        {agent?.model} is not available here, so this run will use the scripted steps. Start Ollama, or install the model
+        with <span className="mono">ollama pull {agent?.model}</span>.
+      </span>
+    )}
     {!ollamaReachable && (
       <span id="ollama-unreachable" style={{ color: '#FBBF24' }}>
         Ollama is not running, so only the scripted agent is available. Start Ollama and reload this page.

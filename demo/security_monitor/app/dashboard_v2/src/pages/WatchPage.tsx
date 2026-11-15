@@ -308,7 +308,11 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
           {run.streamNote && <KV k="Live updates" v={run.streamNote} id="stream-note" />}
           {run.task && <KV k="Agent" v={run.task.agent_id} />}
           {run.task && <KV k="Request" v={run.task.request_text} />}
-          {run.task?.llm_provider && <KV k="Model provider" v={run.task.llm_provider} />}
+          {run.task?.model ? (
+            <KV k="Model" v={run.task.model} id="run-model" />
+          ) : (
+            run.task?.llm_provider && <KV k="Model provider" v={run.task.llm_provider} />
+          )}
         </DetailsSection>
 
         <DetailsSection title="Boundary (what the request allows)">

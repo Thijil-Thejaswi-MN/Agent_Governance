@@ -653,6 +653,8 @@ class TaskLauncher:
         if spec.condition:
             task.condition = spec.condition
         task.requested_by = spec.requester
+        llm = spec.llm or {}
+        task.model = "scripted" if llm.get("provider") in ("scripted", "scripted_mock") else (llm.get("model") or llm.get("provider"))
         self.storage.save_task(task)
         return task, boundary
 
