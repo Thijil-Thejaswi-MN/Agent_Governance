@@ -11,6 +11,7 @@ import { ruleSentenceText } from '../logic/rules';
 
 // No step for this long (or a stream error) -> stop trusting the stream and read stored state.
 const STREAM_STALL_MS = 20000;
+const NOT_FOUND_RETRIES = 20; // about 20 s
 const POLL_INTERVAL_MS = 2000;
 
 const TASK_STATUS_TO_STATE: Record<string, RunState> = {
@@ -182,7 +183,28 @@ export function useRunTracker(taskId: string | undefined): RunTracker {
     setReceipt(null);
     setReceiptLoaded(false);
     setActionError(null);
-    loadTask(id);
+    // A run that was just started may not be stored yet: keep asking for a few seconds
+    // before saying it does not exist.
+    let firstLoadCancelled = false;
+    let firstLoadTimer: ReturnType<typeof setTimeout> | null = null;
+    const firstLoad = async (attempt: number) => {
+      if (firstLoadCancelled) return;
+      try {
+        const detail = await api.getTaskDetail(id);
+        if (firstLoadCancelled) return;
+        setTask(detail.task);
+        setBoundary(detail.boundary);
+        setNotFound(false);
+      } catch (err: any) {
+        if (firstLoadCancelled) return;
+        if (err?.status === 404 && attempt < NOT_FOUND_RETRIES) {
+          firstLoadTimer = setTimeout(() => firstLoad(attempt + 1), 1000);
+        } else if (err?.status === 404) {
+          setNotFound(true);
+        }
+      }
+    };
+    firstLoad(0);
     loadExpansions(id);
 
     let ended = false;
@@ -244,6 +266,8 @@ export function useRunTracker(taskId: string | undefined): RunTracker {
     armWatchdog();
 
     return () => {
+      firstLoadCancelled = true;
+      if (firstLoadTimer) clearTimeout(firstLoadTimer);
       ended = true;
       es.close();
       if (watchdog) clearTimeout(watchdog);

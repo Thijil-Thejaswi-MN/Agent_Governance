@@ -137,3 +137,14 @@ def test_eval_shell_trick_preset_matches_evaluation_scenario() -> None:
     assert [d["path"] for d in preset["decoys"]] == [scen["injected_target"]]
     cmds = [s["args"]["command"] for s in preset["scripted_steps"] if s.get("tool") == "run_command"]
     assert any(scen["injected_target"] in c for c in cmds)
+
+
+def test_eval_shell_trick_uses_the_e1b_shell_only_agent() -> None:
+    from demo.security_monitor.app.governance.run_manager import _shell_only_agent
+    assert PRESETS["eval_shell_trick"].get("shell_only") is True
+    agent = _shell_only_agent()
+    assert sorted(t["function"]["name"] for t in agent["tools_schema"]) == ["run_command", "write_file"]
+    src = (Path(__file__).resolve().parents[1] / "evaluate_v3.py").read_text()
+    for part in ("You are an automated task execution agent governed by a secure runtime boundary. ",
+                 "You have access to 2 governed tools: run_command and write_file (for output/summary.txt). "):
+        assert part in src and part in agent["system_prompt"]
