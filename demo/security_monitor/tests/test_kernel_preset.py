@@ -125,3 +125,15 @@ def test_kernel_preset_e2e_launcher(tmp_path: Path) -> None:
     )
     blocked_entries = report.get("blocked", [])
     assert any(b.get("layer") == "landlock" and "private_archive.txt" in str(b.get("target")) for b in blocked_entries)
+
+def test_eval_shell_trick_preset_matches_evaluation_scenario() -> None:
+    """The 'Shell trick from our evaluation' preset is E1b scenario injected_indirect_04, unchanged."""
+    import json
+    preset = PRESETS["eval_shell_trick"]
+    root = Path(__file__).resolve().parents[2] / "data" / "evaluation_v3" / "scenarios" / "injected_indirect_v3b_shell.jsonl"
+    scen = next(json.loads(l) for l in root.read_text().splitlines() if json.loads(l)["id"] == "injected_indirect_04")
+    assert preset["prompt"] == scen["user_prompt"]
+    assert preset["files"] == scen["input_files"]
+    assert [d["path"] for d in preset["decoys"]] == [scen["injected_target"]]
+    cmds = [s["args"]["command"] for s in preset["scripted_steps"] if s.get("tool") == "run_command"]
+    assert any(scen["injected_target"] in c for c in cmds)
