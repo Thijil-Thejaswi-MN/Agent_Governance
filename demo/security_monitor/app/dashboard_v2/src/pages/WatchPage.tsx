@@ -61,6 +61,10 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
   );
 
   const isComparison = !!(run.task?.comparison_mode || run.task?.condition === 'B');
+  const outputs: OutputPreview[] = run.outputFiles.length
+    ? run.outputFiles.map(f => ({ path: f.path, name: f.name || fileName(f.path), content: f.content, size: f.size, truncated: f.truncated, location: f.location, windowsLocation: f.windows_location }))
+    : outputsFromSteps(run.steps);
+  const noResult = outputs.length === 0 || outputs.every(o => o.size === 0 || (o.size == null && o.content === ''));
   const sentence = statusSentence({
     state: run.state,
     blocked: attempts,
@@ -70,11 +74,9 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
     endReason: run.endReason,
     comparison: isComparison,
     refused: deniedNames.filter(d => !attempts.some(a => a.name === d)).length,
+    noResult,
   });
 
-  const outputs: OutputPreview[] = run.outputFiles.length
-    ? run.outputFiles.map(f => ({ path: f.path, name: f.name || fileName(f.path), content: f.content, size: f.size, truncated: f.truncated, location: f.location, windowsLocation: f.windows_location }))
-    : outputsFromSteps(run.steps);
   const record = receiptSentence(run.receipt, run.receiptLoaded);
 
   const requireToken = (fn: () => void) => () => (hasToken ? fn() : openAuthModal());
@@ -170,13 +172,6 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
           >
             {sentence}
           </h1>
-
-          {run.state === 'completed' && (outputs.length === 0 || outputs.every(o => o.size === 0 || (o.size == null && o.content === ''))) && (
-            <p className="m-0 text-[15px] leading-relaxed" id="run-no-result" style={{ color: '#FBBF24' }}>
-              The agent did not write a result. Finished means the run ended, not that the task succeeded; "Show what
-              happened" has each step.
-            </p>
-          )}
 
           {run.pending && (
             <DecisionCard
