@@ -15,6 +15,7 @@ Enforces:
 from __future__ import annotations
 
 import asyncio
+import copy
 import datetime
 import hashlib
 import re
@@ -460,6 +461,11 @@ class ExpansionService:
             prompt_hash=current_boundary.prompt_hash,
             model_name=current_boundary.model_name,
             parent_expansion_id=req.request_id,
+            requires_user_review=current_boundary.requires_user_review,
+            contains_pasted_content=current_boundary.contains_pasted_content,
+            # The run's own settings (the agent's tool limit, the private-file code, ...) carry over:
+            # without them one approval would lift the agent's tool limit for the rest of the run.
+            metadata=copy.deepcopy(current_boundary.metadata),
         )
 
         target = req.resource_target
