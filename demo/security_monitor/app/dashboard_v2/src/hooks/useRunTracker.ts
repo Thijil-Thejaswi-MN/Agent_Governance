@@ -44,6 +44,8 @@ export interface RunTracker {
   stop: () => Promise<void>;
   approve: (requestId: string, scope?: ApprovalScope) => Promise<void>;
   deny: (requestId: string, reason: string) => Promise<void>;
+  /** Cancels an approved grant while the run is still going. */
+  revoke: (requestId: string) => Promise<void>;
 }
 
 export function useRunTracker(taskId: string | undefined): RunTracker {
@@ -323,6 +325,23 @@ export function useRunTracker(taskId: string | undefined): RunTracker {
     [taskId, loadTask, loadExpansions],
   );
 
+  const revoke = useCallback(
+    async (requestId: string) => {
+      setDeciding(true);
+      setActionError(null);
+      try {
+        await api.revokeExpansion(requestId, 'Cancelled from the Run page');
+        if (taskId) loadExpansions(taskId);
+      } catch (err: any) {
+        setActionError(err.message || 'Could not cancel the access.');
+      } finally {
+        setDeciding(false);
+        requestCountsRefresh();
+      }
+    },
+    [taskId, loadExpansions],
+  );
+
   const deny = useCallback(
     async (requestId: string, reason: string) => {
       if (!reason.trim()) {
@@ -367,5 +386,6 @@ export function useRunTracker(taskId: string | undefined): RunTracker {
     stop,
     approve,
     deny,
+    revoke,
   };
 }

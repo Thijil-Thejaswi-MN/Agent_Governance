@@ -141,6 +141,12 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  revokeExpansion: (requestId: string, reason = '') =>
+    request<{ status: string; removed: string[]; boundary_version: number }>(`${API_BASE}/expansions/${encodeURIComponent(requestId)}/revoke`, {
+      method: 'POST',
+      body: JSON.stringify({ decided_by: 'operator', reason }),
+    }),
+
   grantResource: (taskId: string, payload: { granted_by: string; resource_type: string; resource_target: string; single_use: boolean }) =>
     request<{ status: string; new_boundary: TaskBoundary }>(`${API_BASE}/tasks/${taskId}/grant`, {
       method: 'POST',

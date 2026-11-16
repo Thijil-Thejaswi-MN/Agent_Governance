@@ -130,6 +130,7 @@ class ExpansionStatus(str, Enum):
     APPROVED = "APPROVED"
     DENIED = "DENIED"
     EXPIRED = "EXPIRED"
+    REVOKED = "REVOKED"  # approved, then cancelled by a person while the run was still going
 
 
 class ExpansionRequest(BaseModel):

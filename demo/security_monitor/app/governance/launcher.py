@@ -296,6 +296,34 @@ class ExpansionDelivery:
                         rec["removed_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
                         rec["removed_reason"] = "single_use_consumed_after_first_observed_open"
 
+    def revoke(self, rtype: str, target: str, revoked_by: str) -> list[str]:
+        """Removes the delivered copies of a revoked grant. Returns the removed paths.
+
+        A file the agent already has open stays readable through that open handle; every
+        new open fails because the copy is gone (and the broker no longer allows it)."""
+        if rtype != "file_read":
+            return []
+        t = target[len("granted/"):] if target.startswith("granted/") else target
+        t = t.lstrip("./")
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        removed: list[str] = []
+        with self._lock:
+            for rec in self.records:
+                if rec.get("type") != "file_copy" or rec.get("removed_at"):
+                    continue
+                if rec.get("delivered_path") != f"granted/{t}":
+                    continue
+                path = self.ws / rec["delivered_path"]
+                try:
+                    if path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(self.granted.resolve()):
+                        os.unlink(path)
+                except OSError:
+                    pass
+                rec["removed_at"] = now
+                rec["removed_reason"] = f"revoked_by:{revoked_by}"
+                removed.append(rec["delivered_path"])
+        return removed
+
     def cleanup(self) -> None:
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with self._lock:
@@ -446,6 +474,21 @@ class TaskLauncher:
         # Serialises "release the agent gate" against cancel(): either the agent starts
         # and cancel() kills its cgroup, or cancel() wins and the agent never starts.
         self._gate_lock = threading.Lock()
+
+    def revoke_grant(self, request_id: str, revoked_by: str, reason: str = "") -> dict[str, Any]:
+        """Cancels an approved grant of this live run: the request becomes REVOKED, a boundary
+        version without the resource is saved, and a delivered copy is removed."""
+        expansion = self.live.get("expansion")
+        delivery = self.live.get("delivery")
+        if expansion is None or delivery is None:
+            raise RuntimeError("This run is not running, so there is nothing to cancel.")
+        req = self.storage.get_expansion_request(request_id)
+        if req is None or req.task_id != self.live.get("task_id"):
+            raise ValueError(f"Expansion request '{request_id}' is not part of this run.")
+        boundary = expansion.revoke_request(request_id, revoked_by, reason)
+        removed = delivery.revoke(req.resource_type, req.resource_target, revoked_by)
+        return {"request_id": request_id, "status": "REVOKED", "boundary_version": boundary.version,
+                "removed": removed}
 
     # --- preconditions (fail closed) ---
     @staticmethod
@@ -835,6 +878,8 @@ class TaskLauncher:
                 llm_options["base_url"] = llm_cfg["base_url"]
 
         delivery = ExpansionDelivery(ws, self.storage, staging=resolved_path)
+        self.live["delivery"] = delivery
+        self.live["expansion"] = expansion
         rpc = BrokerRPCServer(broker, ws / BROKER_SOCKET_NAME, task_id, llm_model=llm_model, llm_options=llm_options,
                               delivery=delivery, cgroup_reader=cgroup_ctl.read_proc_cgroup,
                               call_timeout=max(float(spec.approval_timeout_s) + 30.0, 120.0))
@@ -1180,6 +1225,7 @@ class TaskLauncher:
             except Exception:
                 pass
             aloop.stop()
+            self.live.pop("expansion", None)  # grants end with the run: nothing left to cancel
             delivery.cleanup()
             self.storage.revoke_token(token)
 

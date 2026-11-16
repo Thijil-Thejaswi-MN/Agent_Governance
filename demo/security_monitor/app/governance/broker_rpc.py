@@ -642,14 +642,19 @@ class BrokerRPCServer:
         prior = sorted(
             (r for r in self.broker.storage.list_expansion_requests(task_id=self.task_id)
              if r.resource_type == rtype and self._norm_target(r.resource_target) == norm
-             and r.status in (ExpansionStatus.APPROVED, ExpansionStatus.DENIED)
+             and r.status in (ExpansionStatus.APPROVED, ExpansionStatus.DENIED, ExpansionStatus.REVOKED)
              and not str(r.resolved_by or "").startswith(("duplicate_of:", "repeat_of:"))),
             key=lambda r: r.created_at,
         )
         if not prior:
             return None
         last = prior[-1]  # the most recent decision on this resource
-        if last.status == ExpansionStatus.DENIED:
+        if last.status == ExpansionStatus.REVOKED:
+            granted, status = False, f"repeat_of:{last.request_id}:revoked"
+            message = ("A person cancelled this access earlier in this run. "
+                       "You will not be asked again; continue without this resource.")
+            step = f"Not asked again: access to {target} was cancelled in this run"
+        elif last.status == ExpansionStatus.DENIED:
             granted, status = False, f"repeat_of:{last.request_id}:denied"
             message = (f"Already denied earlier in this run (by {last.resolved_by}). "
                        "You will not be asked again; continue without this resource.")

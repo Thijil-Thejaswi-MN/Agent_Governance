@@ -3,7 +3,7 @@ export type TaskLifecycle = 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'FAILED' | 'TER
 export type EnforcementMode = 'OBSERVE' | 'ENFORCE';
 export type EventVerdict = 'INSIDE' | 'OUTSIDE' | 'AMBIGUOUS' | 'UNATTRIBUTED';
 export type RiskTier = 'LOW' | 'MEDIUM' | 'HIGH';
-export type ExpansionStatus = 'PENDING' | 'APPROVED' | 'DENIED' | 'AUTO_APPROVED';
+export type ExpansionStatus = 'PENDING' | 'APPROVED' | 'DENIED' | 'AUTO_APPROVED' | 'REVOKED';
 
 export interface TaskRecord {
   owner?: string | null;
