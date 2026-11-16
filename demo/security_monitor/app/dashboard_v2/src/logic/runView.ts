@@ -173,3 +173,29 @@ export function splitAttempts(steps: TaskStep[]): { direct: BlockedAttempt[]; ba
   }
   return { direct, background };
 }
+
+// The labels of the stopped attempts on the fence. A stopped attempt whose file name matches an
+// allowed file (a write to a read-only input, the same name in another folder) keeps its own
+// label, so it is never hidden behind the allowed chip. `name` is what opening the chip looks up.
+export function fenceBlocked(
+  attempts: BlockedAttempt[],
+  insideNames: string[],
+  hidden: string[] = [],
+): { label: string; name: string }[] {
+  const out: { label: string; name: string }[] = [];
+  const seen = new Set<string>();
+  for (const a of attempts) {
+    let label = a.action === 'run' ? 'a command' : a.name;
+    const clash = label !== 'a command' && insideNames.includes(label);
+    if (clash) {
+      const parts = (a.target || '').trim().replace(/\\/g, '/').replace(/\/+$/, '').split('/').filter(Boolean);
+      const short = parts.slice(-2).join('/');
+      label = a.action === 'write' ? `${a.name} (write)` : short && short !== a.name ? short : `${a.name} (other copy)`;
+    }
+    if (!label || seen.has(label) || hidden.includes(label)) continue;
+    seen.add(label);
+    // A clashing chip never opens the allowed file of the same name.
+    out.push({ label, name: clash ? label : a.name });
+  }
+  return out;
+}

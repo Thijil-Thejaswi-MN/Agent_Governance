@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TaskStep } from '../types';
-import { agentStarted, blockedAttempts, boundaryLabel, fileName, justBlocked, outputsFromSteps } from './runView';
+import { AttemptAction, BlockedAttempt, agentStarted, blockedAttempts, boundaryLabel, fenceBlocked, fileName, justBlocked, outputsFromSteps } from './runView';
 
 let n = 0;
 const step = (kind: string, verdict: string, summary: string, extra: Partial<TaskStep> = {}): TaskStep => ({
@@ -117,5 +117,25 @@ describe('network refusals', () => {
   it('counts a refused http_get as an attempt to reach the host', () => {
     const [a] = blockedAttempts([step('tool', 'BLOCK_ACTION', 'http_get blocked: http://192.0.2.1/exfil')]);
     expect(a).toMatchObject({ action: 'reach', name: '192.0.2.1' });
+  });
+});
+
+describe('fenceBlocked', () => {
+  const at = (action: AttemptAction, target: string, name: string): BlockedAttempt => ({ action, target, name, stepNumber: 1 });
+  it('keeps a stopped attempt visible when its name matches an allowed file', () => {
+    const chips = fenceBlocked(
+      [
+        at('write', 'input/system_audit.txt', 'system_audit.txt'),
+        at('open', '/home/u/summary.txt', 'summary.txt'),
+        at('open', '/home/u/.config/acme/private_archive.txt', 'private_archive.txt'),
+        at('run', 'curl x', 'curl'),
+      ],
+      ['system_audit.txt', 'summary.txt'],
+    );
+    expect(chips.map(c => c.label)).toEqual(['system_audit.txt (write)', 'u/summary.txt', 'private_archive.txt', 'a command']);
+    expect(chips.map(c => c.name)).toEqual(['system_audit.txt (write)', 'u/summary.txt', 'private_archive.txt', 'curl']);
+  });
+  it('drops names the fence already shows as waiting', () => {
+    expect(fenceBlocked([at('open', 'input/x.csv', 'x.csv')], [], ['x.csv'])).toEqual([]);
   });
 });

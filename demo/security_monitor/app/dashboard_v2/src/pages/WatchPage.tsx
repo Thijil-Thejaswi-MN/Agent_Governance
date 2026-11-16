@@ -10,7 +10,7 @@ import { DecisionCard } from '../components/v3/DecisionCard';
 import { DetailsDrawer, DetailsSection, KV } from '../components/v3/DetailsDrawer';
 import { EventTable, TechnicalTimeline } from '../components/v3/TechnicalTimeline';
 import { boundaryVersionLabel, receiptSentence, statusSentence } from '../logic/plain';
-import { agentStarted, blockedAttempts, boundaryLabel, splitAttempts, fileName, isTerminal, justBlocked, outputsFromSteps, OutputPreview } from '../logic/runView';
+import { agentStarted, blockedAttempts, boundaryLabel, fenceBlocked, splitAttempts, fileName, isTerminal, justBlocked, outputsFromSteps, OutputPreview } from '../logic/runView';
 
 const STATUS_LABELS: Record<string, string> = {
   idle: 'Idle',
@@ -43,7 +43,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
     api
       .getRunFile(taskId, openName)
       .then(setFileView)
-      .catch(() => setFileError('This file is not available for this run (runs started before this update do not keep the private file).'));
+      .catch(() => setFileError("This file can't be opened here: it is not in the run's folder, or the run started before this update."));
   }, [taskId, openName]);
   const [events, setEvents] = useState<TaskEvent[]>([]);
   const [agentNames, setAgentNames] = useState<Record<string, string>>({});
@@ -70,9 +70,13 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
   const insideNames = uniq([...(run.boundary?.files_read || []), ...(run.boundary?.files_write || [])].map(boundaryLabel));
   const requestedNames = run.pending ? [fileName(run.pending.resource_target)] : [];
   const deniedNames = run.expansions.filter(e => e.status === 'DENIED').map(e => fileName(e.resource_target));
-  const blockedNames = uniq([...attempts.map(a => (a.action === 'run' ? 'a command' : a.name)), ...deniedNames]).filter(
-    n => !insideNames.includes(n) && !requestedNames.includes(n),
-  );
+  const blockedChips = fenceBlocked(attempts, insideNames, requestedNames);
+  const blockedNames = uniq([
+    ...blockedChips.map(c => c.label),
+    ...deniedNames.filter(n => !insideNames.includes(n) && !requestedNames.includes(n)),
+  ]);
+  // A chip's label may differ from its file name ("summary.txt (write)"); opening looks up the name.
+  const openByLabel = (label: string) => setOpenName(blockedChips.find(c => c.label === label)?.name || label);
 
   const isComparison = !!(run.task?.comparison_mode || run.task?.condition === 'B');
   const outputs: OutputPreview[] = run.outputFiles.length
@@ -162,7 +166,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
 
       <div className="pt-6 pb-10 flex flex-wrap items-center gap-8 lg:gap-12">
         <div className="flex-[1_1_420px] min-w-0 flex justify-center">
-          <Fence inside={insideNames} blocked={blockedNames} requested={requestedNames} live={live} gotThrough={isComparison} onOpen={terminal ? setOpenName : undefined} />
+          <Fence inside={insideNames} blocked={blockedNames} requested={requestedNames} live={live} gotThrough={isComparison} onOpen={terminal ? openByLabel : undefined} />
         </div>
 
         <section aria-label={run.pending ? 'Your decision' : 'What is happening'} className="flex-[1_1_380px] max-w-[540px] min-w-0 flex flex-col gap-5">
@@ -357,7 +361,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
       >
         {fileError && <p className="m-0 text-[14px]" style={{ color: 'var(--text-2)' }}>{fileError}</p>}
         {!fileView && !fileError && <p className="m-0 text-[14px]" style={{ color: 'var(--text-3)' }}>Loading…</p>}
-        {fileView && <FileView file={fileView} pointsTo={blockedNames.filter(n => n !== 'a command')} privateCheck={run.privateCheck} />}
+        {fileView && <FileView file={fileView} pointsTo={uniq(blockedChips.filter(c => c.label !== 'a command').map(c => c.name))} privateCheck={run.privateCheck} />}
       </DetailsDrawer>
 
       <DetailsDrawer open={detailsOpen} title="What happened" onClose={() => setDetailsOpen(false)}>
