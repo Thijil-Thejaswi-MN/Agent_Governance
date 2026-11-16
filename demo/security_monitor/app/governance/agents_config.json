@@ -3,13 +3,11 @@
     "name": "Finance Bot",
     "owner": "Ana Dev",
     "team": "finance",
-    "description": "Financial analysis and revenue reporting",
+    "description": "Revenue, targets and timesheet summaries",
     "model": "qwen2.5:7b",
     "tools": [
       "read_file",
       "write_file",
-      "http_get",
-      "call_agent",
       "request_access",
       "run_command"
     ]
@@ -17,26 +15,39 @@
   "notes_bot": {
     "name": "Notes Bot",
     "owner": "Ravi K",
-    "team": "core",
-    "description": "Documentation and meeting minutes",
+    "team": "operations",
+    "description": "Operations notes: summarises server logs and system audits",
     "model": "qwen2.5:7b",
     "tools": [
       "read_file",
       "write_file",
-      "request_access"
+      "request_access",
+      "run_command"
     ]
   },
   "brief_bot": {
     "name": "Brief Bot",
     "owner": "Meena R",
     "team": "legal",
-    "description": "Legal briefing and compliance review",
+    "description": "Legal briefs: summarises contracts and compliance documents",
     "model": "llama3.1:8b",
     "tools": [
       "read_file",
       "write_file",
-      "http_get",
       "request_access"
+    ]
+  },
+  "travel_bot": {
+    "name": "Travel Bot",
+    "owner": "Kiran S",
+    "team": "travel desk",
+    "description": "Plans business trips with the travel planner program (modelled on Google a2a-samples)",
+    "model": "qwen2.5:7b",
+    "tools": [
+      "read_file",
+      "write_file",
+      "request_access",
+      "run_command"
     ]
   }
 }

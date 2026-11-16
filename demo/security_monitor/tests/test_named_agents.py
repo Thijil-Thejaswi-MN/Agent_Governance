@@ -281,9 +281,9 @@ def test_api_agents_list_and_validation(env):
     resp = client.get("/api/governance/run/agents", headers=headers)
     assert resp.status_code == 200
     agents = resp.json()
-    assert len(agents) == 3
+    assert len(agents) == 4
     ids = {a["id"] for a in agents}
-    assert ids == {"finance_bot", "notes_bot", "brief_bot"}
+    assert ids == {"finance_bot", "notes_bot", "brief_bot", "travel_bot"}
 
     # 2. Validation: invalid agent_id returns 422
     resp_bad = client.post(

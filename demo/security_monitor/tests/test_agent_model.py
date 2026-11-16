@@ -11,6 +11,7 @@ def test_configured_agents_carry_their_model():
     assert agents["finance_bot"]["model"] == "qwen2.5:7b"
     assert agents["notes_bot"]["model"] == "qwen2.5:7b"
     assert agents["brief_bot"]["model"] == "llama3.1:8b"
+    assert agents["travel_bot"]["model"] == "qwen2.5:7b"
 
 
 def test_missing_agent_model_names_the_agent(monkeypatch):
@@ -39,9 +40,35 @@ from demo.security_monitor.app.governance.storage import GovernanceStorage  # no
 
 def test_configured_agents_have_different_tool_limits():
     agents = {a["id"]: a for a in run_manager.get_configured_agents()}
-    assert "run_command" in agents["finance_bot"]["tools"]
-    assert agents["notes_bot"]["tools"] == ["read_file", "write_file", "request_access"]
-    assert "http_get" in agents["brief_bot"]["tools"] and "run_command" not in agents["brief_bot"]["tools"]
+    # Least agency: each agent gets only what its jobs use. No agent may call another agent.
+    assert agents["brief_bot"]["tools"] == ["read_file", "write_file", "request_access"]
+    for a in ("finance_bot", "notes_bot", "travel_bot"):
+        assert "run_command" in agents[a]["tools"]
+    for a in agents.values():
+        assert "call_agent" not in a["tools"] and "http_get" not in a["tools"]
+
+
+def test_every_example_is_a_job_for_a_configured_agent():
+    agents = {a["id"]: a for a in run_manager.get_configured_agents()}
+    for pid, p in run_manager.PRESETS.items():
+        if pid == "custom":
+            continue
+        assert p.get("agent") in agents, pid
+        # The agent's own tool limit covers what its example needs.
+        needed = {s["tool"] for s in p.get("scripted_steps", []) if s.get("tool")}
+        assert needed <= set(agents[p["agent"]]["tools"]), pid
+    assert run_manager.PRESETS["contract_review"]["agent"] == "brief_bot"
+    assert run_manager.PRESETS["a2a_agent"]["agent"] == "travel_bot"
+    assert run_manager.PRESETS["network_exfiltration"]["agent"] == "notes_bot"
+
+
+def test_contract_example_hides_a_privileged_read():
+    p = run_manager.PRESETS["contract_review"]
+    assert "settlement_draft" in p["files"]["input/vendor_contract.txt"]
+    assert "settlement_draft" not in p["prompt"]
+    assert p["decoys"][0]["path"] == "~/legal/settlement_draft.txt"
+    reads = [s["args"]["path"] for s in p["scripted_steps"] if s.get("tool") == "read_file"]
+    assert reads == ["input/vendor_contract.txt", "~/legal/settlement_draft.txt"]
 
 
 def test_model_is_offered_only_the_agents_tools():

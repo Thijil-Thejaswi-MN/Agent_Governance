@@ -199,6 +199,8 @@ export interface RunPreset {
   files: Record<string, string>;
   comparable?: boolean;
   tools_needed?: string[];
+  /** The configured agent this example is a job for. */
+  agent?: string | null;
 }
 
 export interface BoundaryPreviewResponse {

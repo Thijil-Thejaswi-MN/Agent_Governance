@@ -12,7 +12,8 @@ const PRESET_LABELS: Record<string, string> = {
   hidden_instruction: 'A file tries to trick the agent',
   shell_injection: 'A file tricks the agent into a shell command',
   network_exfiltration: 'A file tells the agent to send data to a website',
-  a2a_agent: 'Travel planner agent (modelled on Google a2a-samples)',
+  a2a_agent: 'Plan a trip with the travel planner (modelled on Google a2a-samples)',
+  contract_review: 'A contract tries to trick the agent',
 };
 
 const MAX_FILES = 3;
@@ -33,9 +34,10 @@ export const AskPage: React.FC = () => {
   const [modelOverride, setModelOverride] = useState('');
   const [ollamaReachable, setOllamaReachable] = useState(true);
   const [agents, setAgents] = useState<ConfiguredAgent[]>([
-    { id: 'finance_bot', name: 'Finance Bot', owner: 'Ana Dev', team: 'finance', description: 'Financial analysis' },
-    { id: 'notes_bot', name: 'Notes Bot', owner: 'Ravi K', team: 'core', description: 'Documentation' },
-    { id: 'brief_bot', name: 'Brief Bot', owner: 'Meena R', team: 'legal', description: 'Legal briefing' },
+    { id: 'finance_bot', name: 'Finance Bot', owner: 'Ana Dev', team: 'finance', description: 'Revenue, targets and timesheet summaries' },
+    { id: 'notes_bot', name: 'Notes Bot', owner: 'Ravi K', team: 'operations', description: 'Summarises server logs and system audits' },
+    { id: 'brief_bot', name: 'Brief Bot', owner: 'Meena R', team: 'legal', description: 'Summarises contracts and compliance documents' },
+    { id: 'travel_bot', name: 'Travel Bot', owner: 'Kiran S', team: 'travel desk', description: 'Plans business trips' },
   ]);
   const [agentId, setAgentId] = useState<string>('finance_bot');
   const [prompt, setPrompt] = useState('');
@@ -75,7 +77,8 @@ export const AskPage: React.FC = () => {
         }
         if (ags && ags.length > 0) {
           setAgents(ags);
-          setAgentId(prev => (ags.some(a => a.id === prev) ? prev : ags[0].id));
+          const own = first?.agent && ags.some(a => a.id === first.agent) ? first.agent : null;
+          setAgentId(prev => own || (ags.some(a => a.id === prev) ? prev : ags[0].id));
         }
         if (active.active && active.task_id) {
           setActiveTask(active.task_id);
@@ -109,9 +112,12 @@ export const AskPage: React.FC = () => {
   const canCompare = !!presets.find(p => p.id === presetId)?.comparable;
   const toolsNeeded = presets.find(p => p.id === presetId)?.tools_needed || [];
   const missingTools = chosenAgent?.tools ? toolsNeeded.filter(t => !chosenAgent.tools!.includes(t)) : [];
+  const presetAgent = agents.find(a => a.id === presets.find(p => p.id === presetId)?.agent);
 
   const choosePreset = (p: RunPreset) => {
     setPresetId(p.id);
+    // Each example is a job for one agent: pick that agent (it can still be changed).
+    if (p.agent && agents.some(a => a.id === p.agent)) setAgentId(p.agent);
     if (!p.comparable) setComparisonMode(false);
     setPrompt(p.prompt);
     setFiles({ ...p.files });
@@ -250,7 +256,7 @@ export const AskPage: React.FC = () => {
             {missingTools.length > 0 && (
       <p className="basis-full m-0 text-[13px] leading-relaxed" id="agent-tools-missing" style={{ color: '#FBBF24' }}>
         This example needs <span className="mono">{missingTools.join(', ')}</span>, which {chosenAgent?.name} may not call, so
-        that step will be refused. Pick Finance Bot to run it, or keep {chosenAgent?.name} to show the refusal.
+        that step will be refused. Pick {presetAgent && presetAgent.id !== chosenAgent?.id ? presetAgent.name : 'an agent with that tool'} to run it, or keep {chosenAgent?.name} to show the refusal.
       </p>
     )}
     <AgentModelNote agent={chosenAgent} model={effectiveModel} overridden={!!runModel} missing={agentModelMissing} ollamaReachable={ollamaReachable} />
@@ -320,29 +326,7 @@ export const AskPage: React.FC = () => {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[13px] font-semibold uppercase tracking-wider text-[#8B95A7] mr-1">
-          Try:
-        </span>
-        {presets
-          .filter(p => p.id !== 'custom')
-          .map(p => (
-            <button
-              key={p.id}
-              id={`preset-${p.id}`}
-              type="button"
-              aria-pressed={presetId === p.id}
-              onClick={() => choosePreset(p)}
-              className={`min-h-[44px] sm:min-h-[40px] px-4 rounded-lg text-[14px] cursor-pointer transition-colors border ${
-                presetId === p.id
-                  ? 'border-[#3B82F6] bg-[rgba(59,130,246,0.14)] text-[#E6E9EF] font-semibold'
-                  : 'border-[#2A3344] bg-[#11151D] text-[#A7B0C0] hover:text-[#E6E9EF] hover:border-[#3B82F6]'
-              }`}
-            >
-              {PRESET_LABELS[p.id] || p.name}
-            </button>
-          ))}
-      </div>
+      <PresetGroups presets={presets} agents={agents} presetId={presetId} agentId={agentId} onChoose={choosePreset} />
 
       <div className="text-[14px] flex flex-wrap items-center gap-x-4 gap-y-1 text-[#8B95A7]">
         {fileNames.length > 0 ? <span id="attached-files">Files given to the agent: {joinNames(fileNames)}.</span> : <span>No files given to the agent.</span>}
@@ -386,6 +370,83 @@ export const AskPage: React.FC = () => {
     </div>
   );
 };
+
+/** The examples grouped by the agent whose job they are, with that agent's team and purpose. */
+export function PresetGroups({
+  presets,
+  agents,
+  presetId,
+  agentId,
+  onChoose,
+}: {
+  presets: RunPreset[];
+  agents: ConfiguredAgent[];
+  presetId: string;
+  agentId: string;
+  onChoose: (p: RunPreset) => void;
+}) {
+  const shown = presets.filter(p => p.id !== 'custom');
+  const groups = groupPresets(shown, agents);
+  const chosen = shown.find(p => p.id === presetId);
+  const jobOf = agents.find(a => a.id === chosen?.agent);
+  const running = agents.find(a => a.id === agentId);
+  return (
+    <div className="flex flex-col gap-3" id="preset-groups">
+      <span className="text-[13px] font-semibold uppercase tracking-wider text-[#8B95A7]">Try a job:</span>
+      {groups.map(g => (
+        <div key={g.agent?.id || 'other'} className="flex flex-col gap-1.5" data-preset-group={g.agent?.id || 'other'}>
+          <span className="text-[13px] text-[#A7B0C0]">
+            {g.agent ? (
+              <>
+                <span className="font-semibold text-[#E6E9EF]">{g.agent.name}</span>
+                {g.agent.team ? ` · ${g.agent.team} team` : ''}
+                {g.agent.description ? ` · ${g.agent.description}` : ''}
+              </>
+            ) : (
+              'Other examples'
+            )}
+          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            {g.presets.map(p => (
+              <button
+                key={p.id}
+                id={`preset-${p.id}`}
+                type="button"
+                aria-pressed={presetId === p.id}
+                onClick={() => onChoose(p)}
+                className={`min-h-[44px] sm:min-h-[40px] px-4 rounded-lg text-[14px] cursor-pointer transition-colors border ${
+                  presetId === p.id
+                    ? 'border-[#3B82F6] bg-[rgba(59,130,246,0.14)] text-[#E6E9EF] font-semibold'
+                    : 'border-[#2A3344] bg-[#11151D] text-[#A7B0C0] hover:text-[#E6E9EF] hover:border-[#3B82F6]'
+                }`}
+              >
+                {PRESET_LABELS[p.id] || p.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+      {jobOf && (
+        <p id="preset-agent" className="m-0 text-[14px] text-[#A7B0C0]">
+          {running && running.id !== jobOf.id
+            ? `This is ${jobOf.name}'s job (${jobOf.team || 'its'} team); ${running.name} is running it instead, with ${running.name}'s own tool limit.`
+            : `A job for ${jobOf.name}${jobOf.owner ? `, owned by ${jobOf.owner}` : ''}${jobOf.team ? ` (${jobOf.team} team)` : ''}.`}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function groupPresets(presets: RunPreset[], agents: ConfiguredAgent[]): { agent?: ConfiguredAgent; presets: RunPreset[] }[] {
+  const out: { agent?: ConfiguredAgent; presets: RunPreset[] }[] = [];
+  for (const a of agents) {
+    const ps = presets.filter(p => p.agent === a.id);
+    if (ps.length) out.push({ agent: a, presets: ps });
+  }
+  const rest = presets.filter(p => !p.agent || !agents.some(a => a.id === p.agent));
+  if (rest.length) out.push({ presets: rest });
+  return out;
+}
 
 export function AgentSelector({
   agents,
