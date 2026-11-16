@@ -356,6 +356,22 @@ class LaunchResult:
 
 
 
+def _system_prompt(spec: "TaskSpec") -> str | None:
+    """The default system prompt names all six tools; when fewer are offered, name only those."""
+    offered = _offered_tools(spec)
+    if spec.system_prompt is not None or offered is None:
+        return spec.system_prompt
+    from .llm_agent import LLMAgent
+
+    names = [t["function"]["name"] for t in offered]
+    listed = ", ".join(names[:-1]) + (f", and {names[-1]}" if len(names) > 1 else names[0] if names else "")
+    head = "You have access to 6 governed tools: read_file, write_file, http_get, call_agent, request_access, and run_command. "
+    prompt = LLMAgent.DEFAULT_SYSTEM_PROMPT
+    if head not in prompt:
+        return None
+    return prompt.replace(head, f"You have access to {len(names)} governed tools: {listed}. ")
+
+
 def _offered_tools(spec: "TaskSpec") -> list[dict[str, Any]] | None:
     """The tools offered to the model: the preset's or the default set, cut to the agent's limit."""
     if spec.agent_tools is None:
@@ -840,7 +856,7 @@ class TaskLauncher:
         os.close(token_w)
         shim_task = {
             "prompt": spec.prompt,
-            "system_prompt": spec.system_prompt,
+            "system_prompt": _system_prompt(spec),
             "max_iterations": spec.max_iterations,
             "command_timeout": spec.command_timeout_s,
             "model": llm_model,

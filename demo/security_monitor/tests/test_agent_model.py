@@ -77,3 +77,15 @@ def test_broker_refuses_a_tool_outside_the_agent_limit(tmp_path: Path):
         broker.http_get("tok_limit", "http://127.0.0.1:9/x")
     refused = [e for e in storage.get_events_for_task(task.task_id) if e.prevented and e.target in ("run_command", "http_get")]
     assert {e.target for e in refused} == {"run_command", "http_get"}
+
+
+def test_travel_planner_is_run_as_a_program_not_called_as_an_agent():
+    from demo.security_monitor.app.governance.launcher import _system_prompt
+
+    preset = run_manager.PRESETS["a2a_agent"]
+    assert "Verify system audit" not in preset["prompt"]
+    tools = run_manager._preset_tools(preset)["tools_schema"]
+    names = [t["function"]["name"] for t in tools]
+    assert "call_agent" not in names and "run_command" in names
+    prompt = _system_prompt(TaskSpec(task_id="t", prompt="p", tools_schema=tools))
+    assert "call_agent" not in prompt and "4 governed tools" in prompt
