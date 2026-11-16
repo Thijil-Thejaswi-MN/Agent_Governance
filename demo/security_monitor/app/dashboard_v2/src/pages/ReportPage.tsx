@@ -139,7 +139,7 @@ export const ReportSheet: React.FC<{ report: TaskReport }> = ({ report }) => {
         </p>
         {report.record.available && (
           <p className="m-0 text-[12px] [overflow-wrap:anywhere]" style={{ color: 'var(--text-3)' }}>
-            {report.record.event_count} hash-chained entries (SHA-256) · final hash{' '}
+            {report.record.event_count} hash-chained entries (SHA-256) · last link of the chain{' '}
             <span className="font-mono">{report.record.final_hash || '—'}</span>
           </p>
         )}
