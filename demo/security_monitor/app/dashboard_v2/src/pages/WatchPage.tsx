@@ -403,13 +403,24 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
             {run.receipt?.receipt && run.receipt.available !== false ? (
               <>
                 <KV k="Hash chain" v={run.receipt.verified ? 'Verified (SHA-256 hash chain intact)' : `Does not verify: ${run.receipt.verification_message || 'mismatch'}`} id="receipt-verification" />
-                <KV k="Final hash" v={run.receipt.final_hash || run.receipt.receipt?.hash_chain?.final_hash || 'n/a'} />
-                <KV k="Chained events" v={run.receipt.receipt?.hash_chain?.count ?? run.receipt.receipt?.events?.length ?? 0} />
-                {run.receipt.file_sha256 && <KV k="File SHA-256" v={run.receipt.file_sha256} />}
+                <KV k="Events in the chain" v={run.receipt.receipt?.hash_chain?.count ?? run.receipt.receipt?.events?.length ?? 0} />
+                <KV k="Last link of the chain" v={run.receipt.final_hash || run.receipt.receipt?.hash_chain?.final_hash || 'n/a'} />
                 <p className="m-0 text-[13px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
-                  Verification recomputes the SHA-256 chain. This detects edits to individual entries, but the receipt is not
-                  signed: someone able to rewrite the whole file can recompute the chain. Check a download with{' '}
-                  <code className="mono">scripts/verify_receipt.py</code>.
+                  Each event's hash includes the previous one, so this last link depends on every event before it. Change
+                  any event and it changes. It is the same value as in the step "Task receipt written".
+                </p>
+                {run.receipt.file_sha256 && (
+                  <>
+                    <KV k="Fingerprint of the receipt file" v={run.receipt.file_sha256} />
+                    <p className="m-0 text-[13px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
+                      A different value by design: the SHA-256 of the whole downloaded file, so a copy can be checked to be
+                      exactly this receipt.
+                    </p>
+                  </>
+                )}
+                <p className="m-0 text-[13px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
+                  The receipt is not signed: someone able to rewrite the whole file could recompute the chain. Check a
+                  download with <code className="mono">scripts/verify_receipt.py</code>.
                 </p>
               </>
             ) : (
