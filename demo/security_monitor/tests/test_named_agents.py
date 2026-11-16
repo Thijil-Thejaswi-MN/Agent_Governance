@@ -204,7 +204,7 @@ def test_concurrent_runs_named_agents_separate_cgroups_receipts_records(env, mon
 
     assert spec_map[tid_notes].agent_id == "notes_bot"
     assert spec_map[tid_notes].owner == "Ravi K"
-    assert spec_map[tid_notes].team == "core"
+    assert spec_map[tid_notes].team == "operations"
 
     # Verify separate cgroups
     cg_finance = storage.get_task_cgroup(tid_finance)
