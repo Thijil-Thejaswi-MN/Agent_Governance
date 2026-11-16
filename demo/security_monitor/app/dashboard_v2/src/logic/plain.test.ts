@@ -52,10 +52,10 @@ describe('statusSentence', () => {
   });
 
   it('completed, with and without stopped attempts', () => {
-    expect(statusSentence({ state: 'completed', blocked: [] })).toBe('Done. The agent stayed inside its fence.');
-    expect(statusSentence({ state: 'completed', blocked: [blockedTarget] })).toBe('Done. 1 attempt was stopped.');
+    expect(statusSentence({ state: 'completed', blocked: [] })).toBe('Finished. The agent stayed inside its fence.');
+    expect(statusSentence({ state: 'completed', blocked: [blockedTarget] })).toBe('Finished. 1 attempt was stopped.');
     expect(statusSentence({ state: 'completed', blocked: [blockedTarget, { ...blockedTarget, name: 'b' }] })).toBe(
-      'Done. 2 attempts were stopped.',
+      'Finished. 2 attempts were stopped.',
     );
   });
 
@@ -194,8 +194,16 @@ describe('needs-you sentence', () => {
 describe('comparison runs (kernel lock off)', () => {
   it('says the attempt got through instead of being stopped', () => {
     expect(statusSentence({ state: 'completed', blocked: [blockedTarget], comparison: true })).toBe(
-      'Done. With the kernel lock off, 1 attempt got through.',
+      'Finished. With the kernel lock off, 1 attempt got through.',
     );
-    expect(statusSentence({ state: 'completed', blocked: [], comparison: true })).toBe('Done. The agent stayed inside its fence.');
+    expect(statusSentence({ state: 'completed', blocked: [], comparison: true })).toBe('Finished. The agent stayed inside its fence.');
+  });
+});
+
+describe('finished runs with refused requests', () => {
+  it('counts a refused request even when nothing was blocked', () => {
+    expect(statusSentence({ state: 'completed', blocked: [], refused: 1 })).toBe(
+      'Finished. The agent stayed inside its fence. 1 request was refused.',
+    );
   });
 });

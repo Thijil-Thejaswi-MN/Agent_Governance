@@ -64,7 +64,7 @@ def test_ask_watch_done_preset_1_scripted(page: Page, console_server):
 
     status = page.locator("#run-status")
     expect(status).to_have_attribute("data-state", "completed", timeout=60000)
-    expect(status).to_have_text("Done. The agent stayed inside its fence.")
+    expect(status).to_have_text("Finished. The agent stayed inside its fence.")
     expect(page.locator("#output-preview")).to_contain_text("summary.txt")
     expect(page.locator("#output-preview")).to_contain_text("120,000")
     expect(page.locator("#record-status")).to_have_text("Record checked: no entries changed", timeout=15000)
@@ -105,7 +105,7 @@ def test_preset_2_decision_card_allow_continues(page: Page, console_server):
 
     status = page.locator("#run-status")
     expect(status).to_have_attribute("data-state", "completed", timeout=60000)
-    expect(status).to_have_text("Done. 1 attempt was stopped.")
+    expect(status).to_have_text("Finished. 1 attempt was stopped.")
     expect(page.locator("#record-status")).to_have_text("Record checked: no entries changed", timeout=15000)
     # Once allowed, the file is inside the fence, and the boundary version says why it changed.
     expect(page.locator('#fence [data-chip="inside"]', has_text="target_metrics.csv")).to_be_visible()

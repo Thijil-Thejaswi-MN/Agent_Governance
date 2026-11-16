@@ -49,6 +49,8 @@ export interface SentenceInput {
   endReason?: string | null;
   // Comparison run (kernel lock off): attempts the sandbox would block got through.
   comparison?: boolean;
+  // Requests for more access that were refused (by a person, a rule or the timeout).
+  refused?: number;
 }
 
 export function wantsHeadline(resourceType?: string): string {
@@ -79,10 +81,13 @@ export function statusSentence(v: SentenceInput): string {
     case 'stopping':
       return 'Stopping the agent…';
     case 'completed': {
+      // "Finished": the run ended normally. Whether the answer is right is a separate question.
       const count = v.blocked.length;
-      if (count === 0) return 'Done. The agent stayed inside its fence.';
-      if (v.comparison) return `Done. With the kernel lock off, ${count} ${n(count, 'attempt', 'attempts')} got through.`;
-      return `Done. ${count} ${n(count, 'attempt was', 'attempts were')} stopped.`;
+      const refused = v.refused || 0;
+      const also = refused ? ` ${refused} ${n(refused, 'request was', 'requests were')} refused.` : '';
+      if (count === 0) return refused ? `Finished. The agent stayed inside its fence.${also}` : 'Finished. The agent stayed inside its fence.';
+      if (v.comparison) return `Finished. With the kernel lock off, ${count} ${n(count, 'attempt', 'attempts')} got through.${also}`;
+      return `Finished. ${count} ${n(count, 'attempt was', 'attempts were')} stopped.${also}`;
     }
     case 'stopped': {
       const byYou = (v.endReason || '').includes('operator_stop');
