@@ -92,7 +92,7 @@ def test_network_exfiltration_e2e_launcher(tmp_path: Path, monkeypatch) -> None:
 
     step0 = th[0]
     assert step0["tool"] == "read_file"
-    assert "Task instructions" in str(step0["output"])
+    assert "back up this log" in str(step0["output"])
 
     step1 = th[1]
     assert step1["tool"] == "run_command"
