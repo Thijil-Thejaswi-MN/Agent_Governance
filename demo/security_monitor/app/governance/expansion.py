@@ -179,6 +179,15 @@ class ExpansionService:
         if not task:
             raise ValueError(f"Task '{task_id}' not found.")
 
+    def _has_staged_snapshot(self, task_id: str, resource_target: str) -> bool:
+        """Was a content snapshot of this write recorded for review (a staged_write event)?"""
+        target = (resource_target or "").strip()
+        try:
+            events = self.storage.get_events_for_task(task_id)
+        except Exception:
+            return False
+        return any(e.kind == "staged_write" and e.target == target for e in events)
+
     @staticmethod
     def classify_resource_risk(resource_type: str, resource_target: str) -> RiskTier:
         """
@@ -317,6 +326,13 @@ class ExpansionService:
                         effective_tier = RiskTier.HIGH
                     elif baseline_tier == RiskTier.HIGH:
                         effective_tier = RiskTier.HIGH
+                    # A content-reviewed write (staged_writes.py) shows the person the exact bytes that
+                    # would land, so after untrusted reads it goes to a person (flagged as escalated)
+                    # instead of being denied outright. A HIGH baseline (outside output/, sensitive
+                    # names, outside the workspace) is never lowered.
+                    if (baseline_tier == RiskTier.MEDIUM and resource_type == "file_write"
+                            and self._has_staged_snapshot(task_id, resource_target)):
+                        effective_tier = RiskTier.MEDIUM
 
         # 5. Determine Initial Status
         # Policy rules:

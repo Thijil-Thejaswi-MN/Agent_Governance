@@ -32,12 +32,16 @@ layers on the same path):
   '*' crosses '/', so both mean "anything beneath D"). Any other write glob is
   narrowed to the existing files it matches beneath its literal directory
   prefix, without create; a glob with no literal prefix ('*') grants nothing.
-- Always present: output/ {read} and granted/ {read} (dir entries). Nothing else
-  in output/ is writable unless named, and scratch/ is not granted at all.
+- Always present: output/ {read}, granted/ {read} and staged/ {read, write,
+  create, remove} (dir entries). Nothing else in output/ is writable unless named,
+  and scratch/ is not granted at all. staged/ is where the agent prepares a file
+  it was not given; nothing in it has any effect outside it until a person
+  approves that exact content (see ExpansionDelivery.stage_snapshot).
 - Expansion grants: an approved file_read grant for T is reachable only at its
   delivered copy granted/<T>, which the granted/ entry covers; T itself is not
   added (Landlock cannot widen after restrict_self). An approved file_write grant
-  is dropped for the same reason.
+  is dropped for the same reason: the agent never gains write access to the
+  target. The control plane writes the reviewed snapshot there instead.
 
 Kernel-only runtime support (system paths, interpreter, runtime/ code, tmp/,
 broker socket) is added by the kernel compiler and is never a boundary entry,
@@ -54,13 +58,14 @@ from typing import Any, Iterable
 
 from .evaluator import SENSITIVE_FILE_PATTERNS, BoundaryEvaluator, EvaluationResult
 from .models import EventVerdict, RiskTier, TaskBoundary
+from .staged_writes import STAGED_DIR
 
 ACCESS_KINDS = ("read", "write", "create", "remove")
-RESERVED_NAMES = ("tmp", "runtime", "granted", "broker.sock")
+RESERVED_NAMES = ("tmp", "runtime", "granted", "staged", "broker.sock")
 FILE_WRITE = frozenset({"read", "write", "create"})
 DIR_WRITE = frozenset({"read", "write", "create", "remove"})
 READ = frozenset({"read"})
-RESOLVER_VERSION = "resolved_v1"
+RESOLVER_VERSION = "resolved_v2"  # v2 (17 Nov 2026): adds the staged/ dir entry
 
 _DIR_GLOB = re.compile(r"^([^*?\[]+?)/\*{1,2}$")
 
@@ -314,6 +319,8 @@ def resolve_boundary(
 
     add(os.path.join(root, "output"), "dir", READ, "task_output_dir")
     add(os.path.join(root, "granted"), "dir", READ, "expansion_delivery_dir")
+    # The staging folder: writable at both layers, so the kernel and the broker agree on it.
+    add(os.path.join(root, STAGED_DIR), "dir", DIR_WRITE, "expansion_staging_dir")
 
     entries = tuple(
         ResolvedEntry(path=p, kind=m["kind"], access=frozenset(m["access"]), sources=tuple(m["sources"]),

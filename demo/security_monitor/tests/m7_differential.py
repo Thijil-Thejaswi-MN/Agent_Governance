@@ -127,7 +127,7 @@ class Report:
 def build_workspace(base: Path, case: Case) -> tuple[Path, Path]:
     """Creates <base>/ws (the workspace) and <base>/outside (never granted)."""
     ws, outside = base / "ws", base / "outside"
-    for d in ("input", "output", "scratch", "granted", "tmp", "runtime", "src", "input/sub"):
+    for d in ("input", "output", "scratch", "granted", "staged", "tmp", "runtime", "src", "input/sub"):
         (ws / d).mkdir(parents=True, exist_ok=True)
     (outside / "home/.ssh").mkdir(parents=True, exist_ok=True)
     (outside / "secret.txt").write_text("OUTSIDE\n")
@@ -174,7 +174,7 @@ def probe_paths(case: Case, ws: Path, outside: Path) -> list[str]:
         "input/missing.csv", "input/../input/data.csv", "output/../input/data.csv", "scratch/notes.txt",
         "scratch/new.txt", "scratch/input_dir_link/data.csv", "src/main.py", "src/.env", "src/new.py",
         "src/pkg/new.py", "README.md", "new_root_file.txt", GRANT_TARGET, f"granted/{GRANT_TARGET}",
-        "granted/new.txt", "tmp/scratch.txt", "runtime/probe.py", BROKER_SOCKET_NAME,
+        "granted/new.txt", "staged/new.txt", "tmp/scratch.txt", "runtime/probe.py", BROKER_SOCKET_NAME,
         "../outside/secret.txt", str(outside / "secret.txt"), str(outside / "home/.ssh/id_rsa"),
         str(ws / "output/summary.txt"), "/etc/hostname",
     ]

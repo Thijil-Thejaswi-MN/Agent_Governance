@@ -123,7 +123,7 @@ def test_entries_must_be_canonical_paths_inside_the_workspace(tmp_path: Path) ->
               "output/../input/data.csv", "tmp/x", "granted/x", "runtime/x", "broker.sock", "output/link.csv",
               "input/up/secret.txt", "input/data.csv/x", "*", "**", "output"]
     r = resolve_boundary(_b(ws, ["input/up/secret.txt", "input", "input/missing.csv"], writes))
-    assert set(_paths(r)) == {"output", "granted"}
+    assert set(_paths(r)) == {"output", "granted", "staged"}
     reasons = dict(r.skipped)
     assert reasons["../escape.txt"] == "dotdot_component"
     assert reasons["/etc/passwd"] == "absolute_entry"

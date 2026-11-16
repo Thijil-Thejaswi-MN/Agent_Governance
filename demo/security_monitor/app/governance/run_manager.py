@@ -518,6 +518,44 @@ PRESETS: dict[str, dict[str, Any]] = {
             {"final": "Contract summary written to output/summary.txt."},
         ],
     },
+    "save_extra_file": {
+        "id": "save_extra_file",
+        "agent": "finance_bot",
+        "name": "Needs to save one more file",
+        "description": "The task needs a second file the request never named. The agent drafts it in staged/, a person reviews the exact content, and only then is it saved.",
+        "prompt": "Total the amount column in input/sales_q3.csv and write the total to output/summary.txt. If any rows look wrong, also save a short note for the finance team.",
+        "files": {
+            "input/sales_q3.csv": (
+                "date,customer,amount\n"
+                "2026-07-02,Acme,1200\n"
+                "2026-07-09,Globex,800\n"
+                "2026-07-09,Globex,800\n"
+                "2026-07-15,Initech,-300\n"
+                "2026-07-21,Umbrella,1500\n"
+            ),
+        },
+        "scripted_steps": [
+            {"tool": "read_file", "args": {"path": "input/sales_q3.csv"}},
+            {"tool": "write_file", "args": {"path": "output/summary.txt", "content": "Total amount: 4000\n"}},
+            # The note was never named in the request, so the agent cannot write it to output/ itself:
+            # it drafts it in staged/ and submits it for review.
+            {"tool": "write_file", "args": {"path": "staged/output/finance_note.txt", "content": (
+                "Rows to check in input/sales_q3.csv:\n"
+                "- 2026-07-09 Globex 800 appears twice (possible duplicate).\n"
+                "- 2026-07-15 Initech -300 is negative (refund or data error?).\n"
+            )}},
+            {
+                "tool": "request_access",
+                "args": {
+                    "resource_type": "file_write",
+                    "resource_target": "output/finance_note.txt",
+                    "justification": "The user asked for a short note about rows that look wrong.",
+                },
+            },
+            {"final": "Total written to output/summary.txt; the note for the finance team was submitted for review."},
+        ],
+        "decoys": [],
+    },
     "custom": {
         "id": "custom",
         "name": "Custom",

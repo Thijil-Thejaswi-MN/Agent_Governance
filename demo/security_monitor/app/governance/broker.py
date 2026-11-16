@@ -409,7 +409,13 @@ class ToolBroker:
 
         target_display = eval_res.resolved_path or file_path
         if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
-            raise PermissionError(f"Write to file '{target_display}' denied by boundary: {eval_res.rule_matched}")
+            msg = f"Write to file '{target_display}' denied by boundary: {eval_res.rule_matched}"
+            if os.environ.get("GOVERNANCE_ACCESS_HINT") == "1" and type(self.evaluator).__name__ == "ResolvedBoundaryEvaluator":
+                # Console runs only: say how to have a new file saved after a person reviews it.
+                msg += (f". If the user's task genuinely needs this file, write the full content to "
+                        f"'staged/{file_path}' instead, then call request_access with resource_type 'file_write' "
+                        f"and resource_target '{file_path}'; a person will review that content.")
+            raise PermissionError(msg)
 
         target = Path(eval_res.resolved_path) if eval_res.resolved_path else Path(file_path)
         if not target.is_absolute():

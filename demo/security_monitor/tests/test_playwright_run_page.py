@@ -113,6 +113,31 @@ def test_preset_2_decision_card_allow_continues(page: Page, console_server):
     expect(page.locator("#details-drawer #boundary-version")).to_have_text("Boundary version 2 (after 1 approval)")
 
 
+@pytest.mark.os_layer
+def test_save_extra_file_card_shows_the_content_and_saves_it(page: Page, console_server):
+    """A write the request never named: the card shows the exact staged content, and on
+    approval that content is saved to output/ by the system (content-reviewed writes)."""
+    _open_ask(page, console_server, "save_extra_file")
+    page.locator("#start-run-btn").click()
+
+    card = page.locator('[id^="inline-approval-card-"]')
+    expect(card).to_be_visible(timeout=25000)
+    expect(page.locator("#run-status")).to_have_text("The agent wants to write one more file.")
+    expect(card).to_contain_text("finance_note.txt")
+    expect(card.locator("#decision-facts")).to_contain_text("a new file")
+    expect(card.locator("#decision-staged-content")).to_contain_text("Globex 800 appears twice")
+    _assert_plain(page)
+
+    card.locator('[id^="inline-approve-btn-"]').click()
+    expect(card).to_have_count(0, timeout=15000)
+    status = page.locator("#run-status")
+    expect(status).to_have_attribute("data-state", "completed", timeout=60000)
+    preview = page.locator("#output-preview")
+    expect(preview).to_contain_text("and 1 more")
+    preview.click()
+    expect(page.locator("#output-drawer")).to_contain_text("Initech -300 is negative")
+
+
 def test_ask_failed_start_shows_plain_reason_and_stays(page: Page, unsupported_host_server):
     _open_ask(page, unsupported_host_server, "summarise_csv")
     page.locator("#start-run-btn").click()

@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .llm_agent import RPC_MAX_REQUEST_BYTES, rpc_recv_frame, rpc_send_frame
+from .staged_writes import normalize_write_target
 from .models import EventSource, EventVerdict, ExpansionRequest, ExpansionStatus, GovernanceEvent, RiskTier, TaskAction
 
 AGENT_ENDPOINTS = (
@@ -499,6 +500,9 @@ class BrokerRPCServer:
                 "delivery": deliv_dup,
             }
 
+        if rtype == "file_write" and self.delivery is not None and getattr(self.delivery, "staging", False):
+            target = normalize_write_target(target) or target  # "staged/output/x.txt" asks for output/x.txt
+
         # A decision already made in this run is not asked again: a block stays a block, and an
         # approved file that does not exist in the task folder is reported as missing.
         repeat = self._repeat_decision(rtype, target, just)
@@ -507,6 +511,13 @@ class BrokerRPCServer:
         already = self._already_allowed(rtype, target)
         if already is not None:
             return already
+
+        # Content-reviewed writes: a file the agent was not given is staged first, and the
+        # snapshot taken now (not the file as it is later) is what the person reviews and what lands.
+        if rtype == "file_write" and self.delivery is not None and getattr(self.delivery, "staging", False):
+            staged = self._stage_for_review(target)
+            if staged is not None:
+                return staged
 
         timeout_s = getattr(self.broker, "default_approval_timeout", None)
         if timeout_s is not None:
@@ -517,6 +528,14 @@ class BrokerRPCServer:
             res["delivery"] = self.delivery.deliver(self.task_id, rtype, target, bool(res.get("granted")))
             if res.get("granted") and res["delivery"].get("reason") == "source_missing_or_outside_workspace":
                 res["message"] = f"'{target}' was approved, but no such file exists in the task folder."
+            if rtype == "file_write" and getattr(self.delivery, "staging", False) and res.get("granted"):
+                d = res["delivery"]
+                if d.get("type") == "file_land":
+                    res["message"] = (f"Approved. The reviewed content was saved to '{d['landed_path']}' "
+                                      f"(SHA-256 {d['content_sha256'][:12]}...). You cannot change that file yourself.")
+                else:
+                    res["granted"] = False
+                    res["message"] = f"Approved, but '{target}' was not saved: {str(d.get('reason', 'unknown')).replace('_', ' ')}."
         status_val = res.get("status") or ("APPROVED" if res.get("granted") else "DENIED")
         approver_val = res.get("approved_by") or ("operator" if res.get("granted") else "policy")
         reason_val = res.get("reason") or ("Granted" if res.get("granted") else "Denied")
@@ -530,6 +549,43 @@ class BrokerRPCServer:
             source_label="enforced",
         )
         return res
+
+    def _stage_for_review(self, target: str) -> dict[str, Any] | None:
+        """Snapshots staged/<target>. Returns a reply when there is nothing to review, else None."""
+        snap = self.delivery.stage_snapshot(target)
+        if not snap.get("ok"):
+            reason = snap.get("reason", "not_staged")
+            where = snap.get("staged_path") or f"staged/{target}"
+            if reason == "not_staged":
+                message = (f"To create '{target}', first write the full content to '{where}' "
+                           f"(with write_file or the shell), then call request_access again with resource_type "
+                           f"'file_write' and resource_target '{target}'. A person will review that exact content.")
+            elif reason == "invalid_target":
+                message = f"'{target}' is not a file path inside the task folder."
+            else:
+                message = f"'{where}' cannot be reviewed ({reason.replace('_', ' ')}). Write it as a plain file."
+            self._step("BLOCK_ACTION", f"Write request {target}: nothing to review", message)
+            return {"granted": False, "status": "STAGE_FIRST" if reason == "not_staged" else "REFUSED",
+                    "resource_type": "file_write", "resource_target": target, "reason": reason, "message": message}
+        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        try:
+            bnd = self.broker.storage.get_boundary(self.task_id)
+            bnd_ver = bnd.version if bnd else None
+        except Exception:
+            bnd_ver = None
+        details = {k: snap[k] for k in ("staged_path", "size_bytes", "content_sha256", "binary", "preview", "truncated")}
+        details["resource_type"] = "file_write"
+        self.broker.storage.record_event(GovernanceEvent(
+            event_id=self.broker._generate_event_id() if hasattr(self.broker, "_generate_event_id") else f"gov_ev_{uuid.uuid4().hex[:12]}",
+            timestamp=now_utc, source=EventSource.TOOL_BROKER, task_id=self.task_id,
+            agent_id=getattr(self.broker.storage.get_task(self.task_id), "agent_id", "agent") or "agent",
+            kind="staged_write", target=snap["target"], details=details,
+            verdict=EventVerdict.INSIDE, risk_tier=RiskTier.LOW, action_taken=TaskAction.LOG, prevented=False,
+            rule_matched="staged_for_review", boundary_version=bnd_ver,
+        ))
+        self._step("ALLOW", f"Staged {snap['target']} for review ({snap['size_bytes']} bytes)",
+                   f"SHA-256 {snap['content_sha256']}")
+        return None
 
     @staticmethod
     def _norm_target(target: str) -> str:

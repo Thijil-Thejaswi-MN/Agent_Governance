@@ -90,6 +90,28 @@ def _req(storage: GovernanceStorage, target: str, *, escalated: bool = False, ti
 
 # --- preview -----------------------------------------------------------------------------
 
+def test_preview_of_a_write_shows_the_reviewed_snapshot(env):
+    """A write request's card shows the content snapshot taken when the agent asked
+    (staged_writes.py), never the staged file as it is now."""
+    from demo.security_monitor.app.governance.models import EventSource, EventVerdict, GovernanceEvent, TaskAction
+    c, storage, ws, _ = env
+    storage.record_event(GovernanceEvent(
+        event_id="gov_ev_staged_1", timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        source=EventSource.TOOL_BROKER, task_id="t1", agent_id="notes_bot", kind="staged_write",
+        target="output/extra.txt",
+        details={"staged_path": "staged/output/extra.txt", "size_bytes": 9, "content_sha256": "c" * 64,
+                 "binary": False, "preview": "Total: 22", "truncated": False, "resource_type": "file_write"},
+        verdict=EventVerdict.INSIDE, risk_tier=RiskTier.LOW, action_taken=TaskAction.LOG, prevented=False,
+        rule_matched="staged_for_review"))
+    (ws / "staged" / "output").mkdir(parents=True)
+    (ws / "staged" / "output" / "extra.txt").write_text("changed later")
+    rid = _req(storage, "output/extra.txt", rtype="file_write")
+    body = c.get(f"/api/governance/expansions/{rid}/preview", headers=ADMIN).json()
+    assert body["staged"]["preview"] == "Total: 22" and body["staged"]["content_sha256"] == "c" * 64
+    other = _req(storage, "docs/notes.txt")
+    assert c.get(f"/api/governance/expansions/{other}/preview", headers=ADMIN).json()["staged"] is None
+
+
 def test_preview_names_folder_and_size(env):
     c, storage, _, _ = env
     rid = _req(storage, "docs/notes.txt")

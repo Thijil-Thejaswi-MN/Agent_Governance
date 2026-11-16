@@ -283,6 +283,45 @@ def _cleanup(res) -> None:
 
 @linux_only
 @needs_scope
+def test_staged_write_lands_only_the_reviewed_content(tmp_path: Path) -> None:
+    """Content-reviewed writes under the real kernel lock: the agent cannot write output/extra.txt
+    itself (Landlock), stages it in staged/, and after approval exactly the staged content lands."""
+    steps = [
+        {"tool": "run_command", "args": {"command": "printf 'direct' > output/extra.txt"}},
+        {"tool": "run_command", "args": {"command": "mkdir -p staged/output && printf 'Total: 22' > staged/output/extra.txt"}},
+        {"tool": "request_access", "args": {"resource_type": "file_write", "resource_target": "output/extra.txt",
+                                            "justification": "the user asked for a second summary"}},
+        {"tool": "run_command", "args": {"command": "cat output/extra.txt"}},
+        {"tool": "run_command", "args": {"command": "printf 'changed' > output/extra.txt"}},
+        {"final": "done"},
+    ]
+    from demo.security_monitor.app.governance.launcher import TaskLauncher, TaskSpec
+
+    storage = GovernanceStorage(tmp_path / "gov.db")
+    launcher = TaskLauncher(storage, workspace_base=Path(os.environ["HOME"]) / "agent_workspaces", receipts_dir=tmp_path / "r")
+    spec = TaskSpec(prompt="Summarise input/sales.csv into output/summary.txt", inputs={"input/sales.csv": "a\n1\n"},
+                    output_targets=["output/summary.txt"], llm={"provider": "scripted", "steps": steps},
+                    approval_policy="oracle", oracle_allowed=["output/extra.txt"], timeout_s=90,
+                    freeze_timeout_s=1.0, boundary_model="v1.1")
+    res = launcher.run(spec)
+    try:
+        hist = res.shim_result["tool_history"]
+        assert hist[0]["output"]["exit_code"] != 0  # Landlock: the agent cannot create the target itself
+        assert hist[1]["output"]["exit_code"] == 0  # staged/ is writable
+        grant = hist[2]["output"]
+        assert grant["granted"] is True and grant["delivery"]["type"] == "file_land"
+        assert hist[3]["output"]["stdout"] == "Total: 22"
+        assert hist[4]["output"]["exit_code"] != 0  # still not writable for the agent after approval
+        assert (res.workspace / "output/extra.txt").read_text() == "Total: 22"
+        exp = [e for e in res.receipt["expansions"] if e.get("resource_type") == "file_write"][0]
+        assert exp["decision"] == "APPROVED" and exp["delivery"]["type"] == "file_land"
+        assert exp["delivery"]["content_sha256"] == grant["delivery"]["content_sha256"]
+    finally:
+        _cleanup(res)
+
+
+@linux_only
+@needs_scope
 def test_launcher_vertical_slice_landlock_prevents_shell_read(tmp_path: Path) -> None:
     steps = [
         {"tool": "run_command", "args": {"command": "wc -l input/sales.csv"}},
