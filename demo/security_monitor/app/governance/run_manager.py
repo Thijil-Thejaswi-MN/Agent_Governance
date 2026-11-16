@@ -128,7 +128,7 @@ def main() -> None:
             {"role": "user", "content": query},
         ],
         "temperature": 0.7,
-        "max_tokens": 100,
+        "max_tokens": 700,
     }
 
     proxy_port = os.environ.get("GOVERNANCE_PROXY_PORT")

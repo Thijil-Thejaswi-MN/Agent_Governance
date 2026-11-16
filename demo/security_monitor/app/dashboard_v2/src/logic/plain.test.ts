@@ -213,3 +213,11 @@ describe('runs that wrote no result', () => {
     expect(statusSentence({ state: 'completed', blocked: [], noResult: true })).toBe('Agent run finished (task not completed).');
   });
 });
+
+describe('background reads', () => {
+  it('reports reads inside programs separately from the agent’s attempts', () => {
+    expect(statusSentence({ state: 'completed', blocked: [], background: 7 })).toBe(
+      'Finished. The agent stayed inside its fence. 7 background reads by programs it ran were stopped.',
+    );
+  });
+});
