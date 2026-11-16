@@ -159,7 +159,8 @@ export function splitAttempts(steps: TaskStep[]): { direct: BlockedAttempt[]; ba
   const background: BlockedAttempt[] = [];
   for (const a of blockedAttempts(steps)) {
     const named = a.action === 'run' || commands.some(c => c.includes(a.name) || c.includes(a.target));
-    if (kernelStep.has(a.stepNumber) && !named) background.push(a);
+    // With no commands at all, a kernel block cannot come from a program the agent ran.
+    if (kernelStep.has(a.stepNumber) && commands.length > 0 && !named) background.push(a);
     else direct.push(a);
   }
   return { direct, background };
