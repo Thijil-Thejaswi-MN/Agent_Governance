@@ -356,14 +356,35 @@ class BrokerRPCServer:
             )
             raise
 
+    def _step(self, verdict: str, summary: str, detail: str) -> None:
+        self.broker.storage.record_task_step(
+            self.task_id, kind="tool", layer="broker", verdict=verdict,
+            summary=summary, detail=detail, source_label="enforced",
+        )
+
     def _h_http_get(self, token: str, p: dict[str, Any]) -> Any:
-        return self.broker.http_get(token, _str_param(p, "url"))
+        url = _str_param(p, "url")
+        try:
+            res = self.broker.http_get(token, url)
+        except Exception as err:
+            # Shown on the run page like a refused file read (it was only in the event log before).
+            self._step("BLOCK_ACTION", f"http_get blocked: {url}", str(err))
+            raise
+        self._step("ALLOW", f"http_get allowed: {url}", f"Fetched {url}")
+        return res
 
     def _h_call_agent(self, token: str, p: dict[str, Any]) -> Any:
         msg = p.get("message", {})
         if not isinstance(msg, dict):
             msg = {"text": str(msg)}
-        return self.broker.call_agent(token, _str_param(p, "target_agent", 256), msg)
+        target = _str_param(p, "target_agent", 256)
+        try:
+            res = self.broker.call_agent(token, target, msg)
+        except Exception as err:
+            self._step("BLOCK_ACTION", f"call_agent blocked: {target}", str(err))
+            raise
+        self._step("ALLOW", f"call_agent allowed: {target}", f"Message sent to {target}")
+        return res
 
     def _h_request_access(self, token: str, p: dict[str, Any]) -> Any:
         rtype = _str_param(p, "resource_type", 64)

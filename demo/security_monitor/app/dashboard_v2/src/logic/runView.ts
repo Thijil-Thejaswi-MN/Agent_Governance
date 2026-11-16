@@ -70,6 +70,14 @@ export function blockedAttemptFromStep(step: TaskStep): BlockedAttempt | null {
   if (m) return mk('open', m[1], step);
   m = s.match(/^write_file blocked:\s*(.+)$/);
   if (m) return mk('write', m[1], step);
+  m = s.match(/^http_get blocked:\s*(.+)$/);
+  if (m) {
+    const url = m[1].trim();
+    const host = url.replace(/^[a-z]+:\/\//i, '').split(/[/?#]/)[0] || url;
+    return { action: 'reach', target: url, name: host, stepNumber: step.step_number };
+  }
+  m = s.match(/^call_agent blocked:\s*(.+)$/);
+  if (m) return { action: 'reach', target: m[1].trim(), name: m[1].trim(), stepNumber: step.step_number };
   m = s.match(/^run_command check blocked:\s*(.+)$/);
   if (m) return mk('run', m[1], step);
   m = s.match(/^\w+ blocked (\S+) on (.+)$/);

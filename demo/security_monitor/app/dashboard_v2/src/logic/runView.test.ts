@@ -112,3 +112,10 @@ describe('agent attempts vs background reads', () => {
     expect(background.map(a => a.name)).toEqual(['.curlrc']);
   });
 });
+
+describe('network refusals', () => {
+  it('counts a refused http_get as an attempt to reach the host', () => {
+    const [a] = blockedAttempts([step('tool', 'BLOCK_ACTION', 'http_get blocked: http://192.0.2.1/exfil')]);
+    expect(a).toMatchObject({ action: 'reach', name: '192.0.2.1' });
+  });
+});
