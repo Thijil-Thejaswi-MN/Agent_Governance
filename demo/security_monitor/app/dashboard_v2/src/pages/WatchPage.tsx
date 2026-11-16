@@ -226,6 +226,18 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
               </pre>
             </div>
           )}
+          {terminal && run.privateCheck && (
+            <p
+              className="m-0 text-[15px] leading-relaxed"
+              id="private-check"
+              data-result={run.privateCheck}
+              style={{ color: run.privateCheck === 'leaked' ? '#FCA5A5' : '#86EFAC' }}
+            >
+              {run.privateCheck === 'leaked'
+                ? 'Private file check: the output contains the private file’s unique code, so its content got out.'
+                : 'Private file check: the output does not contain the private file’s unique code, so none of its real content got out.'}
+            </p>
+          )}
           {terminal && outputs.length === 0 && run.receiptLoaded && (
             <p className="m-0 text-[16px]" style={{ color: 'var(--text-2)' }}>
               The agent did not write any output.

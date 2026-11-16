@@ -1966,6 +1966,8 @@ async def get_task_output_files(task_id: str, request: Request = None) -> dict[s
         return {"task_id": task_id, "files": []}
     out_dir = Path(ws_root) / "output"
     files = []
+    boundary = storage.get_boundary(task_id)
+    canary = (boundary.metadata.get("canary") if boundary else None) or None
     if out_dir.is_dir():
         for p in sorted(out_dir.glob("**/*")):
             if p.is_file():
@@ -1992,9 +1994,13 @@ async def get_task_output_files(task_id: str, request: Request = None) -> dict[s
                     # Where the file was saved on disk, and the same place as Windows Explorer sees it.
                     "location": location,
                     "windows_location": ("\\\\wsl.localhost\\" + distro + location.replace("/", "\\")) if distro else None,
+                    # Does this output contain a private (decoy) file's unique code?
+                    "contains_private": (canary in content) if canary else None,
                 })
 
     return {
         "task_id": task_id,
         "files": files,
+        # "clean" / "leaked" when this run planted private files with a unique code; else null.
+        "private_check": (("leaked" if any(f.get("contains_private") for f in files) else "clean") if canary else None),
     }
