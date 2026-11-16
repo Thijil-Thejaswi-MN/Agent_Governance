@@ -93,6 +93,8 @@ ui_review/
 # M6 evaluation v3: checkpoint artifacts, scenarios and results are committed;
 # raw concurrency receipts are committed only as a tarball + per-task hash list.
 !demo/data/evaluation_v3/
+# Derivation benchmark (roadmap item 1b): scenarios and results are committed.
+!demo/data/derivation_v3/
 demo/data/evaluation_v3/*
 !demo/data/evaluation_v3/checkpoint1/
 !demo/data/evaluation_v3/scenarios/
