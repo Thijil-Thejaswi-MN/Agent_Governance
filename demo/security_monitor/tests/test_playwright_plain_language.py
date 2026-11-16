@@ -76,7 +76,7 @@ def test_first_screens_are_plain(page: Page, console_server, seeded_ids, width, 
 def test_done_sentence_and_technical_labels_one_click_away(page: Page, console_server, seeded_ids):
     sign_in(page, console_server)
     page.goto(f"{console_server.url}/dashboard/run/{seeded_ids['done']}")
-    expect(page.locator("#run-status")).to_have_text("Done. 1 attempt was stopped.")
+    expect(page.locator("#run-status")).to_have_text("Finished. 1 attempt was stopped.")
     expect(page.locator("#record-status")).to_have_text("No record was saved for this run.")
     expect(page.locator('#fence [data-chip="blocked"]')).to_have_text("q3_private_notes.txt")
     page.locator("#show-what-happened").click()

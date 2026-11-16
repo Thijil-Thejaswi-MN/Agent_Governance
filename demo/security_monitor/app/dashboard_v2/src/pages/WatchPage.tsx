@@ -69,6 +69,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
     agentStarted: started,
     endReason: run.endReason,
     comparison: isComparison,
+    refused: deniedNames.filter(d => !attempts.some(a => a.name === d)).length,
   });
 
   const outputs: OutputPreview[] = run.outputFiles.length
@@ -169,6 +170,13 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
           >
             {sentence}
           </h1>
+
+          {run.state === 'completed' && (outputs.length === 0 || outputs.every(o => o.size === 0 || (o.size == null && o.content === ''))) && (
+            <p className="m-0 text-[15px] leading-relaxed" id="run-no-result" style={{ color: '#FBBF24' }}>
+              The agent did not write a result. Finished means the run ended, not that the task succeeded; "Show what
+              happened" has each step.
+            </p>
+          )}
 
           {run.pending && (
             <DecisionCard

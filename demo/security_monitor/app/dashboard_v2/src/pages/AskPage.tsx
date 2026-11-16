@@ -107,6 +107,8 @@ export const AskPage: React.FC = () => {
   const effectiveModel = runModel || agentModel || 'scripted';
 
   const canCompare = !!presets.find(p => p.id === presetId)?.comparable;
+  const toolsNeeded = presets.find(p => p.id === presetId)?.tools_needed || [];
+  const missingTools = chosenAgent?.tools ? toolsNeeded.filter(t => !chosenAgent.tools!.includes(t)) : [];
 
   const choosePreset = (p: RunPreset) => {
     setPresetId(p.id);
@@ -245,7 +247,13 @@ export const AskPage: React.FC = () => {
                   ))}
               </select>
             </label>
-            <AgentModelNote agent={chosenAgent} model={effectiveModel} overridden={!!runModel} missing={agentModelMissing} ollamaReachable={ollamaReachable} />
+            {missingTools.length > 0 && (
+      <p className="basis-full m-0 text-[13px] leading-relaxed" id="agent-tools-missing" style={{ color: '#FBBF24' }}>
+        This example needs <span className="mono">{missingTools.join(', ')}</span>, which {chosenAgent?.name} may not call, so
+        that step will be refused. Pick Finance Bot to run it, or keep {chosenAgent?.name} to show the refusal.
+      </p>
+    )}
+    <AgentModelNote agent={chosenAgent} model={effectiveModel} overridden={!!runModel} missing={agentModelMissing} ollamaReachable={ollamaReachable} />
             {role === 'admin' && (
               <label
                 className={`flex items-center gap-2 text-[13px] text-[#FBBF24] ${canCompare ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}
