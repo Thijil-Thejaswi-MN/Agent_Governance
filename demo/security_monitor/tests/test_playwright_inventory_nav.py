@@ -38,9 +38,9 @@ def _sign_in(page: Page, url: str, token: str) -> None:
 def test_inventory_empty(page: Page, empty_console_server):
     _sign_in(page, empty_console_server.url, empty_console_server.token)
     page.goto(f"{empty_console_server.url}/dashboard/inventory")
-    # No runs yet: only the console's three configured agents, each with zero runs.
-    expect(page.locator("#inventory-headline")).to_have_text("3 agents.")
-    for agent in ("finance_bot", "notes_bot", "brief_bot"):
+    # No runs yet: only the console's four configured agents, each with zero runs.
+    expect(page.locator("#inventory-headline")).to_have_text("4 agents.")
+    for agent in ("finance_bot", "notes_bot", "brief_bot", "travel_bot"):
         card = page.locator(f'#inventory-list li[data-agent="{agent}"]')
         expect(card).to_be_visible()
         expect(card).to_contain_text("Tasks run0")

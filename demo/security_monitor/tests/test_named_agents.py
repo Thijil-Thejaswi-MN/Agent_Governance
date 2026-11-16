@@ -204,7 +204,7 @@ def test_concurrent_runs_named_agents_separate_cgroups_receipts_records(env, mon
 
     assert spec_map[tid_notes].agent_id == "notes_bot"
     assert spec_map[tid_notes].owner == "Ravi K"
-    assert spec_map[tid_notes].team == "core"
+    assert spec_map[tid_notes].team == "operations"
 
     # Verify separate cgroups
     cg_finance = storage.get_task_cgroup(tid_finance)
@@ -281,9 +281,9 @@ def test_api_agents_list_and_validation(env):
     resp = client.get("/api/governance/run/agents", headers=headers)
     assert resp.status_code == 200
     agents = resp.json()
-    assert len(agents) == 3
+    assert len(agents) == 4
     ids = {a["id"] for a in agents}
-    assert ids == {"finance_bot", "notes_bot", "brief_bot"}
+    assert ids == {"finance_bot", "notes_bot", "brief_bot", "travel_bot"}
 
     # 2. Validation: invalid agent_id returns 422
     resp_bad = client.post(

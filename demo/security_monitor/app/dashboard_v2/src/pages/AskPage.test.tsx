@@ -2,7 +2,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { agentRows, hourlyHeat, TaskLike } from '../logic/teamStats';
-import { AgentSelector } from './AskPage';
+import { AgentSelector, PresetGroups, groupPresets } from './AskPage';
 
 describe('AskPage agent dropdown', () => {
   const agents = [
@@ -92,5 +92,33 @@ describe('per-agent stats for named agents', () => {
     expect(rows[0].agentId).toBe('finance_bot'); // 2 stops
     expect(rows[1].agentId).toBe('notes_bot');   // 1 stop
     expect(rows[2].agentId).toBe('brief_bot');   // 0 stops
+  });
+});
+
+describe('examples grouped by the agent whose job they are', () => {
+  const agents = [
+    { id: 'finance_bot', name: 'Finance Bot', owner: 'Ana Dev', team: 'finance', description: 'Revenue summaries' },
+    { id: 'brief_bot', name: 'Brief Bot', owner: 'Meena R', team: 'legal', description: 'Contract summaries' },
+  ];
+  const preset = (id: string, agent?: string) => ({ id, name: id, description: '', prompt: 'p', files: {}, agent });
+  const presets = [preset('summarise_csv', 'finance_bot'), preset('contract_review', 'brief_bot'), preset('odd'), preset('custom')];
+
+  it('groups by agent in agent order, with unassigned examples last', () => {
+    const g = groupPresets(presets.filter(p => p.id !== 'custom'), agents);
+    expect(g.map(x => x.agent?.id || 'other')).toEqual(['finance_bot', 'brief_bot', 'other']);
+    expect(g[1].presets.map(p => p.id)).toEqual(['contract_review']);
+  });
+
+  it("names the job's agent, and says so when another agent runs it", () => {
+    const own = renderToStaticMarkup(
+      <PresetGroups presets={presets} agents={agents} presetId="contract_review" agentId="brief_bot" onChoose={() => {}} />,
+    );
+    expect(own).toContain('A job for Brief Bot, owned by Meena R (legal team).');
+    expect(own).toContain('data-preset-group="brief_bot"');
+    expect(own).not.toContain('id="preset-custom"');
+    const other = renderToStaticMarkup(
+      <PresetGroups presets={presets} agents={agents} presetId="contract_review" agentId="finance_bot" onChoose={() => {}} />,
+    );
+    expect(other).toContain("This is Brief Bot&#x27;s job (legal team); Finance Bot is running it instead");
   });
 });

@@ -1731,6 +1731,8 @@ async def get_run_presets() -> list[dict[str, Any]]:
             "files": p["files"],
             # Comparison mode (kernel lock off) is only offered for presets that plant decoys.
             "comparable": bool(p.get("decoys")),
+            # The configured agent this example is a job for (the Run page selects it).
+            "agent": p.get("agent"),
             # Tools this example needs (from its steps), so the Run page can warn when the chosen
             # agent's tool limit does not include them.
             "tools_needed": sorted({s["tool"] for s in p.get("scripted_steps", []) if s.get("tool")}),

@@ -38,11 +38,11 @@ def test_named_agents_playwright(page: Page, named_agents_console_server, tmp_pa
     # --- Run 1: finance_bot ---
     page.goto(f"{console_server.url}/dashboard/run")
     expect(page.locator("#agent-selector")).to_be_visible()
-    page.locator("#agent-selector").select_option("finance_bot")
-
     preset_btn = page.locator("#preset-summarise_csv")
     expect(preset_btn).to_be_visible()
     preset_btn.click()
+    expect(page.locator("#agent-selector")).to_have_value("finance_bot")
+    expect(page.locator("#preset-agent")).to_contain_text("A job for Finance Bot")
 
     page.locator("#model-selector").select_option("scripted")
     page.locator("#start-run-btn").click()
@@ -57,12 +57,14 @@ def test_named_agents_playwright(page: Page, named_agents_console_server, tmp_pa
     # --- Run 2: notes_bot ---
     page.goto(f"{console_server.url}/dashboard/run")
     expect(page.locator("#agent-selector")).to_be_visible()
-    page.locator("#agent-selector").select_option("notes_bot")
-    expect(page.locator("#agent-selector")).to_have_value("notes_bot")
-
     preset_btn2 = page.locator("#preset-summarise_csv")
     expect(preset_btn2).to_be_visible()
     preset_btn2.click()
+    # The example is Finance Bot's job; picking another agent runs it under that agent's own limit.
+    expect(page.locator("#agent-selector")).to_have_value("finance_bot")
+    page.locator("#agent-selector").select_option("notes_bot")
+    expect(page.locator("#agent-selector")).to_have_value("notes_bot")
+    expect(page.locator("#preset-agent")).to_contain_text("Finance Bot's job")
 
     page.locator("#model-selector").select_option("scripted")
     page.locator("#start-run-btn").click()
