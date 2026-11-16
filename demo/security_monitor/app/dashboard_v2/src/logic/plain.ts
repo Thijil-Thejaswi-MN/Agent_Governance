@@ -51,6 +51,8 @@ export interface SentenceInput {
   comparison?: boolean;
   // Requests for more access that were refused (by a person, a rule or the timeout).
   refused?: number;
+  // The run ended without writing a result (no output file, or an empty one).
+  noResult?: boolean;
 }
 
 export function wantsHeadline(resourceType?: string): string {
@@ -85,6 +87,13 @@ export function statusSentence(v: SentenceInput): string {
       const count = v.blocked.length;
       const refused = v.refused || 0;
       const also = refused ? ` ${refused} ${n(refused, 'request was', 'requests were')} refused.` : '';
+      if (v.noResult) {
+        const what = [
+          count ? `${count} ${n(count, 'attempt was', 'attempts were')} ${v.comparison ? 'let through' : 'stopped'}.` : '',
+          also.trim(),
+        ].filter(Boolean).join(' ');
+        return `Agent run finished (task not completed).${what ? ' ' + what : ''}`;
+      }
       if (count === 0) return refused ? `Finished. The agent stayed inside its fence.${also}` : 'Finished. The agent stayed inside its fence.';
       if (v.comparison) return `Finished. With the kernel lock off, ${count} ${n(count, 'attempt', 'attempts')} got through.${also}`;
       return `Finished. ${count} ${n(count, 'attempt was', 'attempts were')} stopped.${also}`;

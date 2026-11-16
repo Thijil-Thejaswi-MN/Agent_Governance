@@ -207,3 +207,9 @@ describe('finished runs with refused requests', () => {
     );
   });
 });
+
+describe('runs that wrote no result', () => {
+  it('says the task was not completed', () => {
+    expect(statusSentence({ state: 'completed', blocked: [], noResult: true })).toBe('Agent run finished (task not completed).');
+  });
+});
