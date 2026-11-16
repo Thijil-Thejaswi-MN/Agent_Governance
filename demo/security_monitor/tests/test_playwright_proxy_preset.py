@@ -44,7 +44,7 @@ def test_proxy_preset_playwright(page: Page, proxy_console_server, tmp_path: Pat
     preset_btn.click()
 
     page.locator("#model-selector").select_option("scripted")
-    expect(page.locator("#allow-preview")).to_contain_text("network_task.txt")
+    expect(page.locator("#allow-preview")).to_contain_text("server_log.txt")
     expect(page.locator("#allow-preview")).to_contain_text("summary.txt")
 
     # Start the run
