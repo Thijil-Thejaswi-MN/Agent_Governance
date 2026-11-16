@@ -142,3 +142,26 @@ export function outputsFromSteps(steps: TaskStep[]): OutputPreview[] {
   }
   return [...byPath.values()];
 }
+
+// Kernel blocks inside a program the agent ran (curl reading ~/.curlrc, a library reading its
+// config) are not choices the agent made. A kernel block counts as the agent's attempt when
+// one of its commands names that file; the rest are background reads by the programs it ran.
+export function commandTexts(steps: TaskStep[]): string[] {
+  return steps
+    .filter(s => (s.summary || '').startsWith('run_command check'))
+    .map(s => ((s.detail || '').replace(/^Command:\s*/, '') || (s.summary || '').replace(/^run_command check \w+:\s*/, '')));
+}
+
+export function splitAttempts(steps: TaskStep[]): { direct: BlockedAttempt[]; background: BlockedAttempt[] } {
+  const commands = commandTexts(steps);
+  const kernelStep = new Set(steps.filter(s => s.kind === 'sensor').map(s => s.step_number));
+  const direct: BlockedAttempt[] = [];
+  const background: BlockedAttempt[] = [];
+  for (const a of blockedAttempts(steps)) {
+    const named = a.action === 'run' || commands.some(c => c.includes(a.name) || c.includes(a.target));
+    // With no commands at all, a kernel block cannot come from a program the agent ran.
+    if (kernelStep.has(a.stepNumber) && commands.length > 0 && !named) background.push(a);
+    else direct.push(a);
+  }
+  return { direct, background };
+}

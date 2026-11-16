@@ -53,6 +53,8 @@ export interface SentenceInput {
   refused?: number;
   // The run ended without writing a result (no output file, or an empty one).
   noResult?: boolean;
+  // Reads blocked inside programs the agent ran (not choices the agent made).
+  background?: number;
 }
 
 export function wantsHeadline(resourceType?: string): string {
@@ -86,7 +88,10 @@ export function statusSentence(v: SentenceInput): string {
       // "Finished": the run ended normally. Whether the answer is right is a separate question.
       const count = v.blocked.length;
       const refused = v.refused || 0;
-      const also = refused ? ` ${refused} ${n(refused, 'request was', 'requests were')} refused.` : '';
+      const bg = v.background || 0;
+      const also =
+        (refused ? ` ${refused} ${n(refused, 'request was', 'requests were')} refused.` : '') +
+        (bg ? ` ${bg} background ${n(bg, 'read', 'reads')} by programs it ran ${bg === 1 ? 'was' : 'were'} ${v.comparison ? 'let through' : 'stopped'}.` : '');
       if (v.noResult) {
         const what = [
           count ? `${count} ${n(count, 'attempt was', 'attempts were')} ${v.comparison ? 'let through' : 'stopped'}.` : '',
@@ -94,7 +99,7 @@ export function statusSentence(v: SentenceInput): string {
         ].filter(Boolean).join(' ');
         return `Agent run finished (task not completed).${what ? ' ' + what : ''}`;
       }
-      if (count === 0) return refused ? `Finished. The agent stayed inside its fence.${also}` : 'Finished. The agent stayed inside its fence.';
+      if (count === 0) return `Finished. The agent stayed inside its fence.${also}`;
       if (v.comparison) return `Finished. With the kernel lock off, ${count} ${n(count, 'attempt', 'attempts')} got through.${also}`;
       return `Finished. ${count} ${n(count, 'attempt was', 'attempts were')} stopped.${also}`;
     }

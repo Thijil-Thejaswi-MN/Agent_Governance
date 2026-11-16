@@ -10,7 +10,7 @@ import { DecisionCard } from '../components/v3/DecisionCard';
 import { DetailsDrawer, DetailsSection, KV } from '../components/v3/DetailsDrawer';
 import { EventTable, TechnicalTimeline } from '../components/v3/TechnicalTimeline';
 import { boundaryVersionLabel, receiptSentence, statusSentence } from '../logic/plain';
-import { agentStarted, blockedAttempts, boundaryLabel, fileName, isTerminal, justBlocked, outputsFromSteps, OutputPreview } from '../logic/runView';
+import { agentStarted, blockedAttempts, boundaryLabel, splitAttempts, fileName, isTerminal, justBlocked, outputsFromSteps, OutputPreview } from '../logic/runView';
 
 const STATUS_LABELS: Record<string, string> = {
   idle: 'Idle',
@@ -50,6 +50,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
   }, [readOnly, taskId, detailsOpen]);
 
   const attempts = useMemo(() => blockedAttempts(run.steps), [run.steps]);
+  const split = useMemo(() => splitAttempts(run.steps), [run.steps]);
   const lastBlock = useMemo(() => justBlocked(run.steps), [run.steps]);
   const started = agentStarted(run.steps);
 
@@ -67,7 +68,8 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
   const noResult = outputs.length === 0 || outputs.every(o => o.size === 0 || (o.size == null && o.content === ''));
   const sentence = statusSentence({
     state: run.state,
-    blocked: attempts,
+    blocked: split.direct,
+    background: split.background.length,
     justBlocked: lastBlock,
     pending: run.pending,
     agentStarted: started,

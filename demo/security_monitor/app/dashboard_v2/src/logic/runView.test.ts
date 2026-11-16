@@ -96,3 +96,19 @@ describe('boundaryLabel', () => {
     expect(boundaryLabel('*')).toBe('task folder (all files)');
   });
 });
+
+import { splitAttempts } from './runView';
+
+describe('agent attempts vs background reads', () => {
+  it('counts a kernel block as the agent’s only when one of its commands names the file', () => {
+    const steps = [
+      step('tool', 'ALLOW', 'run_command check allowed: cat ~/old_reports/board_minutes.txt', { detail: 'Command: cat ~/old_reports/board_minutes.txt' }),
+      step('sensor', 'BLOCK_ACTION', 'Landlock blocked file_read on /home/u/old_reports/board_minutes.txt', { layer: 'landlock' }),
+      step('sensor', 'BLOCK_ACTION', 'Landlock blocked file_read on /home/u/.curlrc', { layer: 'landlock' }),
+      step('tool', 'BLOCK_ACTION', 'read_file blocked: ~/projects/archive/q3_private_notes.txt'),
+    ].map((s, i) => ({ ...s, step_number: i + 1 }));
+    const { direct, background } = splitAttempts(steps);
+    expect(direct.map(a => a.name)).toEqual(['board_minutes.txt', 'q3_private_notes.txt']);
+    expect(background.map(a => a.name)).toEqual(['.curlrc']);
+  });
+});
