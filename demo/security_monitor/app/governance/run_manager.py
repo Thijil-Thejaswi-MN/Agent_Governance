@@ -44,9 +44,9 @@ def load_agents_config() -> dict[str, dict[str, Any]]:
         except Exception as e:
             logger.warning("Failed to load agents_config.json: %s", e)
     return {
-        "finance_bot": {"name": "Finance Bot", "owner": "Ana Dev", "team": "finance", "description": "Financial analysis and revenue reporting", "model": "qwen2.5:7b"},
-        "notes_bot": {"name": "Notes Bot", "owner": "Ravi K", "team": "core", "description": "Documentation and meeting minutes", "model": "qwen2.5:7b"},
-        "brief_bot": {"name": "Brief Bot", "owner": "Meena R", "team": "legal", "description": "Legal briefing and compliance review", "model": "llama3.1:8b"},
+        "finance_bot": {"name": "Finance Bot", "owner": "Ana Dev", "team": "finance", "description": "Financial analysis and revenue reporting", "model": "qwen2.5:7b", "tools": ["read_file", "write_file", "http_get", "call_agent", "request_access", "run_command"]},
+        "notes_bot": {"name": "Notes Bot", "owner": "Ravi K", "team": "core", "description": "Documentation and meeting minutes", "model": "qwen2.5:7b", "tools": ["read_file", "write_file", "request_access"]},
+        "brief_bot": {"name": "Brief Bot", "owner": "Meena R", "team": "legal", "description": "Legal briefing and compliance review", "model": "llama3.1:8b", "tools": ["read_file", "write_file", "http_get", "request_access"]},
     }
 
 
@@ -68,7 +68,7 @@ def get_configured_agents() -> list[dict[str, Any]]:
             "description": info.get("description", ""),
             # The model the agent runs on; a run may override it (e.g. 'scripted' for a repeatable demo).
             "model": info.get("model", DEFAULT_AGENT_MODEL),
-            # The tools its agent loop offers the model; the broker checks every call against the task boundary.
+            # Its tool limit: the only tools offered to its model, and the broker refuses any other.
             "tools": info.get("tools") or _governed_tool_names(),
         })
     return out
@@ -874,6 +874,7 @@ class ActiveRunManager:
                 requester=owner or "operator",
                 boundary_model="v1.1",
                 network=preset_network,
+                agent_tools=list(cfg_info["tools"]) if cfg_info.get("tools") else None,
                 **(_shell_only_agent() if preset and preset.get("shell_only") else {}),
             )
 

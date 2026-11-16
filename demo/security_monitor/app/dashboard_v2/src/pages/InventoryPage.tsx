@@ -69,7 +69,7 @@ export const InventoryCard: React.FC<{ c: AgentCard; now: number }> = ({ c, now 
           {c.tools && c.tools.length > 0 && (
             <div className="flex flex-col gap-1.5">
               <span className="text-[13px]" style={{ color: 'var(--text-3)' }}>
-                Tools it can call (the broker checks each call)
+                Its tool limit (any other tool is refused)
               </span>
               <div className="flex flex-wrap gap-1.5">
                 {c.tools.map(tool => (
@@ -273,9 +273,9 @@ export const InventoryPage: React.FC = () => {
             : `${totalAgents} ${totalAgents === 1 ? 'agent' : 'agents'}.`}
         </h1>
         <p className="m-0 text-[16px] leading-relaxed max-w-[860px]" style={{ color: 'var(--text-2)' }}>
-          An agent is an identity we hold accountable: a name, an owner and a team, the model it runs on, and the tools
-          it can call. What it may touch is not part of the agent. Each request sets that, and every tool call is checked
-          against it. Counts come from real runs here; comparison runs (kernel lock off) are not counted.
+          An agent is an identity we hold accountable: a name, an owner and a team, the model it runs on, and its tool
+          limit, the only tools it may ever call. Which files and sites it may touch is not part of the agent: each
+          request sets that, inside the agent's limit, and every tool call is checked against both. Counts come from real runs here; comparison runs (kernel lock off) are not counted.
           {cards.length > 0 && ` ${counts.high} high, ${counts.medium} medium and ${counts.low} low risk.`}
         </p>
       </header>

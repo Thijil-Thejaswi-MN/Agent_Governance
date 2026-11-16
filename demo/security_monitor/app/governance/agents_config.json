@@ -4,20 +4,39 @@
     "owner": "Ana Dev",
     "team": "finance",
     "description": "Financial analysis and revenue reporting",
-    "model": "qwen2.5:7b"
+    "model": "qwen2.5:7b",
+    "tools": [
+      "read_file",
+      "write_file",
+      "http_get",
+      "call_agent",
+      "request_access",
+      "run_command"
+    ]
   },
   "notes_bot": {
     "name": "Notes Bot",
     "owner": "Ravi K",
     "team": "core",
     "description": "Documentation and meeting minutes",
-    "model": "qwen2.5:7b"
+    "model": "qwen2.5:7b",
+    "tools": [
+      "read_file",
+      "write_file",
+      "request_access"
+    ]
   },
   "brief_bot": {
     "name": "Brief Bot",
     "owner": "Meena R",
     "team": "legal",
     "description": "Legal briefing and compliance review",
-    "model": "llama3.1:8b"
+    "model": "llama3.1:8b",
+    "tools": [
+      "read_file",
+      "write_file",
+      "http_get",
+      "request_access"
+    ]
   }
 }

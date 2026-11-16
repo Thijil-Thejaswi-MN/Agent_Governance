@@ -102,6 +102,8 @@ class TaskSpec:
     oracle_allowed: list[str] = field(default_factory=list)
     condition: str | None = None
     tools_schema: list[dict[str, Any]] | None = None
+    # The agent's own tool limit (from the agent list). None: no per-agent limit.
+    agent_tools: list[str] | None = None
     decoys: list[dict[str, Any]] = field(default_factory=list)
     canary: str = ""
     use_eval_world: bool = False
@@ -352,6 +354,17 @@ class LaunchResult:
     fs_diff: dict[str, Any] | None = None
     audit_sink_requests: list[dict[str, Any]] = field(default_factory=list)
 
+
+
+def _offered_tools(spec: "TaskSpec") -> list[dict[str, Any]] | None:
+    """The tools offered to the model: the preset's or the default set, cut to the agent's limit."""
+    if spec.agent_tools is None:
+        return spec.tools_schema
+    from .llm_agent import GOVERNED_TOOLS_SCHEMA
+
+    base = spec.tools_schema if spec.tools_schema is not None else GOVERNED_TOOLS_SCHEMA
+    limit = set(spec.agent_tools)
+    return [t for t in base if t.get("function", {}).get("name") in limit]
 
 class TaskLauncher:
     """Launches one task in its own scope + sandbox and produces its receipt."""
@@ -650,6 +663,12 @@ class TaskLauncher:
             boundary.tools = sorted(set(boundary.tools) | set(spec.declared_tools))
             boundary.metadata["tools_declared_by_requester"] = sorted(spec.declared_tools)
             self.storage.save_boundary(boundary)
+        if spec.agent_tools is not None:
+            # Checked by the broker before the task boundary: a tool outside the agent's limit is
+            # refused whatever the request allows.
+            boundary.metadata["agent_tool_limit"] = sorted(spec.agent_tools)
+            boundary.metadata["agent_tool_limit_agent"] = spec.agent_id
+            self.storage.save_boundary(boundary)
         if spec.condition:
             task.condition = spec.condition
         task.requested_by = spec.requester
@@ -825,7 +844,7 @@ class TaskLauncher:
             "max_iterations": spec.max_iterations,
             "command_timeout": spec.command_timeout_s,
             "model": llm_model,
-            "tools_schema": spec.tools_schema,
+            "tools_schema": _offered_tools(spec),
             "condition": cond,
             "client_mode": "direct" if is_direct else "broker",
         }

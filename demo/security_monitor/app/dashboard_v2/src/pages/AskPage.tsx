@@ -427,7 +427,11 @@ const AgentModelNote: React.FC<{
           (model === 'scripted'
             ? ' This run replays fixed steps instead (no AI), so it is repeatable.'
             : ` This run uses ${model} instead.`)}{' '}
-        What it may touch comes from your request, not from the agent.
+        It may call only{' '}
+        <span className="mono" style={{ color: 'var(--text-2)' }} id="agent-tool-limit">
+          {(agent.tools || []).join(', ') || 'its default tools'}
+        </span>
+        ; which files and sites it may touch comes from your request.
       </span>
     )}
     {missing && (

@@ -169,6 +169,31 @@ class ToolBroker:
             "escalated_by_provenance": escalated,
         }
 
+    def _check_agent_tool(self, task_id: str, agent_id: str, boundary: Any, tool_name: str) -> None:
+        """Refuse a tool outside the agent's own tool limit, and record the refusal."""
+        check = getattr(self.evaluator, "evaluate_agent_tool", None)
+        limit_eval = check(boundary, tool_name) if check else None
+        if limit_eval is None:
+            return
+        action, prevented = self.policy_engine.decide(boundary, limit_eval)
+        self.storage.record_event(GovernanceEvent(
+            event_id=self._generate_event_id(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            source=EventSource.TOOL_BROKER,
+            task_id=task_id,
+            agent_id=agent_id,
+            pid=os.getpid(),
+            kind="tool_invocation",
+            target=tool_name,
+            verdict=limit_eval.verdict,
+            risk_tier=limit_eval.risk_tier,
+            action_taken=action,
+            prevented=prevented,
+            rule_matched=limit_eval.rule_matched,
+            boundary_version=boundary.version,
+        ))
+        raise PermissionError(f"Tool {tool_name} denied: {limit_eval.rule_matched}")
+
     def _authenticate(self, token: str) -> tuple[str, str]:
         """
         Validates token and returns (task_id, agent_id).
@@ -221,6 +246,7 @@ class ToolBroker:
         boundary = self.storage.get_boundary(task_id)
         if not boundary:
             raise RuntimeError(f"Active boundary not found for task {task_id}")
+        self._check_agent_tool(task_id, agent_id, boundary, "read_file")
 
         # Check tool granted
         tool_eval = self.evaluator.evaluate_tool(boundary, "read_file")
@@ -313,6 +339,7 @@ class ToolBroker:
         boundary = self.storage.get_boundary(task_id)
         if not boundary:
             raise RuntimeError(f"Active boundary not found for task {task_id}")
+        self._check_agent_tool(task_id, agent_id, boundary, "write_file")
 
         tool_eval = self.evaluator.evaluate_tool(boundary, "write_file")
         if tool_eval.verdict != EventVerdict.INSIDE:
@@ -385,6 +412,7 @@ class ToolBroker:
         boundary = self.storage.get_boundary(task_id)
         if not boundary:
             raise RuntimeError(f"Active boundary not found for task {task_id}")
+        self._check_agent_tool(task_id, agent_id, boundary, "http_get")
 
         eval_res = self.evaluator.evaluate_network(boundary, url)
         action, prevented = self.policy_engine.decide(boundary, eval_res)
@@ -484,6 +512,7 @@ class ToolBroker:
         boundary = self.storage.get_boundary(task_id)
         if not boundary:
             raise RuntimeError(f"Active boundary not found for task {task_id}")
+        self._check_agent_tool(task_id, agent_id, boundary, "run_command")
 
         eval_res = self.evaluator.evaluate_command(boundary, command)
         action, prevented = self.policy_engine.decide(boundary, eval_res)
@@ -614,6 +643,7 @@ class ToolBroker:
         boundary = self.storage.get_boundary(task_id)
         if not boundary:
             raise RuntimeError(f"Active boundary not found for task {task_id}")
+        self._check_agent_tool(task_id, agent_id, boundary, "call_agent")
 
         eval_res = self.evaluator.evaluate_peer_agent(boundary, target_agent)
         action, prevented = self.policy_engine.decide(boundary, eval_res)

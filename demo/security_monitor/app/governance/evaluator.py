@@ -249,6 +249,22 @@ class BoundaryEvaluator:
             rule_matched="unmediated execution not supported until OS enforcement (M4)",
         )
 
+    def evaluate_agent_tool(self, boundary: TaskBoundary, tool_name: str) -> EvaluationResult | None:
+        """The agent's own tool limit, checked before the task boundary.
+
+        A configured agent may call only the tools in its limit, whatever the request allows.
+        Returns None when the tool is within the limit or the task has no agent limit.
+        """
+        limit = boundary.metadata.get("agent_tool_limit")
+        if limit is None or tool_name in limit:
+            return None
+        agent = boundary.metadata.get("agent_tool_limit_agent") or "this agent"
+        return EvaluationResult(
+            verdict=EventVerdict.OUTSIDE,
+            risk_tier=RiskTier.HIGH,
+            rule_matched=f"{tool_name} is not in the tool limit of {agent}",
+        )
+
     def evaluate_tool(self, boundary: TaskBoundary, tool_name: str) -> EvaluationResult:
         if tool_name in ("llm_complete", "request_access"):
             return EvaluationResult(
