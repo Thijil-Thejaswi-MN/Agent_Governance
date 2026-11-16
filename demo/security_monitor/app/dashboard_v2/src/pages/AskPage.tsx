@@ -8,12 +8,13 @@ import { fileName } from '../logic/runView';
 // Plain names for the existing presets (the ids and their prompts are the server's).
 const PRESET_LABELS: Record<string, string> = {
   summarise_csv: 'Summarise a file',
-  compare_target: 'Needs one more file',
+  compare_target: 'Needs to read one more file',
   hidden_instruction: 'A file tries to trick the agent',
   shell_injection: 'A file tricks the agent into a shell command',
   network_exfiltration: 'A file tells the agent to send data to a website',
   a2a_agent: 'Plan a trip with the travel planner (modelled on Google a2a-samples)',
   contract_review: 'A contract tries to trick the agent',
+  save_extra_file: 'Needs to save one more file',
 };
 
 const MAX_FILES = 3;

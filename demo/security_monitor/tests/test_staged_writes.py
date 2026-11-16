@@ -226,3 +226,39 @@ def test_write_over_an_input_is_high_risk_and_never_lands(tmp_path: Path) -> Non
                                         "justification": "fix the data"})
     assert res["granted"] is False
     assert (ws / "input/data.csv").read_text() == "a,b\n1,2\n"
+
+
+# --- provenance: a reviewed write goes to a person, an unreviewed one stays denied ----
+
+def test_write_after_reading_files_goes_to_a_person_only_when_content_is_reviewed(tmp_path: Path) -> None:
+    srv, storage, ws, token = _server(tmp_path, approve=True)
+    exp = srv.broker.expansion_service
+    exp.user_approval_hook = None  # leave it waiting, to read the decision before a person acts
+    exp.record_untrusted_read(srv.task_id, "file_read", "input/data.csv", "a,b\n1,2\n")
+    # Without a reviewed snapshot: MEDIUM escalated to HIGH, denied by policy (unchanged).
+    plain = exp.evaluate_request(srv.task_id, "finance_bot", "file_write", "output/plain.txt", "x")
+    assert plain.status == ExpansionStatus.DENIED and plain.effective_risk_tier.value == "HIGH"
+    # With a reviewed snapshot: flagged as escalated, but a person decides.
+    _stage(ws, "output/note.txt", b"note\n")
+    assert srv._stage_for_review("output/note.txt") is None
+    reviewed = exp.evaluate_request(srv.task_id, "finance_bot", "file_write", "output/note.txt", "x")
+    assert reviewed.status == ExpansionStatus.PENDING and reviewed.escalated_by_provenance is True
+    assert reviewed.effective_risk_tier.value == "MEDIUM"
+    # A HIGH baseline is never lowered, even when staged.
+    _stage(ws, "input/data.csv", b"tampered\n")
+    assert srv._stage_for_review("input/data.csv") is None
+    over = exp.evaluate_request(srv.task_id, "finance_bot", "file_write", "input/data.csv", "x")
+    assert over.status == ExpansionStatus.DENIED
+
+
+def test_save_extra_file_example_needs_a_reviewed_write() -> None:
+    from demo.security_monitor.app.governance import run_manager as rm
+    p = rm.PRESETS["save_extra_file"]
+    assert p["agent"] == "finance_bot" and "finance_note" not in p["prompt"]
+    steps = p["scripted_steps"]
+    staged = [s for s in steps if s.get("tool") == "write_file" and s["args"]["path"].startswith("staged/")]
+    asked = [s for s in steps if s.get("tool") == "request_access"]
+    assert staged[0]["args"]["path"] == "staged/output/finance_note.txt"
+    assert asked[0]["args"] == {"resource_type": "file_write", "resource_target": "output/finance_note.txt",
+                                "justification": asked[0]["args"]["justification"]}
+    assert steps.index(staged[0]) < steps.index(asked[0])

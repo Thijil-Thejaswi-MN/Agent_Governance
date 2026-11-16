@@ -72,7 +72,7 @@ export const StagedContent: React.FC<{ staged: StagedSnapshot | null | undefined
           style={{ color: '#E6E9EF' }}
         >
           {staged.preview}
-          {staged.truncated ? '\n… (first 2,000 characters shown)' : ''}
+          {staged.truncated ? '\n… (only the start is shown: 2,000 characters)' : ''}
         </pre>
       )}
       <span className="text-[12px] font-mono" style={{ color: 'var(--text-3)' }} title={staged.content_sha256}>
