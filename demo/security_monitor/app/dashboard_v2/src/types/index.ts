@@ -229,6 +229,7 @@ export interface RunOutputFile {
   truncated: boolean;
   location?: string;
   windows_location?: string | null;
+  contains_private?: boolean | null;
 }
 
 export interface RunModelsResponse {

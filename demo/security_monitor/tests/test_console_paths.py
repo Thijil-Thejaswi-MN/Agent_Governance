@@ -55,3 +55,12 @@ def test_evaluation_behaviour_is_unchanged_without_the_flag(tmp_path, monkeypatc
     _, _, broker = _setup(tmp_path)
     with pytest.raises(PermissionError):
         broker.read_file("tok", "sales_1.csv")
+
+
+def test_launcher_keeps_the_canary_for_the_output_check():
+    import inspect
+
+    from demo.security_monitor.app.governance import api, launcher
+
+    assert 'boundary.metadata["canary"] = spec.canary' in inspect.getsource(launcher.TaskLauncher)
+    assert '"private_check"' in inspect.getsource(api)

@@ -33,6 +33,8 @@ export interface RunTracker {
   pending: ExpansionItem | null;
   expansions: ExpansionItem[];
   outputFiles: RunOutputFile[];
+  /** "clean" / "leaked" when the run planted private files with a unique code; null otherwise. */
+  privateCheck: 'clean' | 'leaked' | null;
   receipt: ReceiptResponse | null;
   receiptLoaded: boolean;
   actionError: string | null;
@@ -56,6 +58,7 @@ export function useRunTracker(taskId: string | undefined): RunTracker {
   const [pending, setPending] = useState<ExpansionItem | null>(null);
   const [expansions, setExpansions] = useState<ExpansionItem[]>([]);
   const [outputFiles, setOutputFiles] = useState<RunOutputFile[]>([]);
+  const [privateCheck, setPrivateCheck] = useState<'clean' | 'leaked' | null>(null);
   const [receipt, setReceipt] = useState<ReceiptResponse | null>(null);
   const [receiptLoaded, setReceiptLoaded] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -99,6 +102,7 @@ export function useRunTracker(taskId: string | undefined): RunTracker {
       api.getTaskReceipt(id).catch(() => null),
     ]);
     setOutputFiles(outputResp.files || []);
+    setPrivateCheck((outputResp as { private_check?: 'clean' | 'leaked' | null }).private_check ?? null);
     setReceipt(receiptResp);
     setReceiptLoaded(true);
   }, []);
@@ -180,6 +184,7 @@ export function useRunTracker(taskId: string | undefined): RunTracker {
     setStopNote(null);
     setPending(null);
     setOutputFiles([]);
+    setPrivateCheck(null);
     setReceipt(null);
     setReceiptLoaded(false);
     setActionError(null);
@@ -353,6 +358,7 @@ export function useRunTracker(taskId: string | undefined): RunTracker {
     pending,
     expansions,
     outputFiles,
+    privateCheck,
     receipt,
     receiptLoaded,
     actionError,

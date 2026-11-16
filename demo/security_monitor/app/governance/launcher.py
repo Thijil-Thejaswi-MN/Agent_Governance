@@ -679,6 +679,10 @@ class TaskLauncher:
             boundary.tools = sorted(set(boundary.tools) | set(spec.declared_tools))
             boundary.metadata["tools_declared_by_requester"] = sorted(spec.declared_tools)
             self.storage.save_boundary(boundary)
+        if spec.canary:
+            # Kept so the console can check outputs for the private files' unique code.
+            boundary.metadata["canary"] = spec.canary
+            self.storage.save_boundary(boundary)
         if spec.agent_tools is not None:
             # Checked by the broker before the task boundary: a tool outside the agent's limit is
             # refused whatever the request allows.
