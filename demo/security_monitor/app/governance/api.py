@@ -1182,10 +1182,23 @@ async def preview_expansion(request_id: str) -> dict[str, Any]:
         "learned_from": learned[0] if learned else None,
         "rule_possible": not is_high_risk_or_escalated(req),
     })
+    out["staged"] = _staged_snapshot_for(storage, req) if req.resource_type == "file_write" else None
     other = _unused_single_use_grant(storage, req.task_id, exclude=req.request_id)
     out["once_possible"] = other is None
     out["once_blocked_by"] = other.resource_target if other else None
     return out
+
+
+def _staged_snapshot_for(storage: Any, req: Any) -> dict[str, Any] | None:
+    """The content a person reviews for a write request: the snapshot recorded when the agent
+    asked (staged_writes.py). It is exactly what lands on approval, never the staged file as it is now."""
+    target = (req.resource_target or "").strip()
+    snaps = [e for e in storage.get_events_for_task(req.task_id)
+             if e.kind == "staged_write" and e.target == target and str(e.timestamp) <= str(req.created_at)]
+    if not snaps:
+        return None
+    d = snaps[-1].details or {}
+    return {k: d.get(k) for k in ("staged_path", "size_bytes", "content_sha256", "binary", "preview", "truncated")}
 
 
 def _unused_single_use_grant(storage: Any, task_id: str, exclude: str | None = None) -> Any:

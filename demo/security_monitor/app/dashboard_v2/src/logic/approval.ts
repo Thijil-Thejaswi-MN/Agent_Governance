@@ -16,6 +16,18 @@ export interface ExpansionPreview {
   rule_possible: boolean;
   once_possible?: boolean;
   once_blocked_by?: string | null;
+  resource_type?: string;
+  /** For a write request: the content snapshot the person reviews (exactly what lands on approval). */
+  staged?: StagedSnapshot | null;
+}
+
+export interface StagedSnapshot {
+  staged_path: string;
+  size_bytes: number;
+  content_sha256: string;
+  binary: boolean;
+  preview: string;
+  truncated: boolean;
 }
 
 export function formatBytes(n: number | null | undefined): string | null {
@@ -26,9 +38,15 @@ export function formatBytes(n: number | null | undefined): string | null {
 }
 
 /** The facts line under the file name: "in docs · 1.2 KB", "in docs · size unknown". */
-export function previewFacts(p: Pick<ExpansionPreview, 'kind' | 'folder' | 'size_bytes' | 'exists' | 'inside_workspace'>): string[] {
+export function previewFacts(
+  p: Pick<ExpansionPreview, 'kind' | 'folder' | 'size_bytes' | 'exists' | 'inside_workspace'> &
+    Partial<Pick<ExpansionPreview, 'resource_type' | 'staged'>>,
+): string[] {
   const out: string[] = [];
-  if (p.kind === 'file') {
+  if (p.kind === 'file' && p.resource_type === 'file_write') {
+    out.push(p.folder ? `in ${p.folder}` : 'in the task folder');
+    out.push(p.staged ? `a new file, ${formatBytes(p.staged.size_bytes) ?? 'size unknown'} to save` : 'nothing staged to review');
+  } else if (p.kind === 'file') {
     out.push(p.folder ? `in ${p.folder}` : 'in the task folder');
     if (p.inside_workspace === false) out.push('outside the task folder, size unknown');
     else if (p.exists === false) out.push('not found in the task folder');

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { DecisionCard, RequestPreview } from './DecisionCard';
+import { DecisionCard, RequestPreview, StagedContent } from './DecisionCard';
 import { ExpansionItem } from '../../types';
 import { ExpansionPreview } from '../../logic/approval';
 
@@ -85,5 +85,23 @@ describe('decision card', () => {
     const html = card({ readOnly: true });
     expect(html).not.toContain('Allow once');
     expect(html).toContain('A decision is waiting.');
+  });
+});
+
+describe('StagedContent', () => {
+  const staged = { staged_path: 'staged/output/extra.txt', size_bytes: 9, content_sha256: 'b'.repeat(64), binary: false, preview: 'Total: 22', truncated: false };
+  it('shows the exact content that will be saved, with its hash', () => {
+    const html = renderToStaticMarkup(<StagedContent staged={staged} />);
+    expect(html).toContain('id="decision-staged-content"');
+    expect(html).toContain('Total: 22');
+    expect(html).toContain('SHA-256 bbbbbbbbbbbbbbbb');
+  });
+  it('does not print binary content', () => {
+    const html = renderToStaticMarkup(<StagedContent staged={{ ...staged, binary: true, preview: '' }} />);
+    expect(html).not.toContain('decision-staged-content');
+    expect(html).toContain('binary file');
+  });
+  it('renders nothing for a request with no staged content', () => {
+    expect(renderToStaticMarkup(<StagedContent staged={null} />)).toBe('');
   });
 });

@@ -57,6 +57,7 @@ from .os_layer.sandbox_spec import (
 from .proxy import EgressProxyServer
 from .receipt import build_receipt, verify_chain
 from .resolved_boundary import ResolvedBoundaryEvaluator
+from .staged_writes import land_snapshot, normalize_write_target, snapshot_staged
 from .storage import GovernanceStorage
 
 HERE = Path(__file__).resolve().parent
@@ -166,14 +167,48 @@ class ExpansionDelivery:
     delivered by copy (from outside the sandbox). Single-use deliveries (HIGH)
     are removed after the first open observed by the sensor; that is sensor-driven
     removal, not kernel-enforced single use. Everything is removed at task end.
+
+    With staging (the M7 path), approved file writes are content-reviewed: the agent
+    stages the file in staged/, the snapshot taken when it asks is what the person
+    reviews, and on approval exactly that snapshot is written to the target
+    (staged_writes.py). The target never becomes writable for the agent.
     """
 
-    def __init__(self, workspace: Path, storage: GovernanceStorage) -> None:
+    def __init__(self, workspace: Path, storage: GovernanceStorage, staging: bool = False) -> None:
         self.ws = workspace.resolve()
         self.granted = self.ws / "granted"
         self.storage = storage
+        self.staging = staging
         self.records: list[dict[str, Any]] = []
+        self._snapshots: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
+
+    def stage_snapshot(self, target: str) -> dict[str, Any]:
+        """Snapshots staged/<target> for review; the bytes are kept here, never re-read on approval."""
+        snap = snapshot_staged(self.ws, target)
+        if snap.get("ok"):
+            with self._lock:
+                self._snapshots[snap["target"]] = snap
+        return {k: v for k, v in snap.items() if k != "data"}
+
+    def _land(self, target: str, rec: dict[str, Any]) -> None:
+        t = normalize_write_target(target)
+        with self._lock:
+            snap = self._snapshots.get(t or "")
+        if t is None:
+            rec.update({"type": "none", "reason": "invalid_or_traversal_target"})
+            return
+        if snap is None:
+            rec.update({"type": "none", "reason": "nothing_staged_for_review"})
+            return
+        res = land_snapshot(self.ws, t, snap["data"])
+        if not res.get("ok"):
+            rec.update({"type": "none", "reason": res.get("reason", "not_landed")})
+            return
+        with self._lock:
+            self._snapshots.pop(t, None)
+        rec.update({"type": "file_land", "landed_path": res["landed_path"], "staged_path": snap["staged_path"],
+                    "content_sha256": res["content_sha256"], "size_bytes": res["size_bytes"]})
 
     def _latest_request(self, task_id: str, rtype: str, target: str) -> Any:
         t_clean = target[len("granted/"):] if target.startswith("granted/") else target
@@ -238,13 +273,15 @@ class ExpansionDelivery:
                     rec.update({"type": "file_copy", "delivered_path": f"granted/{rel}",
                                 "content_sha256": hashlib.sha256(dst.read_bytes()).hexdigest(),
                                 "removed_at": None, "removed_reason": None})
+        elif rtype == "file_write" and self.staging:
+            self._land(target, rec)
         elif rtype == "network":
             rec.update({"type": "proxy_allowlist", "note": "boundary network list updated; egress proxy enforces per task"})
         else:
             rec.update({"type": "broker_tool_only", "note": "Landlock cannot widen after restrict_self; use the broker tool"})
         with self._lock:
             self.records.append(rec)
-        out = {k: rec[k] for k in ("type", "delivered_path", "reason", "note") if k in rec}
+        out = {k: rec[k] for k in ("type", "delivered_path", "landed_path", "content_sha256", "reason", "note") if k in rec}
         return out
 
     def on_open(self, abs_path: str) -> None:
@@ -266,6 +303,7 @@ class ExpansionDelivery:
                 if rec.get("type") == "file_copy" and not rec.get("removed_at"):
                     rec["removed_at"] = now
                     rec["removed_reason"] = "task_end"
+            self._snapshots.clear()  # an unreviewed snapshot never lands after the task
         if self.granted.exists():
             for child in self.granted.iterdir():
                 if child.is_dir() and not child.is_symlink():
@@ -796,7 +834,7 @@ class TaskLauncher:
             if llm_cfg.get("base_url"):
                 llm_options["base_url"] = llm_cfg["base_url"]
 
-        delivery = ExpansionDelivery(ws, self.storage)
+        delivery = ExpansionDelivery(ws, self.storage, staging=resolved_path)
         rpc = BrokerRPCServer(broker, ws / BROKER_SOCKET_NAME, task_id, llm_model=llm_model, llm_options=llm_options,
                               delivery=delivery, cgroup_reader=cgroup_ctl.read_proc_cgroup,
                               call_timeout=max(float(spec.approval_timeout_s) + 30.0, 120.0))

@@ -52,3 +52,12 @@ describe('allow once', () => {
     expect(onceBlockedReason({ once_possible: false, once_blocked_by: 'docs/notes.txt' })).toContain('notes.txt');
   });
 });
+
+describe('write requests', () => {
+  const file = { kind: 'file' as const, folder: 'output', size_bytes: null, exists: false, inside_workspace: true };
+  const staged = { staged_path: 'staged/output/extra.txt', size_bytes: 9, content_sha256: 'a'.repeat(64), binary: false, preview: 'Total: 22', truncated: false };
+  it('says how much will be saved instead of "not found"', () => {
+    expect(previewFacts({ ...file, resource_type: 'file_write', staged })).toEqual(['in output', 'a new file, 9 bytes to save']);
+    expect(previewFacts({ ...file, resource_type: 'file_write', staged: null })).toEqual(['in output', 'nothing staged to review']);
+  });
+});

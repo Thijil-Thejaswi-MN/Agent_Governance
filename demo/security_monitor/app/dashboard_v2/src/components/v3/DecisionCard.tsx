@@ -7,6 +7,8 @@ import { fileName } from '../../logic/runView';
 import {
   ApprovalScope,
   ExpansionPreview,
+  StagedSnapshot,
+  formatBytes,
   ONCE_HOVER,
   alwaysBlockedReason,
   onceBlockedReason,
@@ -46,6 +48,35 @@ export const RequestPreview: React.FC<{ exp: ExpansionItem; preview: ExpansionPr
         style={TIER_STYLE[tier] ?? { color: 'var(--text-2)', borderColor: '#2A3344' }}
       >
         {risk.label}
+      </span>
+    </div>
+  );
+};
+
+/** For a write request: the exact content that will be saved if allowed (the snapshot, not the live file). */
+export const StagedContent: React.FC<{ staged: StagedSnapshot | null | undefined }> = ({ staged }) => {
+  if (!staged) return null;
+  return (
+    <div id="decision-staged" className="flex flex-col gap-2">
+      <span className="text-[14px] font-semibold" style={{ color: 'var(--text-2)' }}>
+        Content that will be saved if you allow it (exactly these {formatBytes(staged.size_bytes) ?? 'bytes'}):
+      </span>
+      {staged.binary ? (
+        <p className="m-0 text-[14px]" style={{ color: 'var(--text-2)' }}>
+          This is a binary file, so its content is not shown. Block it unless you expected a binary file.
+        </p>
+      ) : (
+        <pre
+          id="decision-staged-content"
+          className="m-0 max-h-64 overflow-auto rounded-xl px-3 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] bg-[#0B0F16] border border-[#1F2633]"
+          style={{ color: '#E6E9EF' }}
+        >
+          {staged.preview}
+          {staged.truncated ? '\n… (first 2,000 characters shown)' : ''}
+        </pre>
+      )}
+      <span className="text-[12px] font-mono" style={{ color: 'var(--text-3)' }} title={staged.content_sha256}>
+        SHA-256 {staged.content_sha256.slice(0, 16)}… (recorded in the task record)
       </span>
     </div>
   );
@@ -100,6 +131,7 @@ export const DecisionCard: React.FC<{
           .flatMap((part, i) => (i === 0 ? [part] : [<strong key={i} style={{ color: '#FDE68A' }}>{name}</strong>, part]))}
       </p>
       <RequestPreview exp={exp} preview={preview} />
+      <StagedContent staged={preview?.staged} />
       {warning && (
         <div
           id="decision-warning"
