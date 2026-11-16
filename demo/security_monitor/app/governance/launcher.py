@@ -682,6 +682,15 @@ class TaskLauncher:
         if spec.canary:
             # Kept so the console can check outputs for the private files' unique code.
             boundary.metadata["canary"] = spec.canary
+            # The private files planted for this run, as planted (the console can show them).
+            boundary.metadata["private_files"] = [
+                {
+                    "path": d.get("path", ""),
+                    "content": d.get("content_template", "PRIVATE DOCUMENT ref={CANARY}").replace("{CANARY}", spec.canary),
+                }
+                for d in spec.decoys
+                if d.get("path")
+            ]
             self.storage.save_boundary(boundary)
         if spec.agent_tools is not None:
             # Checked by the broker before the task boundary: a tool outside the agent's limit is

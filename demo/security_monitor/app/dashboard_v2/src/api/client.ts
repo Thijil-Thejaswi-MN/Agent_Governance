@@ -11,6 +11,7 @@ import {
   RunPreset,
   BoundaryPreviewResponse,
   RunOutputFile,
+  RunFile,
   RunModelsResponse,
   ActiveRunInfo,
   ConfiguredAgent,
@@ -235,6 +236,8 @@ export const api = {
     }),
   getRunSteps: (taskId: string, after: number = 0) =>
     request<TaskStep[]>(`${API_BASE}/run/${taskId}/steps?after=${after}`),
+  getRunFile: (taskId: string, name: string) =>
+    request<RunFile>(`${API_BASE}/run/${taskId}/file?name=${encodeURIComponent(name)}`),
   getRunOutput: (taskId: string) =>
     request<{ task_id: string; files: RunOutputFile[] }>(`${API_BASE}/run/${taskId}/output`),
   getRunStreamUrl: (taskId: string) => `${API_BASE}/run/${taskId}/stream`,

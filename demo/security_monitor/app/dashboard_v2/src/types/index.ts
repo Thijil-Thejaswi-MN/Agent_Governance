@@ -234,6 +234,13 @@ export interface RunOutputFile {
   contains_private?: boolean | null;
 }
 
+/** One file the run involved, opened from its name on the Run page. */
+export interface RunFile extends RunOutputFile {
+  kind: 'input' | 'output' | 'private';
+  location?: string | undefined;
+  canary?: string | null;
+}
+
 export interface RunModelsResponse {
   models: string[];
   default: string;

@@ -29,11 +29,40 @@ export interface FenceProps {
   gotThrough?: boolean;
   requested: string[];
   live: boolean;
+  /** Open a file by its name (chips become buttons). */
+  onOpen?: (name: string) => void;
 }
+
+// A chip: a button that opens the file when onOpen is given, else a plain label.
+const Chip: React.FC<{
+  name: string;
+  onOpen?: (name: string) => void;
+  className: string;
+  style: React.CSSProperties;
+  chip: string;
+  children: React.ReactNode;
+}> = ({ name, onOpen, className, style, chip, children }) =>
+  onOpen ? (
+    <button
+      type="button"
+      className={`${className} cursor-pointer hover:brightness-125 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]`}
+      style={{ ...style, font: 'inherit', fontWeight: 600 }}
+      title={`Open ${name}`}
+      aria-label={`Open ${name}`}
+      data-chip={chip}
+      onClick={() => onOpen(name)}
+    >
+      {children}
+    </button>
+  ) : (
+    <div className={className} style={style} title={name} data-chip={chip} aria-hidden="true">
+      {children}
+    </div>
+  );
 
 // The agent in the centre, the files its request allows inside the fence, and what it
 // tried or asked for outside. Names only; full paths are in Details.
-export const Fence: React.FC<FenceProps> = ({ inside, blocked, requested, live, gotThrough }) => {
+export const Fence: React.FC<FenceProps> = ({ inside, blocked, requested, live, gotThrough, onOpen }) => {
   // At most four chips each side; the fourth becomes "+N more" when there are more.
   const shownInside = inside.length > 4 ? inside.slice(0, 3) : inside;
   const moreInside = inside.length - shownInside.length;
@@ -92,9 +121,9 @@ export const Fence: React.FC<FenceProps> = ({ inside, blocked, requested, live, 
           </div>
 
           {shownInside.map((name, i) => (
-            <div key={`in-${name}`} className="fence-chip" style={{ ...insideChip, top: INSIDE_TOPS[i] }} title={name} data-chip="inside" aria-hidden="true">
+            <Chip key={`in-${name}`} name={name} onOpen={onOpen} className="fence-chip" style={{ ...insideChip, top: INSIDE_TOPS[i] }} chip="inside">
               {name}
-            </div>
+            </Chip>
           ))}
           {moreInside > 0 && (
             <div className="fence-chip" style={{ ...insideChip, top: INSIDE_TOPS[3] }} data-chip="inside-more" aria-hidden="true">
@@ -105,17 +134,17 @@ export const Fence: React.FC<FenceProps> = ({ inside, blocked, requested, live, 
 
         <div className="fence-lane">
           {shownOutside.map((o, i) => (
-            <div
+            <Chip
               key={`out-${o.kind}-${o.name}`}
+              name={o.name}
+              onOpen={o.name === 'a command' ? undefined : onOpen}
               className={`fence-chip ${live ? (o.kind === 'blocked' ? 'chip-blocked' : 'chip-waiting') : ''}`}
-              title={o.name}
-              data-chip={o.kind}
-              aria-hidden="true"
+              chip={o.kind}
               style={{ top: OUTSIDE_TOPS[i], ...outsideStyle(o.kind) }}
             >
               {o.name}
               {o.kind === 'requested' ? ' ?' : ''}
-            </div>
+            </Chip>
           ))}
           {moreOutside > 0 && (
             <div aria-hidden="true" className="fence-chip" data-chip="outside-more" style={{ top: OUTSIDE_TOPS[3], ...outsideStyle('blocked') }}>

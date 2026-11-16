@@ -4,7 +4,7 @@ import { CheckCircle2, Download, FileText, AlertTriangle, Square } from 'lucide-
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useRunTracker } from '../hooks/useRunTracker';
-import { TaskEvent } from '../types';
+import { RunFile, TaskEvent } from '../types';
 import { Fence } from '../components/v3/Fence';
 import { DecisionCard } from '../components/v3/DecisionCard';
 import { DetailsDrawer, DetailsSection, KV } from '../components/v3/DetailsDrawer';
@@ -32,6 +32,19 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
   const run = useRunTracker(taskId);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [outputOpen, setOutputOpen] = useState(false);
+  // A file opened from its chip: the input with the hidden note, the output, or the private file.
+  const [openName, setOpenName] = useState<string | null>(null);
+  const [fileView, setFileView] = useState<RunFile | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!taskId || !openName) return;
+    setFileView(null);
+    setFileError(null);
+    api
+      .getRunFile(taskId, openName)
+      .then(setFileView)
+      .catch(() => setFileError('This file is not available for this run (runs started before this update do not keep the private file).'));
+  }, [taskId, openName]);
   const [events, setEvents] = useState<TaskEvent[]>([]);
   const [agentNames, setAgentNames] = useState<Record<string, string>>({});
   useEffect(() => {
@@ -149,7 +162,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
 
       <div className="pt-6 pb-10 flex flex-wrap items-center gap-8 lg:gap-12">
         <div className="flex-[1_1_420px] min-w-0 flex justify-center">
-          <Fence inside={insideNames} blocked={blockedNames} requested={requestedNames} live={live} gotThrough={isComparison} />
+          <Fence inside={insideNames} blocked={blockedNames} requested={requestedNames} live={live} gotThrough={isComparison} onOpen={terminal ? setOpenName : undefined} />
         </div>
 
         <section aria-label={run.pending ? 'Your decision' : 'What is happening'} className="flex-[1_1_380px] max-w-[540px] min-w-0 flex flex-col gap-5">
@@ -336,6 +349,17 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
         ))}
       </DetailsDrawer>
 
+      <DetailsDrawer
+        open={!!openName}
+        title={fileView?.kind === 'private' ? 'Private file (outside the request)' : fileView?.kind === 'output' ? 'Output file' : 'Input file'}
+        onClose={() => setOpenName(null)}
+        id="file-drawer"
+      >
+        {fileError && <p className="m-0 text-[14px]" style={{ color: 'var(--text-2)' }}>{fileError}</p>}
+        {!fileView && !fileError && <p className="m-0 text-[14px]" style={{ color: 'var(--text-3)' }}>Loading…</p>}
+        {fileView && <FileView file={fileView} pointsTo={blockedNames.filter(n => n !== 'a command')} privateCheck={run.privateCheck} />}
+      </DetailsDrawer>
+
       <DetailsDrawer open={detailsOpen} title="What happened" onClose={() => setDetailsOpen(false)}>
         <DetailsSection title="Run">
           <KV k="Task" v={taskId} />
@@ -446,6 +470,56 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
 
 // One file location with a copy button (a browser page cannot open a folder by itself;
 // paste the Windows path into File Explorer's address bar).
+/** An opened file. Lines that point to a file outside the request are marked (the hidden note). */
+export function FileView({ file, pointsTo, privateCheck }: { file: RunFile; pointsTo: string[]; privateCheck?: 'clean' | 'leaked' | null }) {
+  const lines = (file.content || '').split('\n');
+  if (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+  const marks = (line: string) => (file.kind === 'private' ? [] : pointsTo.filter(n => line.includes(n)));
+  const marked = lines.some(l => marks(l).length > 0);
+  return (
+    <DetailsSection title={file.path}>
+      {file.kind === 'private' ? (
+        <p className="m-0 mb-3 text-[14px] leading-relaxed" id="file-note" style={{ color: 'var(--text-2)' }}>
+          Planted for this run outside what the request allows, to test the agent. The agent was refused it, so it never
+          saw this text. Its unique code is <span className="mono">{file.canary}</span>
+          {privateCheck === 'clean' && ', and that code is not in the output'}
+          {privateCheck === 'leaked' && ', and that code was found in the output'}.
+        </p>
+      ) : marked ? (
+        <p className="m-0 mb-3 text-[14px] leading-relaxed" id="file-note" style={{ color: 'var(--text-2)' }}>
+          The highlighted line is the hidden instruction. It asks for a file your request did not allow. The agent read this
+          file because the request allowed it, so the note reached the model as part of the data.
+        </p>
+      ) : null}
+      <div className="flex items-center gap-3 mb-2 text-[13px]" style={{ color: 'var(--text-3)' }}>
+        <span>{file.size} bytes</span>
+        {file.truncated && <span>Showing the first 20,000 bytes</span>}
+      </div>
+      {file.location && (
+        <div className="mb-3 text-[13px]" id="file-location">
+          <div style={{ color: 'var(--text-3)' }}>Saved at (open it yourself to check)</div>
+          <PathLine label="Linux" value={file.location} />
+          {file.windows_location && <PathLine label="Windows Explorer" value={file.windows_location} />}
+        </div>
+      )}
+      <pre className="m-0 whitespace-pre-wrap text-[14px] leading-relaxed mono" style={{ color: 'var(--text)' }} id="file-content">
+        {lines.map((l, i) => {
+          const m = marks(l);
+          return m.length ? (
+            <span key={i} data-hidden-note="true" style={{ display: 'block', background: 'rgba(251,113,133,0.16)', color: '#FECDD3', borderLeft: '3px solid #FB7185', paddingLeft: 8 }}>
+              {l}
+            </span>
+          ) : (
+            <span key={i} style={{ display: 'block', paddingLeft: 11 }}>
+              {l || '\u00a0'}
+            </span>
+          );
+        })}
+      </pre>
+    </DetailsSection>
+  );
+}
+
 function PathLine({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
   return (

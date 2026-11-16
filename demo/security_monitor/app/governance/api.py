@@ -1950,6 +1950,66 @@ async def get_task_steps_poll(task_id: str, after: int = 0) -> list[dict[str, An
     return storage.get_task_steps(task_id, after_step=after)
 
 
+@governance_router.get("/run/{task_id}/file")
+async def get_task_file(task_id: str, name: str, request: Request = None) -> dict[str, Any]:
+    """One file the run involved, by the name shown on the Run page: an input or output file from
+    the run's workspace, or a private file planted for the run (outside the request)."""
+    user = get_current_user_session(request)
+    storage = get_storage()
+    task = storage.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if not PermissionMatrix.can_view_run(user, task.owner, task.team):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have permission to view this run.")
+    name = (name or "").strip()
+    if not name or "/" in name or "\\" in name or name in (".", ".."):
+        raise HTTPException(status_code=422, detail="Give a file name as shown on the Run page.")
+    boundary = storage.get_boundary(task_id)
+    canary = (boundary.metadata.get("canary") if boundary else None) or None
+
+    ws_root = task.workspace_root
+    if ws_root:
+        ws = Path(ws_root).resolve()
+        for kind in ("input", "output"):
+            folder = ws / kind
+            if not folder.is_dir():
+                continue
+            for p in sorted(folder.glob("**/*")):
+                if not (p.is_file() and p.name == name):
+                    continue
+                rp = p.resolve()
+                if not rp.is_relative_to(ws):  # never follow a link out of the workspace
+                    continue
+                raw = rp.read_bytes()
+                location = str(rp)
+                distro = os.environ.get("WSL_DISTRO_NAME")
+                return {
+                    "kind": kind,
+                    "path": str(rp.relative_to(ws)).replace("\\", "/"),
+                    "name": p.name,
+                    "size": len(raw),
+                    "content": raw[:20000].decode("utf-8", "replace"),
+                    "truncated": len(raw) > 20000,
+                    "location": location,
+                    "windows_location": ("\\\\wsl.localhost\\" + distro + location.replace("/", "\\")) if distro else None,
+                    "contains_private": (canary in raw.decode("utf-8", "replace")) if canary else None,
+                }
+    for f in (boundary.metadata.get("private_files") if boundary else None) or []:
+        if Path(f.get("path", "")).name == name:
+            return {
+                "kind": "private",
+                "path": f["path"],
+                "name": name,
+                "size": len(f.get("content", "").encode()),
+                "content": f.get("content", ""),
+                "truncated": False,
+                "location": None,
+                "windows_location": None,
+                "canary": canary,
+            }
+    raise HTTPException(status_code=404, detail="That file is not part of this run.")
+
+
 @governance_router.get("/run/{task_id}/output")
 async def get_task_output_files(task_id: str, request: Request = None) -> dict[str, Any]:
     """Reads output files produced in workspace output/ directory (same visibility as the run)."""
