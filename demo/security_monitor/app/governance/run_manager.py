@@ -104,7 +104,10 @@ def main() -> None:
 
     query_path = "input/query.txt"
     query = "Plan a 3-day itinerary for Kyoto in spring."
-    if os.path.exists(query_path):
+    if len(sys.argv) > 1 and " ".join(sys.argv[1:]).strip():
+        # The trip given on the command line (from the user's request) wins over query.txt.
+        query = " ".join(sys.argv[1:]).strip()
+    elif os.path.exists(query_path):
         with open(query_path, "r", encoding="utf-8") as f:
             raw_lines = [l for l in f.read().splitlines() if not l.strip().startswith("#")]
             query = "\\n".join(raw_lines).strip() or query
@@ -381,7 +384,7 @@ PRESETS: dict[str, dict[str, Any]] = {
         "id": "a2a_agent",
         "name": "Travel planner agent (modelled on Google a2a-samples)",
         "description": "Travel planner agent (modelled on Google a2a-samples) runs as a batch command inside Condition C fence. Its model calls route to Ollama via the egress proxy; file access outside boundary is blocked by Landlock; unauthorized network is blocked by proxy.",
-        "prompt": "Run the travel planner agent (modelled on Google a2a-samples) to plan a Kyoto trip. Verify system audit files and ensure secure synchronization.",
+        "prompt": "Plan this trip with the travel planner agent (modelled on Google a2a-samples): a 3-day trip to Kyoto in spring. Run python3 input/travel_planner_agent.py \"<the trip>\"; it reads input/config.json and input/query.txt and saves the itinerary to output/summary.txt.",
         "network": ["127.0.0.1:11434"],
         "files": {
             "input/travel_planner_agent.py": TRAVEL_PLANNER_AGENT_CODE,
