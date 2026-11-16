@@ -1405,6 +1405,40 @@ async def deny_expansion(
 
 
 
+@governance_router.post("/expansions/{request_id}/revoke")
+async def revoke_expansion(
+    request_id: str,
+    payload: ExpansionDecision,
+    request: Request,
+    _token: str = Depends(verify_operator_token),
+) -> dict[str, Any]:
+    """Cancels an approved grant while its run is still going: the delivered copy is removed,
+    a boundary version without the resource is saved, and the agent is not asked again."""
+    user = authenticate_token(_token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+    storage = get_storage()
+    req = storage.get_expansion_request(request_id)
+    if not req:
+        raise HTTPException(status_code=404, detail=f"Expansion request '{request_id}' not found.")
+    task = storage.get_task(req.task_id)
+    if not PermissionMatrix.can_decide_request(user, task.team if task else None, req.escalated_by_provenance):
+        raise HTTPException(status_code=403, detail="Forbidden: Role not authorized to cancel this access.")
+    if user.role == Role.ADMIN or user.name == os.getenv("GOVERNANCE_OPERATOR_NAME", "operator"):
+        who = f"operator:{user.name}"
+    else:
+        who = f"{user.role.value}:{user.name}"
+    try:
+        result = get_run_manager().revoke_grant(req.task_id, request_id, who, (payload.reason or "").strip())
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except RuntimeError as re_err:
+        raise HTTPException(status_code=409, detail=str(re_err))
+    req = storage.get_expansion_request(request_id)
+    result["request"] = req.model_dump() if req else None
+    return result
+
+
 class BatchDecisionRequest(BaseModel):
     request_ids: list[str]
     reason: str = ""

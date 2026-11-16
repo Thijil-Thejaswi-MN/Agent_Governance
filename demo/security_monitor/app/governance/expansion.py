@@ -454,6 +454,54 @@ class ExpansionService:
             source_label="enforced",
         )
 
+    def revoke_request(self, request_id: str, revoked_by: str, reason: str = "") -> TaskBoundary:
+        """Cancels an approved grant mid-run: the request (and any repeat of it) becomes REVOKED and
+        a new boundary version without the resource is saved. The caller (the launcher's delivery)
+        removes a delivered copy. A write that was already saved cannot be revoked."""
+        req = self.storage.get_expansion_request(request_id)
+        if not req:
+            raise ValueError(f"Expansion request '{request_id}' not found.")
+        if revoked_by.lower() in (req.agent_id.lower(), "agent", "caller", "self"):
+            raise PermissionError("An agent cannot revoke grants.")
+        if req.status != ExpansionStatus.APPROVED:
+            raise RuntimeError(f"Only an approved grant can be revoked (this one is {req.status.value}).")
+        if req.resource_type == "file_write":
+            raise RuntimeError("A write that was approved has already been saved; it cannot be taken back here.")
+        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        note = f"Revoked by {revoked_by}" + (f": {reason}" if reason else "")
+        target = req.resource_target
+        same = [r for r in self.storage.list_expansion_requests(task_id=req.task_id)
+                if r.resource_type == req.resource_type and r.resource_target == target
+                and r.status == ExpansionStatus.APPROVED]
+        for r in same:
+            r.status = ExpansionStatus.REVOKED
+            r.reason = note
+            self.storage.save_expansion_request(r)
+        self.storage.record_task_step(
+            req.task_id, kind="expansion", layer="broker", verdict="BLOCK_ACTION",
+            summary=f"Access to {target} cancelled by {revoked_by}",
+            detail=note, source_label="enforced",
+        )
+        current = self.storage.get_boundary(req.task_id)
+        if not current:
+            raise ValueError(f"Boundary for task '{req.task_id}' not found.")
+        base = self.storage.get_boundary(req.task_id, version=1)
+        new = current.model_copy(deep=True)
+        new.version = current.version + 1
+        new.derived_by = f"revocation_{req.request_id}"
+        new.parent_expansion_id = req.request_id
+        field = {"file_read": "files_read", "network": "network", "peer_agent": "peer_agents"}.get(req.resource_type)
+        if field:
+            at_launch = set(getattr(base, field)) if base else set()
+            if target not in at_launch:  # access the request itself named is never taken away here
+                setattr(new, field, [x for x in getattr(new, field) if x != target])
+        self.storage.save_boundary(new)
+        task = self.storage.get_task(req.task_id)
+        if task:
+            task.current_boundary_version = new.version
+            self.storage.save_task(task)
+        return new
+
     def _apply_boundary_expansion(self, req: ExpansionRequest) -> TaskBoundary:
         """Creates TaskBoundary version N+1 linked to request_id."""
         current_boundary = self.storage.get_boundary(req.task_id)

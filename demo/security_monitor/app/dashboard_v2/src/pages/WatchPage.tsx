@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { CheckCircle2, Download, FileText, AlertTriangle, Square } from 'lucide-react';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { GrantList, cancellableGrants } from '../components/v3/GrantList';
 import { useRunTracker } from '../hooks/useRunTracker';
 import { RunFile, TaskEvent } from '../types';
 import { Fence } from '../components/v3/Fence';
@@ -69,7 +70,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
 
   const insideNames = uniq([...(run.boundary?.files_read || []), ...(run.boundary?.files_write || [])].map(boundaryLabel));
   const requestedNames = run.pending ? [fileName(run.pending.resource_target)] : [];
-  const deniedNames = run.expansions.filter(e => e.status === 'DENIED').map(e => fileName(e.resource_target));
+  const deniedNames = run.expansions.filter(e => e.status === 'DENIED' || e.status === 'REVOKED').map(e => fileName(e.resource_target));
   const blockedChips = fenceBlocked(attempts, insideNames, requestedNames);
   const blockedNames = uniq([
     ...blockedChips.map(c => c.label),
@@ -209,6 +210,14 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
             <p className="m-0 text-[17px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
               It can only touch what is inside the fence. If it needs anything more, it will ask you here.
             </p>
+          )}
+
+          {!terminal && !readOnly && (
+            <GrantList
+              grants={cancellableGrants(run.expansions)}
+              deciding={run.deciding}
+              onCancel={id => (hasToken ? run.revoke(id) : openAuthModal())}
+            />
           )}
 
           {terminal && outputs.length > 0 && (

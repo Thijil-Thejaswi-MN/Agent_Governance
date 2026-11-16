@@ -856,6 +856,15 @@ class ActiveRunManager:
         self._start_time = None
         self._cancel_event = None
 
+    def revoke_grant(self, task_id: str, request_id: str, revoked_by: str, reason: str = "") -> dict[str, Any]:
+        """Cancels an approved grant of a run that is still going (see TaskLauncher.revoke_grant)."""
+        with self._lock:
+            self._prune_dead_runs()
+            slot = self._runs.get(task_id)
+        if slot is None:
+            raise RuntimeError("This run has ended, and its access ended with it.")
+        return slot.launcher.revoke_grant(request_id, revoked_by, reason)
+
     def is_active(self) -> bool:
         with self._lock:
             self._prune_dead_runs()

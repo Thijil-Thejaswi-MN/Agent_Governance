@@ -273,3 +273,29 @@ def test_allow_once_unavailable_while_another_one_time_grant_is_unused(env):
     storage.increment_expansion_usage(first)
     assert c.get(f"/api/governance/expansions/{second}/preview", headers=ADMIN).json()["once_possible"] is True
     assert c.post(f"/api/governance/expansions/{second}/approve", headers=ADMIN, json={"scope": "once"}).status_code == 200
+
+
+# --- cancelling an approved grant ---------------------------------------------------------
+
+def test_revoke_needs_a_running_run_and_goes_to_its_launcher(env, monkeypatch):
+    c, storage, _, _ = env
+    rid = _req(storage, "docs/notes.txt")
+    storage.save_expansion_request(storage.get_expansion_request(rid).model_copy(update={"status": ExpansionStatus.APPROVED}))
+    # No run is going: its access already ended with it.
+    r = c.post(f"/api/governance/expansions/{rid}/revoke", json={"reason": "not needed"}, headers=ADMIN)
+    assert r.status_code == 409 and "ended" in r.json()["detail"]
+    assert c.post("/api/governance/expansions/nope/revoke", json={}, headers=ADMIN).status_code == 404
+
+    calls = []
+
+    class FakeManager:
+        def revoke_grant(self, task_id, request_id, revoked_by, reason=""):
+            calls.append((task_id, request_id, revoked_by, reason))
+            return {"request_id": request_id, "status": "REVOKED", "boundary_version": 2, "removed": ["granted/docs/notes.txt"]}
+
+    monkeypatch.setattr(gov_api, "get_run_manager", lambda: FakeManager())
+    r = c.post(f"/api/governance/expansions/{rid}/revoke", json={"reason": "not needed"}, headers=ADMIN)
+    assert r.status_code == 200, r.text
+    assert r.json()["removed"] == ["granted/docs/notes.txt"]
+    assert calls == [("t1", rid, "operator:admin_ana", "not needed")]
+    assert c.post(f"/api/governance/expansions/{rid}/revoke", json={}).status_code == 401
