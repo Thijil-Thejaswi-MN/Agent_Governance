@@ -281,6 +281,18 @@ class BrokerRPCServer:
                 source_label="enforced",
             )
             return res
+        except ValueError as err:
+            # A malformed call (no path): an error for the model, not a blocked attempt.
+            self.broker.storage.record_task_step(
+                self.task_id,
+                kind="tool",
+                layer="broker",
+                verdict="ERROR",
+                summary=f"read_file failed: {err}",
+                detail=str(err),
+                source_label="enforced",
+            )
+            raise
         except Exception as err:
             self.broker.storage.record_task_step(
                 self.task_id,
@@ -320,6 +332,18 @@ class BrokerRPCServer:
                     source_label="enforced",
                 )
             return res
+        except ValueError as err:
+            # A malformed call (no path): an error for the model, not a blocked attempt.
+            self.broker.storage.record_task_step(
+                self.task_id,
+                kind="tool",
+                layer="broker",
+                verdict="ERROR",
+                summary=f"write_file failed: {err}",
+                detail=str(err),
+                source_label="enforced",
+            )
+            raise
         except Exception as err:
             self.broker.storage.record_task_step(
                 self.task_id,

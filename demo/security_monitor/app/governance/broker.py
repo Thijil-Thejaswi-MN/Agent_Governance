@@ -169,6 +169,26 @@ class ToolBroker:
             "escalated_by_provenance": escalated,
         }
 
+    @staticmethod
+    def _console_path(boundary: Any, file_path: str, tool: str) -> str:
+        """Console runs only (the evaluation scripts never set GOVERNANCE_FRIENDLY_PATHS).
+
+        A call with no path is a malformed call, not an attempt to reach a file, so it is
+        answered with an error and not recorded as a blocked action. A bare file name that
+        matches exactly one allowed file (e.g. "sales_1.csv" for "input/sales_1.csv") is read
+        or written as that file, the same way request_access answers it.
+        """
+        if os.environ.get("GOVERNANCE_FRIENDLY_PATHS") != "1":
+            return file_path
+        name = (file_path or "").strip()
+        if not name:
+            raise ValueError(f"{tool} needs a file path, for example 'input/<name>' or 'output/<name>'.")
+        if "/" in name or "\\" in name or name.startswith("~"):
+            return file_path
+        allowed = boundary.files_write if tool == "write_file" else boundary.files_read
+        hits = [f for f in allowed if "*" not in f and "?" not in f and f.rsplit("/", 1)[-1] == name]
+        return hits[0] if len(hits) == 1 else file_path
+
     def _check_agent_tool(self, task_id: str, agent_id: str, boundary: Any, tool_name: str) -> None:
         """Refuse a tool outside the agent's own tool limit, and record the refusal."""
         check = getattr(self.evaluator, "evaluate_agent_tool", None)
@@ -247,6 +267,7 @@ class ToolBroker:
         if not boundary:
             raise RuntimeError(f"Active boundary not found for task {task_id}")
         self._check_agent_tool(task_id, agent_id, boundary, "read_file")
+        file_path = self._console_path(boundary, file_path, "read_file")
 
         # Check tool granted
         tool_eval = self.evaluator.evaluate_tool(boundary, "read_file")
@@ -340,6 +361,7 @@ class ToolBroker:
         if not boundary:
             raise RuntimeError(f"Active boundary not found for task {task_id}")
         self._check_agent_tool(task_id, agent_id, boundary, "write_file")
+        file_path = self._console_path(boundary, file_path, "write_file")
 
         tool_eval = self.evaluator.evaluate_tool(boundary, "write_file")
         if tool_eval.verdict != EventVerdict.INSIDE:

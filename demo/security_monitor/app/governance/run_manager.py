@@ -840,6 +840,9 @@ class ActiveRunManager:
                 os.environ.setdefault("OLLAMA_MAX_TOKENS", "1024")
                 # Blocked reads tell the model how to ask for the file, so a person gets the choice.
                 os.environ.setdefault("GOVERNANCE_ACCESS_HINT", "1")
+                # A bare allowed file name is read as that file, and a call with no path is an error,
+                # not a blocked attempt.
+                os.environ.setdefault("GOVERNANCE_FRIENDLY_PATHS", "1")
                 llm_cfg = {
                     "provider": "ollama",
                     "model": model,
