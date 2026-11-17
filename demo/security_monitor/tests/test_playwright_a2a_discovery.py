@@ -86,6 +86,12 @@ def test_a2a_discovery_playwright(page: Page, a2a_console_server, tmp_path: Path
     expect(card.locator('[data-skill="hotel_booking"]')).to_be_visible()
     expect(card.locator('[data-testid="governance-state-badge"]')).to_have_text("Not governed yet")
     expect(card).to_have_attribute("data-governance-state", "Not governed yet")
+    # The radar shows one blip per known agent, never invented ones.
+    scan = page.locator("#inventory-scan")
+    expect(scan).to_be_visible()
+    headline = page.locator("#inventory-headline").inner_text()
+    blips = int(scan.locator("[data-blips]").get_attribute("data-blips"))
+    assert blips == min(16, int(headline.split()[0])), (blips, headline)
 
     # Capture 1440 screenshot of discovery page
     page.screenshot(path=str(screenshot_dir / "agents_discovery_page_1440.png"), full_page=True)

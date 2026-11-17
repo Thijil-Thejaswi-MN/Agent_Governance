@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { RunActionButton } from '../components/action/RunActionButton';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -325,14 +326,7 @@ export const AskPage: React.FC = () => {
               </label>
             )}
           </div>
-          <button
-            id="start-run-btn"
-            onClick={start}
-            disabled={starting || activeCount >= 3}
-            className="btn-primary min-h-[44px] sm:min-h-[40px] px-6"
-          >
-            {starting ? 'Starting…' : 'Start'}
-          </button>
+          <RunActionButton id="start-run-btn" onClick={start} busy={starting} disabled={activeCount >= 3} />
         </div>
       </div>
 

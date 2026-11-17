@@ -70,6 +70,10 @@ def test_ask_watch_done_preset_1_scripted(page: Page, console_server):
     expect(page.locator("#record-status")).to_have_text("Record checked: no entries changed", timeout=15000)
     expect(page.locator("#download-record")).to_be_visible()
     expect(page.locator("#stop-run-btn")).to_have_count(0)
+    # The progress pill follows the run's real state and ends once the record is in.
+    expect(page.locator("#run-progress")).to_have_attribute("data-phase", "end", timeout=15000)
+    expect(page.locator("#run-progress")).to_have_attribute("data-finished", "true")
+    expect(page.locator("#run-progress")).to_contain_text("Done")
     _assert_plain(page)
 
     # Details: the honest technical layer.
