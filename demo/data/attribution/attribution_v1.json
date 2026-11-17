@@ -1,0 +1,317 @@
+{
+  "meta": {
+    "runs": 5,
+    "concurrent": 3,
+    "agent": "scripted_mock",
+    "git_commit": "d8bec74bfb47043ee8ea1e31e1a4e4fd7065ba6a",
+    "generated_at": "2026-11-17T08:31:06.872314+00:00"
+  },
+  "tasks": 15,
+  "marker_events": 120,
+  "precision": 1.0,
+  "recall": 1.0,
+  "calls_not_placed": 0,
+  "cross_attributions": 0,
+  "per_task": [
+    {
+      "batch": 0,
+      "task_id": "task_d987d091cd7f",
+      "calls_placed": 5,
+      "calls_not_placed": 0,
+      "os_events_by_tool_call": {
+        "call_001": 19,
+        "call_002": 21,
+        "call_003": 56,
+        "call_004": 32,
+        "call_005": 18,
+        "task_root": 163
+      },
+      "cross_attributions": 0,
+      "marker_events": 8,
+      "correct": 8,
+      "precision": 1.0,
+      "recall": 1.0,
+      "wrong": []
+    },
+    {
+      "batch": 0,
+      "task_id": "task_7d0f7a4b5671",
+      "calls_placed": 5,
+      "calls_not_placed": 0,
+      "os_events_by_tool_call": {
+        "call_001": 19,
+        "call_002": 21,
+        "call_003": 56,
+        "call_004": 32,
+        "call_005": 18,
+        "task_root": 163
+      },
+      "cross_attributions": 0,
+      "marker_events": 8,
+      "correct": 8,
+      "precision": 1.0,
+      "recall": 1.0,
+      "wrong": []
+    },
+    {
+      "batch": 0,
+      "task_id": "task_60102c394561",
+      "calls_placed": 5,
+      "calls_not_placed": 0,
+      "os_events_by_tool_call": {
+        "call_001": 19,
+        "call_002": 21,
+        "call_003": 56,
+        "call_004": 32,
+        "call_005": 18,
+        "task_root": 163
+      },
+      "cross_attributions": 0,
+      "marker_events": 8,
+      "correct": 8,
+      "precision": 1.0,
+      "recall": 1.0,
+      "wrong": []
+    },
+    {
+      "batch": 1,
+      "task_id": "task_ac25d992e101",
+      "calls_placed": 5,
+      "calls_not_placed": 0,
+      "os_events_by_tool_call": {
+        "call_001": 19,
+        "call_002": 21,
+        "call_003": 56,
+        "call_004": 32,
+        "call_005": 18,
+        "task_root": 163
+      },
+      "cross_attributions": 0,
+      "marker_events": 8,
+      "correct": 8,
+      "precision": 1.0,
+      "recall": 1.0,
+      "wrong": []
+    },
+    {
+      "batch": 1,
+      "task_id": "task_a38f2797db1e",
+      "calls_placed": 5,
+      "calls_not_placed": 0,
+      "os_events_by_tool_call": {
+        "call_001": 19,
+        "call_002": 21,
+        "call_003": 56,
+        "call_004": 32,
+        "call_005": 18,
+        "task_root": 163
+      },
+      "cross_attributions": 0,
+      "marker_events": 8,
+      "correct": 8,
+      "precision": 1.0,
+      "recall": 1.0,
+      "wrong": []
+    },
+    {
+      "batch": 1,
+      "task_id": "task_dcdfd462e77d",
+      "calls_placed": 5,
+      "calls_not_placed": 0,
+      "os_events_by_tool_call": {
+        "call_001": 19,
+        "call_002": 21,
+        "call_003": 56,
+        "call_004": 32,
+        "call_005": 18,
+        "task_root": 163
+      },
+      "cross_attributions": 0,
+      "marker_events": 8,
+      "correct": 8,
+      "precision": 1.0,
+      "recall": 1.0,
+      "wrong": []
+    },
+    {
+      "batch": 2,
+      "task_id": "task_ea9fe062ae6a",
+      "calls_placed": 5,
+      "calls_not_placed": 0,
+      "os_events_by_tool_call": {
+        "call_001": 19,
+        "call_002": 21,
+        "call_003": 56,
+        "call_004": 32,
+        "call_005": 18,
+        "task_root": 163
+      },
+      "cross_attributions": 0,
+      "marker_events": 8,
+      "correct": 8,
+      "precision": 1.0,
+      "recall": 1.0,
+      "wrong": []
+    },
+    {
+      "batch": 2,
+      "task_id": "task_f55004b70b37",
+      "calls_placed": 5,
+      "calls_not_placed": 0,
+      "os_events_by_tool_call": {
+        "call_001": 19,
+        "call_002": 21,
+        "call_003": 56,
+        "call_004": 32,
+        "call_005": 18,
+        "task_root": 163
+      },
+      "cross_attributions": 0,
+      "marker_events": 8,
+      "correct": 8,
+      "precision": 1.0,
+      "recall": 1.0,
+      "wrong": []
+    },
+    {
+      "batch": 2,
+      "task_id": "task_8a202ea92b75",
+      "calls_placed": 5,
+      "calls_not_placed": 0,
+      "os_events_by_tool_call": {
+        "call_001": 19,
+        "call_002": 21,
+        "call_003": 56,
+        "call_004": 32,
+        "call_005": 18,
+        "task_root": 163
+      },
+      "cross_attributions": 0,
+      "marker_events": 8,
+      "correct": 8,
+      "precision": 1.0,
+      "recall": 1.0,
+      "wrong": []
+    },
+    {
+      "batch": 3,
+      "task_id": "task_253fcf4b207f",
+      "calls_placed": 5,
+      "calls_not_placed": 0,
+      "os_events_by_tool_call": {
+        "call_001": 19,
+        "call_002": 21,
+        "call_003": 56,
+        "call_004": 32,
+        "call_005": 18,
+        "task_root": 163
+      },
+      "cross_attributions": 0,
+      "marker_events": 8,
+      "correct": 8,
+      "precision": 1.0,
+      "recall": 1.0,
+      "wrong": []
+    },
+    {
+      "batch": 3,
+      "task_id": "task_8c452a2bd9fa",
+      "calls_placed": 5,
+      "calls_not_placed": 0,
+      "os_events_by_tool_call": {
+        "call_001": 19,
+        "call_002": 21,
+        "call_003": 56,
+        "call_004": 32,
+        "call_005": 18,
+        "task_root": 163
+      },
+      "cross_attributions": 0,
+      "marker_events": 8,
+      "correct": 8,
+      "precision": 1.0,
+      "recall": 1.0,
+      "wrong": []
+    },
+    {
+      "batch": 3,
+      "task_id": "task_1221bd7fb73e",
+      "calls_placed": 5,
+      "calls_not_placed": 0,
+      "os_events_by_tool_call": {
+        "call_001": 19,
+        "call_002": 21,
+        "call_003": 56,
+        "call_004": 32,
+        "call_005": 18,
+        "task_root": 163
+      },
+      "cross_attributions": 0,
+      "marker_events": 8,
+      "correct": 8,
+      "precision": 1.0,
+      "recall": 1.0,
+      "wrong": []
+    },
+    {
+      "batch": 4,
+      "task_id": "task_7b9aabe57dca",
+      "calls_placed": 5,
+      "calls_not_placed": 0,
+      "os_events_by_tool_call": {
+        "call_001": 19,
+        "call_002": 21,
+        "call_003": 56,
+        "call_004": 32,
+        "call_005": 18,
+        "task_root": 163
+      },
+      "cross_attributions": 0,
+      "marker_events": 8,
+      "correct": 8,
+      "precision": 1.0,
+      "recall": 1.0,
+      "wrong": []
+    },
+    {
+      "batch": 4,
+      "task_id": "task_b38f324ad32d",
+      "calls_placed": 5,
+      "calls_not_placed": 0,
+      "os_events_by_tool_call": {
+        "call_001": 19,
+        "call_002": 21,
+        "call_003": 56,
+        "call_004": 32,
+        "call_005": 18,
+        "task_root": 163
+      },
+      "cross_attributions": 0,
+      "marker_events": 8,
+      "correct": 8,
+      "precision": 1.0,
+      "recall": 1.0,
+      "wrong": []
+    },
+    {
+      "batch": 4,
+      "task_id": "task_381159875684",
+      "calls_placed": 5,
+      "calls_not_placed": 0,
+      "os_events_by_tool_call": {
+        "call_001": 19,
+        "call_002": 21,
+        "call_003": 56,
+        "call_004": 32,
+        "call_005": 18,
+        "task_root": 163
+      },
+      "cross_attributions": 0,
+      "marker_events": 8,
+      "correct": 8,
+      "precision": 1.0,
+      "recall": 1.0,
+      "wrong": []
+    }
+  ]
+}
