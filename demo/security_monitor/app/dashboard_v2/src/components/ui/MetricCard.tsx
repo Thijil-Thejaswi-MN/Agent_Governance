@@ -1,6 +1,6 @@
 import React from 'react';
 
-export interface MetricCardProps {
+export interface MetricCardProps extends React.HTMLAttributes<HTMLDivElement> {
   id?: string;
   label: React.ReactNode;
   value: React.ReactNode;
@@ -25,11 +25,13 @@ export const MetricCard: React.FC<MetricCardProps> = ({
   valueId,
   tone = 'default',
   className = '',
+  ...rest
 }) => {
   return (
     <div
       id={id}
       className={`h-36 rounded-xl border border-line bg-surface-1 p-4 flex flex-col justify-between ${className}`}
+      {...rest}
     >
       <div className="text-[12px] sm:text-[13px] font-medium text-fg-3">{label}</div>
       <div
