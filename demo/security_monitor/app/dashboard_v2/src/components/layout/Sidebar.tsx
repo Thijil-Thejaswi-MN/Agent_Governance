@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Role } from '../../types';
+import { Button } from '../ui/Button';
 
 type GroupKey = 'overview' | 'inventory' | 'governance' | 'runtime' | 'incidents' | 'audit' | 'settings';
 
@@ -69,7 +70,7 @@ export const Sidebar: React.FC<{
 }> = ({ waitingCount = 0, totalTasks = 0, variant = 'rail', onClose, collapsed: collapsedProp = false, onToggleCollapsed }) => {
   const { role, user, team, hasToken, removeToken } = useAuth();
   const navigate = useNavigate();
-  // Signing out goes back to the landing (sign-in) page, as on any website.
+  // Signing out goes back to the landing page.
   const signOut = () => {
     onClose?.();
     navigate('/signin', { replace: true });
@@ -116,14 +117,14 @@ export const Sidebar: React.FC<{
       ...(currentRole === 'auditor' ? { badge: totalTasks > 0 ? totalTasks : undefined, badgeColor: 'var(--text-3)', end: true } : {}),
     });
   add('audit', { to: '/results', label: 'Results', icon: icon(BarChart3) });
-  // The recorded trials behind the results (the server serves them to signed-in users).
+
   const groups = GROUPS.map(g => ({ ...g, items: items.filter(i => i.group === g.key) })).filter(g => g.items.length > 0);
 
   // Collapsed: a tooltip beside the icon, shown on hover and on keyboard focus.
   const tooltip = (text: string) => (
     <span
       aria-hidden="true"
-      className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50 whitespace-nowrap rounded-md border border-line-strong bg-surface-hover px-2 py-1 text-[12px] font-medium text-fg opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+      className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50 whitespace-nowrap rounded-md border border-line-strong bg-surface-2 px-2 py-1 text-[12px] font-medium text-fg opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
     >
       {text}
     </span>
@@ -140,29 +141,22 @@ export const Sidebar: React.FC<{
         aria-label={collapsed ? label : undefined}
         className={({ isActive }) =>
           `group relative flex items-center rounded-lg text-[14px] transition-colors no-underline ${
-            collapsed ? 'justify-center w-11 h-11 mx-auto' : 'gap-3 px-3 min-h-[44px] md:min-h-[40px]'
+            collapsed ? 'justify-center w-10 h-10 mx-auto p-0' : 'h-10 px-3 gap-2.5'
           } ${
             isActive
-              ? 'bg-surface-hover text-fg font-semibold'
-              : 'text-fg-2 hover:bg-surface-navHover hover:text-fg'
+              ? 'bg-surface-2 text-fg font-medium before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[2px] before:rounded-full before:bg-[image:var(--accent-grad)]'
+              : 'text-fg-2 hover:bg-surface-2/50 hover:text-fg'
           }`
         }
       >
         {({ isActive }) => (
           <>
-            {collapsed && isActive && (
-              <span aria-hidden="true" className="absolute left-[-8px] top-2 bottom-2 w-[3px] rounded-full bg-accent" />
-            )}
-            <span className={`relative flex-shrink-0 ${isActive ? 'text-fg' : 'text-fg-3'}`}>
+            <span className={`relative flex-shrink-0 flex items-center justify-center ${isActive ? 'text-fg' : 'text-fg-3 group-hover:text-fg-2'}`}>
               {item.icon}
               {collapsed && item.badge !== undefined && (
                 <span
                   aria-hidden="true"
-                  className="absolute -top-2 -right-2.5 min-w-[16px] h-4 px-1 rounded-full text-[10px] leading-4 font-bold text-center"
-                  style={{
-                    background: item.badgeColor || 'var(--line-strong)',
-                    color: item.badgeColor === 'var(--wait)' || item.badgeColor === 'var(--wait-kpi)' ? 'var(--wait-badge-text)' : 'var(--bg)',
-                  }}
+                  className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full text-[10px] leading-4 font-bold text-center bg-wait text-wait-badge"
                 >
                   {item.badge}
                 </span>
@@ -175,11 +169,7 @@ export const Sidebar: React.FC<{
                 <span className="truncate">{item.label}</span>
                 {item.badge !== undefined && (
                   <span
-                    className="ml-auto px-2 py-0.5 rounded-full text-[11px] font-bold"
-                    style={{
-                      background: item.badgeColor || 'var(--line-strong)',
-                      color: item.badgeColor === 'var(--wait)' || item.badgeColor === 'var(--wait-kpi)' ? 'var(--wait-badge-text)' : 'var(--bg)',
-                    }}
+                    className="ml-auto px-2 py-0.5 rounded-full text-[11px] font-semibold bg-wait-tint text-wait border border-wait/20"
                   >
                     {item.badge}
                   </span>
@@ -200,61 +190,65 @@ export const Sidebar: React.FC<{
       className={
         isDrawer
           ? 'relative flex w-[280px] max-w-[85vw] h-full bg-surface-1 border-r border-line p-4 flex-col gap-4 overflow-y-auto anim-drawer-left'
-          : `hidden md:flex flex-shrink-0 sticky top-0 z-40 h-screen bg-surface-1 border-r border-line flex-col gap-4 transition-[width] duration-200 ${
-              collapsed ? 'w-16 px-2 py-4 overflow-visible' : 'w-64 p-4 overflow-y-auto'
+          : `hidden md:flex flex-shrink-0 sticky top-0 z-40 h-screen bg-surface-1 border-r border-line flex-col transition-[width] duration-200 ${
+              collapsed ? 'w-16 p-2 overflow-visible' : 'w-64 p-3 overflow-y-auto'
             }`
       }
       aria-label="Sidebar navigation"
       data-sidebar={variant}
       data-collapsed={collapsed ? 'true' : 'false'}
     >
-      {/* Brand header; the collapse toggle is the first control (same element in both states, so focus stays on it) */}
-      <div className={collapsed ? 'flex flex-col items-center gap-3' : 'flex items-center gap-2.5 pl-2 py-1'}>
+      {/* Brand header; h-16 as in Tallie */}
+      <div className={`h-16 flex items-center shrink-0 border-b border-line/60 ${collapsed ? 'flex-col justify-center py-1 gap-1' : 'justify-between px-2 gap-2'}`}>
+        <div className={`flex items-center gap-2.5 min-w-0 ${collapsed ? 'order-2' : ''}`}>
+          <div className="w-8 h-8 rounded-lg bg-[image:var(--accent-grad)] flex items-center justify-center text-white shadow-sm flex-shrink-0" aria-hidden={collapsed ? 'true' : undefined}>
+            <Shield className="w-4 h-4" />
+          </div>
+          {!collapsed && (
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold text-[14px] text-fg tracking-tight truncate">Agent Governance</div>
+              <div className="text-[12px] text-fg-3 truncate">{team ? `${team} team` : 'Organization'}</div>
+            </div>
+          )}
+        </div>
+
         {!isDrawer && (
-          <button
-            type="button"
+          <Button
             id="sidebar-toggle"
+            variant="ghost"
+            size="icon-sm"
             onClick={onToggleCollapsed}
             aria-label={toggleLabel}
             aria-expanded={!collapsed}
             aria-controls="sidebar-rail"
-            className={`group relative inline-flex items-center justify-center w-10 h-10 md:w-9 md:h-9 rounded-lg text-fg-2 hover:text-fg hover:bg-surface-hover bg-transparent border-none cursor-pointer flex-shrink-0 ${
-              collapsed ? '' : 'order-last ml-auto'
-            }`}
+            className={`text-fg-3 hover:text-fg relative group ${collapsed ? 'order-1 h-7 w-7' : 'ml-auto'}`}
           >
-            {collapsed ? <PanelLeftOpen className="w-[18px] h-[18px]" /> : <PanelLeftClose className="w-[18px] h-[18px]" />}
+            {collapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
             {collapsed && tooltip(toggleLabel)}
-          </button>
+          </Button>
         )}
-        <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center text-white shadow-sm flex-shrink-0" aria-hidden={collapsed ? 'true' : undefined}>
-          <Shield className="w-4 h-4" />
-        </div>
-        {!collapsed && (
-          <div className="min-w-0 flex-1">
-            <div className="font-bold text-[14px] text-fg tracking-tight truncate">Agent Governance</div>
-            <div className="text-[12px] text-fg-3 truncate">{team ? `${team} team` : 'Organization'}</div>
-          </div>
-        )}
+
         {isDrawer && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={onClose}
             aria-label="Close menu"
-            className="inline-flex items-center justify-center w-11 h-11 rounded-lg text-fg-2 hover:text-fg hover:bg-surface-hover bg-transparent border-none cursor-pointer"
+            className="text-fg-2 hover:text-fg"
           >
             <X className="w-5 h-5" />
-          </button>
+          </Button>
         )}
       </div>
 
       {/* Nav list, in groups */}
-      <nav aria-label="Main" className={`flex flex-col mt-1 ${collapsed ? 'items-stretch gap-1' : 'gap-0.5'}`}>
+      <nav aria-label="Main" className={`flex flex-col flex-1 py-3 ${collapsed ? 'items-stretch gap-1' : 'gap-2'}`}>
         {groups.map((g, gi) => (
-          <div key={g.key} role="group" aria-label={g.label} data-nav-group={g.key} className="flex flex-col gap-1">
+          <div key={g.key} role="group" aria-label={g.label} data-nav-group={g.key} className="flex flex-col gap-0.5">
             {collapsed ? (
-              gi > 0 && <div aria-hidden="true" className="mx-3 my-1.5 border-t border-line" />
+              gi > 0 && <div aria-hidden="true" className="mx-2 my-1.5 border-t border-line" />
             ) : (
-              <div className={`px-3 ${gi > 0 ? 'pt-3' : 'pt-1'} pb-1 text-[11px] font-semibold uppercase tracking-wider text-fg-3`} aria-hidden="true">
+              <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-fg-3" aria-hidden="true">
                 {g.label}
               </div>
             )}
@@ -263,11 +257,11 @@ export const Sidebar: React.FC<{
         ))}
       </nav>
 
-      {/* User Chip, or sign-in when there is no session */}
+      {/* Footer: User Chip, or sign-in when there is no session */}
       {hasToken ? (
         <div
-          className={`mt-auto flex items-center gap-2 rounded-xl bg-surface-2 border border-line ${
-            collapsed ? 'flex-col p-1.5' : 'justify-between p-2'
+          className={`mt-auto shrink-0 flex items-center rounded-xl bg-surface-2 border border-line ${
+            collapsed ? 'flex-col p-1.5 gap-2' : 'justify-between p-2.5 gap-2'
           }`}
         >
           <div className="group relative flex items-center gap-2.5 min-w-0">
@@ -288,21 +282,24 @@ export const Sidebar: React.FC<{
             ) : (
               <div className="min-w-0">
                 <div className="font-semibold text-[13px] text-fg truncate">{user?.name || 'Local Operator'}</div>
-                <div className="text-[11px] font-medium truncate" style={{ color: roleCfg.text }}>
-                  {roleCfg.title} {team ? `· ${team}` : ''}
+                <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium mt-0.5" style={{ color: roleCfg.text, background: roleCfg.bg }}>
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: roleCfg.dot }} />
+                  <span className="truncate">{roleCfg.title} {team ? `· ${team}` : ''}</span>
                 </div>
               </div>
             )}
           </div>
-          <button
-            onClick={signOut}
+          <Button
             id={isDrawer ? undefined : 'sign-out-btn'}
+            variant="ghost"
+            size="icon-sm"
+            onClick={signOut}
             aria-label="Sign out"
             title="Sign out"
-            className="inline-flex items-center justify-center w-11 h-11 md:w-9 md:h-9 rounded-lg text-fg-3 hover:text-fg hover:bg-surface-hover transition-colors border-none bg-transparent cursor-pointer"
+            className="text-fg-3 hover:text-fg hover:bg-surface-3"
           >
             <LogOut className="w-4 h-4" />
-          </button>
+          </Button>
         </div>
       ) : (
         <Link
@@ -310,8 +307,9 @@ export const Sidebar: React.FC<{
           to="/signin"
           onClick={onClose}
           aria-label={collapsed ? 'Sign in' : undefined}
-          className={`group relative mt-auto btn-ghost min-h-[44px] ${collapsed ? 'w-11 px-0 mx-auto' : 'w-full'}`}
-          style={{ borderColor: 'rgb(var(--wait-rgb) / 0.45)', color: 'var(--wait-text)' }}
+          className={`group relative mt-auto flex items-center justify-center gap-2 rounded-lg border border-line bg-surface-2 text-fg-2 hover:bg-surface-3 hover:text-fg text-[13px] font-medium transition-colors no-underline ${
+            collapsed ? 'w-10 h-10 mx-auto p-0' : 'h-10 px-3 w-full'
+          }`}
         >
           <KeyRound className="w-4 h-4" />
           {collapsed ? tooltip('Sign in') : 'Sign in'}

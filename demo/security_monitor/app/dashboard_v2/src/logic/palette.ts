@@ -2,77 +2,78 @@
 
 export const PALETTE = {
   // Surfaces
-  bg: '#0B0E14',
-  surface1: '#0E121A',
-  surface2: '#11151D',
-  surface3: '#161B26',
-  surfaceHover: '#1A2232',
-  surfaceActive: '#161F30',
-  surfaceTerminal: '#0B0F17',
-  surfaceTerminalAlt: '#0B0F16',
-  surfaceNavHover: '#141A24',
-  surfaceTableHover: '#121826',
-  surfaceDarkAlt: '#0F1520',
-  surfaceDarkSlate: '#111827',
-  surfaceSlate800: '#1E293B',
-  surfaceSlate900: '#0F172A',
+  bg: '#0A0A0B',
+  surface1: '#111113',
+  surface2: '#17171A',
+  surface3: '#1E1E22',
+  surfaceHover: '#17171A',
+  surfaceActive: '#1E1E22',
+  surfaceTerminal: '#0A0A0B',
+  surfaceTerminalAlt: '#0E0E10',
+  surfaceNavHover: '#17171A',
+  surfaceTableHover: '#17171A',
+  surfaceDarkAlt: '#111113',
+  surfaceDarkSlate: '#111113',
+  surfaceSlate800: '#17171A',
+  surfaceSlate900: '#111113',
 
   // Lines & Borders
-  line: '#1F2633',
-  lineStrong: '#2A3344',
-  lineSlate: '#334155',
+  line: '#26262B',
+  lineStrong: '#34343B',
+  lineSlate: '#34343B',
 
   // Foreground / Text
-  text: '#E6E9EF',
-  text2: '#A7B0C0',
-  text3: '#8B95A7',
-  textDim: '#6B7487',
-  textSoft: '#CBD5E1',
+  text: '#F4F4F5',
+  text2: '#A1A1AA',
+  text3: '#8B8B94',
+  textDim: '#71717A',
+  textSoft: '#D4D4D8',
 
   // Accents
-  accent: '#3B82F6',
-  accentStrong: '#2563EB',
-  accentDeep: '#1D4ED8',
+  accent: '#818CF8',
+  accentStrong: '#6366F1',
+  accentDeep: '#4F46E5',
+  accentGrad: 'linear-gradient(90deg, #4338CA, #BE185D, #B45309)',
 
   // Status: OK / Allowed
-  ok: '#22C55E',
-  okText: '#86EFAC',
-  okLight: '#4ADE80',
-  okLighter: '#BBF7D0',
+  ok: '#34D399',
+  okText: '#34D399',
+  okLight: '#6EE7B7',
+  okLighter: '#A7F3D0',
   okVerdict: '#6EE7B7',
-  okStrong: '#16A34A',
+  okStrong: '#10B981',
 
   // Status: Bad / Blocked
-  bad: '#EF4444',
-  badText: '#FCA5A5',
-  badLight: '#F87171',
+  bad: '#F87171',
+  badText: '#F87171',
+  badLight: '#FCA5A5',
   badLighter: '#FECACA',
   badVerdict: '#FDA4AF',
-  badStrong: '#DC2626',
+  badStrong: '#EF4444',
 
   // Status: Wait / Warning
-  wait: '#F59E0B',
-  waitText: '#FCD34D',
+  wait: '#FBBF24',
+  waitText: '#FBBF24',
   waitKpi: '#FBBF24',
   waitLighter: '#FDE68A',
-  waitLine: '#3A2E12',
+  waitLine: '#34343B',
   waitBadgeText: '#1A1203',
 
   // Status: Info
-  info: '#60A5FA',
-  infoText: '#93C5FD',
-  infoLighter: '#BFDBFE',
+  info: '#818CF8',
+  infoText: '#818CF8',
+  infoLighter: '#C7D2FE',
   sourceText: '#A5F3FC',
 
-  // Tints (translucent overlays)
-  okTint: 'rgba(34, 197, 94, 0.12)',
-  badTint: 'rgba(239, 68, 68, 0.12)',
-  waitTint: 'rgba(245, 158, 11, 0.12)',
-  infoTint: 'rgba(96, 165, 250, 0.12)',
-  accentTint: 'rgba(59, 130, 246, 0.12)',
+  // Tints (translucent overlays at 10%)
+  okTint: 'rgba(52, 211, 153, 0.10)',
+  badTint: 'rgba(248, 113, 113, 0.10)',
+  waitTint: 'rgba(251, 191, 36, 0.10)',
+  infoTint: 'rgba(129, 140, 248, 0.10)',
+  accentTint: 'rgba(129, 140, 248, 0.10)',
 
   // Roles
-  roleDeveloper: '#60A5FA',
+  roleDeveloper: '#818CF8',
   roleTeamLead: '#A78BFA',
   roleSecurityReviewer: '#FBBF24',
   roleAdmin: '#34D399',
@@ -82,8 +83,8 @@ export const PALETTE = {
   // Actions & Specialized Elements
   ruleAction: '#7C3AED',
   ruleActionHover: '#6D28D9',
-  blocked: '#FB7185',
-  blockedText: '#FECDD3',
+  blocked: '#F87171',
+  blockedText: '#FCA5A5',
 
   // Legacy & Specific Art Colours
   cyan: '#22D3EE',

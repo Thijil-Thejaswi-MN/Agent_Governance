@@ -1,3 +1,4 @@
+@import "@fontsource/instrument-serif/400.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -8,85 +9,87 @@
     color-scheme: dark;
 
     /* Surfaces */
-    --bg-rgb: 11 14 20;
-    --bg: #0B0E14;
+    --bg-rgb: 10 10 11;
+    --bg: #0A0A0B;
 
-    --surface-1-rgb: 14 18 26;
-    --surface-1: #0E121A;
+    --surface-1-rgb: 17 17 19;
+    --surface-1: #111113;
 
-    --surface-2-rgb: 17 21 29;
-    --surface-2: #11151D;
+    --surface-2-rgb: 23 23 26;
+    --surface-2: #17171A;
 
-    --surface-3-rgb: 22 27 38;
-    --surface-3: #161B26;
+    --surface-3-rgb: 30 30 34;
+    --surface-3: #1E1E22;
 
-    --surface-hover-rgb: 26 34 50;
-    --surface-hover: #1A2232;
+    --surface-hover-rgb: 23 23 26;
+    --surface-hover: #17171A;
 
-    --surface-active-rgb: 22 31 48;
-    --surface-active: #161F30;
+    --surface-active-rgb: 30 30 34;
+    --surface-active: #1E1E22;
 
-    --surface-terminal-rgb: 11 15 23;
-    --surface-terminal: #0B0F17;
+    --surface-terminal-rgb: 10 10 11;
+    --surface-terminal: #0A0A0B;
 
     /* Lines & Borders */
-    --line-rgb: 31 38 51;
-    --line: #1F2633;
+    --line-rgb: 38 38 43;
+    --line: #26262B;
 
-    --line-strong-rgb: 42 51 68;
-    --line-strong: #2A3344;
+    --line-strong-rgb: 52 52 59;
+    --line-strong: #34343B;
 
     /* Foreground / Text */
-    --text-rgb: 230 233 239;
-    --text: #E6E9EF;
+    --text-rgb: 244 244 245;
+    --text: #F4F4F5;
 
-    --text-2-rgb: 167 176 192;
-    --text-2: #A7B0C0;
+    --text-2-rgb: 161 161 170;
+    --text-2: #A1A1AA;
 
-    --text-3-rgb: 139 149 167;
-    --text-3: #8B95A7;
+    --text-3-rgb: 139 139 148;
+    --text-3: #8B8B94;
 
-    --text-dim-rgb: 107 116 135;
-    --text-dim: #6B7487;
+    --text-dim-rgb: 113 113 122;
+    --text-dim: #71717A;
 
     /* Accents */
-    --accent-rgb: 59 130 246;
-    --accent: #3B82F6;
+    --accent-rgb: 129 140 248;
+    --accent: #818CF8;
 
-    --accent-strong-rgb: 37 99 235;
-    --accent-strong: #2563EB;
+    --accent-strong-rgb: 99 102 241;
+    --accent-strong: #6366F1;
 
-    --accent-deep-rgb: 29 78 216;
-    --accent-deep: #1D4ED8;
+    --accent-deep-rgb: 79 70 229;
+    --accent-deep: #4F46E5;
+
+    --accent-grad: linear-gradient(90deg, #4338CA, #BE185D, #B45309);
 
     /* Status: OK / Allowed */
-    --ok-rgb: 34 197 94;
-    --ok: #22C55E;
+    --ok-rgb: 52 211 153;
+    --ok: #34D399;
 
-    --ok-text-rgb: 134 239 172;
-    --ok-text: #86EFAC;
+    --ok-text-rgb: 52 211 153;
+    --ok-text: #34D399;
 
-    --ok-light-rgb: 74 222 128;
-    --ok-light: #4ADE80;
+    --ok-light-rgb: 110 231 183;
+    --ok-light: #6EE7B7;
 
-    --ok-lighter-rgb: 187 247 208;
-    --ok-lighter: #BBF7D0;
+    --ok-lighter-rgb: 167 243 208;
+    --ok-lighter: #A7F3D0;
 
     --ok-verdict-rgb: 110 231 183;
     --ok-verdict: #6EE7B7;
 
-    --ok-strong-rgb: 22 163 74;
-    --ok-strong: #16A34A;
+    --ok-strong-rgb: 16 185 129;
+    --ok-strong: #10B981;
 
     /* Status: Bad / Blocked */
-    --bad-rgb: 239 68 68;
-    --bad: #EF4444;
+    --bad-rgb: 248 113 113;
+    --bad: #F87171;
 
-    --bad-text-rgb: 252 165 165;
-    --bad-text: #FCA5A5;
+    --bad-text-rgb: 248 113 113;
+    --bad-text: #F87171;
 
-    --bad-light-rgb: 248 113 113;
-    --bad-light: #F87171;
+    --bad-light-rgb: 252 165 165;
+    --bad-light: #FCA5A5;
 
     --bad-lighter-rgb: 254 202 202;
     --bad-lighter: #FECACA;
@@ -94,15 +97,15 @@
     --bad-verdict-rgb: 253 164 175;
     --bad-verdict: #FDA4AF;
 
-    --bad-strong-rgb: 220 38 38;
-    --bad-strong: #DC2626;
+    --bad-strong-rgb: 239 68 68;
+    --bad-strong: #EF4444;
 
     /* Status: Wait / Warning */
-    --wait-rgb: 245 158 11;
-    --wait: #F59E0B;
+    --wait-rgb: 251 191 36;
+    --wait: #FBBF24;
 
-    --wait-text-rgb: 252 211 77;
-    --wait-text: #FCD34D;
+    --wait-text-rgb: 251 191 36;
+    --wait-text: #FBBF24;
 
     --wait-kpi-rgb: 251 191 36;
     --wait-kpi: #FBBF24;
@@ -110,56 +113,56 @@
     --wait-lighter-rgb: 253 230 138;
     --wait-lighter: #FDE68A;
 
-    --wait-line-rgb: 58 46 18;
-    --wait-line: #3A2E12;
+    --wait-line-rgb: 52 52 59;
+    --wait-line: #34343B;
 
     --wait-badge-text: #1A1203;
 
     /* Status: Info */
-    --info-rgb: 96 165 250;
-    --info: #60A5FA;
+    --info-rgb: 129 140 248;
+    --info: #818CF8;
 
-    --info-text-rgb: 147 197 253;
-    --info-text: #93C5FD;
+    --info-text-rgb: 129 140 248;
+    --info-text: #818CF8;
 
-    --info-lighter-rgb: 191 219 254;
-    --info-lighter: #BFDBFE;
+    --info-lighter-rgb: 199 210 254;
+    --info-lighter: #C7D2FE;
 
     --source-text-rgb: 165 243 252;
     --source-text: #A5F3FC;
 
     /* Foreground soft */
-    --text-soft-rgb: 203 213 225;
-    --text-soft: #CBD5E1;
+    --text-soft-rgb: 212 212 216;
+    --text-soft: #D4D4D8;
 
     /* Surfaces extra */
-    --surface-terminal-alt: #0B0F16;
-    --surface-nav-hover: #141A24;
-    --surface-table-hover: #121826;
-    --surface-dark-alt: #0F1520;
-    --surface-dark-slate: #111827;
-    --surface-slate-800: #1E293B;
-    --surface-slate-900: #0F172A;
-    --line-slate: #334155;
+    --surface-terminal-alt: #0E0E10;
+    --surface-nav-hover: #17171A;
+    --surface-table-hover: #17171A;
+    --surface-dark-alt: #111113;
+    --surface-dark-slate: #111113;
+    --surface-slate-800: #17171A;
+    --surface-slate-900: #111113;
+    --line-slate: #34343B;
 
     /* Actions & Blocked */
     --role-admin-contrast: #04130F;
     --rule-action: #7C3AED;
     --rule-action-hover: #6D28D9;
-    --blocked-rgb: 251 113 133;
-    --blocked: #FB7185;
-    --blocked-text: #FECDD3;
+    --blocked-rgb: 248 113 113;
+    --blocked: #F87171;
+    --blocked-text: #FCA5A5;
 
     /* Tints */
-    --ok-tint: rgba(34, 197, 94, 0.12);
-    --bad-tint: rgba(239, 68, 68, 0.12);
-    --wait-tint: rgba(245, 158, 11, 0.12);
-    --info-tint: rgba(96, 165, 250, 0.12);
-    --accent-tint: rgba(59, 130, 246, 0.12);
+    --ok-tint: rgba(52, 211, 153, 0.10);
+    --bad-tint: rgba(248, 113, 113, 0.10);
+    --wait-tint: rgba(251, 191, 36, 0.10);
+    --info-tint: rgba(129, 140, 248, 0.10);
+    --accent-tint: rgba(129, 140, 248, 0.10);
 
     /* Role colours */
-    --role-developer-rgb: 96 165 250;
-    --role-developer: #60A5FA;
+    --role-developer-rgb: 129 140 248;
+    --role-developer: #818CF8;
 
     --role-team-lead-rgb: 167 139 250;
     --role-team-lead: #A78BFA;
