@@ -1,0 +1,93 @@
+:root {
+  --hero-beam-blue: #3B82F6;
+  --hero-beam-indigo: #6366F1;
+  --hero-beam-violet: #A5B4FC;
+  --hero-beam-core: #F59E0B;
+  --hero-beam-warm: #FB7185;
+}
+
+.hero-beam-wrapper {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  contain: paint;
+}
+
+.hero-beam-glow {
+  position: absolute;
+  top: -20%;
+  left: -20%;
+  width: 140%;
+  height: 140%;
+  background:
+    radial-gradient(ellipse 65% 35% at 50% 28%, rgba(245, 158, 11, 0.14), transparent 70%),
+    linear-gradient(
+      -35deg,
+      transparent 12%,
+      rgba(99, 102, 241, 0.16) 30%,
+      rgba(245, 158, 11, 0.22) 48%,
+      rgba(251, 113, 133, 0.16) 58%,
+      rgba(59, 130, 246, 0.20) 70%,
+      transparent 88%
+    );
+  filter: blur(52px);
+  opacity: 0.85;
+  transform-origin: center center;
+}
+
+.hero-beam-halftone {
+  position: absolute;
+  top: -20%;
+  left: -20%;
+  width: 140%;
+  height: 140%;
+  background-image: radial-gradient(circle at center, rgba(255, 255, 255, 0.18) 0, rgba(255, 255, 255, 0.18) 1.2px, transparent 1.2px);
+  background-size: 16px 16px;
+  -webkit-mask-image: linear-gradient(
+    -35deg,
+    transparent 18%,
+    rgba(0, 0, 0, 0.45) 35%,
+    rgba(0, 0, 0, 0.85) 48%,
+    rgba(0, 0, 0, 0.55) 62%,
+    transparent 82%
+  );
+  mask-image: linear-gradient(
+    -35deg,
+    transparent 18%,
+    rgba(0, 0, 0, 0.45) 35%,
+    rgba(0, 0, 0, 0.85) 48%,
+    rgba(0, 0, 0, 0.55) 62%,
+    transparent 82%
+  );
+  transform-origin: center center;
+}
+
+/* Subtle dark vignette over center so headline, paragraph and sign-in panel keep high contrast (> 4.5:1) */
+.hero-beam-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 55%, rgba(0, 0, 0, 0.45) 0%, transparent 80%);
+}
+
+@keyframes heroBeamDrift {
+  0% {
+    transform: translate(-1%, -1%) rotate(0deg);
+  }
+  50% {
+    transform: translate(1.5%, 2%) rotate(1.5deg);
+  }
+  100% {
+    transform: translate(-1%, -1%) rotate(0deg);
+  }
+}
+
+.hero-beam-animated {
+  animation: heroBeamDrift 24s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-beam-animated {
+    animation: none !important;
+  }
+}

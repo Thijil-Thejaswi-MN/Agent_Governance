@@ -520,6 +520,36 @@
     background-clip: text;
   }
 }
+
+.dot-matrix-gradient {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-weight: 600;
+  color: #ffffff;
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .dot-matrix-gradient {
+    color: transparent;
+    background-image: radial-gradient(circle at center, #ffffff 0 44%, rgba(255, 255, 255, 0) 50%);
+    background-size: 0.085em 0.085em;
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+}
+@supports (((-webkit-mask-image: radial-gradient(circle, #000, transparent)) or (mask-image: radial-gradient(circle, #000, transparent))) and ((-webkit-background-clip: text) or (background-clip: text))) {
+  .dot-matrix-gradient {
+    color: transparent;
+    background-image: linear-gradient(135deg, #F59E0B 0%, #FB7185 45%, #6366F1 80%, #3B82F6 100%);
+    background-size: 100% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-mask-image: radial-gradient(circle at center, #000 0 44%, transparent 50%);
+    mask-image: radial-gradient(circle at center, #000 0 44%, transparent 50%);
+    -webkit-mask-size: 0.085em 0.085em;
+    mask-size: 0.085em 0.085em;
+    -webkit-mask-repeat: repeat;
+    mask-repeat: repeat;
+  }
+}
 @keyframes landingReveal {
   from {
     opacity: 0;
