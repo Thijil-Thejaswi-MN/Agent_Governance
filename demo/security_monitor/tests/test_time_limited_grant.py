@@ -141,6 +141,6 @@ def test_timed_scope_in_the_api(tmp_path: Path, monkeypatch) -> None:
     r = c.post(f"/api/governance/expansions/{pending.request_id}/approve", json={"scope": "timed"}, headers=h)
     assert r.status_code == 200, r.text
     got = storage.get_expansion_request(pending.request_id)
-    assert got.status == ExpansionStatus.APPROVED and got.reason == "Allowed for 10 minutes in the console"
+    assert got.status == ExpansionStatus.APPROVED and got.reason == "Allowed for 10 minutes"
     ends = dt.datetime.fromisoformat(got.expires_at)
     assert dt.timedelta(minutes=9) < ends - before < dt.timedelta(minutes=11)
