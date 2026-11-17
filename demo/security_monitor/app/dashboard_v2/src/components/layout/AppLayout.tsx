@@ -110,6 +110,9 @@ export const AppLayout: React.FC = () => {
 
   return (
     <div className="relative min-h-screen bg-bg text-fg flex flex-col font-sans overflow-x-clip">
+      {/* 2px accent gradient line at the very top of the page */}
+      <div className="fixed top-0 left-0 right-0 h-[2px] z-50 bg-[image:var(--accent-grad)] pointer-events-none" />
+
       {/* Demo Data Banner when active */}
       {isDemoDataActive && (
         <div className="bg-bad text-white text-[12px] font-bold text-center py-1 select-none tracking-wide z-50">

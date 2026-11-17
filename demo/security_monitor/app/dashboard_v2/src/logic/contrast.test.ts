@@ -34,19 +34,19 @@ const surfaces: Record<string, RGB> = {
 };
 
 describe('text contrast >= 4.5:1', () => {
-  const textOnSurfaces: Record<string, string[]> = {
-    [PALETTE.text]: ['bg', 'surface1', 'surface2', 'surface3'],
-    [PALETTE.text2]: ['bg', 'surface1', 'surface2', 'surface3'],
-    [PALETTE.text3]: ['bg', 'surface1', 'surface2', 'surface3'],
-    [PALETTE.okText]: ['bg', 'surface1', 'surface2', 'surface3'],
-    [PALETTE.badText]: ['bg', 'surface1', 'surface2', 'surface3'],
-    [PALETTE.waitText]: ['bg', 'surface1', 'surface2', 'surface3'],
-    [PALETTE.waitKpi]: ['bg', 'surface1', 'surface2', 'surface3'],
-    [PALETTE.info]: ['bg', 'surface1', 'surface2', 'surface3'],
-    [PALETTE.infoText]: ['bg', 'surface1', 'surface2', 'surface3'],
-  };
-  for (const [fg, on] of Object.entries(textOnSurfaces)) {
-    for (const s of on) {
+  const testedColors = Array.from(new Set([
+    PALETTE.text,
+    PALETTE.text2,
+    PALETTE.text3,
+    PALETTE.okText,
+    PALETTE.badText,
+    PALETTE.waitText,
+    PALETTE.waitKpi,
+    PALETTE.info,
+    PALETTE.infoText,
+  ]));
+  for (const fg of testedColors) {
+    for (const s of ['bg', 'surface1', 'surface2', 'surface3']) {
       it(`${fg} on ${s}`, () => {
         expect(ratio(hex(fg), surfaces[s])).toBeGreaterThanOrEqual(4.5);
       });
@@ -73,6 +73,13 @@ describe('text contrast >= 4.5:1', () => {
     expect(ratio(hex(PALETTE.waitBadgeText), hex(PALETTE.waitKpi))).toBeGreaterThanOrEqual(4.5);
   });
 
+  it('white text on --accent-grad is >= 5:1 on every stop', () => {
+    const stops = ['#4338CA', '#BE185D', '#B45309'];
+    for (const stop of stops) {
+      expect(ratio(hex('#FFFFFF'), hex(stop))).toBeGreaterThanOrEqual(5.0);
+    }
+  });
+
   it('keeps PALETTE values in sync with index.css', () => {
     // Read index.css
     // @ts-ignore
@@ -93,6 +100,7 @@ describe('text contrast >= 4.5:1', () => {
     expect(css).toContain(`--text-2: ${PALETTE.text2}`);
     expect(css).toContain(`--text-3: ${PALETTE.text3}`);
     expect(css).toContain(`--accent: ${PALETTE.accent}`);
+    expect(css).toContain(`--accent-grad: ${PALETTE.accentGrad}`);
     expect(css).toContain(`--ok: ${PALETTE.ok}`);
     expect(css).toContain(`--bad: ${PALETTE.bad}`);
     expect(css).toContain(`--wait: ${PALETTE.wait}`);
