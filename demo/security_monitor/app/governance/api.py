@@ -1669,6 +1669,114 @@ async def expire_standing_rule(
     raise HTTPException(status_code=404, detail="Rule not found.")
 
 
+class PolicySimulateRequest(BaseModel):
+    """What would happen if this task's agent did this now (nothing is run or changed)."""
+    task_id: str
+    kind: str = "tool_call"  # tool_call | access_request
+    tool: str | None = None  # tool_call: read_file | write_file | http_get | call_agent | run_command
+    resource_type: str | None = None  # access_request: file_read | file_write | network | peer_agent
+    target: str
+    violations_so_far: int | None = None  # default: this task's blocked actions so far
+    draft_rule: dict[str, Any] | None = None  # access_request: {agent_or_profile, action, target, response}
+    assume_rules_on: bool = False  # access_request: evaluate rules even if GOVERNANCE_STANDING_RULES is off
+    add: dict[str, list[str]] | None = None  # what-if: extra boundary entries {files_read: [...], ...}
+    remove: dict[str, list[str]] | None = None  # what-if: boundary entries taken away
+
+
+_SIM_FIELDS = ("files_read", "files_write", "network", "peer_agents", "tools")
+
+
+@governance_router.post("/policy/simulate")
+async def simulate_policy(payload: PolicySimulateRequest, request: Request = None) -> dict[str, Any]:
+    """Explains, layer by layer, what the broker would decide for one action of a task, and
+    under which policy version. Optionally under a changed boundary or a draft standing rule."""
+    from .policy_sim import PRECEDENCE_VERSION, REQUEST_LAYERS, TOOL_LAYERS, PolicySimulator, policy_version
+    from .resolved_boundary import ResolvedBoundaryEvaluator
+
+    user = get_current_user_session(request)
+    storage = get_storage()
+    task = storage.get_task(payload.task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if not PermissionMatrix.can_view_run(user, task.owner, task.team):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have permission to view this run.")
+    boundary = storage.get_boundary(payload.task_id)
+    if not boundary:
+        raise HTTPException(status_code=404, detail="This task has no boundary.")
+    target = (payload.target or "").strip()
+    if not target or len(target) > 1000:
+        raise HTTPException(status_code=422, detail="Give a target (a path, address, agent or command).")
+
+    changed = boundary.model_copy(deep=True)
+    for field_name, entries in (payload.add or {}).items():
+        if field_name not in _SIM_FIELDS:
+            raise HTTPException(status_code=422, detail=f"Can only change {', '.join(_SIM_FIELDS)}.")
+        setattr(changed, field_name, sorted(set(getattr(changed, field_name)) | {str(e) for e in entries}))
+    for field_name, entries in (payload.remove or {}).items():
+        if field_name not in _SIM_FIELDS:
+            raise HTTPException(status_code=422, detail=f"Can only change {', '.join(_SIM_FIELDS)}.")
+        setattr(changed, field_name, [e for e in getattr(changed, field_name) if e not in set(entries)])
+    what_if = bool(payload.add or payload.remove)
+
+    rules = _rules_snapshot()
+    if payload.draft_rule:
+        try:
+            draft = StandingRuleCreateRequest(**payload.draft_rule)
+        except Exception as ex:
+            raise HTTPException(status_code=422, detail=f"Draft rule is not valid: {ex}") from ex
+        agent, action, rtarget, response = _validated_rule_fields(draft)
+        now = datetime.now(timezone.utc)
+        rules = rules + [StandingRule(rule_id="rule_draft", agent_or_profile=agent, action=action, target=rtarget,
+                                      owner=f"{user.name} (draft)", created_at=now.isoformat(),
+                                      expires_at=(now + timedelta(days=1)).isoformat(),
+                                      team=draft.team, is_active=True, response=response)]
+
+    evaluator = (ResolvedBoundaryEvaluator(storage) if boundary.metadata.get("boundary_model") == "v1.1"
+                 else None)
+    sim = PolicySimulator(evaluator, rules=rules,
+                          rules_enabled=True if (payload.assume_rules_on or payload.draft_rule) else None)
+    if payload.kind == "tool_call":
+        if not payload.tool:
+            raise HTTPException(status_code=422, detail="Give the tool for a tool call.")
+        if payload.violations_so_far is not None:
+            violations = max(0, int(payload.violations_so_far))
+        else:
+            violations = sum(1 for e in storage.get_events_for_task(payload.task_id)
+                             if e.verdict.value == "OUTSIDE" and e.source.value == "TOOL_BROKER"
+                             and e.kind not in ("request_access", "authentication"))
+        try:
+            decision = sim.tool_call(changed, payload.tool, target, violations_so_far=violations)
+        except ValueError as ex:
+            raise HTTPException(status_code=422, detail=str(ex)) from ex
+        layers = TOOL_LAYERS
+    elif payload.kind == "access_request":
+        if not payload.resource_type:
+            raise HTTPException(status_code=422, detail="Give the resource type for an access request.")
+        exp = get_expansion_service()
+        staged = payload.resource_type == "file_write" and exp._has_staged_snapshot(payload.task_id, target)
+        try:
+            decision = sim.access_request(changed, task.request_text, payload.resource_type, target,
+                                          agent_id=task.agent_id,
+                                          untrusted_reads=storage.get_provenance_for_task(payload.task_id),
+                                          provenance_mode="any", staged_snapshot=staged, task_team=task.team)
+        except ValueError as ex:
+            raise HTTPException(status_code=422, detail=str(ex)) from ex
+        layers = REQUEST_LAYERS
+    else:
+        raise HTTPException(status_code=422, detail="kind must be tool_call or access_request.")
+    return {
+        **decision,
+        "task_id": payload.task_id,
+        "simulated": True,
+        "what_if": what_if,
+        "draft_rule": bool(payload.draft_rule),
+        "precedence": PRECEDENCE_VERSION,
+        "layers": [{"id": i, "name": n} for i, n in layers],
+        "policy_version": policy_version(changed, rules),
+        "current_policy_version": policy_version(boundary, _rules_snapshot()),
+    }
+
+
 class ProactiveGrantRequest(BaseModel):
     granted_by: str = Field(..., description="Operator identifier")
     resource_type: str = Field(..., description="file_read | file_write | network | peer_agent")

@@ -5,6 +5,7 @@ import { StandingRule } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { EmptyState, ErrorState, LoadingState } from '../components/common/States';
 import { ResponseChip, RuleSentence } from '../components/policy/RuleBits';
+import { PolicyCheck } from '../components/policy/PolicyCheck';
 import { ACTIONS, RESPONSES, RuleDraft, draftFromParams, draftProblems, ruleState, sortRules } from '../logic/rules';
 
 const EMPTY_DRAFT: RuleDraft = { agent_or_profile: '*', action: 'file_read', target: '', response: 'allow', expiry_days: 30 };
@@ -221,6 +222,8 @@ export const StandingRulesPage: React.FC = () => {
           </div>
         </form>
       )}
+
+      <PolicyCheck draft={draft} />
 
       <section aria-labelledby="rules-heading" className="flex flex-col gap-3">
         <h2 id="rules-heading" className="m-0 text-[17px] font-semibold text-[#E6E9EF]">

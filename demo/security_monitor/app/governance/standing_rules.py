@@ -65,11 +65,13 @@ def match_rule(
     req: ExpansionRequest,
     task_team: str | None = None,
     now: datetime.datetime | None = None,
+    force_enabled: bool = False,
 ) -> StandingRule | None:
     """Finds a matching active standing rule for a pending expansion request.
     Rules never apply to provenance escalation or HIGH risk.
+    `force_enabled` is for the policy simulator only ("what would this rule do if rules were on").
     """
-    if not is_standing_rules_enabled():
+    if not (force_enabled or is_standing_rules_enabled()):
         return None
 
     if is_high_risk_or_escalated(req):
@@ -118,14 +120,16 @@ def pick_rule(
     req: ExpansionRequest,
     task_team: str | None = None,
     now: datetime.datetime | None = None,
+    force_enabled: bool = False,
 ) -> StandingRule | None:
     """The rule that decides `req`, strictest response first (block, then ask, then allow).
     Returns None for HIGH risk and provenance-escalated requests, and when rules are off.
     """
-    if not is_standing_rules_enabled() or is_high_risk_or_escalated(req):
+    if not (force_enabled or is_standing_rules_enabled()) or is_high_risk_or_escalated(req):
         return None
     for response in RULE_PRECEDENCE:
-        matched = match_rule([r for r in rules if r.response == response], req, task_team=task_team, now=now)
+        matched = match_rule([r for r in rules if r.response == response], req, task_team=task_team, now=now,
+                             force_enabled=force_enabled)
         if matched:
             return matched
     return None

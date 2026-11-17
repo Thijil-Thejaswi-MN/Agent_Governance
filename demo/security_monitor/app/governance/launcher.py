@@ -58,6 +58,7 @@ from .os_layer.sandbox_spec import (
 from .proxy import EgressProxyServer
 from .receipt import build_receipt, verify_chain
 from .resolved_boundary import ResolvedBoundaryEvaluator
+from .policy_sim import receipt_policy_section
 from .staged_writes import land_snapshot, normalize_write_target, snapshot_staged
 from .storage import GovernanceStorage
 
@@ -887,6 +888,10 @@ class TaskLauncher:
             boundary.metadata["agent_tool_limit"] = sorted(spec.agent_tools)
             boundary.metadata["agent_tool_limit_agent"] = spec.agent_id
             self.storage.save_boundary(boundary)
+        if spec.boundary_model == "v1.1":
+            # Tells the policy simulator which file evaluator the broker used for this task.
+            boundary.metadata["boundary_model"] = "v1.1"
+            self.storage.save_boundary(boundary)
         if spec.condition:
             task.condition = spec.condition
         task.requested_by = spec.requester
@@ -1398,6 +1403,7 @@ class TaskLauncher:
             os_identity={k: identity[k] for k in ("cgroup_path", "unit_name", "scope_pid", "source")} if identity else None,
             condition=spec.condition,
             extra={
+                "policy": receipt_policy_section(initial_boundary, self.storage.get_boundary(task_id)),
                 "llm_provider": provider_label,
                 "llm_model": llm_model,
                 "runtime_code_sha256": runtime_hashes,

@@ -149,35 +149,81 @@ class ExpansionService:
 
         return False
 
-    def evaluate_request(
-        self,
-        task_id: str,
-        agent_id: str,
+    def resolve_provenance_mode(self, provenance_enabled: bool | None = None,
+                                provenance_mode: str | None = None) -> str:
+        if provenance_mode is not None:
+            return provenance_mode.lower()
+        if provenance_enabled is not None:
+            return "any" if provenance_enabled else "off"
+        return "any" if self.provenance_enabled else "off"
+
+    @classmethod
+    def assess_request(
+        cls,
+        user_request_text: str,
         resource_type: str,
         resource_target: str,
-        justification: str,
-        provenance_enabled: bool | None = None,
-        provenance_mode: str | None = None,  # "off", "any", "content_linked"
-        timeout_seconds: float = 5.0,
-    ) -> ExpansionRequest:
-        """
-        Creates and evaluates a dynamic expansion request.
-        Applies provenance escalation and determines baseline vs effective risk tier.
-        Agent-initiated HIGH risk expansion requests are automatically DENIED by policy.
-        """
-        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        request_id = self._generate_request_id()
+        prior_untrusted_reads: list[Any],
+        provenance_mode: str = "any",
+        staged_snapshot: bool = False,
+    ) -> dict[str, Any]:
+        """The risk decision for an access request, with no side effects.
 
-        # 1. Enforce Exact Resource Scope (NO WILDCARDS ALLOWED)
-        if any(c in resource_target for c in ("*", "?", "[", "]")):
-            raise ValueError(
-                f"Wildcards are strictly prohibited in expansion requests. "
-                f"Resource target '{resource_target}' must be exact."
-            )
+        Used by evaluate_request (live) and by the policy simulator, so a simulated
+        request is assessed by exactly the code that assesses a real one.
 
-        task = self.storage.get_task(task_id)
-        if not task:
-            raise ValueError(f"Task '{task_id}' not found.")
+        Order: baseline risk (structure and sensitive names) -> was it anticipated by
+        the user's own request -> provenance escalation (one tier up after untrusted
+        reads) -> risk policy (LOW auto-approved, MEDIUM a person decides, HIGH denied).
+        """
+        baseline_tier = cls.classify_resource_risk(resource_type, resource_target)
+        anticipated_by_user = cls.is_anticipated_by_user(user_request_text, resource_target)
+        mode = (provenance_mode or "off").lower()
+        target_norm = resource_target.strip().replace("\\", "/").lower()
+        escalated = False
+        effective_tier = baseline_tier
+        escalation_reason = None
+        if mode != "off" and prior_untrusted_reads and not anticipated_by_user:
+            if mode == "any":
+                escalated = True
+                escalation_reason = f"{len(prior_untrusted_reads)} untrusted read(s) earlier in the task"
+            elif mode == "content_linked":
+                needle_name = Path(target_norm).name.lower()
+                host_part = target_norm.split(":")[0] if ":" in target_norm else target_norm
+                for pr in prior_untrusted_reads:
+                    snippet = (getattr(pr, "content_snippet", "") or "").lower()
+                    if target_norm in snippet or needle_name in snippet or (resource_type == "network" and host_part in snippet):
+                        escalated = True
+                        escalation_reason = f"the target appears in untrusted content from {getattr(pr, 'source_target', '?')}"
+                        break
+            if escalated:
+                if baseline_tier == RiskTier.LOW:
+                    effective_tier = RiskTier.MEDIUM
+                elif baseline_tier == RiskTier.MEDIUM:
+                    effective_tier = RiskTier.HIGH
+                # A content-reviewed write (staged_writes.py) shows the person the exact bytes that
+                # would land, so after untrusted reads it goes to a person (flagged as escalated)
+                # instead of being denied outright. A HIGH baseline (outside output/, sensitive
+                # names, outside the workspace) is never lowered.
+                if baseline_tier == RiskTier.MEDIUM and resource_type == "file_write" and staged_snapshot:
+                    effective_tier = RiskTier.MEDIUM
+        # Risk policy: LOW auto-approved, MEDIUM waits for a person, HIGH denied for agent requests.
+        if effective_tier == RiskTier.LOW:
+            status, resolved_by = ExpansionStatus.APPROVED, "auto_policy"
+        elif effective_tier == RiskTier.MEDIUM:
+            status, resolved_by = ExpansionStatus.PENDING, None
+        else:
+            status, resolved_by = ExpansionStatus.DENIED, "policy_deny_high_risk"
+        return {
+            "baseline_tier": baseline_tier,
+            "effective_tier": effective_tier,
+            "anticipated_by_user": anticipated_by_user,
+            "provenance_mode": mode,
+            "escalated": escalated,
+            "escalation_reason": escalation_reason,
+            "status": status,
+            "resolved_by": resolved_by,
+        }
 
     def _has_staged_snapshot(self, task_id: str, resource_target: str) -> bool:
         """Was a content snapshot of this write recorded for review (a staged_write event)?"""
@@ -285,75 +331,16 @@ class ExpansionService:
             raise ValueError(f"Task '{task_id}' not found.")
 
 
-        # 2. Determine Baseline Risk Tier using structural rules and sensitive patterns
-        baseline_tier = self.classify_resource_risk(resource_type, resource_target)
-
-        # 3. Check if explicitly anticipated by user original request text
-        anticipated_by_user = self.is_anticipated_by_user(task.request_text, resource_target)
-
-        # 4. Provenance-Aware Escalation Analysis
-        if provenance_mode is not None:
-            mode = provenance_mode.lower()
-        elif provenance_enabled is not None:
-            mode = "any" if provenance_enabled else "off"
-        else:
-            mode = "any" if self.provenance_enabled else "off"
-
-        escalated = False
-        effective_tier = baseline_tier
-
-        if mode != "off":
-            prior_reads = self.storage.get_provenance_for_task(task_id)
-            if len(prior_reads) > 0 and not anticipated_by_user:
-                if mode == "any":
-                    # Any untrusted read taints the agent
-                    escalated = True
-                elif mode == "content_linked":
-                    # Escalate only if requested resource target / name / host appears in untrusted content read earlier
-                    needle_path = target_norm
-                    needle_name = Path(target_norm).name.lower()
-                    host_part = target_norm.split(":")[0] if ":" in target_norm else target_norm
-                    for pr in prior_reads:
-                        snippet = (pr.content_snippet or "").lower()
-                        if needle_path in snippet or needle_name in snippet or (resource_type == "network" and host_part in snippet):
-                            escalated = True
-                            break
-
-                if escalated:
-                    if baseline_tier == RiskTier.LOW:
-                        effective_tier = RiskTier.MEDIUM
-                    elif baseline_tier == RiskTier.MEDIUM:
-                        effective_tier = RiskTier.HIGH
-                    elif baseline_tier == RiskTier.HIGH:
-                        effective_tier = RiskTier.HIGH
-                    # A content-reviewed write (staged_writes.py) shows the person the exact bytes that
-                    # would land, so after untrusted reads it goes to a person (flagged as escalated)
-                    # instead of being denied outright. A HIGH baseline (outside output/, sensitive
-                    # names, outside the workspace) is never lowered.
-                    if (baseline_tier == RiskTier.MEDIUM and resource_type == "file_write"
-                            and self._has_staged_snapshot(task_id, resource_target)):
-                        effective_tier = RiskTier.MEDIUM
-
-        # 5. Determine Initial Status
-        # Policy rules:
-        # LOW: Auto-approved
-        # MEDIUM: PENDING (escalates to operator approval: ASK_USER)
-        # HIGH: DENIED by policy for agent-initiated requests (DENY)
-        if effective_tier == RiskTier.LOW:
-            status = ExpansionStatus.APPROVED
-            resolved_by = "auto_policy"
-            resolved_at = now_utc
-            is_auto_approved = True
-        elif effective_tier == RiskTier.MEDIUM:
-            status = ExpansionStatus.PENDING
-            resolved_by = None
-            resolved_at = None
-            is_auto_approved = False
-        else:  # RiskTier.HIGH
-            status = ExpansionStatus.DENIED
-            resolved_by = "policy_deny_high_risk"
-            resolved_at = now_utc
-            is_auto_approved = False
+        a = self.assess_request(task.request_text, resource_type, resource_target,
+                                self.storage.get_provenance_for_task(task_id),
+                                provenance_mode=self.resolve_provenance_mode(provenance_enabled, provenance_mode),
+                                staged_snapshot=(resource_type == "file_write"
+                                                 and self._has_staged_snapshot(task_id, resource_target)))
+        baseline_tier, effective_tier, escalated = a["baseline_tier"], a["effective_tier"], a["escalated"]
+        status = a["status"]
+        resolved_by = a["resolved_by"]
+        resolved_at = now_utc if status != ExpansionStatus.PENDING else None
+        is_auto_approved = status == ExpansionStatus.APPROVED
 
         single_use = (effective_tier == RiskTier.HIGH)
 
