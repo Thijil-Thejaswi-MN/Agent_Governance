@@ -40,7 +40,6 @@ REDIRECTS = [
     ("/dashboard/agents", "/dashboard/fleet"),
     ("/dashboard/evaluation", "/dashboard/results"),
     ("/dashboard/architecture", "/dashboard/run"),  # via /dashboard, which lands the admin on Run
-    ("/dashboard/no-such-page", "/dashboard/run"),
 ]
 
 
