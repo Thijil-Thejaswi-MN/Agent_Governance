@@ -38,5 +38,10 @@ describe('cancellable grants', () => {
     expect(html).toContain('targets.csv');
     expect(html).toContain('id="revoke-btn-r1"');
     expect(renderToStaticMarkup(<GrantList grants={[]} deciding={false} onCancel={() => {}} />)).toBe('');
+    const timed = renderToStaticMarkup(
+      <GrantList grants={[e({ expires_at: '2026-11-17T10:42:00Z' })]} deciding={false} onCancel={() => {}} />,
+    );
+    expect(timed).toContain('data-expires="true"');
+    expect(timed).toContain(' · until ');
   });
 });

@@ -119,7 +119,7 @@ class ToolBroker:
         )
         task_id, agent_id = self._authenticate(token)
         reqs = self.storage.list_expansion_requests(task_id=task_id)
-        latest_req = reqs[-1] if reqs else None
+        latest_req = max(reqs, key=lambda r: r.created_at) if reqs else None  # the request just made
 
         base_risk = latest_req.baseline_risk_tier.value if latest_req and hasattr(latest_req.baseline_risk_tier, "value") else "LOW"
         eff_risk = latest_req.effective_risk_tier.value if latest_req and hasattr(latest_req.effective_risk_tier, "value") else "LOW"

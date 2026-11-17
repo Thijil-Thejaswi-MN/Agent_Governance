@@ -145,6 +145,7 @@ def build_receipt(
             "approver": req.resolved_by,
             "resolved_at": req.resolved_at,
             "single_use": req.single_use,
+            "expires_at": req.expires_at,
             "delivery": deliveries_by_req.get(req.request_id),
         })
 

@@ -56,9 +56,9 @@ describe('decision card', () => {
     expect(card()).toContain('title="The copy is removed after the agent’s first read (detected by the monitor)."');
   });
 
-  it('offers the four decisions in order', () => {
+  it('offers the decisions in order', () => {
     const html = card({ canManageRules: true });
-    const order = ['inline-approve-btn-exp_1', 'allow-once-btn-exp_1', 'deny-btn-exp_1', 'always-btn-exp_1'].map(id =>
+    const order = ['inline-approve-btn-exp_1', 'allow-once-btn-exp_1', 'allow-timed-btn-exp_1', 'deny-btn-exp_1', 'always-btn-exp_1'].map(id =>
       html.indexOf(`id="${id}"`),
     );
     expect(order.every(i => i > 0)).toBe(true);
@@ -67,6 +67,12 @@ describe('decision card', () => {
     expect(html).toContain('Allow once');
     expect(html).toContain('Always for this agent');
     expect(html).toContain('>Block<');
+    expect(html).toContain('Allow for 10 minutes');
+  });
+
+  it('offers no time limit for a write (it is saved once)', () => {
+    const html = card({ exp: { ...exp, resource_type: 'file_write', resource_target: 'output/note.txt' } as ExpansionItem });
+    expect(html).not.toContain('allow-timed-btn');
   });
 
   it('disables Always for people who cannot make rules, and says why', () => {

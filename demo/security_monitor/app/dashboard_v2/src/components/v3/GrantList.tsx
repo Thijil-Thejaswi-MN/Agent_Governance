@@ -17,6 +17,13 @@ export function cancellableGrants(expansions: ExpansionItem[]): ExpansionItem[] 
   return out;
 }
 
+/** The local clock time a timed grant ends, e.g. "10:42". */
+export function untilTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 const KIND: Record<string, string> = { file_read: 'read a file', network: 'reach a website', peer_agent: 'talk to an agent' };
 
 export const GrantList: React.FC<{
@@ -37,6 +44,7 @@ export const GrantList: React.FC<{
               {g.resource_type === 'file_read' ? fileName(g.resource_target) : g.resource_target}
             </span>
             {` · ${KIND[g.resource_type] || 'extra access'}`}
+            {g.expires_at && <span data-expires="true">{` · until ${untilTime(g.expires_at)}`}</span>}
           </span>
           <button
             id={`revoke-btn-${g.request_id}`}

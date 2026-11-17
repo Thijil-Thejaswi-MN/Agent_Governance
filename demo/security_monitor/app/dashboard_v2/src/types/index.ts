@@ -94,6 +94,8 @@ export interface ExpansionItem {
   denial_reason?: string;
   reason?: string;
   single_use?: boolean;
+  /** "Allow for N minutes": when the grant ends on its own. */
+  expires_at?: string | null;
   timeout_seconds?: number;
   escalated_by_provenance?: boolean;
   provenance_escalation?: boolean;

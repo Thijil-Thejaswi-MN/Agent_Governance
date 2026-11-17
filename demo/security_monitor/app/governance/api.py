@@ -1069,12 +1069,15 @@ class ExpansionSubmission(BaseModel):
 class ExpansionDecision(BaseModel):
     decided_by: str = "operator"  # Ignored by server, kept for client compatibility
     reason: str = ""
-    # Approve only: "once" (single use), "run" (this task) or "always" (this task, plus a
-    # standing rule for this agent and this exact resource).
+    # Approve only: "once" (single use), "run" (this task), "timed" (this task, for `minutes`)
+    # or "always" (this task, plus a standing rule for this agent and this exact resource).
     scope: str = "run"
+    minutes: int | None = None
 
 
-APPROVAL_SCOPES = ("once", "run", "always")
+APPROVAL_SCOPES = ("once", "run", "timed", "always")
+TIMED_MINUTES_DEFAULT = 10
+TIMED_MINUTES_MAX = 240
 ALWAYS_RULE_DAYS = 30
 
 
@@ -1289,7 +1292,14 @@ async def approve_expansion(
 
     scope = (payload.scope or "run").strip().lower()
     if scope not in APPROVAL_SCOPES:
-        raise HTTPException(status_code=422, detail="Scope must be once, run or always.")
+        raise HTTPException(status_code=422, detail="Scope must be once, run, timed or always.")
+    minutes = payload.minutes if payload.minutes is not None else TIMED_MINUTES_DEFAULT
+    if scope == "timed":
+        if req.resource_type == "file_write":
+            raise HTTPException(status_code=422, detail="A time limit applies to reading, sites and agents; "
+                                                        "an approved write is saved once.")
+        if not (1 <= minutes <= TIMED_MINUTES_MAX):
+            raise HTTPException(status_code=422, detail=f"Minutes must be between 1 and {TIMED_MINUTES_MAX}.")
     if scope != "run" and req.status != ExpansionStatus.PENDING:
         raise HTTPException(status_code=409, detail="This request has already been decided.")
     if scope == "once":
@@ -1317,9 +1327,13 @@ async def approve_expansion(
             approver = f"{user.role.value}:{user.name}"
         if scope == "once":
             storage.mark_expansion_single_use(request_id)
+        if scope == "timed":
+            ends = datetime.now(timezone.utc) + timedelta(minutes=minutes)
+            storage.mark_expansion_expiry(request_id, ends.isoformat())
         default_reason = {
             "once": "Allowed once in the console",
             "run": "",
+            "timed": f"Allowed for {minutes} minutes",
             "always": "Allowed for this run; a standing rule now covers it for this agent",
         }[scope]
         new_boundary = get_expansion_service().approve_request(
