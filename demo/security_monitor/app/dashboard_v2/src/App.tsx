@@ -83,8 +83,7 @@ export const App: React.FC = () => {
             <Route path="run/:taskId" element={page(<WatchPage />)} />
 
             {/* Shared run investigation */}
-            {/* The old investigation page (pages/RunInvestigationPage.tsx, kept, not routed) showed
-                placeholder values; the Run page shows the same run from real data. */}
+            {/* Old links to the removed investigation page go to the Run page, which shows the run from real data. */}
             <Route path="runs/:taskId" element={<RunRedirect />} />
 
             {/* Fleet, History, Results */}

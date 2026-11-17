@@ -16,7 +16,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from .receipt import verify_chain
+from .receipt import verify_chain, verify_receipt
 
 EVAL_DIR = Path(__file__).resolve().parents[3] / "data" / "evaluation_v3"
 RESULTS_DIR = EVAL_DIR / "results"
@@ -196,6 +196,7 @@ def get_trial(dataset: str, scenario_id: str, condition: str, repeat: int) -> di
     if receipt:
         events = receipt.get("events") or []
         ok, final_hash, msg = verify_chain(events)
+        check = verify_receipt(receipt)
         receipt_view = {
             "task_id": receipt.get("task_id"),
             "integrity": receipt.get("integrity"),
@@ -205,6 +206,9 @@ def get_trial(dataset: str, scenario_id: str, condition: str, repeat: int) -> di
             "outside_events": _clip((receipt.get("outside_events") or [])[:20]),
             "chain_verified": ok,
             "chain_message": msg,
+            "record_verified": check["ok"],
+            "record_scope": check["scope"],
+            "record_message": check["message"],
             "final_hash": final_hash,
             "recorded_final_hash": (receipt.get("hash_chain") or {}).get("final_hash"),
             "chained_events": len(events),

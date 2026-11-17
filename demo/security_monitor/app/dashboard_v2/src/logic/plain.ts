@@ -200,6 +200,8 @@ export function secondsLeft(exp: Pick<ExpansionItem, 'created_at' | 'timeout_sec
 export function receiptSentence(r: ReceiptResponse | null | undefined, loaded: boolean): { text: string; tone: 'ok' | 'bad' | 'none' } {
   if (!loaded) return { text: 'Checking the record…', tone: 'none' };
   if (!r || r.available === false || !r.receipt) return { text: 'No record was saved for this run.', tone: 'none' };
+  if (r.verified && r.verified_scope === 'events_only')
+    return { text: 'Record checked: no entries changed (older record: approvals and settings are not covered)', tone: 'ok' };
   if (r.verified) return { text: 'Record checked: no entries changed', tone: 'ok' };
   return { text: "Record check failed: the entries don't match.", tone: 'bad' };
 }

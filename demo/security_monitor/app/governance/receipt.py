@@ -1,11 +1,18 @@
-"""Task Receipt v0 (M6.1).
+"""Task Receipt v1 (M6.1; v1 since 17 Nov 2026).
 
 A per-task JSON record of what the task was allowed, what it asked for, what it
-did and what was prevented. It is *hash-chained*: every event entry includes
-the hash of the previous entry, and the receipt carries the final hash, so a
-recomputation (scripts/verify_receipt.py) detects edits to the event list that
-were not followed by re-chaining. It is not signed and is not a guarantee
-against a party who can rewrite the whole file.
+did and what was prevented. Two integrity layers:
+
+- the event list is *hash-chained*: every event entry includes the hash of the
+  previous entry, and the receipt carries the final hash;
+- since v1, `hash_chain.document_sha256` is a SHA-256 over the whole record
+  (everything except that one field), so approvals, approvers, deliveries, the
+  initial boundary, termination and isolation level are covered too. In v0 only the
+  event list was covered (independent audit, finding A3).
+
+`verify_receipt` (used by scripts/verify_receipt.py and the API) recomputes both and
+rejects records that lack the required fields. It is not signed and is not a guarantee
+against a party who can rewrite the whole file and recompute the hashes.
 
 Data minimisation: paths, operations and results only. No file contents, no
 prompt text (only its SHA-256), secret-looking strings in commands redacted, no
@@ -22,7 +29,7 @@ from .models import EventSource, EventVerdict, TaskBoundary, TaskRecord
 from .redaction import redact_command
 from .storage import GovernanceStorage
 
-RECEIPT_VERSION = "v0"
+RECEIPT_VERSION = "v1"
 GENESIS_HASH = "0" * 64
 _SAFE_BROKER_DETAIL_KEYS = ("execution", "check_only", "reason", "channel", "method", "dst_host", "dst_port")
 
@@ -159,7 +166,7 @@ def build_receipt(
     b = initial_boundary
     receipt = {
         "receipt_version": RECEIPT_VERSION,
-        "integrity": "hash-chained (SHA-256 over canonical JSON entries; not signed)",
+        "integrity": "hash-chained events and a SHA-256 over the whole record (not signed)",
         "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "task_id": task.task_id,
         "condition": condition,
@@ -200,4 +207,71 @@ def build_receipt(
     }
     if extra:
         receipt["extra"] = extra
-    return receipt
+    return seal(receipt)
+
+
+REQUIRED_V0 = ("task_id", "events", "hash_chain")
+REQUIRED_V1 = REQUIRED_V0 + ("receipt_version", "event_counts", "initial_boundary", "expansions", "deliveries",
+                             "termination", "isolation_level")
+
+
+def document_hash(receipt: dict[str, Any]) -> str:
+    """SHA-256 over the canonical JSON of the whole record except hash_chain.document_sha256."""
+    body = json.loads(json.dumps(receipt, default=str))
+    (body.get("hash_chain") or {}).pop("document_sha256", None)
+    return hashlib.sha256(canonical(body)).hexdigest()
+
+
+def seal(receipt: dict[str, Any]) -> dict[str, Any]:
+    """Adds the whole-record hash. Returns the record as it will be stored (a JSON round trip,
+    so the hash is computed over exactly what is written)."""
+    out = json.loads(json.dumps(receipt, default=str))
+    out["hash_chain"]["document_sha256"] = document_hash(out)
+    return out
+
+
+def verify_receipt(r: Any) -> dict[str, Any]:
+    """Checks a stored record. Returns {ok, scope, message, final_hash}.
+
+    scope "whole_record": events chained and the whole-record hash matches (v1).
+    scope "events_only": an older v0 record; only the event list could be checked.
+    """
+    def fail(msg: str, final: str | None = None) -> dict[str, Any]:
+        return {"ok": False, "scope": None, "message": msg, "final_hash": final}
+
+    if not isinstance(r, dict):
+        return fail("not a record")
+    version = r.get("receipt_version", "v0")
+    required = REQUIRED_V0 if version == "v0" else REQUIRED_V1
+    missing = [k for k in required if k not in r]
+    if missing:
+        return fail(f"missing fields: {', '.join(missing)}")
+    events = r.get("events")
+    hc = r.get("hash_chain")
+    if not isinstance(events, list) or not isinstance(hc, dict):
+        return fail("events or hash_chain has the wrong shape")
+    ok, final, msg = verify_chain(events)
+    if not ok:
+        return fail(msg, final)
+    if hc.get("count") != len(events):
+        return fail(f"count mismatch: chain says {hc.get('count')}, list has {len(events)}", final)
+    if hc.get("final_hash") != final:
+        return fail("final_hash mismatch", final)
+    if "event_counts" in r:
+        counts: dict[str, int] = {}
+        for e in events:
+            counts[e.get("verdict")] = counts.get(e.get("verdict"), 0) + 1
+        declared = {k: v for k, v in ((r.get("event_counts") or {}).get("by_verdict") or {}).items() if v}
+        if declared != counts:
+            return fail(f"verdict counts mismatch: declared {declared}, recomputed {counts}", final)
+    doc = hc.get("document_sha256")
+    if doc:
+        if doc != document_hash(r):
+            return fail("the record was changed after it was written (whole-record hash does not match)", final)
+        return {"ok": True, "scope": "whole_record", "message": f"ok ({len(events)} entries; whole record checked)",
+                "final_hash": final}
+    if version != "v0":
+        return fail("whole-record hash missing", final)
+    return {"ok": True, "scope": "events_only",
+            "message": f"ok ({len(events)} entries; older v0 record: only the event list is chained)",
+            "final_hash": final}

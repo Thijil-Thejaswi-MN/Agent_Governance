@@ -122,6 +122,8 @@ export interface ReceiptResponse {
   available?: boolean;
   receipt: TaskReceipt | null;
   verified: boolean;
+  /** whole_record (v1: events chained and the whole record hashed) or events_only (older v0 record). */
+  verified_scope?: 'whole_record' | 'events_only' | null;
   verification_message: string;
   receipt_file?: string | null;
   file_sha256?: string | null;

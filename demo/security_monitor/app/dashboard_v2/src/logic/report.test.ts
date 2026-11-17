@@ -41,3 +41,11 @@ describe('report wording', () => {
     expect(formatWhen(new Date(2026, 0, 5, 9, 3, 7).toISOString())).toBe('5 Jan 2026, 09:03:07');
   });
 });
+
+describe('record line scope (audit A3)', () => {
+  it('says when only the event list of an older record could be checked', () => {
+    const base = { available: true, verified: true, message: null, final_hash: 'x', event_count: 1 };
+    expect(recordLine({ ...base, verified_scope: 'whole_record' }).text).toBe('Record checked: no entries changed');
+    expect(recordLine({ ...base, verified_scope: 'events_only' }).text).toContain('older record');
+  });
+});

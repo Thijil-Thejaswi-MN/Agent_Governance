@@ -761,7 +761,7 @@ async def get_records_summary(request: Request = None) -> dict[str, Any]:
             if not any(cf.name == f.name for cf in candidate_files):
                 candidate_files.append(f)
 
-    from .receipt import verify_chain
+    from .receipt import verify_receipt
 
     total = 0
     verified = 0
@@ -779,13 +779,7 @@ async def get_records_summary(request: Request = None) -> dict[str, Any]:
                 is_valid = cached[1]
             else:
                 data = json.loads(rf.read_text(encoding="utf-8"))
-                events = data.get("events", [])
-                ok, final, msg = verify_chain(events)
-                is_valid = ok
-                if ok:
-                    hc = data.get("hash_chain", {})
-                    if hc.get("count") != len(events) or hc.get("final_hash") != final:
-                        is_valid = False
+                is_valid = verify_receipt(data)["ok"]
                 with _records_cache_lock:
                     _records_verification_cache[key] = (mtime, is_valid)
 
@@ -856,19 +850,11 @@ def _receipt_check(task_id: str) -> dict[str, Any]:
             "receipt_file": None,
         }
 
-    from .receipt import verify_chain
-    events = receipt_data.get("events", [])
-    ok, final, msg = verify_chain(events)
-    verified = ok
-    verification_msg = msg
-    if ok:
-        hc = receipt_data.get("hash_chain", {})
-        if hc.get("count") != len(events):
-            verified = False
-            verification_msg = f"count mismatch: chain says {hc.get('count')}, list has {len(events)}"
-        elif hc.get("final_hash") != final:
-            verified = False
-            verification_msg = "final_hash mismatch"
+    from .receipt import verify_receipt
+    check = verify_receipt(receipt_data)
+    verified = check["ok"]
+    verification_msg = check["message"]
+    verified_scope = check["scope"]
 
     file_sha256 = None
     if receipt_file and Path(receipt_file).is_file():
@@ -880,6 +866,7 @@ def _receipt_check(task_id: str) -> dict[str, Any]:
         "available": True,
         "receipt": receipt_data,
         "verified": verified,
+        "verified_scope": verified_scope,
         "verification_message": verification_msg,
         "receipt_file": receipt_file,
         "file_sha256": file_sha256,
@@ -918,6 +905,7 @@ def _task_report(task_id: str, request: Request | None) -> dict[str, Any]:
     record = {
         "available": rc.get("available", False),
         "verified": rc.get("verified", False),
+        "verified_scope": rc.get("verified_scope"),
         "message": rc.get("verification_message"),
         "final_hash": rc.get("final_hash"),
         "event_count": len(receipt_events),

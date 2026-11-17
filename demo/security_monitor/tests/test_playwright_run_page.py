@@ -80,7 +80,7 @@ def test_ask_watch_done_preset_1_scripted(page: Page, console_server):
     page.locator("#show-what-happened").click()
     drawer = page.locator("#details-drawer")
     expect(drawer).to_be_visible()
-    expect(drawer.locator("#receipt-verification")).to_have_text("Verified (SHA-256 hash chain intact)")
+    expect(drawer.locator("#receipt-verification")).to_have_text("Verified: events chained and whole record hashed (SHA-256, not signed)")
     expect(drawer.locator("#network-marker")).to_have_text("network: none")
     expect(drawer.locator("#boundary-version")).to_have_text("Boundary version 1")
     expect(drawer).to_contain_text("enforced · tool broker")
