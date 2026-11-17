@@ -95,7 +95,8 @@ def test_dont_allow_requires_a_reason(page: Page, console_server):
     page.goto(f"{console_server.url}/dashboard/run/{task_id}")
     page.evaluate("sessionStorage.clear()")
     page.reload()
-    _sign_in_on_landing(page, console_server.token, "/dashboard/fleet")
+    # Signed out on a run page: the landing page, then straight back to this run.
+    _sign_in_on_landing(page, console_server.token, f"/dashboard/run/{task_id}")
 
     card = page.locator(f"#inline-approval-card-{req_id}")
     expect(card).to_be_visible()
