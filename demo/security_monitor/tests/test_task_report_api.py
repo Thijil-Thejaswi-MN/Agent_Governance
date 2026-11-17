@@ -121,7 +121,10 @@ def test_report_has_every_section(env):
     assert by_id["e4"]["scope"] == "timeout" and by_id["e4"]["decided_by_label"] == "No one in time (stayed blocked)"
     assert rep["blocked"] == [{"timestamp": "2026-11-12T10:03:00+00:00", "kind": "file_read",
                                "target": "input/payroll.csv", "layer": "broker", "rule": "not in boundary"}]
-    assert rep["record"] == {"available": True, "verified": True, "message": "ok", "final_hash": final, "event_count": 2}
+    # A hand-made v0 record (no whole-record hash): it verifies, and says only the events were checked.
+    assert rep["record"] == {"available": True, "verified": True, "verified_scope": "events_only",
+                             "message": "ok (2 entries; older v0 record: only the event list is chained)",
+                             "final_hash": final, "event_count": 2}
 
 
 def test_report_record_states(env):
