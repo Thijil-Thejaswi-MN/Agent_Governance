@@ -19,59 +19,67 @@ export const TopBar: React.FC<TopBarProps> = ({ breadcrumb, activeAgentsCount = 
 
   const getContextAndTitle = () => {
     if (breadcrumb) {
-      if (breadcrumb.includes(' / ')) {
-        const parts = breadcrumb.split(' / ').map(s => s.trim());
+      if (breadcrumb.includes(' / ') || breadcrumb.includes(' › ')) {
+        const parts = breadcrumb.split(/\s*[/›]\s*/).map(s => s.trim());
         const title = parts.pop() || '';
-        const context = parts.join(' / ');
+        const context = parts.join(' › ');
         return { context, title };
       }
       return { context: team ? `${team} team` : '', title: breadcrumb };
     }
 
-    const path = location.pathname.replace(/^\/+/g, '');
+    const path = location.pathname.replace(/^\/+/g, '').replace(/\/+$/, '');
     let title = 'Overview';
-    let context = team ? `${team} team` : '';
+    let context = team ? `${team} team` : 'Overview';
 
-    if (!path || path.startsWith('overview')) {
+    if (!path || path === 'overview') {
       title = 'Overview';
+      context = team ? `${team} team` : 'Overview';
     } else if (path.startsWith('team')) {
       title = 'Team overview';
+      context = team ? `${team} team` : 'Overview';
     } else if (path.startsWith('inbox')) {
       title = 'Approvals';
-      context = context || 'Governance';
+      context = 'Governance';
     } else if (path.startsWith('standing-rules')) {
       title = 'Policies';
-      context = context || 'Governance';
+      context = 'Governance';
     } else if (path.startsWith('records')) {
       title = 'Records';
-      context = context || 'Audit & Reports';
+      context = 'Audit & Reports';
     } else if (path.startsWith('runs/')) {
       title = 'Run investigation';
-      context = context || 'Runtime';
+      context = 'Runtime';
     } else if (path.startsWith('run')) {
       title = 'Run';
-      context = context || 'Runtime';
+      context = 'Runtime';
     } else if (path.startsWith('report/')) {
       title = 'Task report';
-      context = context || 'Audit & Reports';
+      context = 'Audit & Reports';
     } else if (path.startsWith('incidents')) {
       title = 'Incidents';
+      context = 'Incidents';
     } else if (path.startsWith('inventory')) {
-      title = 'Agent Inventory';
+      title = 'Agents';
+      context = 'Agent Inventory';
     } else if (path.startsWith('history/')) {
       title = 'Past run';
-      context = context || 'Runtime';
+      context = 'Runtime';
     } else if (path.startsWith('history')) {
       title = 'History';
-      context = context || 'Runtime';
+      context = 'Runtime';
     } else if (path.startsWith('fleet')) {
       title = 'Fleet';
-      context = context || 'Runtime';
+      context = 'Runtime';
     } else if (path.startsWith('results')) {
       title = 'Results';
-      context = context || 'Audit & Reports';
+      context = 'Audit & Reports';
+    } else if (path.startsWith('evidence')) {
+      title = 'Evidence';
+      context = 'Audit & Reports';
     } else {
-      title = path;
+      title = 'Page not found';
+      context = 'Console';
     }
 
     return { context, title };
@@ -106,22 +114,21 @@ export const TopBar: React.FC<TopBarProps> = ({ breadcrumb, activeAgentsCount = 
         <span className="font-semibold text-[15px] text-fg tracking-tight truncate">Agent Governance</span>
       </div>
 
-      {/* Desktop breadcrumb / context & page title in Instrument Serif */}
-      <div className="hidden md:flex items-baseline gap-2 min-w-0">
+      {/* Desktop breadcrumb only: context › page name, Inter text-[13px] */}
+      <nav aria-label="Breadcrumb" className="hidden md:flex items-center gap-1.5 min-w-0 text-[13px]">
         {context ? (
-          <span className="text-[13px] text-fg-3 font-normal truncate">
-            {context} <span className="mx-1 text-fg-3/60">/</span>
-          </span>
+          <>
+            <span className="text-fg-3 truncate">{context}</span>
+            <span className="text-fg-3 select-none" aria-hidden="true">›</span>
+          </>
         ) : null}
-        <div className="text-[22px] font-serif text-fg font-normal leading-none tracking-tight truncate">
-          {title}
-        </div>
-      </div>
+        <span className="text-fg-2 truncate font-normal">{title}</span>
+      </nav>
 
       {/* Right controls: active agents status badge */}
       <div className="flex items-center gap-3 ml-auto">
         {activeAgentsCount > 0 && (
-          <StatusPill tone="ok" label={`${activeAgentsCount} running`} />
+          <StatusPill tone="info" label={`${activeAgentsCount} running`} />
         )}
       </div>
     </header>

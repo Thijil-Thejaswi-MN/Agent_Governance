@@ -75,3 +75,25 @@ def test_deep_link_reload(page: Page, console_server):
     page.reload()
     expect(page).to_have_url(re.compile(r"/dashboard/history/?$"))
     expect(page.locator("h1")).to_contain_text("Past runs")
+
+
+def test_page_header_single_heading_and_topbar_breadcrumb(page: Page, console_server):
+    """Assert /overview, /fleet, /history and /records each have exactly one visible h1
+    heading and TopBar shows the page name only as breadcrumb text."""
+    pages_to_check = [
+        ("/dashboard/overview", "Overview"),
+        ("/dashboard/fleet", "Fleet"),
+        ("/dashboard/history", "History"),
+        ("/dashboard/records", "Records"),
+    ]
+    sign_in(page, console_server)
+    for path, page_name in pages_to_check:
+        page.goto(f"{console_server.url}{path}")
+        # Exactly one visible h1 heading element on the page
+        expect(page.locator("h1:visible")).to_have_count(1)
+        # TopBar contains no heading element
+        expect(page.locator("[data-topbar] h1, [data-topbar] h2, [data-topbar] [role='heading']")).to_have_count(0)
+        # TopBar displays the page name only as breadcrumb text
+        breadcrumb = page.locator("[data-topbar] [aria-label='Breadcrumb']")
+        expect(breadcrumb).to_contain_text(page_name)
+

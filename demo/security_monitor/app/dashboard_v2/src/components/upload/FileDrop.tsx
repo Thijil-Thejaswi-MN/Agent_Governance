@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { UploadCloud } from 'lucide-react';
 import { MAX_FILES, planUploads, UploadFileInput } from '../../logic/uploadFiles';
+import { Button } from '../ui/Button';
 
 export interface FileDropProps {
   files: Record<string, string>;
@@ -139,11 +140,11 @@ export const FileDrop: React.FC<FileDropProps> = ({
         onDrop={handleDrop}
         className={`relative flex flex-col items-center justify-center p-6 sm:p-8 rounded-xl border-2 border-dashed transition-colors duration-150 text-center select-none ${
           isLimitReached
-            ? 'border-line-strong bg-surface-1/50 opacity-60 cursor-not-allowed'
+            ? 'border-line bg-surface-1/50 opacity-60 cursor-not-allowed'
             : isDragging
-            ? 'border-accent bg-accent/10 cursor-pointer ring-2 ring-accent/20'
-            : 'border-line-strong hover:border-accent/60 bg-surface-1 cursor-pointer'
-        } bg-[repeating-linear-gradient(-45deg,rgba(255,255,255,0.02)_0px,rgba(255,255,255,0.02)_1px,transparent_1px,transparent_10px)] focus:outline-none focus:ring-2 focus:ring-accent`}
+            ? 'border-accent bg-accent-tint cursor-pointer ring-2 ring-accent/20'
+            : 'border-line hover:border-accent/60 bg-surface-1 cursor-pointer'
+        } bg-[repeating-linear-gradient(-45deg,rgba(var(--text-rgb)/0.02)_0px,rgba(var(--text-rgb)/0.02)_1px,transparent_1px,transparent_10px)] focus:outline-none focus:ring-2 focus:ring-accent`}
       >
         <input
           id="file-drop-input"
@@ -160,7 +161,7 @@ export const FileDrop: React.FC<FileDropProps> = ({
 
         {isLimitReached ? (
           <div className="flex flex-col items-center gap-2 py-2">
-            <div className="w-12 h-12 rounded-full border border-line-strong bg-surface-3 flex items-center justify-center text-fg-3">
+            <div className="w-12 h-12 rounded-full border border-line bg-surface-2 flex items-center justify-center text-fg-3">
               <UploadCloud className="w-6 h-6" />
             </div>
             <p className="text-[14px] font-medium text-fg-3">
@@ -169,16 +170,18 @@ export const FileDrop: React.FC<FileDropProps> = ({
           </div>
         ) : (
           <div className="flex flex-col items-center gap-2">
-            <div className="w-12 h-12 rounded-full border border-line-strong bg-surface-3 flex items-center justify-center text-accent mb-1">
+            <div className="w-12 h-12 rounded-full border border-line bg-surface-2 flex items-center justify-center text-accent mb-1">
               <UploadCloud className="w-6 h-6" />
             </div>
             <div className="text-[14px]">
               <span className="font-medium text-fg">Click to upload</span>
               <span className="text-fg-3"> or drag and drop</span>
             </div>
-            <button
-              type="button"
+            <Button
               id="browse-files-btn"
+              type="button"
+              variant="secondary"
+              size="md"
               disabled={isLimitReached}
               aria-disabled={isLimitReached}
               onClick={(e) => {
@@ -187,10 +190,10 @@ export const FileDrop: React.FC<FileDropProps> = ({
                   fileInputRef.current?.click();
                 }
               }}
-              className="mt-1 min-h-[44px] px-4 py-2 text-[13px] font-medium rounded-lg bg-surface-3 hover:bg-surface-hover text-fg border border-line-strong focus:outline-none focus:ring-2 focus:ring-accent transition-colors"
+              className="mt-1 min-h-[40px] px-4 py-2 text-[13px]"
             >
               Browse files
-            </button>
+            </Button>
             <p className="text-[12px] text-fg-3 mt-1">
               TXT, CSV, TSV, MD, JSON, YAML or LOG (max. 50 KB)
             </p>

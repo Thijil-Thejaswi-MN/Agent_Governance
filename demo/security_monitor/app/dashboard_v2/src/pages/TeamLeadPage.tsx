@@ -7,6 +7,7 @@ import { EmptyState, ErrorState, LoadingState } from '../components/common/State
 import { needsYouSentence } from '../logic/plain';
 import { HourCell, agentRows, hourlyHeat, startOfLocalDay } from '../logic/teamStats';
 import { loadTodayEvents } from '../api/events';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
 
@@ -83,18 +84,17 @@ export const TeamLeadPage: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6 font-sans">
-      <section className="anim-rise">
-        <h1 id="team-headline" className="text-2xl sm:text-3xl font-bold tracking-tight text-fg">
-          {running} of {rows.length} {teamLabel}agents at work. {waiting === 0 ? 'Nothing needs you.' : `${waiting} need${waiting === 1 ? 's' : ''} you.`}
-        </h1>
-        <p className="text-[15px] text-fg-2 mt-1.5">
-          {rows.length === 0
+      <PageHeader
+        titleId="team-headline"
+        title={`${running} of ${rows.length} ${teamLabel}agents at work. ${waiting === 0 ? 'Nothing needs you.' : `${waiting} need${waiting === 1 ? 's' : ''} you.`}`}
+        subtitle={
+          rows.length === 0
             ? 'No runs yet for this team.'
             : top
             ? `Most stops: ${top.agentId}, ${top.stops} ${top.stops === 1 ? 'time' : 'times'} in all.`
-            : 'No agent has been stopped at the fence.'}
-        </p>
-      </section>
+            : 'No agent has been stopped at the fence.'
+        }
+      />
 
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
         <Kpi id="kpi-running" label="Agents running" value={rows.length ? `${running} / ${rows.length}` : '—'} sub={rows.length ? `${rows.length - running} idle` : 'No agents yet'} />
@@ -113,15 +113,15 @@ export const TeamLeadPage: React.FC = () => {
             !recordsSummary || recordsSummary.total === 0
               ? '—'
               : recordsSummary.failed === 0
-              ? `${Math.round((recordsSummary.verified / recordsSummary.total) * 100)}%`
-              : `${recordsSummary.failed} failed`
+                ? `${Math.round((recordsSummary.verified / recordsSummary.total) * 100)}%`
+                : `${recordsSummary.failed} failed`
           }
           sub={
             !recordsSummary
               ? 'Not available for this role'
               : recordsSummary.total === 0
-              ? 'No records yet'
-              : `${recordsSummary.verified} of ${recordsSummary.total} records checked`
+                ? 'No records yet'
+                : `${recordsSummary.verified} of ${recordsSummary.total} records checked`
           }
           color={recordsSummary && recordsSummary.failed > 0 ? 'var(--bad)' : recordsSummary && recordsSummary.total ? 'var(--ok)' : 'var(--text)'}
         />

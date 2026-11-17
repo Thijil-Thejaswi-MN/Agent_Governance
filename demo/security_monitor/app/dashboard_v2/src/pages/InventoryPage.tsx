@@ -5,6 +5,7 @@ import { AgentInventoryItem, ConfiguredAgent, ExpansionItem, TaskRecord } from '
 import { EmptyState, ErrorState, LoadingState } from '../components/common/States';
 import { AgentCard, RISK_RULE, Risk, inventoryCards, riskWhy } from '../logic/inventory';
 import { outcomeLabel, relativeTime } from '../logic/plain';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const RISK: Record<Risk, { label: string; style: React.CSSProperties }> = {
   high: { label: 'High risk', style: { color: 'var(--bad-text)', background: 'var(--bad-tint)', borderColor: 'rgb(var(--bad-rgb) / 0.4)' } },
@@ -265,24 +266,25 @@ export const InventoryPage: React.FC = () => {
 
   return (
     <div className="max-w-[1200px] pb-12 flex flex-col gap-6">
-      <header className="flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-8">
-        <div className="flex flex-col gap-2 min-w-0 flex-1">
-        <h1 id="inventory-headline" className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-fg">
-          {tasks == null && inventory.length === 0
+      <PageHeader
+        titleId="inventory-headline"
+        title={
+          tasks == null && inventory.length === 0
             ? 'Agent inventory'
             : totalAgents === 0
             ? 'No agents yet.'
-            : `${totalAgents} ${totalAgents === 1 ? 'agent' : 'agents'}.`}
-        </h1>
-        <p className="m-0 text-[16px] leading-relaxed max-w-[860px]" style={{ color: 'var(--text-2)' }}>
-          An agent is an identity we hold accountable: a name, an owner and a team, the model it runs on, and its tool
-          limit, the only tools it may ever call. Which files and sites it may touch is not part of the agent: each
-          request sets that, inside the agent's limit, and every tool call is checked against both. Counts come from real runs here; comparison runs (kernel lock off) are not counted.
-          {cards.length > 0 && ` ${counts.high} high, ${counts.medium} medium and ${counts.low} low risk.`}
-        </p>
-        </div>
-        {tasks && totalAgents > 0 && <AgentScan count={totalAgents} id="inventory-scan" size={132} />}
-      </header>
+            : `${totalAgents} ${totalAgents === 1 ? 'agent' : 'agents'}.`
+        }
+        subtitle={
+          <span>
+            An agent is an identity we hold accountable: a name, an owner and a team, the model it runs on, and its tool
+            limit, the only tools it may ever call. Which files and sites it may touch is not part of the agent: each
+            request sets that, inside the agent's limit, and every tool call is checked against both. Counts come from real runs here; comparison runs (kernel lock off) are not counted.
+            {cards.length > 0 && ` ${counts.high} high, ${counts.medium} medium and ${counts.low} low risk.`}
+          </span>
+        }
+        actions={tasks && totalAgents > 0 ? <AgentScan count={totalAgents} id="inventory-scan" size={132} /> : undefined}
+      />
       {error && !tasks ? (
         <ErrorState message={error} onRetry={load} id="inventory-error" />
       ) : !tasks ? (

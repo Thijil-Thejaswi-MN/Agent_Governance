@@ -20,6 +20,8 @@ import {
 import { layerLabel } from '../logic/report';
 import { needsYouSentence } from '../logic/plain';
 import { PALETTE } from '../logic/palette';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Button } from '../components/ui/Button';
 
 const STATE: Record<AgentState, { color: string; label: string }> = {
   asking: { color: PALETTE.wait, label: 'asking you' },
@@ -107,10 +109,10 @@ export const AdminOverviewPage: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6 font-sans">
-      <section className="flex flex-wrap items-end justify-between gap-4 anim-rise">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-fg">Overview</h1>
-          <p id="overview-sentence" className="text-[15px] text-fg-2 mt-1.5">
+      <PageHeader
+        title="Overview"
+        subtitle={
+          <span id="overview-sentence">
             {runs24.length === 0
               ? 'No runs in the last 24 hours.'
               : `${agents24} ${agents24 === 1 ? 'agent' : 'agents'} ran ${runs24.length} ${runs24.length === 1 ? 'task' : 'tasks'} in the last 24 hours. ${stopped24} ${stopped24 === 1 ? 'action was' : 'actions were'} stopped at the fence.`}{' '}
@@ -119,12 +121,14 @@ export const AdminOverviewPage: React.FC = () => {
                 {pending.length} {pending.length === 1 ? 'request needs' : 'requests need'} a decision.
               </strong>
             )}
-          </p>
-        </div>
-        <button onClick={() => navigate('/records')} className="btn-primary min-h-[40px] px-4 text-[13px]">
-          Open records
-        </button>
-      </section>
+          </span>
+        }
+        actions={
+          <Button variant="primary" size="md" onClick={() => navigate('/records')} className="min-h-[40px] px-4 text-[13px]">
+            Open records
+          </Button>
+        }
+      />
 
       <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
         <Kpi id="kpi-active" label="Active agents" value={String(dots.filter(d => d.state !== 'idle').length)} sub={dots.length ? `${dots.length} ${dots.length === 1 ? 'agent' : 'agents'} in all` : 'No agents yet'} />

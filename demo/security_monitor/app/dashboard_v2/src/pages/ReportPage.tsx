@@ -4,6 +4,7 @@ import { Download, FileJson, Printer } from 'lucide-react';
 import { api } from '../api/client';
 import { ErrorState, LoadingState } from '../components/common/States';
 import { outcomeLabel } from '../logic/plain';
+import { PageHeader } from '../components/ui/PageHeader';
 import {
   ReportApproval,
   ReportBlocked,
@@ -45,17 +46,15 @@ export const ReportSheet: React.FC<{ report: TaskReport }> = ({ report }) => {
           <span>Comparison run: kernel lock off, for demonstration</span>
         </div>
       )}
-      <header className="flex flex-col gap-1 border-b border-line pb-4">
-        <p className="m-0 text-[12px] uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
-          Task report
-        </p>
-        <h1 className="m-0 font-display font-bold text-[22px] sm:text-[26px] leading-tight text-fg [overflow-wrap:anywhere]">
-          {t.request_text}
-        </h1>
-        <p className="m-0 text-[13px]" style={{ color: 'var(--text-2)' }}>
-          <span className="font-mono">{t.task_id}</span> · generated {formatWhen(report.generated_at)}
-        </p>
-      </header>
+      <PageHeader
+        title={t.request_text}
+        subtitle={
+          <span>
+            <span className="font-mono">{t.task_id}</span> · generated {formatWhen(report.generated_at)}
+          </span>
+        }
+        className="border-b border-line pb-4"
+      />
 
       <section aria-label="Run" className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3">
         <Fact k="Requested by" v={t.requester || '—'} id="report-requester" />

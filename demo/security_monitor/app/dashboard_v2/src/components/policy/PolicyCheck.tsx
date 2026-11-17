@@ -13,17 +13,12 @@ import {
   shownSteps,
   stepTone,
 } from '../../logic/policySim';
+import { StatusPill } from '../ui/StatusPill';
+import { Button } from '../ui/Button';
+import { Tone } from '../../logic/tones';
 
 const fieldCls =
-  'w-full min-w-0 min-h-[44px] px-3 rounded-lg bg-surface-1 border border-line-strong text-[15px] text-fg focus:outline-none focus:border-accent';
-
-const OUTCOME_STYLE: Record<string, React.CSSProperties> = {
-  allow: { color: 'var(--ok-text)', background: 'var(--ok-tint)', borderColor: 'rgba(34,197,94,0.35)' },
-  deny: { color: 'var(--bad-text)', background: 'var(--bad-tint)', borderColor: 'rgba(239,68,68,0.35)' },
-  ask: { color: 'var(--wait-text)', background: 'var(--wait-tint)', borderColor: 'rgba(245,158,11,0.35)' },
-};
-
-const TONE_COLOR = { ok: 'var(--ok-text)', bad: 'var(--bad-text)', ask: 'var(--wait-text)', info: 'var(--text-3)' } as const;
+  'w-full min-w-0 min-h-[44px] px-3 rounded-lg bg-surface-2 border border-line-strong text-[14px] text-fg focus:outline-none focus:border-accent';
 
 /** "Check a decision": asks the server what the broker would do with one action of a run. */
 export const PolicyCheck: React.FC<{ draft: RuleDraft }> = ({ draft }) => {
@@ -68,13 +63,19 @@ export const PolicyCheck: React.FC<{ draft: RuleDraft }> = ({ draft }) => {
     }
   };
 
+  const outcomeTone = (outcome: string): Tone => {
+    if (outcome === 'allow') return 'ok';
+    if (outcome === 'deny') return 'bad';
+    return 'wait';
+  };
+
   return (
-    <section id="policy-check" aria-labelledby="policy-check-heading" className="card p-5 flex flex-col gap-4">
+    <section id="policy-check" aria-labelledby="policy-check-heading" className="rounded-xl border border-line bg-surface-1 p-5 flex flex-col gap-4">
       <div className="flex flex-col gap-1">
         <h2 id="policy-check-heading" className="m-0 text-[17px] font-semibold text-fg">
           Check a decision
         </h2>
-        <p className="m-0 text-[14px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
+        <p className="m-0 text-[14px] text-fg-2 leading-relaxed">
           See what would happen if a run's agent did this now, and which check decides it. Nothing is run and nothing
           changes.
         </p>
@@ -82,7 +83,7 @@ export const PolicyCheck: React.FC<{ draft: RuleDraft }> = ({ draft }) => {
 
       <form onSubmit={check} noValidate className="flex flex-col gap-4" aria-label="Check a decision">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <label className="flex flex-col gap-1.5 text-[13px] sm:col-span-2" style={{ color: 'var(--text-2)' }}>
+          <label className="flex flex-col gap-1.5 text-[13px] text-fg-2 sm:col-span-2">
             Run
             <select id="sim-task" className={fieldCls} value={taskId} onChange={e => setTaskId(e.target.value)}>
               {!tasks && <option value="">Loading runs…</option>}
@@ -95,7 +96,7 @@ export const PolicyCheck: React.FC<{ draft: RuleDraft }> = ({ draft }) => {
               ))}
             </select>
           </label>
-          <label className="flex flex-col gap-1.5 text-[13px]" style={{ color: 'var(--text-2)' }}>
+          <label className="flex flex-col gap-1.5 text-[13px] text-fg-2">
             The agent tries to
             <select id="sim-action" className={fieldCls} value={choiceValue} onChange={e => setChoiceValue(e.target.value)}>
               {SIM_CHOICES.map(c => (
@@ -105,7 +106,7 @@ export const PolicyCheck: React.FC<{ draft: RuleDraft }> = ({ draft }) => {
               ))}
             </select>
           </label>
-          <label className="flex flex-col gap-1.5 text-[13px]" style={{ color: 'var(--text-2)' }}>
+          <label className="flex flex-col gap-1.5 text-[13px] text-fg-2">
             {choice.tool === 'run_command' ? 'Command' : 'Exact name'}
             <input
               id="sim-target"
@@ -118,7 +119,7 @@ export const PolicyCheck: React.FC<{ draft: RuleDraft }> = ({ draft }) => {
           </label>
         </div>
         {canTestDraft && (
-          <label className="inline-flex items-center gap-2 text-[14px]" style={{ color: 'var(--text-2)' }}>
+          <label className="inline-flex items-center gap-2 text-[14px] text-fg-2">
             <input
               id="sim-use-draft"
               type="checkbox"
@@ -130,14 +131,14 @@ export const PolicyCheck: React.FC<{ draft: RuleDraft }> = ({ draft }) => {
           </label>
         )}
         <div>
-          <button id="sim-check-btn" type="submit" className="btn-primary min-h-[44px] px-6" disabled={busy || !taskId}>
+          <Button id="sim-check-btn" type="submit" variant="primary" size="md" disabled={busy || !taskId} className="min-h-[44px] px-6">
             {busy ? 'Checking…' : 'Check'}
-          </button>
+          </Button>
         </div>
       </form>
 
       {error && (
-        <p id="sim-error" role="alert" className="m-0 text-[14px]" style={{ color: 'var(--bad-text)' }}>
+        <p id="sim-error" role="alert" className="m-0 text-[14px] text-bad">
           {error}
         </p>
       )}
@@ -145,32 +146,37 @@ export const PolicyCheck: React.FC<{ draft: RuleDraft }> = ({ draft }) => {
       {result && (
         <div id="sim-result" data-outcome={result.outcome} data-decided-by={result.decided_by} className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span
-              className="inline-flex items-center px-3 py-1 rounded-full border text-[13px] font-semibold"
-              style={OUTCOME_STYLE[result.outcome]}
-            >
-              {OUTCOME_LABEL[result.outcome] || result.outcome}
-            </span>
-            <span className="text-[14px]" style={{ color: 'var(--text-2)' }}>
+            <StatusPill
+              tone={outcomeTone(result.outcome)}
+              label={OUTCOME_LABEL[result.outcome] || result.outcome}
+            />
+            <span className="text-[14px] text-fg-2">
               decided by <strong className="text-fg">{layerLabel(result.decided_by)}</strong>
               {result.draft_rule && result.rule_id === 'rule_draft' ? ' (your draft rule)' : ''}
             </span>
           </div>
           <p className="m-0 text-[14px] text-fg [overflow-wrap:anywhere]">{result.reason}</p>
-          <ol id="sim-steps" className="m-0 pl-5 flex flex-col gap-1.5 text-[14px]">
-            {shownSteps(result).map((s, i) => (
-              <li key={`${s.layer}-${i}`} data-layer={s.layer} data-result={s.result}>
-                <span className="font-semibold" style={{ color: TONE_COLOR[stepTone(s)] }}>
-                  {layerLabel(s.layer)}
-                </span>
-                <span style={{ color: 'var(--text-3)' }}> · {s.result}</span>
-                <span className="block [overflow-wrap:anywhere]" style={{ color: 'var(--text-2)' }}>
-                  {s.reason}
-                </span>
-              </li>
-            ))}
+          <ol id="sim-steps" className="m-0 p-0 list-none flex flex-col gap-2">
+            {shownSteps(result).map((s, i) => {
+              const tone = stepTone(s);
+              const pillTone: Tone = tone === 'ask' ? 'wait' : tone;
+              return (
+                <li
+                  key={`${s.layer}-${i}`}
+                  data-layer={s.layer}
+                  data-result={s.result}
+                  className="p-3 rounded-lg bg-surface-2 border border-line flex flex-col gap-1.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-fg text-[13px]">{layerLabel(s.layer)}</span>
+                    <StatusPill tone={pillTone} label={s.result} />
+                  </div>
+                  <span className="text-[13px] text-fg-2 [overflow-wrap:anywhere]">{s.reason}</span>
+                </li>
+              );
+            })}
           </ol>
-          <p className="m-0 text-[12px] font-mono" style={{ color: 'var(--text-3)' }}>
+          <p className="m-0 text-[12px] font-mono text-fg-3">
             policy {result.policy_version}
             {result.policy_version !== result.current_policy_version ? ` (the run's own: ${result.current_policy_version})` : ''}
             {' · '}

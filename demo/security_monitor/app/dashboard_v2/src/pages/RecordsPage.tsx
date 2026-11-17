@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { TaskRecord, ReceiptResponse, ExpansionItem } from '../types';
-import { StatCard } from '../components/stats/StatCard';
+import { MetricCard } from '../components/ui/MetricCard';
+import { StatusPill } from '../components/ui/StatusPill';
+import { Button } from '../components/ui/Button';
 import { decisionsLine, recordStats, recordsLine, stoppedLine } from '../logic/recordStats';
 import { PALETTE } from '../logic/palette';
-import { Download, RefreshCw, CheckCircle2, AlertCircle, FileText, ShieldX, UserCheck, FileCheck2 } from 'lucide-react';
+import { Download, RefreshCw } from 'lucide-react';
+import { PageHeader } from '../components/ui/PageHeader';
 
 interface ChainStep {
   idx: number;
@@ -20,7 +23,7 @@ export const RecordsPage: React.FC = () => {
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
   const [selectedReceipt, setSelectedReceipt] = useState<ReceiptResponse | null>(null);
   const [isChecking, setIsChecking] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [filterStop, setFilterStop] = useState(false);
 
   const fetchTasks = async () => {
@@ -138,117 +141,97 @@ export const RecordsPage: React.FC = () => {
   return (
     <div className="flex flex-col gap-6 font-sans">
       {/* Headline */}
-      <section className="anim-rise">
-        {recordsSummary ? (
-          recordsSummary.total === 0 ? (
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-fg-3">
-              No records yet.
-            </h1>
-          ) : recordsSummary.failed > 0 ? (
-            <div className="flex flex-col gap-2">
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-bad">
-                {recordsSummary.failed} of {recordsSummary.total} records failed the check.
-              </h1>
-              <div className="text-[13px] text-bad-text font-mono">
+      <PageHeader
+        title={
+          recordsSummary
+            ? recordsSummary.total === 0
+              ? 'No records yet.'
+              : recordsSummary.failed > 0
+              ? `${recordsSummary.failed} of ${recordsSummary.total} records failed the check.`
+              : `${recordsSummary.total} records. All ${recordsSummary.total} checked: no entries changed.`
+            : 'Records'
+        }
+        subtitle={
+          <>
+            {recordsSummary && recordsSummary.failed > 0 && (
+              <div className="text-[13px] text-bad font-mono mb-1">
                 Failed runs: {recordsSummary.failed_ids.join(', ')}
               </div>
-            </div>
-          ) : (
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-fg">
-              {recordsSummary.total} records. All {recordsSummary.total} checked: no entries changed.
-            </h1>
-          )
-        ) : tasks.length === 0 ? (
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-fg-3">
-            No records yet.
-          </h1>
-        ) : (
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-fg">
-            {tasks.length} records. Checking them…
-          </h1>
-        )}
-        <p className="text-[15px] text-fg-2 mt-1.5">
-          Each run keeps an ordered record where every entry is linked to the one before it, so a changed or
-          missing entry shows up.
-        </p>
-      </section>
+            )}
+            <span>
+              Each run keeps an ordered record where every entry is linked to the one before it, so a changed or
+              missing entry shows up.
+            </span>
+          </>
+        }
+      />
 
-      {/* What the records show: three numbers, each counted from real records (logic/recordStats.ts). */}
-      <section id="records-stats" aria-label="What the records show" className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatCard
+      {/* What the records show: three numbers, each counted from real records */}
+      <section id="records-stats" aria-label="What the records show" className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+        <MetricCard
           id="stat-stopped"
-          icon={<ShieldX className="w-3.5 h-3.5" />}
-          badge="Stopped at the fence"
-          value={stats.stopped}
-          suffix={stats.stopped === 1 ? 'action' : 'actions'}
-          tone={stats.stopped ? 'var(--bad-text)' : 'var(--text)'}
-          sub={stoppedLine(stats)}
-          about="Things an agent tried that its task did not allow, refused by the tool broker or the kernel before they happened."
-          source="each run's broker and kernel counts (comparison runs left out)"
+          data-value={stats.stopped}
+          label="Stopped at the fence"
+          value={`${stats.stopped.toLocaleString()} ${stats.stopped === 1 ? 'action' : 'actions'}`}
+          note={stoppedLine(stats)}
+          tone={stats.stopped ? 'bad' : 'default'}
         />
-        <StatCard
+        <MetricCard
           id="stat-decided"
-          icon={<UserCheck className="w-3.5 h-3.5" />}
-          badge="Decided by a person"
-          value={stats.decidedByPerson}
-          suffix={stats.decidedByPerson === 1 ? 'request' : 'requests'}
-          sub={decisionsLine(stats)}
-          about="Requests for more access that waited for someone to choose. Automatic policy, standing rules and timeouts are not counted here."
-          source="the approval requests and who resolved each one"
-          delayMs={90}
+          data-value={stats.decidedByPerson}
+          label="Decided by a person"
+          value={`${stats.decidedByPerson.toLocaleString()} ${stats.decidedByPerson === 1 ? 'request' : 'requests'}`}
+          note={decisionsLine(stats)}
+          tone="default"
         />
-        <StatCard
+        <MetricCard
           id="stat-records"
-          icon={<FileCheck2 className="w-3.5 h-3.5" />}
-          badge="Records that check out"
-          value={stats.verified}
-          suffix={`of ${stats.checked.toLocaleString()}`}
-          tone={stats.failed ? 'var(--bad-text)' : stats.checked ? 'var(--ok-text)' : 'var(--text)'}
-          sub={recordsLine(stats)}
-          about="Every entry of a run's record is linked to the one before it, and the server re-checks the whole chain."
-          source="the server's check of every stored record"
-          delayMs={180}
+          data-value={stats.verified}
+          label="Records that check out"
+          value={`${stats.verified.toLocaleString()} of ${stats.checked.toLocaleString()}`}
+          note={recordsLine(stats)}
+          tone={stats.failed ? 'bad' : stats.checked ? 'ok' : 'default'}
         />
       </section>
 
       {/* Main Grid: Records Table (left) + Side Panel Chain (right) */}
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
         {/* Table */}
-        <div className="lg:col-span-2 p-5 rounded-xl bg-surface-2 border border-line flex flex-col gap-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-[15px] font-bold text-fg">Records</h2>
+        <div className="lg:col-span-2 rounded-xl border border-line bg-surface-1 overflow-hidden flex flex-col">
+          <div className="p-4 border-b border-line flex flex-wrap items-center justify-between gap-3">
+            <h2 className="m-0 text-[15px] font-bold text-fg">Records</h2>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setFilterStop(!filterStop)}
-                className={`px-3 py-1.5 rounded-full text-[12px] font-semibold border cursor-pointer ${
-                  filterStop
-                    ? 'bg-bad/20 border-bad text-bad-light'
-                    : 'bg-surface-hover border-line-strong text-fg'
-                }`}
+                className={`px-3 py-1.5 rounded-lg text-[12px] font-semibold border transition-colors cursor-pointer ${filterStop
+                  ? 'bg-bad-tint border-bad/30 text-bad'
+                  : 'bg-surface-2 border-line text-fg hover:bg-surface-3'
+                  }`}
               >
                 {filterStop ? 'Showing: Has a stop' : 'Filter: Has a stop'}
               </button>
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={handleExportCSV}
-                className="px-3.5 py-1.5 rounded-lg border border-line-strong bg-transparent hover:bg-surface-3 text-fg font-semibold text-[13px] flex items-center gap-1.5 cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
                 Export CSV
-              </button>
+              </Button>
             </div>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[13px] border-collapse">
               <thead>
-                <tr className="border-b border-line text-fg-3 font-medium text-[12px]">
-                  <th className="pb-2.5 font-normal">Run</th>
-                  <th className="pb-2.5 font-normal">Agent</th>
-                  <th className="pb-2.5 font-normal">Team</th>
-                  <th className="pb-2.5 font-normal">Task</th>
-                  <th className="pb-2.5 font-normal">Outcome</th>
-                  <th className="pb-2.5 font-normal">Record</th>
-                  <th className="pb-2.5 font-normal">Action</th>
+                <tr className="bg-surface-2 border-b border-line text-fg-3 uppercase text-[12px] tracking-wider font-semibold">
+                  <th className="py-2.5 px-4 font-semibold">Run</th>
+                  <th className="py-2.5 px-3 font-semibold">Agent</th>
+                  <th className="py-2.5 px-3 font-semibold">Team</th>
+                  <th className="py-2.5 px-3 font-semibold">Task</th>
+                  <th className="py-2.5 px-3 font-semibold">Outcome</th>
+                  <th className="py-2.5 px-3 font-semibold">Record</th>
+                  <th className="py-2.5 px-4 font-semibold text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
@@ -260,48 +243,54 @@ export const RecordsPage: React.FC = () => {
                   </tr>
                 ) : (
                   filteredTasks.slice(0, 20).map(t => {
-                  const isSelected = selectedTask?.task_id === t.task_id;
-                  const stops = t.prevented_count || t.os_denials_count || 0;
-                  return (
-                    <tr
-                      key={t.task_id}
-                      onClick={() => handleSelectTask(t)}
-                      className={`cursor-pointer transition-colors ${
-                        isSelected ? 'bg-surface-active' : 'hover:bg-surface-3'
-                      }`}
-                    >
-                      <td className="py-2.5 font-mono text-info-text">
-                        {t.task_id.slice(0, 10)}…
-                      </td>
-                      <td className="py-2.5 font-mono text-fg">{t.agent_id}</td>
-                      <td className="py-2.5 text-fg-2">{(t as any).team || 'General'}</td>
-                      <td className="py-2.5 text-fg max-w-[160px] truncate">
-                        {t.request_text}
-                      </td>
-                      <td className="py-2.5">
-                        {stops > 0 ? (
-                          <span className="text-bad-light">{stops} stopped</span>
-                        ) : (
-                          <span className="text-fg-3">allowed</span>
-                        )}
-                      </td>
-                      <td className="py-2.5">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-ok/[0.14] text-ok-light text-[11px] font-semibold">
-                          ✓ Record checked: no entries changed
-                        </span>
-                      </td>
-                      <td className="py-2.5" onClick={e => e.stopPropagation()}>
-                        <a
-                          href={api.getRawReceiptUrl(t.task_id)}
-                          download
-                          className="text-info hover:text-info-text flex items-center gap-1 text-[12px]"
-                        >
-                          <Download className="w-3.5 h-3.5" /> Download
-                        </a>
-                      </td>
-                    </tr>
-                  );
-                }))}
+                    const isSelected = selectedTask?.task_id === t.task_id;
+                    const stops = t.prevented_count || t.os_denials_count || 0;
+                    const isFailed = recordsSummary?.failed_ids?.includes(t.task_id);
+                    const isV0 = (t as any).receipt_version === 0 || (t as any).verified_scope === 'events_only';
+
+                    return (
+                      <tr
+                        key={t.task_id}
+                        onClick={() => handleSelectTask(t)}
+                        className={`h-11 min-h-[44px] cursor-pointer transition-colors ${isSelected ? 'bg-surface-2' : 'hover:bg-surface-2/50'
+                          }`}
+                      >
+                        <td className="py-2 px-4 font-mono text-accent font-medium">
+                          {t.task_id.slice(0, 10)}…
+                        </td>
+                        <td className="py-2 px-3 font-mono text-fg">{t.agent_id}</td>
+                        <td className="py-2 px-3 text-fg-2">{(t as any).team || 'General'}</td>
+                        <td className="py-2 px-3 text-fg max-w-[160px] truncate">
+                          {t.request_text}
+                        </td>
+                        <td className="py-2 px-3">
+                          {stops > 0 ? (
+                            <span className="text-bad font-medium">{stops} stopped</span>
+                          ) : (
+                            <span className="text-fg-3">allowed</span>
+                          )}
+                        </td>
+                        <td className="py-2 px-3">
+                          {isFailed ? (
+                            <StatusPill tone="bad" label="Verification failed" />
+                          ) : isV0 ? (
+                            <StatusPill tone="info" label="events only" />
+                          ) : (
+                            <StatusPill tone="ok" label="Record checked: no entries changed" />
+                          )}
+                        </td>
+                        <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>
+                          <a
+                            href={api.getRawReceiptUrl(t.task_id)}
+                            download
+                            className="inline-flex items-center gap-1 text-[12px] font-medium text-fg-2 hover:text-fg hover:bg-surface-2 px-2.5 py-1 rounded-lg transition-colors no-underline"
+                          >
+                            <Download className="w-3.5 h-3.5" /> Download
+                          </a>
+                        </td>
+                      </tr>
+                    );
+                  }))}
               </tbody>
             </table>
           </div>
@@ -309,11 +298,11 @@ export const RecordsPage: React.FC = () => {
 
         {/* Side Panel Vertical Chain */}
         {selectedTask && (
-          <aside className="p-5 rounded-xl bg-surface-2 border border-line flex flex-col gap-3.5 sticky top-4">
-            <div className="text-[12px] font-bold text-role-auditor tracking-wider uppercase">
+          <aside className="p-5 rounded-xl bg-surface-1 border border-line flex flex-col gap-3.5 sticky top-4">
+            <div className="text-[12px] font-bold text-accent tracking-wider uppercase">
               RECORD · {selectedTask.task_id.slice(0, 12)}…
             </div>
-            <div className="text-[15px] font-bold text-fg">
+            <div className="text-[15px] font-bold text-fg break-words">
               {selectedTask.agent_id} · {selectedTask.request_text.slice(0, 32)}…
             </div>
 
@@ -336,7 +325,7 @@ export const RecordsPage: React.FC = () => {
                   <div className="pb-2">
                     <div className="font-semibold text-[13px] text-fg">{s.label}</div>
                     <div className="text-[12px] text-fg-2 leading-snug">{s.detail}</div>
-                    <div className="font-mono text-[10px] text-fg-dim mt-0.5">
+                    <div className="font-mono text-[10px] text-fg-3 mt-0.5">
                       #{s.idx} · links to #{s.idx === 0 ? '—' : s.idx - 1}
                     </div>
                   </div>
@@ -345,20 +334,16 @@ export const RecordsPage: React.FC = () => {
             </div>
 
             {/* Hash chain verification status */}
-            <div className="p-3 rounded-lg bg-bg border border-line text-[12px] flex flex-col gap-1">
+            <div className="p-3 rounded-lg bg-surface-2 border border-line text-[12px] flex flex-col gap-1.5">
               <div className="text-fg-3">Hash chain verification:</div>
               {selectedReceipt?.available === false ? (
-                <div className="font-mono text-[11px] text-fg-3">
-                  No stored receipt
-                </div>
+                <StatusPill tone="neutral" label="No stored record" />
               ) : selectedReceipt?.verified === false ? (
-                <div className="font-mono text-[11px] text-bad">
-                  ? Verification failed: entry changed or hash mismatch
-                </div>
+                <StatusPill tone="bad" label="Verification failed: entry changed or hash mismatch" />
+              ) : selectedReceipt?.verified_scope === 'events_only' ? (
+                <StatusPill tone="info" label="events only" />
               ) : (
-                <div className="font-mono text-[11px] text-ok">
-                  ? Hash chain verified: no entries changed
-                </div>
+                <StatusPill tone="ok" label="Record checked: no entries changed" />
               )}
             </div>
 
@@ -367,21 +352,22 @@ export const RecordsPage: React.FC = () => {
               <a
                 href={api.getRawReceiptUrl(selectedTask.task_id)}
                 download
-                className="flex-1 min-h-[36px] px-3 rounded-lg bg-accent hover:bg-accent-strong text-white font-semibold text-[13px] flex items-center justify-center gap-1.5 no-underline"
+                className="flex-1 min-h-[36px] h-9 px-3 rounded-lg text-white font-medium text-[13px] flex items-center justify-center gap-1.5 no-underline bg-[image:var(--accent-grad)] hover:brightness-110 active:brightness-95 transition-all"
               >
                 <Download className="w-4 h-4" /> Download record
               </a>
-              <button
+              <Button
+                variant="secondary"
+                size="sm"
                 onClick={handleCheckAgain}
                 disabled={isChecking}
-                className="min-h-[36px] px-3 rounded-lg border border-line-strong bg-transparent hover:bg-surface-3 text-fg font-semibold text-[13px] flex items-center gap-1.5 cursor-pointer"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isChecking ? 'animate-spin' : ''}`} />
                 Check again
-              </button>
+              </Button>
             </div>
 
-            <p className="text-[11px] text-fg-dim mt-1 leading-snug">
+            <p className="text-[11px] text-fg-3 mt-1 leading-snug">
               Read-only role: auditors can inspect and export records but cannot approve, deny, or alter rules.
             </p>
           </aside>
@@ -390,4 +376,3 @@ export const RecordsPage: React.FC = () => {
     </div>
   );
 };
-

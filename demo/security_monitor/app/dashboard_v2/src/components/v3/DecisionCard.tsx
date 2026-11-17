@@ -4,6 +4,7 @@ import { ExpansionItem } from '../../types';
 import { api } from '../../api/client';
 import { decisionLead, decisionWarning, formatCountdown, secondsLeft } from '../../logic/plain';
 import { fileName } from '../../logic/runView';
+import { Button } from '../ui/Button';
 import {
   ApprovalScope,
   TIMED_MINUTES,
@@ -31,7 +32,7 @@ export const RequestPreview: React.FC<{ exp: ExpansionItem; preview: ExpansionPr
   const tier = String(preview?.risk_tier || exp.effective_risk_tier || '').toUpperCase();
   const risk = riskLabel(tier);
   return (
-    <div id="decision-preview" className="rounded-2xl px-4 py-3.5 flex flex-wrap items-start gap-x-3 gap-y-2 bg-surface-1 border border-line">
+    <div id="decision-preview" className="rounded-2xl px-4 py-3.5 flex flex-wrap items-start gap-x-3 gap-y-2 bg-surface-2 border border-line">
       <Icon aria-hidden="true" className="w-5 h-5 mt-0.5 shrink-0" style={{ color: 'var(--info-text)' }} />
       <div className="min-w-[200px] flex-1 flex flex-col gap-1">
         <span className="font-mono text-[15px] text-fg [overflow-wrap:anywhere]">
@@ -125,7 +126,7 @@ export const DecisionCard: React.FC<{
   const onceWhyNot = onceBlockedReason(preview);
 
   return (
-    <div id={`inline-approval-card-${exp.request_id}`} className="flex flex-col gap-5" data-state="waiting">
+    <div id={`inline-approval-card-${exp.request_id}`} className="flex flex-col gap-5 rounded-2xl border border-line bg-surface-1 p-5 shadow-sm" data-state="waiting">
       <p className="m-0 text-[18px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
         {decisionLead(exp, triedBefore)
           .split(name)
@@ -150,70 +151,75 @@ export const DecisionCard: React.FC<{
       ) : !denying ? (
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap gap-3">
-            <button
+            <Button
               id={`inline-approve-btn-${exp.request_id}`}
               type="button"
+              variant="primary"
+              size="md"
               disabled={deciding}
               onClick={() => onAllow('run')}
-              className="btn-primary pulse-waiting w-full sm:w-auto"
-              style={{ minHeight: 52, padding: '0 28px', background: 'linear-gradient(135deg, var(--role-admin), var(--cyan))', color: 'var(--role-admin-contrast)' }}
+              className="pulse-waiting w-full sm:w-auto min-h-[44px] px-6"
             >
               Allow for this run
-            </button>
-            <button
+            </Button>
+            <Button
               id={`allow-once-btn-${exp.request_id}`}
               type="button"
+              variant="secondary"
+              size="md"
               disabled={deciding || !!onceWhyNot}
               onClick={() => onAllow('once')}
-              className="btn-ghost flex-1 sm:flex-none disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ minHeight: 52, padding: '0 22px' }}
+              className="flex-1 sm:flex-none min-h-[44px] px-5 disabled:opacity-50 disabled:cursor-not-allowed"
               title={onceWhyNot ?? ONCE_HOVER}
               aria-describedby={onceWhyNot ? `once-why-${exp.request_id}` : undefined}
             >
               Allow once
-            </button>
+            </Button>
             {exp.resource_type !== 'file_write' && (
-              <button
+              <Button
                 id={`allow-timed-btn-${exp.request_id}`}
                 type="button"
+                variant="secondary"
+                size="md"
                 disabled={deciding}
                 onClick={() => onAllow('timed')}
-                className="btn-ghost flex-1 sm:flex-none"
-                style={{ minHeight: 52, padding: '0 22px' }}
+                className="flex-1 sm:flex-none min-h-[44px] px-5"
                 title={`The grant ends by itself after ${TIMED_MINUTES} minutes; the agent cannot open it again after that.`}
               >
                 Allow for {TIMED_MINUTES} minutes
-              </button>
+              </Button>
             )}
-            <button
+            <Button
               id={`deny-btn-${exp.request_id}`}
               type="button"
+              variant="danger"
+              size="md"
               disabled={deciding}
               onClick={() => setDenying(true)}
-              className="btn-ghost flex-1 sm:flex-none"
-              style={{ minHeight: 52, padding: '0 22px', borderColor: 'rgb(var(--blocked-rgb) / 0.45)', color: 'var(--blocked-text)' }}
+              className="flex-1 sm:flex-none min-h-[44px] px-5"
             >
               Block
-            </button>
+            </Button>
           </div>
           {onceWhyNot && (
-            <span id={`once-why-${exp.request_id}`} className="text-[13px] leading-snug" style={{ color: 'var(--text-3)' }}>
+            <span id={`once-why-${exp.request_id}`} className="text-[13px] leading-snug text-fg-3">
               {onceWhyNot}
             </span>
           )}
           <div className="flex flex-col gap-1.5">
-            <button
+            <Button
               id={`always-btn-${exp.request_id}`}
               type="button"
+              variant="secondary"
+              size="sm"
               disabled={deciding || !!alwaysWhyNot}
               aria-describedby={`always-why-${exp.request_id}`}
               onClick={() => onAllow('always')}
-              className="btn-ghost self-start disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ minHeight: 44, padding: '0 18px' }}
+              className="self-start min-h-[40px] px-4 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Always for this agent
-            </button>
-            <span id={`always-why-${exp.request_id}`} className="text-[13px] leading-snug" style={{ color: 'var(--text-3)' }}>
+            </Button>
+            <span id={`always-why-${exp.request_id}`} className="text-[13px] leading-snug text-fg-3">
               {alwaysWhyNot ?? 'Allows it for this run and saves a standing rule for this agent and this exact name.'}
             </span>
           </div>
@@ -226,7 +232,7 @@ export const DecisionCard: React.FC<{
             if (reason.trim()) onDeny(reason.trim());
           }}
         >
-          <label htmlFor="deny-reason-input" className="text-[15px] font-medium">
+          <label htmlFor="deny-reason-input" className="text-[15px] font-medium text-fg">
             Why block it? (a few words, required)
           </label>
           <input
@@ -237,22 +243,29 @@ export const DecisionCard: React.FC<{
             required
             maxLength={300}
             placeholder="Not needed for this task"
-            className="min-h-[48px] px-4 rounded-[14px] text-[16px] outline-none"
-            style={{ background: 'var(--field)', border: '1px solid rgb(var(--blocked-rgb) / 0.45)', color: 'var(--text)' }}
+            className="min-h-[48px] px-4 rounded-[14px] text-[16px] outline-none bg-surface-2 border border-line text-fg focus:border-line-strong"
           />
           <div className="flex flex-wrap gap-3">
-            <button
+            <Button
               id="confirm-deny-btn"
               type="submit"
+              variant="danger"
+              size="md"
               disabled={deciding || !reason.trim()}
-              className="btn-ghost"
-              style={{ borderColor: 'rgb(var(--blocked-rgb) / 0.6)', color: 'var(--blocked-text)' }}
+              className="min-h-[44px] px-5"
             >
               Block
-            </button>
-            <button type="button" className="btn-ghost" onClick={() => setDenying(false)} disabled={deciding}>
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="md"
+              onClick={() => setDenying(false)}
+              disabled={deciding}
+              className="min-h-[44px] px-5"
+            >
               Back
-            </button>
+            </Button>
           </div>
         </form>
       )}
