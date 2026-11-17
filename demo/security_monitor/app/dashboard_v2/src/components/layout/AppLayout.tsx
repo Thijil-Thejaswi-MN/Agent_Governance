@@ -14,7 +14,7 @@ const PUBLIC_PATHS = ['/signin', '/results'];
 
 export const AppLayout: React.FC = () => {
   const location = useLocation();
-  const { needsSignIn, authEpoch, isDemoDataActive } = useAuth();
+  const { needsSignIn, authEpoch, isDemoDataActive, hasToken, user } = useAuth();
   const [waitingCount, setWaitingCount] = useState(0);
   const [totalTasks, setTotalTasks] = useState(0);
   const [activeCount, setActiveCount] = useState(0);
@@ -34,8 +34,12 @@ export const AppLayout: React.FC = () => {
   const isSignInPage = cleanPath === '/signin' || cleanPath === '/';
   const isPublic = PUBLIC_PATHS.includes(cleanPath);
 
-  // Poll pending count and active runs periodically
+  // Poll pending count and active runs periodically, only while signed in and in the shell
+  // (on the sign-in page, or signed out, every poll would be a 401 in the server log).
+  const signedIn = (hasToken || !!user) && !needsSignIn;
+  const pollCounts = signedIn && !isSignInPage;
   useEffect(() => {
+    if (!pollCounts) return;
     let mounted = true;
     const fetchCounts = async () => {
       try {
@@ -65,7 +69,7 @@ export const AppLayout: React.FC = () => {
       clearInterval(interval);
       off();
     };
-  }, [authEpoch]);
+  }, [authEpoch, pollCounts]);
 
   // The mobile menu closes on navigation and on Escape, and takes focus when it opens.
   useEffect(() => setMenuOpen(false), [location.pathname]);

@@ -110,3 +110,21 @@ def test_derive_endpoint(tmp_path: Path, monkeypatch) -> None:
     assert c.post("/api/governance/run/derive", json={**body, "agent_id": "nobody"}, headers=h).status_code == 422
     bad = {**body, "files": {"../escape.txt": "x"}}
     assert c.post("/api/governance/run/derive", json=bad, headers=h).status_code == 422
+
+
+def test_an_unreachable_or_missing_model_falls_back_at_once(monkeypatch) -> None:
+    """Without this check the page waited for the full derivation timeout when Ollama
+    could not be reached (seen on WSL with Ollama on the Windows side switched off)."""
+    def never(*_a, **_k):
+        raise AssertionError("the model must not be called")
+
+    monkeypatch.setattr(rm, "ollama_client", never)
+    monkeypatch.setattr(rm, "list_installed_models", lambda: None)
+    res = rm.derive_files_for_review("Summarise input/sales_q3.csv", files=FILES, agent_id="finance_bot")
+    assert res["fallback"] is True and "not running" in res["fallback_reason"]
+    assert [r["path"] for r in res["reads"]] == ["input/sales_q3.csv"]
+
+    monkeypatch.setattr(rm, "list_installed_models", lambda: ["llama3.1:8b"])
+    res = rm.derive_files_for_review("Summarise input/sales_q3.csv", files=FILES, agent_id="finance_bot",
+                                     model="qwen2.5:7b")
+    assert res["fallback"] is True and "not installed" in res["fallback_reason"]

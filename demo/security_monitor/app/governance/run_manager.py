@@ -757,6 +757,12 @@ def _run_inputs(preset_id: str | None, files: dict[str, str] | None) -> list[str
     return sorted(combined)
 
 
+def _unavailable_model(reason: str) -> Any:
+    def client(_prompt: str) -> str:
+        raise ConnectionError(reason)
+    return client
+
+
 def derive_files_for_review(
     prompt: str,
     preset_id: str | None = None,
@@ -773,7 +779,17 @@ def derive_files_for_review(
     cfg = load_agents_config().get(agent_id or "finance_bot") or {}
     chosen = model if model and model != "scripted" else (cfg.get("model") or DEFAULT_AGENT_MODEL)
     inputs = _run_inputs(preset_id, files)
-    client = llm_client or ollama_client(chosen, timeout_s=DERIVATION_TIMEOUT_S)
+    client = llm_client
+    if client is None:
+        # Check first that Ollama answers (2 s), so an unreachable model falls back at once
+        # instead of holding the page for the whole derivation timeout.
+        installed = list_installed_models()
+        if installed is None:
+            client = _unavailable_model("Ollama is not running or cannot be reached")
+        elif chosen not in installed:
+            client = _unavailable_model(f"the model {chosen} is not installed in Ollama")
+        else:
+            client = ollama_client(chosen, timeout_s=DERIVATION_TIMEOUT_S)
     b = GroundedLLMDerivation(client, available_inputs=inputs, model=chosen).derive(
         task_id="review", request_text=prompt, workspace_root="/tmp/agent_preview")
     meta = b.metadata or {}
