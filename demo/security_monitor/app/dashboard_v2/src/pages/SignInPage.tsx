@@ -6,6 +6,7 @@ import { Role } from '../types';
 import { roleHome } from '../logic/journey';
 import DotField from '../components/effects/DotField';
 import { formatCount, useCountUp } from '../hooks/useCountUp';
+import { FeatureMosaic } from '../components/landing/FeatureMosaic';
 
 interface RoleCard {
   role: Role;
@@ -175,6 +176,7 @@ export const SignInPage: React.FC = () => {
             className="hidden sm:flex flex-1 max-w-[430px] h-[clamp(44px,5.2vw,48px)] items-center justify-around rounded-full bg-white px-2 py-1 shadow-[0_4px_14px_rgba(0,0,0,0.16)]"
           >
             {navLink('#signin', 'Sign in', true)}
+            {navLink('#features', 'How it works')}
             {navLink('#results', 'Results')}
             {navLink('#roles', 'Roles')}
           </nav>
@@ -283,6 +285,14 @@ export const SignInPage: React.FC = () => {
             From our evaluation: qwen2.5:7b on one machine, our own 32-task sets, a simulated approver. Not live numbers;
             the trial records are on the Evidence page after you sign in.
           </p>
+        </section>
+
+        {/* What it does (feature mosaic) */}
+        <section aria-labelledby="features-heading" className="w-full max-w-[1180px] flex flex-col gap-4 pb-14">
+          <h2 id="features-heading" className="m-0 text-center text-[clamp(20px,2.4vw,28px)] font-semibold tracking-[-0.02em] text-white">
+            How it works
+          </h2>
+          <FeatureMosaic />
         </section>
 
         {/* Role Explanation Section */}
