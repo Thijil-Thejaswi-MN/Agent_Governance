@@ -12,7 +12,7 @@ export const LoadingState: React.FC<{ label?: string; id?: string }> = ({ label 
   >
     <span
       aria-hidden="true"
-      className="inline-block w-4 h-4 rounded-full border-2 border-[#2A3344] border-t-[#60A5FA] motion-safe:animate-spin"
+      className="inline-block w-4 h-4 rounded-full border-2 border-line-strong border-t-info motion-safe:animate-spin"
     />
     {label}
   </div>
@@ -25,7 +25,7 @@ export const EmptyState: React.FC<{
   id?: string;
 }> = ({ title, body, action, id }) => (
   <div id={id} className="card px-5 py-8 flex flex-col items-start gap-2">
-    <p className="m-0 text-[16px] font-semibold text-[#E6E9EF]">{title}</p>
+    <p className="m-0 text-[16px] font-semibold text-fg">{title}</p>
     {body && (
       <p className="m-0 text-[15px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
         {body}
@@ -40,7 +40,7 @@ export const ErrorState: React.FC<{ message: string; onRetry?: () => void; id?: 
     id={id}
     role="alert"
     className="rounded-xl px-5 py-4 flex flex-wrap items-center gap-3 text-[15px]"
-    style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', color: '#FCA5A5' }}
+    style={{ background: 'var(--bad-tint)', border: '1px solid rgba(239,68,68,0.35)', color: 'var(--bad-text)' }}
   >
     <span className="min-w-0 [overflow-wrap:anywhere]">{message}</span>
     {onRetry && (

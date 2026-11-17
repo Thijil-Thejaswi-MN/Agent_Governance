@@ -32,7 +32,7 @@ export const DetailsDrawer: React.FC<{
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="details-sheet relative h-[88vh] sm:h-full max-h-screen w-full sm:w-[640px] max-w-full overflow-y-auto overscroll-contain rounded-t-2xl sm:rounded-none border-t sm:border-t-0 sm:border-l border-[#2A3344] sm:border-[#1F2633]"
+        className="details-sheet relative h-[88vh] sm:h-full max-h-screen w-full sm:w-[640px] max-w-full overflow-y-auto overscroll-contain rounded-t-2xl sm:rounded-none border-t sm:border-t-0 sm:border-l border-line-strong sm:border-line"
         style={{ background: 'var(--card)' }}
       >
         <div className="sticky top-0 z-10 flex items-center justify-between gap-3 px-5 py-3" style={{ background: 'var(--card)', borderBottom: '1px solid var(--line)' }}>

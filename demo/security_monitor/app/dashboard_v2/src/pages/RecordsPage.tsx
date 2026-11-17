@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import { TaskRecord, ReceiptResponse, ExpansionItem } from '../types';
 import { StatCard } from '../components/stats/StatCard';
 import { decisionsLine, recordStats, recordsLine, stoppedLine } from '../logic/recordStats';
+import { PALETTE } from '../logic/palette';
 import { Download, RefreshCw, CheckCircle2, AlertCircle, FileText, ShieldX, UserCheck, FileCheck2 } from 'lucide-react';
 
 interface ChainStep {
@@ -102,13 +103,13 @@ export const RecordsPage: React.FC = () => {
         idx: 0,
         label: 'Request',
         detail: `User asked: ${selectedTask.request_text.slice(0, 48)}...`,
-        color: '#22C55E',
+        color: PALETTE.ok,
       },
       {
         idx: 1,
         label: 'Fence set',
         detail: `Workspace: ${selectedTask.workspace_root}`,
-        color: '#22C55E',
+        color: PALETTE.ok,
       },
     ];
 
@@ -117,7 +118,7 @@ export const RecordsPage: React.FC = () => {
         idx: steps.length,
         label: 'Stopped',
         detail: 'Tried to access target outside boundary',
-        color: '#EF4444',
+        color: PALETTE.bad,
       });
     }
 
@@ -125,7 +126,7 @@ export const RecordsPage: React.FC = () => {
       idx: steps.length,
       label: 'Finished',
       detail: `Status: ${selectedTask.status}`,
-      color: selectedTask.status === 'FAILED' ? '#EF4444' : '#22C55E',
+      color: selectedTask.status === 'FAILED' ? PALETTE.bad : PALETTE.ok,
     });
 
     return steps;
@@ -140,33 +141,33 @@ export const RecordsPage: React.FC = () => {
       <section className="anim-rise">
         {recordsSummary ? (
           recordsSummary.total === 0 ? (
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#8B95A7]">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-fg-3">
               No records yet.
             </h1>
           ) : recordsSummary.failed > 0 ? (
             <div className="flex flex-col gap-2">
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#EF4444]">
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-bad">
                 {recordsSummary.failed} of {recordsSummary.total} records failed the check.
               </h1>
-              <div className="text-[13px] text-[#FCA5A5] font-mono">
+              <div className="text-[13px] text-bad-text font-mono">
                 Failed runs: {recordsSummary.failed_ids.join(', ')}
               </div>
             </div>
           ) : (
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#E6E9EF]">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-fg">
               {recordsSummary.total} records. All {recordsSummary.total} checked: no entries changed.
             </h1>
           )
         ) : tasks.length === 0 ? (
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#8B95A7]">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-fg-3">
             No records yet.
           </h1>
         ) : (
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#E6E9EF]">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-fg">
             {tasks.length} records. Checking them…
           </h1>
         )}
-        <p className="text-[15px] text-[#A7B0C0] mt-1.5">
+        <p className="text-[15px] text-fg-2 mt-1.5">
           Each run keeps an ordered record where every entry is linked to the one before it, so a changed or
           missing entry shows up.
         </p>
@@ -180,7 +181,7 @@ export const RecordsPage: React.FC = () => {
           badge="Stopped at the fence"
           value={stats.stopped}
           suffix={stats.stopped === 1 ? 'action' : 'actions'}
-          tone={stats.stopped ? '#FCA5A5' : '#E6E9EF'}
+          tone={stats.stopped ? 'var(--bad-text)' : 'var(--text)'}
           sub={stoppedLine(stats)}
           about="Things an agent tried that its task did not allow, refused by the tool broker or the kernel before they happened."
           source="each run's broker and kernel counts (comparison runs left out)"
@@ -202,7 +203,7 @@ export const RecordsPage: React.FC = () => {
           badge="Records that check out"
           value={stats.verified}
           suffix={`of ${stats.checked.toLocaleString()}`}
-          tone={stats.failed ? '#FCA5A5' : stats.checked ? '#86EFAC' : '#E6E9EF'}
+          tone={stats.failed ? 'var(--bad-text)' : stats.checked ? 'var(--ok-text)' : 'var(--text)'}
           sub={recordsLine(stats)}
           about="Every entry of a run's record is linked to the one before it, and the server re-checks the whole chain."
           source="the server's check of every stored record"
@@ -213,23 +214,23 @@ export const RecordsPage: React.FC = () => {
       {/* Main Grid: Records Table (left) + Side Panel Chain (right) */}
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
         {/* Table */}
-        <div className="lg:col-span-2 p-5 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col gap-3">
+        <div className="lg:col-span-2 p-5 rounded-xl bg-surface-2 border border-line flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-[15px] font-bold text-[#E6E9EF]">Records</h2>
+            <h2 className="text-[15px] font-bold text-fg">Records</h2>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setFilterStop(!filterStop)}
                 className={`px-3 py-1.5 rounded-full text-[12px] font-semibold border cursor-pointer ${
                   filterStop
-                    ? 'bg-[#EF4444]/20 border-[#EF4444] text-[#F87171]'
-                    : 'bg-[#1A2232] border-[#2A3344] text-[#E6E9EF]'
+                    ? 'bg-bad/20 border-bad text-bad-light'
+                    : 'bg-surface-hover border-line-strong text-fg'
                 }`}
               >
                 {filterStop ? 'Showing: Has a stop' : 'Filter: Has a stop'}
               </button>
               <button
                 onClick={handleExportCSV}
-                className="px-3.5 py-1.5 rounded-lg border border-[#2A3344] bg-transparent hover:bg-[#161B26] text-[#E6E9EF] font-semibold text-[13px] flex items-center gap-1.5 cursor-pointer"
+                className="px-3.5 py-1.5 rounded-lg border border-line-strong bg-transparent hover:bg-surface-3 text-fg font-semibold text-[13px] flex items-center gap-1.5 cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
                 Export CSV
@@ -240,7 +241,7 @@ export const RecordsPage: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-[13px] border-collapse">
               <thead>
-                <tr className="border-b border-[#1F2633] text-[#8B95A7] font-medium text-[12px]">
+                <tr className="border-b border-line text-fg-3 font-medium text-[12px]">
                   <th className="pb-2.5 font-normal">Run</th>
                   <th className="pb-2.5 font-normal">Agent</th>
                   <th className="pb-2.5 font-normal">Team</th>
@@ -250,10 +251,10 @@ export const RecordsPage: React.FC = () => {
                   <th className="pb-2.5 font-normal">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#1F2633]">
+              <tbody className="divide-y divide-line">
                 {filteredTasks.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-8 text-center text-[#8B95A7]">
+                    <td colSpan={7} className="py-8 text-center text-fg-3">
                       No records found.
                     </td>
                   </tr>
@@ -266,26 +267,26 @@ export const RecordsPage: React.FC = () => {
                       key={t.task_id}
                       onClick={() => handleSelectTask(t)}
                       className={`cursor-pointer transition-colors ${
-                        isSelected ? 'bg-[#161F30]' : 'hover:bg-[#161B26]'
+                        isSelected ? 'bg-surface-active' : 'hover:bg-surface-3'
                       }`}
                     >
-                      <td className="py-2.5 font-mono text-[#93C5FD]">
+                      <td className="py-2.5 font-mono text-info-text">
                         {t.task_id.slice(0, 10)}…
                       </td>
-                      <td className="py-2.5 font-mono text-[#E6E9EF]">{t.agent_id}</td>
-                      <td className="py-2.5 text-[#A7B0C0]">{(t as any).team || 'General'}</td>
-                      <td className="py-2.5 text-[#E6E9EF] max-w-[160px] truncate">
+                      <td className="py-2.5 font-mono text-fg">{t.agent_id}</td>
+                      <td className="py-2.5 text-fg-2">{(t as any).team || 'General'}</td>
+                      <td className="py-2.5 text-fg max-w-[160px] truncate">
                         {t.request_text}
                       </td>
                       <td className="py-2.5">
                         {stops > 0 ? (
-                          <span className="text-[#F87171]">{stops} stopped</span>
+                          <span className="text-bad-light">{stops} stopped</span>
                         ) : (
-                          <span className="text-[#8B95A7]">allowed</span>
+                          <span className="text-fg-3">allowed</span>
                         )}
                       </td>
                       <td className="py-2.5">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[rgba(34,197,94,0.14)] text-[#4ADE80] text-[11px] font-semibold">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-ok/[0.14] text-ok-light text-[11px] font-semibold">
                           ✓ Record checked: no entries changed
                         </span>
                       </td>
@@ -293,7 +294,7 @@ export const RecordsPage: React.FC = () => {
                         <a
                           href={api.getRawReceiptUrl(t.task_id)}
                           download
-                          className="text-[#60A5FA] hover:text-[#93C5FD] flex items-center gap-1 text-[12px]"
+                          className="text-info hover:text-info-text flex items-center gap-1 text-[12px]"
                         >
                           <Download className="w-3.5 h-3.5" /> Download
                         </a>
@@ -308,11 +309,11 @@ export const RecordsPage: React.FC = () => {
 
         {/* Side Panel Vertical Chain */}
         {selectedTask && (
-          <aside className="p-5 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col gap-3.5 sticky top-4">
-            <div className="text-[12px] font-bold text-[#F472B6] tracking-wider uppercase">
+          <aside className="p-5 rounded-xl bg-surface-2 border border-line flex flex-col gap-3.5 sticky top-4">
+            <div className="text-[12px] font-bold text-role-auditor tracking-wider uppercase">
               RECORD · {selectedTask.task_id.slice(0, 12)}…
             </div>
-            <div className="text-[15px] font-bold text-[#E6E9EF]">
+            <div className="text-[15px] font-bold text-fg">
               {selectedTask.agent_id} · {selectedTask.request_text.slice(0, 32)}…
             </div>
 
@@ -329,13 +330,13 @@ export const RecordsPage: React.FC = () => {
                       }}
                     />
                     {idx < chainSteps.length - 1 && (
-                      <span className="w-0.5 h-8 bg-[#2A3344] my-0.5" />
+                      <span className="w-0.5 h-8 bg-line-strong my-0.5" />
                     )}
                   </div>
                   <div className="pb-2">
-                    <div className="font-semibold text-[13px] text-[#E6E9EF]">{s.label}</div>
-                    <div className="text-[12px] text-[#A7B0C0] leading-snug">{s.detail}</div>
-                    <div className="font-mono text-[10px] text-[#6B7487] mt-0.5">
+                    <div className="font-semibold text-[13px] text-fg">{s.label}</div>
+                    <div className="text-[12px] text-fg-2 leading-snug">{s.detail}</div>
+                    <div className="font-mono text-[10px] text-fg-dim mt-0.5">
                       #{s.idx} · links to #{s.idx === 0 ? '—' : s.idx - 1}
                     </div>
                   </div>
@@ -344,43 +345,43 @@ export const RecordsPage: React.FC = () => {
             </div>
 
             {/* Hash chain verification status */}
-            <div className="p-3 rounded-lg bg-[#0B0E14] border border-[#1F2633] text-[12px] flex flex-col gap-1">
-              <div className="text-[#8B95A7]">Hash chain verification:</div>
+            <div className="p-3 rounded-lg bg-bg border border-line text-[12px] flex flex-col gap-1">
+              <div className="text-fg-3">Hash chain verification:</div>
               {selectedReceipt?.available === false ? (
-                <div className="font-mono text-[11px] text-[#8B95A7]">
+                <div className="font-mono text-[11px] text-fg-3">
                   No stored receipt
                 </div>
               ) : selectedReceipt?.verified === false ? (
-                <div className="font-mono text-[11px] text-[#EF4444]">
+                <div className="font-mono text-[11px] text-bad">
                   ? Verification failed: entry changed or hash mismatch
                 </div>
               ) : (
-                <div className="font-mono text-[11px] text-[#22C55E]">
+                <div className="font-mono text-[11px] text-ok">
                   ? Hash chain verified: no entries changed
                 </div>
               )}
             </div>
 
             {/* Buttons */}
-            <div className="flex items-center gap-2 pt-2 border-t border-[#1F2633]">
+            <div className="flex items-center gap-2 pt-2 border-t border-line">
               <a
                 href={api.getRawReceiptUrl(selectedTask.task_id)}
                 download
-                className="flex-1 min-h-[36px] px-3 rounded-lg bg-[#3B82F6] hover:bg-[#2563EB] text-white font-semibold text-[13px] flex items-center justify-center gap-1.5 no-underline"
+                className="flex-1 min-h-[36px] px-3 rounded-lg bg-accent hover:bg-accent-strong text-white font-semibold text-[13px] flex items-center justify-center gap-1.5 no-underline"
               >
                 <Download className="w-4 h-4" /> Download record
               </a>
               <button
                 onClick={handleCheckAgain}
                 disabled={isChecking}
-                className="min-h-[36px] px-3 rounded-lg border border-[#2A3344] bg-transparent hover:bg-[#161B26] text-[#E6E9EF] font-semibold text-[13px] flex items-center gap-1.5 cursor-pointer"
+                className="min-h-[36px] px-3 rounded-lg border border-line-strong bg-transparent hover:bg-surface-3 text-fg font-semibold text-[13px] flex items-center gap-1.5 cursor-pointer"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isChecking ? 'animate-spin' : ''}`} />
                 Check again
               </button>
             </div>
 
-            <p className="text-[11px] text-[#6B7487] mt-1 leading-snug">
+            <p className="text-[11px] text-fg-dim mt-1 leading-snug">
               Read-only role: auditors can inspect and export records but cannot approve, deny, or alter rules.
             </p>
           </aside>

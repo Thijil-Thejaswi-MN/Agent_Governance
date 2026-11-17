@@ -4,11 +4,11 @@ import { technicalLabel } from '../../logic/plain';
 
 const verdictColor = (v: string) =>
   v === 'BLOCK_ACTION' || v === 'DENY' || v === 'BLOCKED' || v === 'FAILED'
-    ? '#FDA4AF'
+    ? 'var(--bad-verdict)'
     : v === 'PENDING'
-    ? '#FDE68A'
+    ? 'var(--wait-lighter)'
     : v === 'ALLOW' || v === 'APPROVED' || v === 'COMPLETED'
-    ? '#6EE7B7'
+    ? 'var(--ok-verdict)'
     : 'var(--text-2)';
 
 // Server timestamps are UTC ISO strings; show them as the viewer's local clock time.
@@ -37,7 +37,7 @@ export const TechnicalTimeline: React.FC<{ steps: TaskStep[] }> = ({ steps }) =>
         >
           <div className="flex flex-wrap items-center gap-2 mono text-[12px]">
             <span style={{ color: 'var(--text-3)' }}>#{step.step_number}</span>
-            <span className="px-2 py-0.5 rounded-md" style={{ background: 'rgba(34,211,238,0.1)', color: '#A5F3FC' }}>
+            <span className="px-2 py-0.5 rounded-md" style={{ background: 'rgba(34,211,238,0.1)', color: 'var(--source-text)' }}>
               {technicalLabel(step.source_label, step.layer)}
             </span>
             <span style={{ color: verdictColor(step.verdict) }}>{step.verdict}</span>
@@ -97,7 +97,7 @@ export const EventTable: React.FC<{ events: TaskEvent[] }> = ({ events }) => {
               <td className="py-1.5 pr-3">{ev.source}</td>
               <td className="py-1.5 pr-3">{ev.kind}</td>
               <td className="py-1.5 pr-3 [overflow-wrap:anywhere]">{ev.target}</td>
-              <td className="py-1.5 pr-3" style={{ color: ev.prevented ? '#FDA4AF' : ev.verdict === 'INSIDE' ? '#6EE7B7' : 'var(--text)' }}>
+              <td className="py-1.5 pr-3" style={{ color: ev.prevented ? 'var(--bad-verdict)' : ev.verdict === 'INSIDE' ? 'var(--ok-verdict)' : 'var(--text)' }}>
                 {ev.verdict}
                 {ev.prevented ? ' (prevented)' : ''}
               </td>

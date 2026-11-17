@@ -6,37 +6,190 @@
 @layer base {
   :root {
     color-scheme: dark;
-    --bg: #0B0E14;
-    --sidebar: #0E121A;
-    --card: #11151D;
-    --card-hover: #161B26;
-    --border: #1F2633;
-    --border-strong: #2A3344;
-    --text: #E6E9EF;
-    --text-secondary: #A7B0C0;
-    --text-muted: #8B95A7;
-    --accent: #3B82F6;
-    --allowed: #22C55E;
-    --waiting: #F59E0B;
-    --stopped: #EF4444;
 
-    /* Names the developer pages (console v3) still use, mapped onto the v4 palette.
-       --cyan and --blocked keep their v3 values: only the fence picture uses them, and it
-       stays exactly as it was. */
-    --text-2: #A7B0C0;
-    --text-3: #8B95A7;
+    /* Surfaces */
+    --bg-rgb: 11 14 20;
+    --bg: #0B0E14;
+
+    --surface-1-rgb: 14 18 26;
+    --surface-1: #0E121A;
+
+    --surface-2-rgb: 17 21 29;
+    --surface-2: #11151D;
+
+    --surface-3-rgb: 22 27 38;
+    --surface-3: #161B26;
+
+    --surface-hover-rgb: 26 34 50;
+    --surface-hover: #1A2232;
+
+    --surface-active-rgb: 22 31 48;
+    --surface-active: #161F30;
+
+    --surface-terminal-rgb: 11 15 23;
+    --surface-terminal: #0B0F17;
+
+    /* Lines & Borders */
+    --line-rgb: 31 38 51;
     --line: #1F2633;
-    --card-2: #161B26;
-    --field: #0E121A;
-    --cyan: #22D3EE;
+
+    --line-strong-rgb: 42 51 68;
+    --line-strong: #2A3344;
+
+    /* Foreground / Text */
+    --text-rgb: 230 233 239;
+    --text: #E6E9EF;
+
+    --text-2-rgb: 167 176 192;
+    --text-2: #A7B0C0;
+
+    --text-3-rgb: 139 149 167;
+    --text-3: #8B95A7;
+
+    --text-dim-rgb: 107 116 135;
+    --text-dim: #6B7487;
+
+    /* Accents */
+    --accent-rgb: 59 130 246;
+    --accent: #3B82F6;
+
+    --accent-strong-rgb: 37 99 235;
+    --accent-strong: #2563EB;
+
+    --accent-deep-rgb: 29 78 216;
+    --accent-deep: #1D4ED8;
+
+    /* Status: OK / Allowed */
+    --ok-rgb: 34 197 94;
+    --ok: #22C55E;
+
+    --ok-text-rgb: 134 239 172;
+    --ok-text: #86EFAC;
+
+    --ok-light-rgb: 74 222 128;
+    --ok-light: #4ADE80;
+
+    --ok-lighter-rgb: 187 247 208;
+    --ok-lighter: #BBF7D0;
+
+    --ok-verdict-rgb: 110 231 183;
+    --ok-verdict: #6EE7B7;
+
+    --ok-strong-rgb: 22 163 74;
+    --ok-strong: #16A34A;
+
+    /* Status: Bad / Blocked */
+    --bad-rgb: 239 68 68;
+    --bad: #EF4444;
+
+    --bad-text-rgb: 252 165 165;
+    --bad-text: #FCA5A5;
+
+    --bad-light-rgb: 248 113 113;
+    --bad-light: #F87171;
+
+    --bad-lighter-rgb: 254 202 202;
+    --bad-lighter: #FECACA;
+
+    --bad-verdict-rgb: 253 164 175;
+    --bad-verdict: #FDA4AF;
+
+    --bad-strong-rgb: 220 38 38;
+    --bad-strong: #DC2626;
+
+    /* Status: Wait / Warning */
+    --wait-rgb: 245 158 11;
+    --wait: #F59E0B;
+
+    --wait-text-rgb: 252 211 77;
+    --wait-text: #FCD34D;
+
+    --wait-kpi-rgb: 251 191 36;
+    --wait-kpi: #FBBF24;
+
+    --wait-lighter-rgb: 253 230 138;
+    --wait-lighter: #FDE68A;
+
+    --wait-line-rgb: 58 46 18;
+    --wait-line: #3A2E12;
+
+    --wait-badge-text: #1A1203;
+
+    /* Status: Info */
+    --info-rgb: 96 165 250;
+    --info: #60A5FA;
+
+    --info-text-rgb: 147 197 253;
+    --info-text: #93C5FD;
+
+    --info-lighter-rgb: 191 219 254;
+    --info-lighter: #BFDBFE;
+
+    --source-text-rgb: 165 243 252;
+    --source-text: #A5F3FC;
+
+    /* Foreground soft */
+    --text-soft-rgb: 203 213 225;
+    --text-soft: #CBD5E1;
+
+    /* Surfaces extra */
+    --surface-terminal-alt: #0B0F16;
+    --surface-nav-hover: #141A24;
+    --surface-table-hover: #121826;
+    --surface-dark-alt: #0F1520;
+    --surface-dark-slate: #111827;
+    --surface-slate-800: #1E293B;
+    --surface-slate-900: #0F172A;
+    --line-slate: #334155;
+
+    /* Actions & Blocked */
+    --role-admin-contrast: #04130F;
+    --rule-action: #7C3AED;
+    --rule-action-hover: #6D28D9;
+    --blocked-rgb: 251 113 133;
     --blocked: #FB7185;
+    --blocked-text: #FECDD3;
+
+    /* Tints */
+    --ok-tint: rgba(34, 197, 94, 0.12);
+    --bad-tint: rgba(239, 68, 68, 0.12);
+    --wait-tint: rgba(245, 158, 11, 0.12);
+    --info-tint: rgba(96, 165, 250, 0.12);
+    --accent-tint: rgba(59, 130, 246, 0.12);
 
     /* Role colours */
+    --role-developer-rgb: 96 165 250;
     --role-developer: #60A5FA;
+
+    --role-team-lead-rgb: 167 139 250;
     --role-team-lead: #A78BFA;
+
+    --role-security-reviewer-rgb: 251 191 36;
     --role-security-reviewer: #FBBF24;
+
+    --role-admin-rgb: 52 211 153;
     --role-admin: #34D399;
+
+    --role-auditor-rgb: 244 114 182;
     --role-auditor: #F472B6;
+
+    /* Aliases for backwards compatibility */
+    --sidebar: var(--surface-1);
+    --card: var(--surface-2);
+    --card-hover: var(--surface-3);
+    --card-2: var(--surface-3);
+    --field: var(--surface-1);
+    --border: var(--line);
+    --border-strong: var(--line-strong);
+    --text-secondary: var(--text-2);
+    --text-muted: var(--text-3);
+    --allowed: var(--ok);
+    --stopped: var(--bad);
+    --waiting: var(--wait);
+    --cyan: #22D3EE;
+    --slate-500: #64748B;
+    --indigo-light: #C7D2FE;
+    --blocked: #FB7185;
   }
 
   html,

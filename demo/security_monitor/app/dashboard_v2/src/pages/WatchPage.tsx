@@ -116,7 +116,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
 
   return (
     <div className="max-w-[1280px]">
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-5 border-b border-[#1F2633]">
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-5 border-b border-line">
         {readOnly ? (
           <ol aria-label="Progress" className="flex flex-wrap items-center gap-2.5 text-[14px] list-none p-0 m-0 min-h-[44px]" style={{ color: 'var(--text-3)' }}>
             <li>
@@ -132,7 +132,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
             onClick={requireToken(run.stop)}
             disabled={run.state === 'stopping'}
             className="btn-ghost min-h-[44px] sm:min-h-[40px]"
-            style={{ borderColor: 'rgba(239,68,68,0.5)', color: '#FCA5A5' }}
+            style={{ borderColor: 'rgb(var(--bad-rgb) / 0.5)', color: 'var(--bad-text)' }}
           >
             <Square className="w-4 h-4" />
             {run.state === 'stopping' ? 'Stopping…' : 'Stop'}
@@ -144,9 +144,9 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
         <div
           id="comparison-run-banner"
           role="status"
-          className="mt-4 px-4 py-3 rounded-xl border border-[#F59E0B]/40 bg-[rgba(245,158,11,0.10)] text-[#FBBF24] text-[15px] font-medium flex items-center gap-2.5"
+          className="mt-4 px-4 py-3 rounded-xl border border-wait/40 bg-wait-tint text-wait-kpi text-[15px] font-medium flex items-center gap-2.5"
         >
-          <AlertTriangle className="w-5 h-5 shrink-0 text-[#F59E0B]" />
+          <AlertTriangle className="w-5 h-5 shrink-0 text-wait" />
           <span>Comparison run: kernel lock off, for demonstration</span>
         </div>
       )}
@@ -174,7 +174,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
             id="run-status"
             data-state={run.state}
             aria-live="polite"
-            className="m-0 font-display font-bold text-[28px] sm:text-[36px] leading-[1.15] text-[#E6E9EF]"
+            className="m-0 font-display font-bold text-[28px] sm:text-[36px] leading-[1.15] text-fg"
           >
             {sentence}
           </h1>
@@ -208,7 +208,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
 
           {terminal && outputs.length > 0 && (
             <div
-              className="card p-5 cursor-pointer hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2563EB]"
+              className="card p-5 cursor-pointer hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-strong"
               id="output-preview"
               role="button"
               tabIndex={0}
@@ -243,7 +243,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
               className="m-0 text-[15px] leading-relaxed"
               id="private-check"
               data-result={run.privateCheck}
-              style={{ color: run.privateCheck === 'leaked' ? '#FCA5A5' : '#86EFAC' }}
+              style={{ color: run.privateCheck === 'leaked' ? 'var(--bad-text)' : 'var(--ok-text)' }}
             >
               {run.privateCheck === 'leaked'
                 ? 'Private file check: the output contains the private file’s unique code, so its content got out.'
@@ -264,9 +264,9 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
                 className="inline-flex items-center gap-2 min-h-[44px] px-4 rounded-lg text-[14px] font-semibold"
                 style={
                   record.tone === 'ok'
-                    ? { background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.45)', color: '#86EFAC' }
+                    ? { background: 'var(--ok-tint)', border: '1px solid rgb(var(--ok-rgb) / 0.45)', color: 'var(--ok-text)' }
                     : record.tone === 'bad'
-                    ? { background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.5)', color: '#FECACA' }
+                    ? { background: 'var(--bad-tint)', border: '1px solid rgb(var(--bad-rgb) / 0.5)', color: 'var(--bad-lighter)' }
                     : { border: '1px solid var(--border-strong)', color: 'var(--text-2)' }
                 }
               >
@@ -283,13 +283,13 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
           )}
 
           {run.decisionNote && !run.pending && (
-            <p id="decision-note" role="status" className="m-0 text-[15px] leading-relaxed" style={{ color: '#BBF7D0' }}>
+            <p id="decision-note" role="status" className="m-0 text-[15px] leading-relaxed" style={{ color: 'var(--ok-lighter)' }}>
               {run.decisionNote}
             </p>
           )}
 
           {run.actionError && (
-            <div id="action-error" role="alert" className="px-4 py-3 rounded-xl text-[15px]" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.45)', color: '#FECACA' }}>
+            <div id="action-error" role="alert" className="px-4 py-3 rounded-xl text-[15px]" style={{ background: 'var(--bad-tint)', border: '1px solid rgb(var(--bad-rgb) / 0.45)', color: 'var(--bad-lighter)' }}>
               {run.actionError}
             </div>
           )}
@@ -511,7 +511,7 @@ export function FileView({ file, pointsTo, privateCheck }: { file: RunFile; poin
         {lines.map((l, i) => {
           const m = marks(l);
           return m.length ? (
-            <span key={i} data-hidden-note="true" style={{ display: 'block', background: 'rgba(251,113,133,0.16)', color: '#FECDD3', borderLeft: '3px solid #FB7185', paddingLeft: 8 }}>
+            <span key={i} data-hidden-note="true" style={{ display: 'block', background: 'rgba(251,113,133,0.16)', color: 'var(--blocked-text)', borderLeft: '3px solid var(--blocked)', paddingLeft: 8 }}>
               {l}
             </span>
           ) : (

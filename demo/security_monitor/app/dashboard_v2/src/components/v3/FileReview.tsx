@@ -37,7 +37,7 @@ export const FileReview: React.FC<{
   if (result.fallback) {
     return (
       <div id="file-review" className="flex flex-col gap-1.5 text-[14px]" style={{ color: 'var(--text-2)' }}>
-        <span id="file-review-fallback" style={{ color: '#FBBF24' }}>
+        <span id="file-review-fallback" style={{ color: 'var(--wait-kpi)' }}>
           {agentName}'s model ({result.model}) could not be asked, so only the files your request names are allowed.
         </span>
         {result.fallback_reason && <span className="mono text-[12px]" style={{ color: 'var(--text-3)' }}>{result.fallback_reason}</span>}
@@ -46,8 +46,8 @@ export const FileReview: React.FC<{
   }
   const inferred = result.reads.filter(r => !r.named).length;
   return (
-    <div id="file-review" className="flex flex-col gap-2 rounded-xl px-4 py-3 border border-[#1F2633] bg-[#0E121A]">
-      <span className="text-[14px] font-semibold" style={{ color: '#E6E9EF' }}>
+    <div id="file-review" className="flex flex-col gap-2 rounded-xl px-4 py-3 border border-line bg-surface-1">
+      <span className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>
         {result.reads.length === 0
           ? `${agentName}'s model (${result.model}) says this task needs none of its files.`
           : `${agentName}'s model (${result.model}) chose these files. Untick any it should not read.`}
@@ -58,11 +58,11 @@ export const FileReview: React.FC<{
             type="checkbox"
             checked={kept.includes(r.path)}
             onChange={() => onToggle(r.path)}
-            className="rounded border-[#2A3344] bg-[#0E121A]"
+            className="rounded border-line-strong bg-surface-1"
             id={`review-read-${fileName(r.path)}`}
           />
-          <span className="mono" style={{ color: '#E6E9EF' }}>{fileName(r.path)}</span>
-          <span style={{ color: r.named ? 'var(--text-3)' : '#FBBF24' }}>
+          <span className="mono" style={{ color: 'var(--text)' }}>{fileName(r.path)}</span>
+          <span style={{ color: r.named ? 'var(--text-3)' : 'var(--wait-kpi)' }}>
             {r.named ? 'named in your request' : 'chosen by the model: check it'}
           </span>
         </label>

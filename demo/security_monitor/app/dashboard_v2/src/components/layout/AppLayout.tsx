@@ -10,6 +10,7 @@ import { onCountsRefresh } from '../../logic/countsRefresh';
 import { readCollapsed, safeLocalStorage, writeCollapsed } from '../../logic/sidebarState';
 
 import { PROTECTED_PATHS, isProtectedPath } from '../../logic/protectedPaths';
+import { PALETTE } from '../../logic/palette';
 
 export { PROTECTED_PATHS, isProtectedPath };
 
@@ -84,9 +85,9 @@ export const AppLayout: React.FC = () => {
 
   if (isSignInPage) {
     return (
-      <div className="min-h-screen bg-[#0B0E14] text-[#E6E9EF]">
+      <div className="min-h-screen bg-bg text-fg">
         {isDemoDataActive && (
-          <div className="bg-[#EF4444] text-white text-[12px] font-bold text-center py-1 select-none tracking-wide z-50">
+          <div className="bg-bad text-white text-[12px] font-bold text-center py-1 select-none tracking-wide z-50">
             Demo data: not real activity
           </div>
         )}
@@ -108,23 +109,23 @@ export const AppLayout: React.FC = () => {
   );
 
   return (
-    <div className="relative min-h-screen bg-[#0B0E14] text-[#E6E9EF] flex flex-col font-sans overflow-x-clip">
+    <div className="relative min-h-screen bg-bg text-fg flex flex-col font-sans overflow-x-clip">
       {/* Demo Data Banner when active */}
       {isDemoDataActive && (
-        <div className="bg-[#EF4444] text-white text-[12px] font-bold text-center py-1 select-none tracking-wide z-50">
+        <div className="bg-bad text-white text-[12px] font-bold text-center py-1 select-none tracking-wide z-50">
           Demo data: not real activity
         </div>
       )}
 
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:px-4 focus:py-2 focus:rounded-xl focus:bg-[#11151D] focus:text-[#E6E9EF] focus:border focus:border-[#3B82F6]"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:px-4 focus:py-2 focus:rounded-xl focus:bg-surface-2 focus:text-fg focus:border focus:border-accent"
       >
         Skip to content
       </a>
 
       {/* A small spark where you click (React Bits ClickSpark); a short still burst with reduced motion. */}
-      <ClickSpark sparkColor={['#60A5FA', '#93C5FD']} sparkCount={8} sparkSize={9} sparkRadius={20} duration={420} className="flex flex-1 flex-col" style={{ height: 'auto' }}>
+      <ClickSpark sparkColor={[PALETTE.info, PALETTE.infoText]} sparkCount={8} sparkSize={9} sparkRadius={20} duration={420} className="flex flex-1 flex-col" style={{ height: 'auto' }}>
       <div className="flex flex-1 min-h-screen">
         <Sidebar
           waitingCount={waitingCount}

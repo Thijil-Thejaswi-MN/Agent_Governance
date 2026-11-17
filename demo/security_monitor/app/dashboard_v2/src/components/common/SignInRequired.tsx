@@ -16,7 +16,7 @@ export const SignInRequired: React.FC = () => {
         Tasks, prompts, events, receipts and outputs are only served to an authenticated operator.
       </p>
       {isConfigured === false ? (
-        <p className="text-[14px]" style={{ color: '#FDE68A' }}>
+        <p className="text-[14px] text-wait-lighter">
           The server has no <code>GOVERNANCE_OPERATOR_TOKEN</code> set, so nobody can sign in. Set it and restart the server.
         </p>
       ) : (

@@ -38,9 +38,9 @@ export const GrantList: React.FC<{
         Allowed during this run
       </span>
       {grants.map(g => (
-        <div key={g.request_id} className="flex items-center gap-3 rounded-xl px-3 py-2 border border-[#1F2633] bg-[#0E121A]">
+        <div key={g.request_id} className="flex items-center gap-3 rounded-xl px-3 py-2 border border-line bg-surface-1">
           <span className="flex-1 min-w-0 text-[14px]" style={{ color: 'var(--text-2)' }}>
-            <span className="mono [overflow-wrap:anywhere]" style={{ color: '#E6E9EF' }}>
+            <span className="mono [overflow-wrap:anywhere]" style={{ color: 'var(--text)' }}>
               {g.resource_type === 'file_read' ? fileName(g.resource_target) : g.resource_target}
             </span>
             {` · ${KIND[g.resource_type] || 'extra access'}`}
@@ -52,7 +52,7 @@ export const GrantList: React.FC<{
             disabled={deciding}
             onClick={() => onCancel(g.request_id)}
             className="btn-ghost min-h-[40px] px-3 disabled:opacity-50"
-            style={{ borderColor: 'rgba(239,68,68,0.5)', color: '#FCA5A5' }}
+            style={{ borderColor: 'rgb(var(--bad-rgb) / 0.5)', color: 'var(--bad-text)' }}
             title="Take this access back now. The agent cannot open it again in this run."
           >
             Cancel access

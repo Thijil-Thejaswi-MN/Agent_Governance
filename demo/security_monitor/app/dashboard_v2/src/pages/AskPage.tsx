@@ -233,34 +233,34 @@ export const AskPage: React.FC = () => {
   return (
     <div className="max-w-[820px] flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-[#E6E9EF]">What should the agent do?</h1>
-        <p className="m-0 text-[16px] text-[#A7B0C0]">
+        <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-fg">What should the agent do?</h1>
+        <p className="m-0 text-[16px] text-fg-2">
           It can only touch what your request needs. Anything else is blocked, or you decide.
         </p>
       </div>
 
       {activeCount >= 3 ? (
-        <div id="active-run-banner" className="w-full px-4 py-3 rounded-xl text-[15px] text-left text-[#F59E0B] bg-[rgba(245,158,11,0.10)] border border-[rgba(245,158,11,0.45)]">
+        <div id="active-run-banner" className="w-full px-4 py-3 rounded-xl text-[15px] text-left text-wait bg-wait/10 border border-wait/45">
           Maximum concurrent runs reached (3 active runs). Please wait for an active run to complete.
         </div>
       ) : activeCount > 0 ? (
-        <div id="active-run-banner" className="w-full px-4 py-3 rounded-xl text-[15px] text-left text-[#E6E9EF] bg-[rgba(59,130,246,0.10)] border border-[rgba(59,130,246,0.45)] flex items-center justify-between">
+        <div id="active-run-banner" className="w-full px-4 py-3 rounded-xl text-[15px] text-left text-fg bg-accent/10 border border-accent/45 flex items-center justify-between">
           <span>{activeCount} agent(s) currently working ({3 - activeCount} slot(s) available).</span>
           <div className="flex items-center gap-2">
             {activeTasks.length > 0 ? (
               activeTasks.map(t => (
-                <Link key={t.task_id} to={`/run/${t.task_id}`} className="text-[#3B82F6] hover:underline font-mono text-[13px]">
+                <Link key={t.task_id} to={`/run/${t.task_id}`} className="text-accent hover:underline font-mono text-[13px]">
                   Watch {t.agent_id || t.task_id.slice(0, 8)}
                 </Link>
               ))
             ) : (
-              activeTask && <Link to={`/run/${activeTask}`} className="text-[#3B82F6] hover:underline font-mono text-[13px]">Watch active run</Link>
+              activeTask && <Link to={`/run/${activeTask}`} className="text-accent hover:underline font-mono text-[13px]">Watch active run</Link>
             )}
           </div>
         </div>
       ) : null}
 
-      <div className="card w-full flex flex-col gap-3 p-3 sm:p-4 text-left border-[#2A3344] focus-within:border-[#3B82F6] transition-colors">
+      <div className="card w-full flex flex-col gap-3 p-3 sm:p-4 text-left border-line-strong focus-within:border-accent transition-colors">
         <label htmlFor="prompt-input" className="sr-only">
           Your request
         </label>
@@ -270,18 +270,18 @@ export const AskPage: React.FC = () => {
           value={prompt}
           onChange={e => setPrompt(e.target.value)}
           placeholder="For example: read sales_data.csv and write a short summary."
-          className="w-full resize-none border-none outline-none bg-transparent text-[16px] sm:text-[17px] leading-normal p-2 text-[#E6E9EF] placeholder-[#6B7487]"
+          className="w-full resize-none border-none outline-none bg-transparent text-[16px] sm:text-[17px] leading-normal p-2 text-fg placeholder-fg-dim"
         />
-        <div className="flex flex-wrap items-center justify-between gap-3 px-1 pt-3 border-t border-[#1F2633]">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-1 pt-3 border-t border-line">
           <div className="flex flex-wrap items-center gap-4">
             <AgentSelector agents={agents} value={agentId} onChange={setAgentId} />
-            <label className="flex items-center gap-2 text-[14px] text-[#A7B0C0]">
+            <label className="flex items-center gap-2 text-[14px] text-fg-2">
               Model
               <select
                 id="model-selector"
                 value={modelOverride}
                 onChange={e => setModelOverride(e.target.value)}
-                className="min-h-[44px] sm:min-h-[40px] px-3 rounded-lg text-[14px] outline-none bg-[#0E121A] text-[#E6E9EF] border border-[#2A3344] focus:border-[#3B82F6]"
+                className="min-h-[44px] sm:min-h-[40px] px-3 rounded-lg text-[14px] outline-none bg-surface-1 text-fg border border-line-strong focus:border-accent"
               >
                 <option value="">
                   {agentModelMissing
@@ -300,7 +300,7 @@ export const AskPage: React.FC = () => {
               </select>
             </label>
             {missingTools.length > 0 && (
-      <p className="basis-full m-0 text-[13px] leading-relaxed" id="agent-tools-missing" style={{ color: '#FBBF24' }}>
+      <p className="basis-full m-0 text-[13px] leading-relaxed" id="agent-tools-missing" style={{ color: 'var(--wait-kpi)' }}>
         This example needs <span className="mono">{missingTools.join(', ')}</span>, which {chosenAgent?.name} may not call, so
         that step will be refused. Pick {presetAgent && presetAgent.id !== chosenAgent?.id ? presetAgent.name : 'an agent with that tool'} to run it, or keep {chosenAgent?.name} to show the refusal.
       </p>
@@ -308,7 +308,7 @@ export const AskPage: React.FC = () => {
     <AgentModelNote agent={chosenAgent} model={effectiveModel} overridden={!!runModel} missing={agentModelMissing} ollamaReachable={ollamaReachable} />
             {role === 'admin' && (
               <label
-                className={`flex items-center gap-2 text-[13px] text-[#FBBF24] ${canCompare ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}
+                className={`flex items-center gap-2 text-[13px] text-wait-kpi ${canCompare ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}
                 title={canCompare ? undefined : 'Pick one of the "A file tries to trick the agent" examples to compare'}
               >
                 <input
@@ -320,10 +320,10 @@ export const AskPage: React.FC = () => {
                     setComparisonMode(e.target.checked);
                     setError(null);
                   }}
-                  className="rounded border-[#F59E0B]/40 bg-[#0E121A] text-[#F59E0B] focus:ring-[#F59E0B]"
+                  className="rounded border-wait/40 bg-surface-1 text-wait focus:ring-wait"
                 />
                 <span>Comparison mode: kernel lock off, for demonstration</span>
-                {!canCompare && <span className="text-[#8B95A7]">(only for the trick examples)</span>}
+                {!canCompare && <span className="text-fg-3">(only for the trick examples)</span>}
               </label>
             )}
           </div>
@@ -338,7 +338,7 @@ export const AskPage: React.FC = () => {
             id="model-chooses-toggle"
             checked={modelChooses}
             onChange={e => setModelChooses(e.target.checked)}
-            className="rounded border-[#2A3344] bg-[#0E121A]"
+            className="rounded border-line-strong bg-surface-1"
           />
           <span>
             Let {chosenAgent?.name || 'the agent'}'s model choose which files it needs (you check them before Start)
@@ -350,7 +350,7 @@ export const AskPage: React.FC = () => {
               {reviewing ? 'Asking the model…' : 'Ask the model'}
             </button>
             {reviewError && (
-              <span id="file-review-error" className="text-[14px]" style={{ color: '#FCA5A5' }}>
+              <span id="file-review-error" className="text-[14px]" style={{ color: 'var(--bad-text)' }}>
                 {reviewError}
               </span>
             )}
@@ -367,8 +367,8 @@ export const AskPage: React.FC = () => {
       </div>
 
       {preview && !(modelChooses && review) && (reads.length > 0 || writes.length > 0) && (
-        <p id="allow-preview" className="m-0 text-[15px] text-[#A7B0C0] flex items-start gap-2">
-          <span aria-hidden="true" className="mt-[7px] inline-block w-2 h-2 rounded-[3px] bg-[#22C55E] flex-none" />
+        <p id="allow-preview" className="m-0 text-[15px] text-fg-2 flex items-start gap-2">
+          <span aria-hidden="true" className="mt-[7px] inline-block w-2 h-2 rounded-[3px] bg-ok flex-none" />
           <span>
             {reads.length > 0 && <>It will be able to read {joinNames(reads)}</>}
             {reads.length > 0 && writes.length > 0 && ' and '}
@@ -378,15 +378,15 @@ export const AskPage: React.FC = () => {
       )}
 
       {error && (
-        <div id="run-error" role="alert" className="w-full text-left px-4 py-4 rounded-xl bg-[rgba(239,68,68,0.08)] border border-[rgba(239,68,68,0.45)] text-[#FECACA]">
+        <div id="run-error" role="alert" className="w-full text-left px-4 py-4 rounded-xl bg-bad/[0.08] border border-bad/45 text-bad-lighter">
           <div className="font-semibold text-[16px]">
             {problems.length > 0 ? "This computer can't run a fenced agent right now." : 'The run could not start.'}
           </div>
           <details className="mt-2" data-details>
-            <summary className="cursor-pointer text-[14px] min-h-[32px] text-[#FCA5A5]">
+            <summary className="cursor-pointer text-[14px] min-h-[32px] text-bad-text">
               Details
             </summary>
-            <div className="mt-2 mono text-[13px] space-y-1 text-[#FECACA]">
+            <div className="mt-2 mono text-[13px] space-y-1 text-bad-lighter">
               <div>{error}</div>
               {problems.length > 0 && (
                 <ul className="list-disc pl-5 m-0">
@@ -402,7 +402,7 @@ export const AskPage: React.FC = () => {
 
       <PresetGroups presets={presets} agents={agents} presetId={presetId} agentId={agentId} onChoose={choosePreset} />
 
-      <div className="text-[14px] flex flex-wrap items-center gap-x-4 gap-y-1 text-[#8B95A7]">
+      <div className="text-[14px] flex flex-wrap items-center gap-x-4 gap-y-1 text-fg-3">
         {fileNames.length > 0 ? <span id="attached-files">Files given to the agent: {joinNames(fileNames)}.</span> : <span>No files given to the agent.</span>}
         {(Object.keys(files).length < MAX_FILES || showAddFile) && (
           <button className="link-btn text-[14px]" onClick={() => setShowAddFile(v => !v)} aria-expanded={showAddFile}>
@@ -421,31 +421,31 @@ export const AskPage: React.FC = () => {
           <FileDrop files={files} onFilesChange={setFiles} />
 
           <div className="relative flex items-center py-1">
-            <div className="flex-grow border-t border-[#2A3344]"></div>
-            <span className="flex-shrink mx-4 text-[12px] uppercase tracking-wider text-[#8B95A7]">
+            <div className="flex-grow border-t border-line-strong"></div>
+            <span className="flex-shrink mx-4 text-[12px] uppercase tracking-wider text-fg-3">
               or paste text
             </span>
-            <div className="flex-grow border-t border-[#2A3344]"></div>
+            <div className="flex-grow border-t border-line-strong"></div>
           </div>
 
-          <label className="block text-[14px] text-[#A7B0C0]">
+          <label className="block text-[14px] text-fg-2">
             File name
             <input
               value={newPath}
               onChange={e => setNewPath(e.target.value)}
-              className="mt-1 w-full min-h-[44px] px-3 rounded-lg mono text-[14px] outline-none bg-[#0E121A] text-[#E6E9EF] border border-[#2A3344] focus:border-[#3B82F6]"
+              className="mt-1 w-full min-h-[44px] px-3 rounded-lg mono text-[14px] outline-none bg-surface-1 text-fg border border-line-strong focus:border-accent"
             />
           </label>
-          <label className="block text-[14px] text-[#A7B0C0]">
+          <label className="block text-[14px] text-fg-2">
             Text (up to 50 KB)
             <textarea
               rows={4}
               value={newContent}
               onChange={e => setNewContent(e.target.value)}
-              className="mt-1 w-full px-3 py-2 rounded-lg mono text-[13px] outline-none bg-[#0E121A] text-[#E6E9EF] border border-[#2A3344] focus:border-[#3B82F6]"
+              className="mt-1 w-full px-3 py-2 rounded-lg mono text-[13px] outline-none bg-surface-1 text-fg border border-line-strong focus:border-accent"
             />
           </label>
-          {fileError && <div className="text-[14px] text-[#FCA5A5]">{fileError}</div>}
+          {fileError && <div className="text-[14px] text-bad-text">{fileError}</div>}
           <button className="btn-ghost min-h-[44px] sm:min-h-[40px]" onClick={addFile}>
             Add file
           </button>
@@ -476,13 +476,13 @@ export function PresetGroups({
   const running = agents.find(a => a.id === agentId);
   return (
     <div className="flex flex-col gap-3" id="preset-groups">
-      <span className="text-[13px] font-semibold uppercase tracking-wider text-[#8B95A7]">Try a job:</span>
+      <span className="text-[13px] font-semibold uppercase tracking-wider text-fg-3">Try a job:</span>
       {groups.map(g => (
         <div key={g.agent?.id || 'other'} className="flex flex-col gap-1.5" data-preset-group={g.agent?.id || 'other'}>
-          <span className="text-[13px] text-[#A7B0C0]">
+          <span className="text-[13px] text-fg-2">
             {g.agent ? (
               <>
-                <span className="font-semibold text-[#E6E9EF]">{g.agent.name}</span>
+                <span className="font-semibold text-fg">{g.agent.name}</span>
                 {g.agent.team ? ` · ${g.agent.team} team` : ''}
                 {g.agent.description ? ` · ${g.agent.description}` : ''}
               </>
@@ -500,8 +500,8 @@ export function PresetGroups({
                 onClick={() => onChoose(p)}
                 className={`min-h-[44px] sm:min-h-[40px] px-4 rounded-lg text-[14px] cursor-pointer transition-colors border ${
                   presetId === p.id
-                    ? 'border-[#3B82F6] bg-[rgba(59,130,246,0.14)] text-[#E6E9EF] font-semibold'
-                    : 'border-[#2A3344] bg-[#11151D] text-[#A7B0C0] hover:text-[#E6E9EF] hover:border-[#3B82F6]'
+                    ? 'border-accent bg-accent/[0.14] text-fg font-semibold'
+                    : 'border-line-strong bg-surface-2 text-fg-2 hover:text-fg hover:border-accent'
                 }`}
               >
                 {PRESET_LABELS[p.id] || p.name}
@@ -511,7 +511,7 @@ export function PresetGroups({
         </div>
       ))}
       {jobOf && (
-        <p id="preset-agent" className="m-0 text-[14px] text-[#A7B0C0]">
+        <p id="preset-agent" className="m-0 text-[14px] text-fg-2">
           {running && running.id !== jobOf.id
             ? `This is ${jobOf.name}'s job (${jobOf.team || 'its'} team); ${running.name} is running it instead, with ${running.name}'s own tool limit.`
             : `A job for ${jobOf.name}${jobOf.owner ? `, owned by ${jobOf.owner}` : ''}${jobOf.team ? ` (${jobOf.team} team)` : ''}.`}
@@ -542,13 +542,13 @@ export function AgentSelector({
   onChange: (id: string) => void;
 }) {
   return (
-    <label className="flex items-center gap-2 text-[14px] text-[#A7B0C0]">
+    <label className="flex items-center gap-2 text-[14px] text-fg-2">
       Agent
       <select
         id="agent-selector"
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="min-h-[44px] sm:min-h-[40px] px-3 rounded-lg text-[14px] outline-none bg-[#0E121A] text-[#E6E9EF] border border-[#2A3344] focus:border-[#3B82F6]"
+        className="min-h-[44px] sm:min-h-[40px] px-3 rounded-lg text-[14px] outline-none bg-surface-1 text-fg border border-line-strong focus:border-accent"
       >
         {agents.map(a => (
           <option key={a.id} value={a.id}>
@@ -588,13 +588,13 @@ const AgentModelNote: React.FC<{
       </span>
     )}
     {missing && (
-      <span id="agent-model-missing" style={{ color: '#FBBF24' }}>
+      <span id="agent-model-missing" style={{ color: 'var(--wait-kpi)' }}>
         {agent?.model} is not available here, so this run will use the scripted steps. Start Ollama, or install the model
         with <span className="mono">ollama pull {agent?.model}</span>.
       </span>
     )}
     {!ollamaReachable && (
-      <span id="ollama-unreachable" style={{ color: '#FBBF24' }}>
+      <span id="ollama-unreachable" style={{ color: 'var(--wait-kpi)' }}>
         Ollama is not running, so only the scripted agent is available. Start Ollama and reload this page.
       </span>
     )}

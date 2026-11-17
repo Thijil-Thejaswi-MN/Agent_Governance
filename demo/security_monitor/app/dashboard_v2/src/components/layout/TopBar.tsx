@@ -42,7 +42,7 @@ export const TopBar: React.FC<TopBarProps> = ({ breadcrumb, activeAgentsCount = 
   };
 
   return (
-    <header data-topbar className="sticky top-0 z-30 flex items-center justify-between gap-3 px-4 md:px-6 min-h-[56px] py-2 border-b border-[#1F2633] bg-[#0E121A] md:bg-gradient-to-b md:from-[#0E121A] md:to-[#0B0E14] select-none">
+    <header data-topbar className="sticky top-0 z-30 flex items-center justify-between gap-3 px-4 md:px-6 min-h-[56px] py-2 border-b border-line bg-surface-1 md:bg-gradient-to-b md:from-surface-1 md:to-bg select-none">
       {/* Below md: menu button and brand (the sidebar is a drawer there) */}
       <div className="flex md:hidden items-center gap-2 min-w-0">
         <button
@@ -51,26 +51,26 @@ export const TopBar: React.FC<TopBarProps> = ({ breadcrumb, activeAgentsCount = 
           onClick={onMenu}
           aria-label="Open menu"
           aria-expanded={menuOpen}
-          className="inline-flex items-center justify-center w-11 h-11 -ml-2 rounded-lg text-[#A7B0C0] hover:text-[#E6E9EF] hover:bg-[#1A2232] bg-transparent border-none cursor-pointer"
+          className="inline-flex items-center justify-center w-11 h-11 -ml-2 rounded-lg text-fg-2 hover:text-fg hover:bg-surface-hover bg-transparent border-none cursor-pointer"
         >
           <Menu className="w-5 h-5" />
         </button>
-        <span className="w-7 h-7 rounded-lg bg-[#3B82F6] flex items-center justify-center text-white flex-shrink-0" aria-hidden="true">
+        <span className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center text-white flex-shrink-0" aria-hidden="true">
           <Shield className="w-3.5 h-3.5" />
         </span>
-        <span className="font-bold text-[15px] text-[#E6E9EF] tracking-tight truncate">Agent Governance</span>
+        <span className="font-bold text-[15px] text-fg tracking-tight truncate">Agent Governance</span>
       </div>
 
       {/* Breadcrumb */}
-      <div className="hidden md:flex text-[13px] text-[#8B95A7] items-center gap-1.5 truncate">
+      <div className="hidden md:flex text-[13px] text-fg-3 items-center gap-1.5 truncate">
         {getBreadcrumb()}
       </div>
 
       {/* Active badge (the search box is not shown until search is wired to something) */}
       <div className="flex items-center gap-3 ml-auto">
         {activeAgentsCount > 0 && (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[rgba(34,197,94,0.14)] text-[#4ADE80] text-[12px] font-semibold flex-shrink-0">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#22C55E]" />
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[rgba(34,197,94,0.14)] text-ok-light text-[12px] font-semibold flex-shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-ok" />
             {activeAgentsCount} running
           </span>
         )}

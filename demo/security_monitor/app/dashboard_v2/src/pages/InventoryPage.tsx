@@ -7,9 +7,9 @@ import { AgentCard, RISK_RULE, Risk, inventoryCards, riskWhy } from '../logic/in
 import { outcomeLabel, relativeTime } from '../logic/plain';
 
 const RISK: Record<Risk, { label: string; style: React.CSSProperties }> = {
-  high: { label: 'High risk', style: { color: '#FCA5A5', background: 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.4)' } },
-  medium: { label: 'Medium risk', style: { color: '#FCD34D', background: 'rgba(245,158,11,0.12)', borderColor: 'rgba(245,158,11,0.4)' } },
-  low: { label: 'Low risk', style: { color: '#86EFAC', background: 'rgba(34,197,94,0.12)', borderColor: 'rgba(34,197,94,0.35)' } },
+  high: { label: 'High risk', style: { color: 'var(--bad-text)', background: 'var(--bad-tint)', borderColor: 'rgb(var(--bad-rgb) / 0.4)' } },
+  medium: { label: 'Medium risk', style: { color: 'var(--wait-text)', background: 'var(--wait-tint)', borderColor: 'rgb(var(--wait-rgb) / 0.4)' } },
+  low: { label: 'Low risk', style: { color: 'var(--ok-text)', background: 'var(--ok-tint)', borderColor: 'rgb(var(--ok-rgb) / 0.35)' } },
 };
 
 /** One agent. No effects, so tests can render it. */
@@ -21,8 +21,8 @@ export const InventoryCard: React.FC<{ c: AgentCard; now: number }> = ({ c, now 
     <li className="card p-4 sm:p-5 flex flex-col gap-4 min-w-0" data-agent={c.agentId} data-risk={c.risk}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1 min-w-0">
-          {c.name && <span className="text-[17px] font-semibold text-[#E6E9EF]">{c.name}</span>}
-          <span className={`font-mono [overflow-wrap:anywhere] ${c.name ? 'text-[12px]' : 'text-[15px] font-semibold text-[#E6E9EF]'}`} style={c.name ? { color: 'var(--text-3)' } : undefined}>
+          {c.name && <span className="text-[17px] font-semibold text-fg">{c.name}</span>}
+          <span className={`font-mono [overflow-wrap:anywhere] ${c.name ? 'text-[12px]' : 'text-[15px] font-semibold text-fg'}`} style={c.name ? { color: 'var(--text-3)' } : undefined}>
             {c.agentId}
           </span>
           {!c.configured && (
@@ -43,7 +43,7 @@ export const InventoryCard: React.FC<{ c: AgentCard; now: number }> = ({ c, now 
           <span
             id={tipId}
             role="tooltip"
-            className="pointer-events-none absolute right-0 top-full mt-2 z-30 w-[min(300px,80vw)] rounded-lg border border-[#2A3344] bg-[#1A2232] px-3 py-2 text-[12px] leading-snug text-[#E6E9EF] shadow-lg opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+            className="pointer-events-none absolute right-0 top-full mt-2 z-30 w-[min(300px,80vw)] rounded-lg border border-line-strong bg-surface-hover px-3 py-2 text-[12px] leading-snug text-fg shadow-lg opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
           >
             {riskWhy(c)} {RISK_RULE}
           </span>
@@ -57,11 +57,11 @@ export const InventoryCard: React.FC<{ c: AgentCard; now: number }> = ({ c, now 
       )}
 
       {(c.model || (c.tools && c.tools.length > 0)) && (
-        <div className="flex flex-col gap-2 rounded-lg border border-[#2A3344] bg-[#0F1520] p-3" data-agent-setup>
+        <div className="flex flex-col gap-2 rounded-lg border border-line-strong bg-surface-darkAlt p-3" data-agent-setup>
           {c.model && (
             <div className="flex items-baseline gap-2 flex-wrap text-[13px]">
               <span style={{ color: 'var(--text-3)' }}>Runs on</span>
-              <span className="font-mono text-[13px] text-[#E6E9EF]" data-agent-model={c.model}>
+              <span className="font-mono text-[13px] text-fg" data-agent-model={c.model}>
                 {c.model}
               </span>
               <span style={{ color: 'var(--text-3)' }}>(its model; a run can override it)</span>
@@ -74,7 +74,7 @@ export const InventoryCard: React.FC<{ c: AgentCard; now: number }> = ({ c, now 
               </span>
               <div className="flex flex-wrap gap-1.5">
                 {c.tools.map(tool => (
-                  <span key={tool} className="px-2 py-0.5 rounded text-[12px] font-mono bg-[#111827] text-[#CBD5E1] border border-[#334155]" data-tool={tool}>
+                  <span key={tool} className="px-2 py-0.5 rounded text-[12px] font-mono bg-surface-darkSlate text-fg-soft border border-line-slate" data-tool={tool}>
                     {tool}
                   </span>
                 ))}
@@ -88,7 +88,7 @@ export const InventoryCard: React.FC<{ c: AgentCard; now: number }> = ({ c, now 
         <Fact k="Owner" v={c.owner ?? '—'} />
         <Fact k="Team" v={c.team ?? '—'} />
         <Fact k="Tasks run" v={String(c.tasks)} />
-        <Fact k="Blocked actions" v={String(c.blocked)} color={c.blocked ? '#F87171' : undefined} />
+        <Fact k="Blocked actions" v={String(c.blocked)} color={c.blocked ? 'var(--bad-light)' : undefined} />
         <Fact k="Requests" v={c.promptedAsks ? `${c.asks} (${c.promptedAsks} prompted by a file)` : String(c.asks)} />
         <Fact k="Last active" v={relativeTime(c.lastActive, now) || '—'} title={c.lastActive ?? undefined} />
       </dl>
@@ -109,7 +109,7 @@ export const InventoryCard: React.FC<{ c: AgentCard; now: number }> = ({ c, now 
       )}
 
       {recent.length > 0 && (
-        <div className="flex flex-col gap-1.5 pt-3 border-t border-[#2A3344]" data-recent-runs>
+        <div className="flex flex-col gap-1.5 pt-3 border-t border-line-strong" data-recent-runs>
           <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>
             Recent runs
           </span>
@@ -118,11 +118,11 @@ export const InventoryCard: React.FC<{ c: AgentCard; now: number }> = ({ c, now 
               const o = outcomeLabel(r.status);
               return (
                 <li key={r.taskId} className="flex items-center gap-2 min-w-0 text-[13px]">
-                  <a href={`/dashboard/report/${r.taskId}`} className="truncate min-w-0 flex-1 text-[#93C5FD] hover:underline" title={r.request || r.taskId}>
+                  <a href={`/dashboard/report/${r.taskId}`} className="truncate min-w-0 flex-1 text-info-text hover:underline" title={r.request || r.taskId}>
                     {r.request || r.taskId}
                   </a>
                   {r.blocked > 0 && (
-                    <span className="shrink-0 text-[12px]" style={{ color: '#F87171' }}>
+                    <span className="shrink-0 text-[12px]" style={{ color: 'var(--bad-light)' }}>
                       {r.blocked} blocked
                     </span>
                   )}
@@ -145,13 +145,13 @@ export const InventoryCard: React.FC<{ c: AgentCard; now: number }> = ({ c, now 
   );
 };
 
-const TONE: Record<'ok' | 'bad' | 'wait' | 'none', string> = { ok: '#86EFAC', bad: '#FCA5A5', wait: '#FCD34D', none: 'var(--text-3)' };
+const TONE: Record<'ok' | 'bad' | 'wait' | 'none', string> = { ok: 'var(--ok-text)', bad: 'var(--bad-text)', wait: 'var(--wait-text)', none: 'var(--text-3)' };
 
 export const DiscoveredAgentCard: React.FC<{ item: AgentInventoryItem }> = ({ item }) => {
   const isGoverned = item.governance_state === 'Governed';
   const stateStyle = isGoverned
-    ? { color: '#86EFAC', background: 'rgba(34,197,94,0.12)', borderColor: 'rgba(34,197,94,0.35)' }
-    : { color: '#FCD34D', background: 'rgba(245,158,11,0.12)', borderColor: 'rgba(245,158,11,0.4)' };
+    ? { color: 'var(--ok-text)', background: 'var(--ok-tint)', borderColor: 'rgb(var(--ok-rgb) / 0.35)' }
+    : { color: 'var(--wait-text)', background: 'var(--wait-tint)', borderColor: 'rgb(var(--wait-rgb) / 0.4)' };
 
   return (
     <li
@@ -162,11 +162,11 @@ export const DiscoveredAgentCard: React.FC<{ item: AgentInventoryItem }> = ({ it
       <div className="flex items-start justify-between gap-3">
         <div className="flex flex-col gap-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-mono text-[15px] font-semibold text-[#E6E9EF] [overflow-wrap:anywhere] min-w-0">
+            <span className="font-mono text-[15px] font-semibold text-fg [overflow-wrap:anywhere] min-w-0">
               {item.name || item.agent_id}
             </span>
             <span
-              className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold text-[#93C5FD] border border-[#3B82F6]/30 bg-[#1E293B]"
+              className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold text-info-text border border-accent/30 bg-surface-slate800"
               data-badge="discovered-card"
             >
               Discovered (A2A card)
@@ -202,7 +202,7 @@ export const DiscoveredAgentCard: React.FC<{ item: AgentInventoryItem }> = ({ it
             {item.skills.map(skill => (
               <span
                 key={skill}
-                className="px-2 py-0.5 rounded text-[11px] font-mono bg-[#0F172A] text-[#CBD5E1] border border-[#334155]"
+                className="px-2 py-0.5 rounded text-[11px] font-mono bg-surface-slate900 text-fg-soft border border-line-slate"
                 data-skill={skill}
               >
                 {skill}
@@ -213,7 +213,7 @@ export const DiscoveredAgentCard: React.FC<{ item: AgentInventoryItem }> = ({ it
       )}
 
       {item.metadata?.card_url && (
-        <div className="pt-2 border-t border-[#2A3344] flex items-center justify-between text-[11px]" style={{ color: 'var(--text-3)' }}>
+        <div className="pt-2 border-t border-line-strong flex items-center justify-between text-[11px]" style={{ color: 'var(--text-3)' }}>
           <span className="truncate font-mono">{item.metadata.card_url}</span>
           {item.metadata.version && <span>v{item.metadata.version}</span>}
         </div>
@@ -267,7 +267,7 @@ export const InventoryPage: React.FC = () => {
     <div className="max-w-[1200px] pb-12 flex flex-col gap-6">
       <header className="flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-8">
         <div className="flex flex-col gap-2 min-w-0 flex-1">
-        <h1 id="inventory-headline" className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-[#E6E9EF]">
+        <h1 id="inventory-headline" className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-fg">
           {tasks == null && inventory.length === 0
             ? 'Agent inventory'
             : totalAgents === 0
@@ -293,7 +293,7 @@ export const InventoryPage: React.FC = () => {
         <>
           <section className="flex flex-col gap-3" id="governed-agents-section">
             {discoveredAgents.length > 0 && (
-              <h2 className="m-0 font-display font-semibold text-[18px] sm:text-[20px] text-[#E6E9EF]">
+              <h2 className="m-0 font-display font-semibold text-[18px] sm:text-[20px] text-fg">
                 Our agents
               </h2>
             )}
@@ -311,7 +311,7 @@ export const InventoryPage: React.FC = () => {
           {discoveredAgents.length > 0 && (
             <section className="flex flex-col gap-3" id="discovered-agents-section">
               <div className="flex items-center justify-between">
-                <h2 className="m-0 font-display font-semibold text-[18px] sm:text-[20px] text-[#E6E9EF]">
+                <h2 className="m-0 font-display font-semibold text-[18px] sm:text-[20px] text-fg">
                   Other agents found on this machine
                 </h2>
                 <span className="text-[13px]" style={{ color: 'var(--text-3)' }}>
@@ -336,7 +336,7 @@ const Fact: React.FC<{ k: string; v: string; color?: string; title?: string }> =
     <dt className="text-[12px]" style={{ color: 'var(--text-3)' }}>
       {k}
     </dt>
-    <dd className="m-0 [overflow-wrap:anywhere]" style={{ color: color ?? '#E6E9EF' }} title={title}>
+    <dd className="m-0 [overflow-wrap:anywhere]" style={{ color: color ?? 'var(--text)' }} title={title}>
       {v}
     </dd>
   </div>

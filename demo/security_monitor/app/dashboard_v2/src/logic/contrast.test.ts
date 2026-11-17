@@ -1,6 +1,7 @@
-// Text contrast of the v3 palette: every text colour on every surface it is used on is
+// Text contrast of the design token palette: every text colour on every surface it is used on is
 // at least 4.5:1 (WCAG AA for body text). Tinted surfaces are the tint over the page.
 import { describe, expect, it } from 'vitest';
+import { PALETTE } from './palette';
 
 type RGB = [number, number, number];
 
@@ -25,30 +26,24 @@ const over = (tint: string, alpha: number, base: string): RGB => {
   return t.map((c, i) => Math.round(c * alpha + b[i] * (1 - alpha))) as RGB;
 };
 
-const BG = '#070B14';
-const CARD = '#0F1526';
-const CARD2 = '#121829';
-const FIELD = '#0B1120';
-
 const surfaces: Record<string, RGB> = {
-  bg: hex(BG),
-  card: hex(CARD),
-  card2: hex(CARD2),
-  field: hex(FIELD),
+  bg: hex(PALETTE.bg),
+  surface1: hex(PALETTE.surface1),
+  surface2: hex(PALETTE.surface2),
+  surface3: hex(PALETTE.surface3),
 };
 
 describe('text contrast >= 4.5:1', () => {
   const textOnSurfaces: Record<string, string[]> = {
-    '#E6EAF2': ['bg', 'card', 'card2', 'field'], // text
-    '#CBD5E1': ['bg'], // decision lead
-    '#A9B4C7': ['bg', 'card', 'card2', 'field'], // secondary
-    '#9AA4B8': ['bg', 'card', 'card2', 'field'], // tertiary
-    '#67E8F9': ['bg', 'card', 'card2'], // links
-    '#A5F3FC': ['bg', 'card'], // active nav, labels
-    '#FDA4AF': ['bg', 'card'], // blocked numbers
-    '#6EE7B7': ['bg', 'card'], // allowed numbers
-    '#FDE68A': ['bg', 'card'], // waiting text
-    '#FCD34D': ['bg'], // "need you"
+    [PALETTE.text]: ['bg', 'surface1', 'surface2', 'surface3'],
+    [PALETTE.text2]: ['bg', 'surface1', 'surface2', 'surface3'],
+    [PALETTE.text3]: ['bg', 'surface1', 'surface2', 'surface3'],
+    [PALETTE.okText]: ['bg', 'surface1', 'surface2', 'surface3'],
+    [PALETTE.badText]: ['bg', 'surface1', 'surface2', 'surface3'],
+    [PALETTE.waitText]: ['bg', 'surface1', 'surface2', 'surface3'],
+    [PALETTE.waitKpi]: ['bg', 'surface1', 'surface2', 'surface3'],
+    [PALETTE.info]: ['bg', 'surface1', 'surface2', 'surface3'],
+    [PALETTE.infoText]: ['bg', 'surface1', 'surface2', 'surface3'],
   };
   for (const [fg, on] of Object.entries(textOnSurfaces)) {
     for (const s of on) {
@@ -60,21 +55,47 @@ describe('text contrast >= 4.5:1', () => {
 
   it('meaning text on its tinted chip or panel', () => {
     const pairs: Array<[string, RGB]> = [
-      ['#A7F3D0', over('#34D399', 0.14, BG)], // allowed chip
-      ['#FECDD3', over('#FB7185', 0.14, BG)], // blocked chip
-      ['#FDE68A', over('#FBBF24', 0.14, BG)], // waiting chip
-      ['#FECDD3', over('#FB7185', 0.08, BG)], // warning panel
-      ['#E6EAF2', over('#FBBF24', 0.08, BG)], // needs-you row
-      ['#A9B4C7', over('#FBBF24', 0.08, BG)],
-      ['#A5F3FC', over('#22D3EE', 0.14, BG)], // active nav pill
-      ['#A7F3D0', over('#34D399', 0.12, BG)], // record checked
+      [PALETTE.okText, over(PALETTE.ok, 0.14, PALETTE.bg)],
+      [PALETTE.badText, over(PALETTE.bad, 0.14, PALETTE.bg)],
+      [PALETTE.waitText, over(PALETTE.wait, 0.14, PALETTE.bg)],
+      [PALETTE.waitKpi, over(PALETTE.wait, 0.14, PALETTE.bg)],
+      [PALETTE.infoText, over(PALETTE.info, 0.14, PALETTE.bg)],
+      [PALETTE.text, over(PALETTE.wait, 0.08, PALETTE.bg)],
+      [PALETTE.text2, over(PALETTE.wait, 0.08, PALETTE.bg)],
     ];
     for (const [fg, bg] of pairs) expect(ratio(hex(fg), bg), fg).toBeGreaterThanOrEqual(4.5);
   });
 
   it('button text on both ends of its gradient', () => {
-    for (const end of ['#22D3EE', '#A78BFA']) expect(ratio(hex('#070B14'), hex(end))).toBeGreaterThanOrEqual(4.5);
-    for (const end of ['#34D399', '#22D3EE']) expect(ratio(hex('#04130F'), hex(end))).toBeGreaterThanOrEqual(4.5);
-    expect(ratio(hex('#1A1203'), hex('#FBBF24'))).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(hex(PALETTE.bg), hex(PALETTE.cyan))).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(hex(PALETTE.bg), hex(PALETTE.roleTeamLead))).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(hex('#04130F'), hex(PALETTE.roleAdmin))).toBeGreaterThanOrEqual(4.5);
+    expect(ratio(hex(PALETTE.waitBadgeText), hex(PALETTE.waitKpi))).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it('keeps PALETTE values in sync with index.css', () => {
+    // Read index.css
+    // @ts-ignore
+    const fs = require('node:fs');
+    // @ts-ignore
+    const path = require('node:path');
+    // @ts-ignore
+    const cssPath = typeof __dirname !== 'undefined' ? path.resolve(__dirname, '../index.css') : '';
+    const css = fs.readFileSync(cssPath, 'utf-8');
+
+    expect(css).toContain(`--bg: ${PALETTE.bg}`);
+    expect(css).toContain(`--surface-1: ${PALETTE.surface1}`);
+    expect(css).toContain(`--surface-2: ${PALETTE.surface2}`);
+    expect(css).toContain(`--surface-3: ${PALETTE.surface3}`);
+    expect(css).toContain(`--line: ${PALETTE.line}`);
+    expect(css).toContain(`--line-strong: ${PALETTE.lineStrong}`);
+    expect(css).toContain(`--text: ${PALETTE.text}`);
+    expect(css).toContain(`--text-2: ${PALETTE.text2}`);
+    expect(css).toContain(`--text-3: ${PALETTE.text3}`);
+    expect(css).toContain(`--accent: ${PALETTE.accent}`);
+    expect(css).toContain(`--ok: ${PALETTE.ok}`);
+    expect(css).toContain(`--bad: ${PALETTE.bad}`);
+    expect(css).toContain(`--wait: ${PALETTE.wait}`);
+    expect(css).toContain(`--info: ${PALETTE.info}`);
   });
 });

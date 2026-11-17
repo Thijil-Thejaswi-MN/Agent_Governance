@@ -18,21 +18,21 @@ export const StatCard: React.FC<{
   about: string;
   source: string;
   delayMs?: number;
-}> = ({ id, icon, badge, value, suffix, decimals = 0, tone = '#E6E9EF', sub, about, source, delayMs = 0 }) => {
+}> = ({ id, icon, badge, value, suffix, decimals = 0, tone = 'var(--text)', sub, about, source, delayMs = 0 }) => {
   const { ref, value: shown } = useCountUp<HTMLDivElement>(value, 1400, delayMs);
   return (
     <div
       id={id}
       ref={ref}
       data-value={value}
-      className="relative overflow-hidden rounded-[28px] border border-[#1F2633] bg-[#11151D] p-5 sm:p-6 flex flex-col gap-3 transition-shadow duration-300 hover:shadow-[0_18px_50px_rgba(0,0,0,0.45)]"
+      className="relative overflow-hidden rounded-[28px] border border-line bg-surface-2 p-5 sm:p-6 flex flex-col gap-3 transition-shadow duration-300 hover:shadow-[0_18px_50px_rgba(0,0,0,0.45)]"
       style={{
         backgroundImage:
           'repeating-linear-gradient(135deg, rgba(255,255,255,0.025) 0 1px, transparent 1px 11px), radial-gradient(120% 80% at 0% 0%, rgba(59,130,246,0.08), transparent 60%)',
       }}
     >
-      <span className="inline-flex items-center gap-2 self-start rounded-full border border-[#2A3344] bg-[#0E121A] pl-1.5 pr-3 py-1 text-[12px] font-semibold text-[#A7B0C0]">
-        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[#161B26] text-[#93C5FD]" aria-hidden="true">
+      <span className="inline-flex items-center gap-2 self-start rounded-full border border-line-strong bg-surface-1 pl-1.5 pr-3 py-1 text-[12px] font-semibold text-fg-2">
+        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-surface-3 text-info-text" aria-hidden="true">
           {icon}
         </span>
         {badge}
@@ -47,7 +47,7 @@ export const StatCard: React.FC<{
           </span>
         )}
       </div>
-      <p className="m-0 text-[14px] font-medium text-[#E6E9EF]" data-sub>
+      <p className="m-0 text-[14px] font-medium text-fg" data-sub>
         {sub}
       </p>
       <p className="m-0 text-[13px] leading-relaxed" style={{ color: 'var(--text-2)' }}>

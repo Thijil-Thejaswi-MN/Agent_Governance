@@ -5,10 +5,10 @@ import { TaskRecord } from '../types';
 import { outcomeLabel, relativeTime } from '../logic/plain';
 
 const TONE: Record<string, React.CSSProperties> = {
-  ok: { color: '#86EFAC', background: 'rgba(34,197,94,0.12)' },
-  bad: { color: '#FCA5A5', background: 'rgba(239,68,68,0.12)' },
-  wait: { color: '#93C5FD', background: 'rgba(59,130,246,0.14)' },
-  none: { color: 'var(--text-2)', background: '#1A2232' },
+  ok: { color: 'var(--ok-text)', background: 'var(--ok-tint)' },
+  bad: { color: 'var(--bad-text)', background: 'var(--bad-tint)' },
+  wait: { color: 'var(--info-text)', background: 'rgba(59,130,246,0.14)' },
+  none: { color: 'var(--text-2)', background: 'var(--surface-hover)' },
 };
 
 const stoppedCount = (t: TaskRecord) => Math.max(t.prevented_count || 0, t.os_denials_count || 0);
@@ -31,10 +31,10 @@ export const HistoryPage: React.FC = () => {
 
   return (
     <div className="max-w-[960px] pb-12 flex flex-col gap-5">
-      <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-[#E6E9EF]">
+      <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-fg">
         {onlyBlocked ? 'Runs where something was stopped.' : 'Past runs.'}
       </h1>
-      <nav aria-label="Filter" className="inline-flex self-start flex-wrap gap-1 p-1 rounded-xl bg-[#11151D] border border-[#1F2633]">
+      <nav aria-label="Filter" className="inline-flex self-start flex-wrap gap-1 p-1 rounded-xl bg-surface-2 border border-line">
         {[
           { to: '/history', label: 'All', active: !onlyBlocked },
           { to: '/history?filter=blocked', label: 'Something was stopped', active: onlyBlocked },
@@ -44,7 +44,7 @@ export const HistoryPage: React.FC = () => {
             to={f.to}
             aria-current={f.active ? 'page' : undefined}
             className={`inline-flex items-center min-h-[44px] sm:min-h-[36px] px-3.5 rounded-lg text-[14px] no-underline ${
-              f.active ? 'bg-[#1A2232] text-[#E6E9EF] font-semibold' : 'text-[#A7B0C0] hover:text-[#E6E9EF]'
+              f.active ? 'bg-surface-hover text-fg font-semibold' : 'text-fg-2 hover:text-fg'
             }`}
           >
             {f.label}
@@ -53,7 +53,7 @@ export const HistoryPage: React.FC = () => {
       </nav>
 
       {error && (
-        <p role="alert" style={{ color: '#FCA5A5' }}>
+        <p role="alert" style={{ color: 'var(--bad-text)' }}>
           {error}
         </p>
       )}
@@ -64,7 +64,7 @@ export const HistoryPage: React.FC = () => {
       )}
       {!tasks && !error && <p style={{ color: 'var(--text-2)' }}>Loading…</p>}
 
-      <ul className="list-none p-0 m-0 flex flex-col rounded-xl overflow-hidden border border-[#1F2633] bg-[#11151D] divide-y divide-[#1F2633] empty:hidden" id="history-list">
+      <ul className="list-none p-0 m-0 flex flex-col rounded-xl overflow-hidden border border-line bg-surface-2 divide-y divide-line empty:hidden" id="history-list">
         {shown.map(t => {
           const o = outcomeLabel(t.status);
           const stopped = stoppedCount(t);
@@ -73,20 +73,20 @@ export const HistoryPage: React.FC = () => {
               <Link
                 to={`/history/${t.task_id}`}
                 data-task-id={t.task_id}
-                className="flex flex-wrap sm:flex-nowrap items-center gap-x-4 gap-y-1.5 px-4 sm:px-5 py-3.5 min-h-[56px] no-underline text-[#E6E9EF] hover:text-[#E6E9EF] hover:bg-[#161B26] transition-colors"
+                className="flex flex-wrap sm:flex-nowrap items-center gap-x-4 gap-y-1.5 px-4 sm:px-5 py-3.5 min-h-[56px] no-underline text-fg hover:text-fg hover:bg-surface-3 transition-colors"
               >
                 <span className="basis-full sm:basis-auto sm:flex-1 min-w-0 truncate text-[15px]" title={t.request_text}>
                   {t.request_text || '(no request text)'}
                 </span>
                 {stopped > 0 && (
-                  <span className="text-[13px] whitespace-nowrap" style={{ color: '#FCA5A5' }}>
+                  <span className="text-[13px] whitespace-nowrap" style={{ color: 'var(--bad-text)' }}>
                     {stopped} {stopped === 1 ? 'refusal' : 'refusals'}
                   </span>
                 )}
                 {(t.comparison_mode || t.condition === 'B') && (
                   <span
                     data-badge="comparison"
-                    className="text-[12px] font-semibold px-2.5 py-0.5 rounded-full whitespace-nowrap bg-[#F59E0B]/15 text-[#FBBF24] border border-[#F59E0B]/30"
+                    className="text-[12px] font-semibold px-2.5 py-0.5 rounded-full whitespace-nowrap bg-wait/15 text-wait-kpi border border-wait/30"
                   >
                     Comparison
                   </span>
