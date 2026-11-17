@@ -95,6 +95,8 @@ ui_review/
 !demo/data/evaluation_v3/
 # Derivation benchmark (roadmap item 1b): scenarios and results are committed.
 !demo/data/derivation_v3/
+# Attribution accuracy runs (roadmap item 3): results are committed.
+!demo/data/attribution/
 demo/data/evaluation_v3/*
 !demo/data/evaluation_v3/checkpoint1/
 !demo/data/evaluation_v3/scenarios/
