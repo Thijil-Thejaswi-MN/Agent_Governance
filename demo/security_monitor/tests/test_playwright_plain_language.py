@@ -122,6 +122,6 @@ def test_results_how_it_works_is_plain_with_details(page: Page, console_server, 
     section.locator("#how-it-works-details-btn").click()
     drawer = page.locator("#how-it-works-drawer")
     expect(drawer).to_contain_text("Landlock")
-    expect(drawer).to_contain_text("7 agent-facing endpoints")
+    expect(drawer).to_contain_text("8 agent-facing endpoints")
     expect(drawer).to_contain_text("observation only, it does not block")
     expect(drawer).to_contain_text("not signed")

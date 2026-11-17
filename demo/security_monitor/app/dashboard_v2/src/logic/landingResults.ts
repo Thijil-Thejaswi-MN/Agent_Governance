@@ -14,7 +14,7 @@ export interface LandingResult {
 
 /** Broker/kernel disagreements before and after the single resolved boundary
  *  (docs/M7_SINGLE_SOURCE_FINDINGS.md; not part of results_summary.json). */
-export const M7 = { before: 9091, after: 0, boundaries: 552 };
+export const M7 = { before: 9091, after: 0, boundaries: 552, compared: 43352, probes: 60624, residuals: 60 };
 
 export function landingResults(s: ResultsSummary | null | undefined): LandingResult[] | null {
   const hA = s?.harm_injected?.A;
@@ -52,7 +52,10 @@ export function landingResults(s: ResultsSummary | null | undefined): LandingRes
       glyph: '=',
       value: M7.after,
       suffix: '',
-      label: `broker and kernel disagreements over ${M7.boundaries} boundaries (${M7.before.toLocaleString('en-US')} before)`,
+      label:
+        `broker and kernel disagreements in ${M7.compared.toLocaleString('en-US')} compared probes over ` +
+        `${M7.boundaries} boundaries (${M7.before.toLocaleString('en-US')} before; ` +
+        `${M7.residuals} known exceptions not compared)`,
     },
   ];
 }
