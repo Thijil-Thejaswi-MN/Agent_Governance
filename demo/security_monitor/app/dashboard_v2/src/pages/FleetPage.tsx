@@ -6,6 +6,7 @@ import { DotState, FleetDot, FleetSummary } from '../types';
 import { DotField, DOT_COLORS, DOT_LEGEND } from '../components/v3/DotField';
 import { DetailsDrawer, DetailsSection, KV } from '../components/v3/DetailsDrawer';
 import { fleetHeadline, needsYouReason, needsYouTitle } from '../logic/plain';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const REFRESH_MS = 5000;
 const LEGEND_ORDER: DotState[] = ['working', 'waiting', 'blocked', 'idle', 'no_task'];
@@ -59,11 +60,17 @@ export const FleetPage: React.FC = () => {
     <div>
       <div className="max-w-[1360px] pb-12 flex flex-wrap gap-6 lg:gap-8 items-start">
         <section aria-label="All agents" className="flex-[999_1_620px] min-w-0 flex flex-col gap-5">
-          <h1 id="fleet-headline" data-quiet={quiet} className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-fg">
-            {line1}
-            <br />
-            <span style={{ color: data.need_you > 0 ? 'var(--wait-kpi)' : 'var(--text-2)' }}>{line2}</span>
-          </h1>
+          <PageHeader
+            titleId="fleet-headline"
+            titleProps={{ 'data-quiet': quiet } as React.HTMLAttributes<HTMLHeadingElement>}
+            title={
+              <>
+                {line1}
+                <br />
+                <span style={{ color: data.need_you > 0 ? 'var(--wait-kpi)' : 'var(--text-2)' }}>{line2}</span>
+              </>
+            }
+          />
 
           {dots.length > 0 ? (
             <>

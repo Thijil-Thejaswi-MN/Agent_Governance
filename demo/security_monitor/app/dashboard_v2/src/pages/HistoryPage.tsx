@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api/client';
 import { TaskRecord } from '../types';
 import { outcomeLabel, relativeTime } from '../logic/plain';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const TONE: Record<string, React.CSSProperties> = {
   ok: { color: 'var(--ok-text)', background: 'var(--ok-tint)' },
@@ -31,9 +32,9 @@ export const HistoryPage: React.FC = () => {
 
   return (
     <div className="max-w-[960px] pb-12 flex flex-col gap-5">
-      <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-fg">
-        {onlyBlocked ? 'Runs where something was stopped.' : 'Past runs.'}
-      </h1>
+      <PageHeader
+        title={onlyBlocked ? 'Runs where something was stopped.' : 'Past runs.'}
+      />
       <nav aria-label="Filter" className="inline-flex self-start flex-wrap gap-1 p-1 rounded-xl bg-surface-2 border border-line">
         {[
           { to: '/history', label: 'All', active: !onlyBlocked },
@@ -43,9 +44,8 @@ export const HistoryPage: React.FC = () => {
             key={f.label}
             to={f.to}
             aria-current={f.active ? 'page' : undefined}
-            className={`inline-flex items-center min-h-[44px] sm:min-h-[36px] px-3.5 rounded-lg text-[14px] no-underline ${
-              f.active ? 'bg-surface-hover text-fg font-semibold' : 'text-fg-2 hover:text-fg'
-            }`}
+            className={`inline-flex items-center min-h-[44px] sm:min-h-[36px] px-3.5 rounded-lg text-[14px] no-underline ${f.active ? 'bg-surface-hover text-fg font-semibold' : 'text-fg-2 hover:text-fg'
+              }`}
           >
             {f.label}
           </Link>

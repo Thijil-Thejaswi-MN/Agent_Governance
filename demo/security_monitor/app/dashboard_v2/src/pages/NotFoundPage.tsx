@@ -1,6 +1,7 @@
 import React from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { Home } from 'lucide-react';
+import { PageHeader } from '../components/ui/PageHeader';
 
 export const NotFoundPage: React.FC = () => {
   const location = useLocation();
@@ -57,20 +58,23 @@ export const NotFoundPage: React.FC = () => {
         {/* Visually hidden 404 for screen readers */}
         <span className="sr-only">404</span>
 
-        <div className="mt-4 flex flex-col items-center gap-2 max-w-lg mx-auto">
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-[#E6E9EF]">
-            This page doesn't exist.
-          </h1>
-          <p className="text-[#8B95A7] text-[13px] sm:text-[14px] leading-relaxed max-w-sm sm:max-w-md mx-auto">
-            The address{' '}
-            <code
-              title={location.pathname}
-              className="inline-block max-w-[200px] sm:max-w-xs align-bottom truncate font-mono text-[12px] sm:text-[13px] px-1.5 py-0.5 rounded bg-[#11151D] border border-[#2A3344] text-[#E6E9EF]"
-            >
-              {location.pathname}
-            </code>{' '}
-            isn't part of the console. It may have moved, or the link was typed wrong.
-          </p>
+        <div className="mt-4 max-w-lg mx-auto">
+          <PageHeader
+            title="This page doesn't exist."
+            className="text-center items-center"
+            subtitle={
+              <p className="text-[#8B95A7] text-[13px] sm:text-[14px] leading-relaxed max-w-sm sm:max-w-md mx-auto m-0">
+                The address{' '}
+                <code
+                  title={location.pathname}
+                  className="inline-block max-w-[200px] sm:max-w-xs align-bottom truncate font-mono text-[12px] sm:text-[13px] px-1.5 py-0.5 rounded bg-[#11151D] border border-[#2A3344] text-[#E6E9EF]"
+                >
+                  {location.pathname}
+                </code>{' '}
+                isn't part of the console. It may have moved, or the link was typed wrong.
+              </p>
+            }
+          />
         </div>
 
         <Link

@@ -5,6 +5,7 @@ import { StatCard } from '../components/stats/StatCard';
 import { decisionsLine, recordStats, recordsLine, stoppedLine } from '../logic/recordStats';
 import { PALETTE } from '../logic/palette';
 import { Download, RefreshCw, CheckCircle2, AlertCircle, FileText, ShieldX, UserCheck, FileCheck2 } from 'lucide-react';
+import { PageHeader } from '../components/ui/PageHeader';
 
 interface ChainStep {
   idx: number;
@@ -138,40 +139,43 @@ export const RecordsPage: React.FC = () => {
   return (
     <div className="flex flex-col gap-6 font-sans">
       {/* Headline */}
-      <section className="anim-rise">
-        {recordsSummary ? (
-          recordsSummary.total === 0 ? (
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-fg-3">
-              No records yet.
-            </h1>
-          ) : recordsSummary.failed > 0 ? (
-            <div className="flex flex-col gap-2">
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-bad">
-                {recordsSummary.failed} of {recordsSummary.total} records failed the check.
-              </h1>
-              <div className="text-[13px] text-bad-text font-mono">
+      <PageHeader
+        title={
+          recordsSummary
+            ? recordsSummary.total === 0
+              ? 'No records yet.'
+              : recordsSummary.failed > 0
+              ? `${recordsSummary.failed} of ${recordsSummary.total} records failed the check.`
+              : `${recordsSummary.total} records. All ${recordsSummary.total} checked: no entries changed.`
+            : tasks.length === 0
+            ? 'No records yet.'
+            : `${tasks.length} records. Checking them…`
+        }
+        titleClassName={
+          recordsSummary
+            ? recordsSummary.total === 0
+              ? 'text-fg-3'
+              : recordsSummary.failed > 0
+              ? 'text-bad'
+              : 'text-fg'
+            : tasks.length === 0
+            ? 'text-fg-3'
+            : 'text-fg'
+        }
+        subtitle={
+          <>
+            {recordsSummary && recordsSummary.failed > 0 && (
+              <div className="text-[13px] text-bad-text font-mono mb-1">
                 Failed runs: {recordsSummary.failed_ids.join(', ')}
               </div>
-            </div>
-          ) : (
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-fg">
-              {recordsSummary.total} records. All {recordsSummary.total} checked: no entries changed.
-            </h1>
-          )
-        ) : tasks.length === 0 ? (
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-fg-3">
-            No records yet.
-          </h1>
-        ) : (
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-fg">
-            {tasks.length} records. Checking them…
-          </h1>
-        )}
-        <p className="text-[15px] text-fg-2 mt-1.5">
-          Each run keeps an ordered record where every entry is linked to the one before it, so a changed or
-          missing entry shows up.
-        </p>
-      </section>
+            )}
+            <span>
+              Each run keeps an ordered record where every entry is linked to the one before it, so a changed or
+              missing entry shows up.
+            </span>
+          </>
+        }
+      />
 
       {/* What the records show: three numbers, each counted from real records (logic/recordStats.ts). */}
       <section id="records-stats" aria-label="What the records show" className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -220,11 +224,10 @@ export const RecordsPage: React.FC = () => {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setFilterStop(!filterStop)}
-                className={`px-3 py-1.5 rounded-full text-[12px] font-semibold border cursor-pointer ${
-                  filterStop
-                    ? 'bg-bad/20 border-bad text-bad-light'
-                    : 'bg-surface-hover border-line-strong text-fg'
-                }`}
+                className={`px-3 py-1.5 rounded-full text-[12px] font-semibold border cursor-pointer ${filterStop
+                  ? 'bg-bad/20 border-bad text-bad-light'
+                  : 'bg-surface-hover border-line-strong text-fg'
+                  }`}
               >
                 {filterStop ? 'Showing: Has a stop' : 'Filter: Has a stop'}
               </button>
@@ -260,48 +263,47 @@ export const RecordsPage: React.FC = () => {
                   </tr>
                 ) : (
                   filteredTasks.slice(0, 20).map(t => {
-                  const isSelected = selectedTask?.task_id === t.task_id;
-                  const stops = t.prevented_count || t.os_denials_count || 0;
-                  return (
-                    <tr
-                      key={t.task_id}
-                      onClick={() => handleSelectTask(t)}
-                      className={`cursor-pointer transition-colors ${
-                        isSelected ? 'bg-surface-active' : 'hover:bg-surface-3'
-                      }`}
-                    >
-                      <td className="py-2.5 font-mono text-info-text">
-                        {t.task_id.slice(0, 10)}…
-                      </td>
-                      <td className="py-2.5 font-mono text-fg">{t.agent_id}</td>
-                      <td className="py-2.5 text-fg-2">{(t as any).team || 'General'}</td>
-                      <td className="py-2.5 text-fg max-w-[160px] truncate">
-                        {t.request_text}
-                      </td>
-                      <td className="py-2.5">
-                        {stops > 0 ? (
-                          <span className="text-bad-light">{stops} stopped</span>
-                        ) : (
-                          <span className="text-fg-3">allowed</span>
-                        )}
-                      </td>
-                      <td className="py-2.5">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-ok/[0.14] text-ok-light text-[11px] font-semibold">
-                          ✓ Record checked: no entries changed
-                        </span>
-                      </td>
-                      <td className="py-2.5" onClick={e => e.stopPropagation()}>
-                        <a
-                          href={api.getRawReceiptUrl(t.task_id)}
-                          download
-                          className="text-info hover:text-info-text flex items-center gap-1 text-[12px]"
-                        >
-                          <Download className="w-3.5 h-3.5" /> Download
-                        </a>
-                      </td>
-                    </tr>
-                  );
-                }))}
+                    const isSelected = selectedTask?.task_id === t.task_id;
+                    const stops = t.prevented_count || t.os_denials_count || 0;
+                    return (
+                      <tr
+                        key={t.task_id}
+                        onClick={() => handleSelectTask(t)}
+                        className={`cursor-pointer transition-colors ${isSelected ? 'bg-surface-active' : 'hover:bg-surface-3'
+                          }`}
+                      >
+                        <td className="py-2.5 font-mono text-info-text">
+                          {t.task_id.slice(0, 10)}…
+                        </td>
+                        <td className="py-2.5 font-mono text-fg">{t.agent_id}</td>
+                        <td className="py-2.5 text-fg-2">{(t as any).team || 'General'}</td>
+                        <td className="py-2.5 text-fg max-w-[160px] truncate">
+                          {t.request_text}
+                        </td>
+                        <td className="py-2.5">
+                          {stops > 0 ? (
+                            <span className="text-bad-light">{stops} stopped</span>
+                          ) : (
+                            <span className="text-fg-3">allowed</span>
+                          )}
+                        </td>
+                        <td className="py-2.5">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-ok/[0.14] text-ok-light text-[11px] font-semibold">
+                            ✓ Record checked: no entries changed
+                          </span>
+                        </td>
+                        <td className="py-2.5" onClick={e => e.stopPropagation()}>
+                          <a
+                            href={api.getRawReceiptUrl(t.task_id)}
+                            download
+                            className="text-info hover:text-info-text flex items-center gap-1 text-[12px]"
+                          >
+                            <Download className="w-3.5 h-3.5" /> Download
+                          </a>
+                        </td>
+                      </tr>
+                    );
+                  }))}
               </tbody>
             </table>
           </div>

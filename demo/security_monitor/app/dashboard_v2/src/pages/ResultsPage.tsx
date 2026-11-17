@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import { ResultsSummary } from '../types';
 import { HowItWorks } from '../components/v3/HowItWorks';
 import { PALETTE } from '../logic/palette';
+import { PageHeader } from '../components/ui/PageHeader';
 
 // One colour per condition, the same in every chart and legend.
 const CONDITION_COLORS: Record<'A' | 'B' | 'C' | 'D', string> = {
@@ -135,17 +136,19 @@ export const ResultsPage: React.FC = () => {
 
   return (
     <div className="max-w-[1200px] pb-12 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
-        <div>
-          <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-fg">Full results</h1>
-          <p className="mt-2 mb-0 text-[15px]" style={{ color: 'var(--text-2)' }}>
+      <PageHeader
+        title="Full results"
+        subtitle={
+          <span>
             Recomputed directly from raw trial runs in <code className="mono">demo/data/evaluation_v3/results/</code>. Model: {summary.model}.
-          </p>
-        </div>
-        <span className="inline-flex items-center min-h-[36px] px-3 rounded-full text-[13px] font-semibold" style={{ background: 'var(--accent-tint)', color: 'var(--info-text)', border: '1px solid rgba(59,130,246,0.4)' }}>
-          {summary.evaluation_label || '—'}
-        </span>
-      </div>
+          </span>
+        }
+        actions={
+          <span className="inline-flex items-center min-h-[36px] px-3 rounded-full text-[13px] font-semibold bg-accent-tint text-accent border border-accent/40">
+            {summary.evaluation_label || '—'}
+          </span>
+        }
+      />
 
       <section className="card p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3" id="evidence-link">
         <div className="flex flex-col gap-1">

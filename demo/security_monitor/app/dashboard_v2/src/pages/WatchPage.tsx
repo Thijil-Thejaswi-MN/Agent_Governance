@@ -15,6 +15,7 @@ import { runPhase } from '../logic/runPhase';
 import { RunProgress } from '../components/action/RunProgress';
 import { agentStarted, blockedAttempts, boundaryLabel, fenceBlocked, splitAttempts, fileName, isTerminal, justBlocked, outputsFromSteps, OutputPreview } from '../logic/runView';
 import { Button } from '../components/ui/Button';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const STATUS_LABELS: Record<string, string> = {
   idle: 'Idle',
@@ -107,10 +108,15 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
   if (run.notFound) {
     return (
       <div className="max-w-xl mx-auto py-20 text-center space-y-4">
-        <h1 className="font-display text-[28px] sm:text-[32px] font-bold m-0">We couldn't find that run.</h1>
-        <Link to="/history" className="btn-ghost">
-          Go to History
-        </Link>
+        <PageHeader
+          title="We couldn't find that run."
+          className="text-center items-center"
+          actions={
+            <Link to="/history" className="btn-ghost">
+              Go to History
+            </Link>
+          }
+        />
       </div>
     );
   }

@@ -5,6 +5,7 @@ import { ExpansionItem, PendingGroup } from '../types';
 import { countDecided, formatDuration, isRule, isTimeout, medianDecisionSeconds } from '../logic/teamStats';
 import { useAuth } from '../context/AuthContext';
 import { ShieldAlert, CheckCircle, XCircle, Sliders, AlertTriangle } from 'lucide-react';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const groupTarget = (g: PendingGroup) => g.target ?? g.normalized_target ?? '';
 const groupRunPath = (g: PendingGroup) => {
@@ -95,14 +96,10 @@ export const InboxPage: React.FC = () => {
   return (
     <div className="flex flex-col gap-6 font-sans">
       {/* Headline */}
-      <section className="anim-rise">
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-fg">
-          {countToDisplay} requests are waiting. They come from {activeGroups.length} patterns.
-        </h1>
-        <p className="text-[15px] text-fg-2 mt-1.5">
-          Similar requests are grouped, so you decide once per pattern instead of once per agent.
-        </p>
-      </section>
+      <PageHeader
+        title={`${countToDisplay} requests are waiting. They come from ${activeGroups.length} patterns.`}
+        subtitle="Similar requests are grouped, so you decide once per pattern instead of once per agent."
+      />
 
       {/* KPI Cards */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">

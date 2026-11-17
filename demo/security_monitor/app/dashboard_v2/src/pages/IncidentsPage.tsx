@@ -5,6 +5,7 @@ import { api } from '../api/client';
 import { EmptyState, ErrorState, LoadingState } from '../components/common/States';
 import { Incident, IncidentDetail, mentionText, responseTaken, ruleLink, stoppedBy, triedLead } from '../logic/incidents';
 import { formatWhen } from '../logic/report';
+import { PageHeader } from '../components/ui/PageHeader';
 
 /** The expanded part of one incident. No effects, so tests can render it. */
 export const IncidentDetailView: React.FC<{ d: IncidentDetail }> = ({ d }) => {
@@ -83,14 +84,10 @@ export const IncidentsPage: React.FC = () => {
 
   return (
     <div className="max-w-[960px] pb-12 flex flex-col gap-5">
-      <header className="flex flex-col gap-2">
-        <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-fg">
-          {items == null ? 'Incidents' : items.length === 0 ? 'No incidents.' : `${items.length} blocked ${items.length === 1 ? 'action' : 'actions'}.`}
-        </h1>
-        <p className="m-0 text-[16px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
-          Every time an agent tried something outside its boundary. Each one was attempted, not successful.
-        </p>
-      </header>
+      <PageHeader
+        title={items == null ? 'Incidents' : items.length === 0 ? 'No incidents.' : `${items.length} blocked ${items.length === 1 ? 'action' : 'actions'}.`}
+        subtitle="Every time an agent tried something outside its boundary. Each one was attempted, not successful."
+      />
 
       {error ? (
         <ErrorState message={error} onRetry={load} id="incidents-error" />

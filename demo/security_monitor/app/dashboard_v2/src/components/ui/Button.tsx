@@ -1,4 +1,4 @@
-import React, { forwardRef } from 'react';
++import React, { forwardRef } from 'react';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 export type ButtonSize = 'sm' | 'md' | 'lg' | 'icon' | 'icon-sm';

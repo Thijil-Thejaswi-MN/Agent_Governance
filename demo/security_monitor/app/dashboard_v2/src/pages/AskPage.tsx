@@ -8,6 +8,7 @@ import { fileName } from '../logic/runView';
 import { FileReview, FileReviewResult } from '../components/v3/FileReview';
 import { FileDrop } from '../components/upload/FileDrop';
 import { Button } from '../components/ui/Button';
+import { PageHeader } from '../components/ui/PageHeader';
 
 // Plain names for the existing presets (the ids and their prompts are the server's).
 const PRESET_LABELS: Record<string, string> = {
@@ -233,12 +234,10 @@ export const AskPage: React.FC = () => {
 
   return (
     <div className="max-w-[820px] flex flex-col gap-6">
-      <div className="flex flex-col gap-2">
-        <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-fg">What should the agent do?</h1>
-        <p className="m-0 text-[16px] text-fg-2">
-          It can only touch what your request needs. Anything else is blocked, or you decide.
-        </p>
-      </div>
+      <PageHeader
+        title="What should the agent do?"
+        subtitle="It can only touch what your request needs. Anything else is blocked, or you decide."
+      />
 
       {activeCount >= 3 ? (
         <div id="active-run-banner" className="w-full px-4 py-3 rounded-xl text-[15px] text-left text-wait bg-wait/10 border border-wait/45">

@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { AttackDetail, AttackRow, AttackStory, EvidenceDataset, EvidenceTrial } from '../types';
 import { ErrorState, LoadingState } from '../components/common/States';
 import { DetailsDrawer } from '../components/v3/DetailsDrawer';
+import { PageHeader } from '../components/ui/PageHeader';
 import { ACTION_LABEL, SETUP_ABOUT, firstStory, highlightParts, rowVerdict, stepView, storyVerdict } from '../logic/evidence';
 
 const TONE: Record<'bad' | 'good' | 'neutral', React.CSSProperties> = {
@@ -356,17 +357,15 @@ export const EvidencePage: React.FC = () => {
 
   return (
     <div className="max-w-[1200px] pb-12 flex flex-col gap-8" id="evidence-page">
-      <header className="flex flex-col gap-2">
-        <Link to="/results" className="text-[14px] inline-flex items-center min-h-[32px]" style={{ color: 'var(--info-text)' }}>
-          ← Results
-        </Link>
-        <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-fg">Evidence</h1>
-        <p className="m-0 text-[16px] leading-relaxed max-w-[860px]" style={{ color: 'var(--text-2)' }}>
-          The recorded evaluation trials behind the results, one attack at a time. Pick an attack, see the instruction
-          hidden in its input file, then the exact step where the agent acted on it in each setup and what came back.
-          Everything here is read from the raw trial files in the repository.
-        </p>
-      </header>
+      <PageHeader
+        title="Evidence"
+        subtitle="The recorded evaluation trials behind the results, one attack at a time. Pick an attack, see the instruction hidden in its input file, then the exact step where the agent acted on it in each setup and what came back. Everything here is read from the raw trial files in the repository."
+        actions={
+          <Link to="/results" className="text-[14px] inline-flex items-center min-h-[32px] text-accent hover:underline">
+            ← Results
+          </Link>
+        }
+      />
 
       <nav className="flex flex-wrap gap-2" aria-label="Recorded runs" id="evidence-datasets">
         {datasets

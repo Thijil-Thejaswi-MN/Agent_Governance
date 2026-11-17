@@ -7,6 +7,7 @@ import { EmptyState, ErrorState, LoadingState } from '../components/common/State
 import { ResponseChip, RuleSentence } from '../components/policy/RuleBits';
 import { PolicyCheck } from '../components/policy/PolicyCheck';
 import { ACTIONS, RESPONSES, RuleDraft, draftFromParams, draftProblems, ruleState, sortRules } from '../logic/rules';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const EMPTY_DRAFT: RuleDraft = { agent_or_profile: '*', action: 'file_read', target: '', response: 'allow', expiry_days: 30 };
 
@@ -82,13 +83,10 @@ export const StandingRulesPage: React.FC = () => {
 
   return (
     <div className="max-w-[960px] pb-12 flex flex-col gap-6">
-      <header className="flex flex-col gap-2">
-        <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-fg">Policies</h1>
-        <p className="m-0 text-[16px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
-          Standing rules decide requests that would otherwise wait for a person. High-risk requests, and requests
-          that a file the agent read may have prompted, always go to a person.
-        </p>
-      </header>
+      <PageHeader
+        title="Policies"
+        subtitle="Standing rules decide requests that would otherwise wait for a person. High-risk requests, and requests that a file the agent read may have prompted, always go to a person."
+      />
 
       <div
         id="rules-status"
