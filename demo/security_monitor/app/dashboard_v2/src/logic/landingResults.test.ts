@@ -14,6 +14,7 @@ describe('sign-in evaluation figures (audit A4, A5, A9)', () => {
     expect(r[1].label).toContain('when the request names the files');
     expect(r[1].label).toContain('when it does not, 10/32 (14/32 without)');
     expect(r[2].label).toBe('added to a normal task (6.4 s to 7.4 s)');
+    expect(r[3].label).toContain('in 43,352 compared probes over 552 boundaries (9,091 before; 60 known exceptions not compared)');
   });
 
   it('feed the chart from the same file', () => {

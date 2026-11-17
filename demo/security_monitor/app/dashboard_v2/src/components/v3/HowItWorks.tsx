@@ -103,13 +103,13 @@ export const HowItWorks: React.FC = () => {
       <DetailsDrawer open={open} title="How it works: technical details" onClose={() => setOpen(false)} id="how-it-works-drawer">
         <DetailsSection title="Request to boundary">
           <KV k="Intake" v="intake.py derives a per-task boundary: files read and write, tools, network hosts, peer agents" />
-          <KV k="Derivation" v="v1 templates (catalog.BoundaryDerivationV1) in the launcher; v2 LLM derivation (derivation_v2.py) evaluated in M5, not wired into the launcher" />
+          <KV k="Derivation" v="templates (catalog.BoundaryDerivationV1_1) by default; optionally a model proposes the files to read (derivation_grounded.py), limited to files that exist, and the requester reviews them before the run" />
           <KV k="Identity" v="one cgroup v2 scope per task (systemd-run --user --scope), created before the agent acts" />
         </DetailsSection>
         <DetailsSection title="Layer 1: tool layer">
-          <KV k="Broker" v="Unix-socket RPC with 7 agent-facing endpoints: read_file, write_file, http_get, call_agent, request_access, run_command_check, llm_complete; no approve, deny or grant endpoint" />
+          <KV k="Broker" v="Unix-socket RPC with 8 agent-facing endpoints: read_file, write_file, http_get, call_agent, request_access, run_command_check, run_command_begin, llm_complete; no approve, deny or grant endpoint" />
           <KV k="Egress proxy" v="the only TCP port the sandbox may connect to" />
-          <KV k="Expansion" v="request_access gets a risk tier, raised when the agent read untrusted input before asking (provenance); grants are exact resources, wildcards are rejected; an approved file is copied into the read-only granted/ directory" />
+          <KV k="Expansion" v="request_access gets a risk tier, raised when the agent read untrusted input before asking (provenance); grants are exact resources, wildcards are rejected; an approved file is copied into the read-only granted/ directory; a new output file is written to staged/ and a person reviews that exact content before it is saved" />
           <KV k="Fail closed" v="a request nobody decides before its timeout is denied" />
         </DetailsSection>
         <DetailsSection title="Layer 2: kernel layer (Linux/WSL2)">
@@ -121,7 +121,7 @@ export const HowItWorks: React.FC = () => {
           <KV k="Graduated response" v="deny → freeze (cgroup.freeze) → kill (cgroup.kill)" />
         </DetailsSection>
         <DetailsSection title="Record">
-          <KV k="Task Receipt v0" v="a SHA-256 hash-chained JSON log per task; it detects edits to individual entries, but it is not signed, so someone able to rewrite the whole file can recompute the chain (scripts/verify_receipt.py)" />
+          <KV k="Task Receipt v1" v="a SHA-256 hash-chained log of events plus a SHA-256 hash of the whole record (boundary, grants, deliveries, ending); it detects edits, but it is not signed, so someone able to rewrite the whole file can recompute both (scripts/verify_receipt.py). Older v0 records verify for their events only" />
         </DetailsSection>
         <DetailsSection title="Conditions (M6 evaluation)">
           <KV k="A" v="no governance" />
@@ -131,7 +131,7 @@ export const HowItWorks: React.FC = () => {
         </DetailsSection>
         <DetailsSection title="Who decides expansions">
           <KV k="Evaluation" v="an idealised ORACLE approves exactly the legitimate resources; real human approvals were not tested" />
-          <KV k="Console" v="requests stay PENDING until a signed-in operator decides; the approver is recorded as operator:<GOVERNANCE_OPERATOR_NAME>" />
+          <KV k="Console" v="LOW risk is approved and HIGH risk denied automatically; a MEDIUM request waits for a person with the right role (or a standing rule, when rules are on) and is denied if nobody decides before its timeout. The decision is recorded under the person who made it (operator:<name> for the operator, otherwise role:<name>)" />
         </DetailsSection>
       </DetailsDrawer>
     </section>

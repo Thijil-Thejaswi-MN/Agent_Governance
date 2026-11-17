@@ -25,6 +25,7 @@ from .models import (
 from .storage import GovernanceStorage
 from .evaluator import BoundaryEvaluator
 from .policy import TaskPolicyEngine
+from .single_use import consume_single_use
 
 logger = logging.getLogger(__name__)
 
@@ -219,6 +220,10 @@ class EgressProxyServer:
                 writer.close()
                 await writer.wait_closed()
                 return
+
+            # A single-use network grant is used up by this connection, as it is through
+            # the broker's http_get (independent audit #2, F-03).
+            consume_single_use(self.storage, boundary, "network", f"{dst_host}:{dst_port}")
 
             # 5. Connect to destination exact IP (NO SECOND DNS LOOKUP) and tunnel
             try:

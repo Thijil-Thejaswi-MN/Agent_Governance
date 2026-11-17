@@ -23,6 +23,7 @@ from .storage import GovernanceStorage
 from .evaluator import BoundaryEvaluator
 from .policy import TaskPolicyEngine
 from .expansion import ExpansionService
+from .single_use import consume_single_use
 
 
 class ToolBroker:
@@ -64,25 +65,8 @@ class ToolBroker:
         self.storage.record_event(ev)
 
     def _check_and_consume_single_use(self, boundary: Any, resource_type: str, target: str) -> None:
-        """Enforces single-use consumption for human-approved HIGH expansion grants."""
-        if not boundary.parent_expansion_id:
-            return
-        req = self.storage.get_expansion_request(boundary.parent_expansion_id)
-        if not req or not req.single_use:
-            return
-        if req.resource_type == resource_type and req.resource_target == target:
-            used = self.storage.increment_expansion_usage(req.request_id)
-            if used >= 1:
-                # Consume single-use grant: remove resource from boundary so subsequent accesses are blocked
-                if resource_type == "file_read" and target in boundary.files_read:
-                    boundary.files_read.remove(target)
-                elif resource_type == "file_write" and target in boundary.files_write:
-                    boundary.files_write.remove(target)
-                elif resource_type == "network" and target in boundary.network:
-                    boundary.network.remove(target)
-                elif resource_type == "peer_agent" and target in boundary.peer_agents:
-                    boundary.peer_agents.remove(target)
-                self.storage.save_boundary(boundary)
+        """Uses up every single-use grant of this task that the access matches (single_use.py)."""
+        consume_single_use(self.storage, boundary, resource_type, target)
 
     def request_expansion(
         self,

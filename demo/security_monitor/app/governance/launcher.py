@@ -198,20 +198,35 @@ class ExpansionDelivery:
         self._lock = threading.Lock()
 
     def stage_snapshot(self, target: str) -> dict[str, Any]:
-        """Snapshots staged/<target> for review; the bytes are kept here, never re-read on approval."""
+        """Snapshots staged/<target> for review; the bytes are kept here, never re-read on approval.
+
+        Each snapshot gets its own id. The request that showed it to a person lands exactly
+        that snapshot (deliver(..., snapshot_id=...)), so a second snapshot of the same target
+        can never be landed by the first approval (independent audit #2, finding F-02)."""
         snap = snapshot_staged(self.ws, target)
         if snap.get("ok"):
+            snap["snapshot_id"] = f"snap_{uuid.uuid4().hex[:12]}"
             with self._lock:
-                self._snapshots[snap["target"]] = snap
+                self._snapshots[snap["snapshot_id"]] = snap
         return {k: v for k, v in snap.items() if k != "data"}
 
-    def _land(self, target: str, rec: dict[str, Any]) -> None:
+    def _land(self, target: str, rec: dict[str, Any], snapshot_id: str | None = None) -> None:
         t = normalize_write_target(target)
-        with self._lock:
-            snap = self._snapshots.get(t or "")
         if t is None:
             rec.update({"type": "none", "reason": "invalid_or_traversal_target"})
             return
+        with self._lock:
+            if snapshot_id is not None:
+                snap = self._snapshots.get(snapshot_id)
+                if snap is not None and snap.get("target") != t:
+                    snap = None
+            else:
+                # Without an id, land only when exactly one snapshot of this target exists.
+                same = [s for s in self._snapshots.values() if s.get("target") == t]
+                snap = same[0] if len(same) == 1 else None
+                if len(same) > 1:
+                    rec.update({"type": "none", "reason": "ambiguous_snapshot"})
+                    return
         if snap is None:
             rec.update({"type": "none", "reason": "nothing_staged_for_review"})
             return
@@ -220,8 +235,8 @@ class ExpansionDelivery:
             rec.update({"type": "none", "reason": res.get("reason", "not_landed")})
             return
         with self._lock:
-            self._snapshots.pop(t, None)
-        rec.update({"type": "file_land", "landed_path": res["landed_path"], "staged_path": snap["staged_path"],
+            self._snapshots.pop(snap["snapshot_id"], None)
+        rec.update({"type": "file_land", "snapshot_id": snap["snapshot_id"], "landed_path": res["landed_path"], "staged_path": snap["staged_path"],
                     "content_sha256": res["content_sha256"], "size_bytes": res["size_bytes"]})
 
     def _latest_request(self, task_id: str, rtype: str, target: str) -> Any:
@@ -232,7 +247,8 @@ class ExpansionDelivery:
         # a new approval of the same file must be the one that is delivered.
         return max(reqs, key=lambda r: r.created_at) if reqs else None
 
-    def deliver(self, task_id: str, rtype: str, target: str, granted: bool) -> dict[str, Any]:
+    def deliver(self, task_id: str, rtype: str, target: str, granted: bool,
+                snapshot_id: str | None = None) -> dict[str, Any]:
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         req = self._latest_request(task_id, rtype, target)
         rec: dict[str, Any] = {
@@ -244,6 +260,9 @@ class ExpansionDelivery:
         }
         if not granted or req is None or req.status != ExpansionStatus.APPROVED:
             rec.update({"type": "none", "reason": "not_approved"})
+            if snapshot_id is not None:
+                with self._lock:
+                    self._snapshots.pop(snapshot_id, None)  # a refused write never lands later
         elif rtype == "file_read":
             raw = target.strip().replace("\\", "/")
             parts = [p for p in raw.split("/") if p]
@@ -290,7 +309,7 @@ class ExpansionDelivery:
                                 "content_sha256": hashlib.sha256(dst.read_bytes()).hexdigest(),
                                 "removed_at": None, "removed_reason": None})
         elif rtype == "file_write" and self.staging:
-            self._land(target, rec)
+            self._land(target, rec, snapshot_id)
         elif rtype == "network":
             rec.update({"type": "proxy_allowlist", "note": "boundary network list updated; egress proxy enforces per task"})
         else:

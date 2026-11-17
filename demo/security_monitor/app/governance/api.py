@@ -43,7 +43,7 @@ from .expansion import ExpansionService
 from .fleet import build_fleet_summary
 from .intake import TaskIntakeService
 from .inventory import AgentInventoryService
-from .models import EnforcementMode, ExpansionStatus, TaskBoundary, TaskLifecycle, TaskRecord
+from .models import EnforcementMode, ExpansionStatus, RiskTier, TaskBoundary, TaskLifecycle, TaskRecord
 from .roles import (
     Role,
     UserSession,
@@ -587,13 +587,30 @@ def event_key(e: dict[str, Any]) -> str:
     return f"{e.get('timestamp') or ''}|{e.get('event_id') or ''}"
 
 
+def _visible_tasks(request: Request | None, storage: Any) -> list[Any]:
+    """The tasks this user may see (PermissionMatrix.can_view_run). Every read that lists task
+    data goes through this or _require_view (independent audit #2, finding F-05)."""
+    user = get_current_user_session(request)
+    return [t for t in storage.list_tasks() if PermissionMatrix.can_view_run(user, t.owner, t.team)]
+
+
+def _require_view(request: Request | None, storage: Any, task_id: str) -> Any:
+    """The task, if this user may see it: 403 for someone else's task. None for an unknown id."""
+    user = get_current_user_session(request)
+    task = storage.get_task(task_id)
+    if task is not None and not PermissionMatrix.can_view_run(user, task.owner, task.team):
+        raise HTTPException(status_code=403, detail="Forbidden: You do not have permission to view this run.")
+    return task
+
+
 @governance_router.get("/events")
 async def list_all_events(
     since: str | None = Query(None),
     limit: int = Query(100, ge=1, le=500),
+    request: Request = None,
 ) -> dict[str, Any]:
     storage = get_storage()
-    tasks = storage.list_tasks()
+    tasks = _visible_tasks(request, storage)
     all_events: list[dict[str, Any]] = []
     seen_ids = set()
 
@@ -684,7 +701,9 @@ async def list_tasks(request: Request = None) -> list[dict[str, Any]]:
 
 
 @governance_router.post("/tasks")
-async def submit_task(req: SubmitTaskRequest) -> dict[str, Any]:
+async def submit_task(req: SubmitTaskRequest, request: Request) -> dict[str, Any]:
+    if not PermissionMatrix.can_start_run(get_current_user_session(request)):
+        raise HTTPException(status_code=403, detail="Forbidden: your role cannot start a run.")
     task, boundary = get_intake().submit_task(
         request_text=req.request_text,
         agent_id=req.agent_id,
@@ -727,7 +746,8 @@ async def get_task_detail(task_id: str, request: Request = None) -> dict[str, An
 
 
 @governance_router.get("/tasks/{task_id}/events")
-async def get_task_events(task_id: str) -> list[dict[str, Any]]:
+async def get_task_events(task_id: str, request: Request = None) -> list[dict[str, Any]]:
+    _require_view(request, get_storage(), task_id)
     storage_events = get_storage().get_events_for_task(task_id)
     return _build_unified_task_events(task_id, storage_events)
 
@@ -996,10 +1016,21 @@ async def get_task_receipt_raw(task_id: str, request: Request = None) -> Respons
     )
 
 
+def _scoped_inventory(visible_ids: set[str]) -> list[dict[str, Any]]:
+    """The agent inventory, with the current run named only when this user may see it."""
+    out = []
+    for i in get_inventory_service().get_inventory():
+        d = i.model_dump()
+        if d.get("current_task_id") and d["current_task_id"] not in visible_ids:
+            d["current_task_id"] = None
+            d["boundary_version"] = None
+        out.append(d)
+    return out
+
+
 @governance_router.get("/inventory")
-async def get_agent_inventory() -> list[dict[str, Any]]:
-    items = get_inventory_service().get_inventory()
-    return [i.model_dump() for i in items]
+async def get_agent_inventory(request: Request = None) -> list[dict[str, Any]]:
+    return _scoped_inventory({t.task_id for t in _visible_tasks(request, get_storage())})
 
 
 @governance_router.get("/alerts")
@@ -1008,10 +1039,12 @@ async def get_alerts() -> list[dict[str, Any]]:
 
 
 @governance_router.get("/fleet/summary")
-async def get_fleet_summary() -> dict[str, Any]:
-    """Agents at work, waiting decisions and grouped blocked actions (Fleet page). Reads only."""
+async def get_fleet_summary(request: Request = None) -> dict[str, Any]:
+    """Agents at work, waiting decisions and grouped blocked actions (Fleet page). Reads only,
+    and only the runs this user may see."""
     storage = get_storage()
-    tasks = [t for t in storage.list_tasks() if getattr(t, "condition", None) != "B"]
+    tasks = [t for t in _visible_tasks(request, storage) if getattr(t, "condition", None) != "B"]
+    visible_ids = {t.task_id for t in tasks}
     task_dicts = [
         {
             "task_id": t.task_id,
@@ -1028,8 +1061,9 @@ async def get_fleet_summary() -> dict[str, Any]:
     for t in tasks:
         events.extend(_build_unified_task_events(t.task_id, storage.get_events_for_task(t.task_id)))
         snippets_by_task[t.task_id] = [p.content_snippet or "" for p in storage.get_provenance_for_task(t.task_id)]
-    pending = [_enrich_expansion_dict(e, storage) for e in storage.list_expansion_requests(status="PENDING")]
-    inventory = [i.model_dump() for i in get_inventory_service().get_inventory()]
+    pending = [_enrich_expansion_dict(e, storage) for e in storage.list_expansion_requests(status="PENDING")
+               if e.task_id in visible_ids]
+    inventory = _scoped_inventory(visible_ids)
     return build_fleet_summary(task_dicts, inventory, pending, events, snippets_by_task)
 
 
@@ -1134,29 +1168,35 @@ def _enrich_expansion_dict(e: Any, storage: Any) -> dict[str, Any]:
 async def list_expansions(
     task_id: str | None = Query(None),
     status: str | None = Query(None),
+    request: Request = None,
 ) -> list[dict[str, Any]]:
     storage = get_storage()
+    visible = {t.task_id for t in _visible_tasks(request, storage)}
     expansions = storage.list_expansion_requests(task_id=task_id, status=status)
-    return [_enrich_expansion_dict(e, storage) for e in expansions]
+    return [_enrich_expansion_dict(e, storage) for e in expansions if e.task_id in visible]
 
 
-@governance_router.get("/expansions/{request_id}")
-async def get_expansion(request_id: str) -> dict[str, Any]:
-    storage = get_storage()
+def _visible_request(request: Request | None, storage: Any, request_id: str) -> Any:
     req = storage.get_expansion_request(request_id)
     if not req:
         raise HTTPException(status_code=404, detail="Expansion request not found")
+    _require_view(request, storage, req.task_id)
+    return req
+
+
+@governance_router.get("/expansions/{request_id}")
+async def get_expansion(request_id: str, request: Request = None) -> dict[str, Any]:
+    storage = get_storage()
+    req = _visible_request(request, storage, request_id)
     return _enrich_expansion_dict(req, storage)
 
 
 @governance_router.get("/expansions/{request_id}/preview")
-async def preview_expansion(request_id: str) -> dict[str, Any]:
+async def preview_expansion(request_id: str, request: Request = None) -> dict[str, Any]:
     """What a waiting request is for, in plain terms: name, folder and size (read only;
     the size is looked up only inside that task's workspace and never read)."""
     storage = get_storage()
-    req = storage.get_expansion_request(request_id)
-    if not req:
-        raise HTTPException(status_code=404, detail="Expansion request not found")
+    req = _visible_request(request, storage, request_id)
     task = storage.get_task(req.task_id)
     workspace = task.workspace_root if task else None
     if not workspace:
@@ -1214,8 +1254,29 @@ def _target_mentioned(target: str, snippet: str) -> bool:
     return t in low or (len(name) >= 3 and name in low)
 
 
+def _require_task_control(request: Request | None, task_id: str, agent_id: str) -> None:
+    """Asking for access on a task's behalf from the web API needs the right to control that
+    task (the same check as stopping it), and the agent named must be the task's own agent
+    (independent audit #2, finding F-01). The agent itself asks over its broker socket."""
+    user = get_current_user_session(request)
+    task = get_storage().get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found.")
+    if not PermissionMatrix.can_stop_run(user, task.owner, task.team):
+        raise HTTPException(status_code=403, detail="Forbidden: you cannot ask for access on behalf of this task.")
+    if (agent_id or "") != (task.agent_id or ""):
+        raise HTTPException(status_code=400, detail=f"Agent '{agent_id}' is not the agent of task '{task_id}'.")
+
+
+def _decider_name(user: UserSession) -> str:
+    if user.role == Role.ADMIN or user.name == os.getenv("GOVERNANCE_OPERATOR_NAME", "operator"):
+        return f"operator:{user.name}"
+    return f"{user.role.value}:{user.name}"
+
+
 @governance_router.post("/expansions/request")
-async def request_expansion(payload: ExpansionSubmission) -> dict[str, Any]:
+async def request_expansion(payload: ExpansionSubmission, request: Request) -> dict[str, Any]:
+    _require_task_control(request, payload.task_id, payload.agent_id)
     try:
         req = get_expansion_service().evaluate_request(
             task_id=payload.task_id,
@@ -1237,8 +1298,9 @@ async def request_expansion(payload: ExpansionSubmission) -> dict[str, Any]:
 
 
 @governance_router.post("/expansions/request_and_wait")
-async def request_expansion_and_wait(payload: ExpansionSubmission) -> dict[str, Any]:
+async def request_expansion_and_wait(payload: ExpansionSubmission, request: Request) -> dict[str, Any]:
     """Non-blocking async request-and-wait endpoint. Uses asyncio.sleep so other requests are not blocked."""
+    _require_task_control(request, payload.task_id, payload.agent_id)
     try:
         approved, message = await get_expansion_service().async_request_and_wait(
             task_id=payload.task_id,
@@ -1547,9 +1609,11 @@ async def batch_deny_expansions(
 
 @governance_router.get("/inbox/pending")
 async def get_inbox_pending(request: Request) -> dict[str, Any]:
-    """Returns pending requests grouped by pattern for Security Reviewer inbox."""
+    """Returns pending requests grouped by pattern for Security Reviewer inbox (only the runs
+    this user may see)."""
     storage = get_storage()
-    pending = storage.list_expansion_requests(status="PENDING")
+    visible = {t.task_id for t in _visible_tasks(request, storage)}
+    pending = [r for r in storage.list_expansion_requests(status="PENDING") if r.task_id in visible]
     groups = group_pending(pending)
     total_waiting = len(pending)
     pattern_count = len(groups)
@@ -1766,7 +1830,8 @@ async def simulate_policy(payload: PolicySimulateRequest, request: Request = Non
 
 
 class ProactiveGrantRequest(BaseModel):
-    granted_by: str = Field(..., description="Operator identifier")
+    # Ignored: the grant is recorded under the signed-in user (independent audit #2, F-01).
+    granted_by: str | None = Field(None, description="Ignored; the authenticated user is recorded")
     resource_type: str = Field(..., description="file_read | file_write | network | peer_agent")
     resource_target: str = Field(..., description="Exact resource target (wildcards forbidden)")
     single_use: bool = Field(True, description="Single-use consumption for high-risk resources")
@@ -1778,11 +1843,26 @@ async def grant_resource_proactively(
     payload: ProactiveGrantRequest,
     _token: str = Depends(verify_operator_token),
 ) -> dict[str, Any]:
-    """Allows a human operator to proactively grant a resource (including HIGH risk) from the dashboard."""
+    """Allows a person to grant a resource before the agent asks. The grant is recorded under the
+    authenticated user, never a name from the request body. A high-risk grant needs an admin or a
+    security reviewer; anything else needs the right to decide this task's requests."""
+    user = authenticate_token(_token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+    task = get_storage().get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=400, detail=f"Task '{task_id}' not found.")
+    tier = get_expansion_service().classify_resource_risk(payload.resource_type, payload.resource_target)
+    if tier == RiskTier.HIGH:
+        allowed = PermissionMatrix.can_batch_decide(user)
+    else:
+        allowed = PermissionMatrix.can_decide_request(user, task.team)
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Forbidden: your role cannot grant this resource to this task.")
     try:
         new_boundary = get_expansion_service().grant_resource_proactively(
             task_id=task_id,
-            granted_by=payload.granted_by,
+            granted_by=_decider_name(user),
             resource_type=payload.resource_type,
             resource_target=payload.resource_target,
             single_use=payload.single_use,
@@ -2139,9 +2219,10 @@ async def stream_task_steps(task_id: str, request: Request) -> StreamingResponse
 
 
 @governance_router.get("/run/{task_id}/steps")
-async def get_task_steps_poll(task_id: str, after: int = 0) -> list[dict[str, Any]]:
-    """Polling fallback for live task steps."""
+async def get_task_steps_poll(task_id: str, after: int = 0, request: Request = None) -> list[dict[str, Any]]:
+    """Polling fallback for live task steps (same visibility as the run)."""
     storage = get_storage()
+    _require_view(request, storage, task_id)
     return storage.get_task_steps(task_id, after_step=after)
 
 

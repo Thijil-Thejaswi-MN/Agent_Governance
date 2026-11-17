@@ -132,6 +132,9 @@ class BrokerRPCServer:
         self._thread: threading.Thread | None = None
         self._stopping = False
         self._lock = threading.Lock()
+        # Write targets with a review in progress: one at a time per target, so the content a
+        # person reviews is the content that lands (independent audit #2, finding F-02).
+        self._writes_in_review: set[str] = set()
 
         self._handlers: dict[str, Callable[[str, dict[str, Any]], Any]] = {
             "read_file": self._h_read_file,
@@ -568,18 +571,44 @@ class BrokerRPCServer:
 
         # Content-reviewed writes: a file the agent was not given is staged first, and the
         # snapshot taken now (not the file as it is later) is what the person reviews and what lands.
-        if rtype == "file_write" and self.delivery is not None and getattr(self.delivery, "staging", False):
-            staged = self._stage_for_review(target)
-            if staged is not None:
-                return staged
+        snapshot_id: str | None = None
+        reviewing = rtype == "file_write" and self.delivery is not None and getattr(self.delivery, "staging", False)
+        if reviewing:
+            with self._lock:
+                busy = target in self._writes_in_review
+                if not busy:
+                    self._writes_in_review.add(target)
+            if busy:
+                message = (f"A write to '{target}' is already waiting for a decision. "
+                           f"Wait for that answer before asking again.")
+                self._step("BLOCK_ACTION", f"Write request {target}: one already waiting", message)
+                return {"granted": False, "status": "ALREADY_PENDING", "resource_type": rtype,
+                        "resource_target": target, "reason": "write_already_pending", "message": message}
+        try:
+            if reviewing:
+                staged, snapshot_id = self._stage_snapshot_for_review(target)
+                if staged is not None:
+                    return staged
+            res = self._ask_and_deliver(token, rtype, target, just, snapshot_id)
+        finally:
+            if reviewing:
+                with self._lock:
+                    self._writes_in_review.discard(target)
+        return res
 
+    def _ask_and_deliver(self, token: str, rtype: str, target: str, just: str,
+                         snapshot_id: str | None) -> dict[str, Any]:
         timeout_s = getattr(self.broker, "default_approval_timeout", None)
         if timeout_s is not None:
             res = self.broker.request_access(token, rtype, target, just, timeout_seconds=timeout_s)
         else:
             res = self.broker.request_access(token, rtype, target, just)
         if self.delivery is not None:
-            res["delivery"] = self.delivery.deliver(self.task_id, rtype, target, bool(res.get("granted")))
+            if snapshot_id is not None:
+                res["delivery"] = self.delivery.deliver(self.task_id, rtype, target, bool(res.get("granted")),
+                                                        snapshot_id=snapshot_id)
+            else:
+                res["delivery"] = self.delivery.deliver(self.task_id, rtype, target, bool(res.get("granted")))
             if res.get("granted") and res["delivery"].get("reason") == "source_missing_or_outside_workspace":
                 res["message"] = f"'{target}' was approved, but no such file exists in the task folder."
             if rtype == "file_write" and getattr(self.delivery, "staging", False) and res.get("granted"):
@@ -606,6 +635,11 @@ class BrokerRPCServer:
 
     def _stage_for_review(self, target: str) -> dict[str, Any] | None:
         """Snapshots staged/<target>. Returns a reply when there is nothing to review, else None."""
+        return self._stage_snapshot_for_review(target)[0]
+
+    def _stage_snapshot_for_review(self, target: str) -> tuple[dict[str, Any] | None, str | None]:
+        """Like _stage_for_review, and also returns the id of the snapshot taken, which is the
+        one that lands if the request is approved."""
         snap = self.delivery.stage_snapshot(target)
         if not snap.get("ok"):
             reason = snap.get("reason", "not_staged")
@@ -619,8 +653,9 @@ class BrokerRPCServer:
             else:
                 message = f"'{where}' cannot be reviewed ({reason.replace('_', ' ')}). Write it as a plain file."
             self._step("BLOCK_ACTION", f"Write request {target}: nothing to review", message)
-            return {"granted": False, "status": "STAGE_FIRST" if reason == "not_staged" else "REFUSED",
-                    "resource_type": "file_write", "resource_target": target, "reason": reason, "message": message}
+            return ({"granted": False, "status": "STAGE_FIRST" if reason == "not_staged" else "REFUSED",
+                     "resource_type": "file_write", "resource_target": target, "reason": reason,
+                     "message": message}, None)
         now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
         try:
             bnd = self.broker.storage.get_boundary(self.task_id)
@@ -629,6 +664,7 @@ class BrokerRPCServer:
             bnd_ver = None
         details = {k: snap[k] for k in ("staged_path", "size_bytes", "content_sha256", "binary", "preview", "truncated")}
         details["resource_type"] = "file_write"
+        details["snapshot_id"] = snap.get("snapshot_id")
         self.broker.storage.record_event(GovernanceEvent(
             event_id=self.broker._generate_event_id() if hasattr(self.broker, "_generate_event_id") else f"gov_ev_{uuid.uuid4().hex[:12]}",
             timestamp=now_utc, source=EventSource.TOOL_BROKER, task_id=self.task_id,
@@ -639,7 +675,7 @@ class BrokerRPCServer:
         ))
         self._step("ALLOW", f"Staged {snap['target']} for review ({snap['size_bytes']} bytes)",
                    f"SHA-256 {snap['content_sha256']}")
-        return None
+        return None, snap.get("snapshot_id")
 
     @staticmethod
     def _norm_target(target: str) -> str:
