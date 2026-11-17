@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { BoundaryPreviewResponse, RunPreset, ConfiguredAgent, ActiveRunTask } from '../types';
 import { fileName } from '../logic/runView';
 import { FileReview, FileReviewResult } from '../components/v3/FileReview';
+import { FileDrop } from '../components/upload/FileDrop';
 
 // Plain names for the existing presets (the ids and their prompts are the server's).
 const PRESET_LABELS: Record<string, string> = {
@@ -227,7 +228,7 @@ export const AskPage: React.FC = () => {
 
   const reads = [...new Set((preview?.boundary_v1.files_read || []).map(fileName))];
   const writes = [...new Set((preview?.boundary_v1.files_write || []).map(fileName))];
-  const fileNames = Object.keys(files).map(fileName);
+  const fileNames = Object.keys(files);
 
   return (
     <div className="max-w-[820px] flex flex-col gap-6">
@@ -403,7 +404,7 @@ export const AskPage: React.FC = () => {
 
       <div className="text-[14px] flex flex-wrap items-center gap-x-4 gap-y-1 text-[#8B95A7]">
         {fileNames.length > 0 ? <span id="attached-files">Files given to the agent: {joinNames(fileNames)}.</span> : <span>No files given to the agent.</span>}
-        {Object.keys(files).length < MAX_FILES && (
+        {(Object.keys(files).length < MAX_FILES || showAddFile) && (
           <button className="link-btn text-[14px]" onClick={() => setShowAddFile(v => !v)} aria-expanded={showAddFile}>
             {showAddFile ? 'Cancel' : 'Add your own file'}
           </button>
@@ -416,7 +417,17 @@ export const AskPage: React.FC = () => {
       </div>
 
       {showAddFile && (
-        <div className="w-full card p-4 text-left space-y-3">
+        <div className="w-full card p-4 text-left space-y-4">
+          <FileDrop files={files} onFilesChange={setFiles} />
+
+          <div className="relative flex items-center py-1">
+            <div className="flex-grow border-t border-[#2A3344]"></div>
+            <span className="flex-shrink mx-4 text-[12px] uppercase tracking-wider text-[#8B95A7]">
+              or paste text
+            </span>
+            <div className="flex-grow border-t border-[#2A3344]"></div>
+          </div>
+
           <label className="block text-[14px] text-[#A7B0C0]">
             File name
             <input
