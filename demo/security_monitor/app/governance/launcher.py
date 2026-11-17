@@ -1411,6 +1411,8 @@ class TaskLauncher:
                 "landlock_rules_sha256": _sha256_file(rules_path),
                 "rpc_call_counts": dict(rpc.call_counts),
                 "rpc_rejections": rpc.rejections,
+                "rpc_rejections_dropped": rpc.rejections_dropped,
+                "rpc_connections_refused": rpc.connections_refused,
                 "tool_call_attribution": _tool_call_attribution(rpc.tool_calls, correlator.records),
                 "aborted": aborted,
                 **({"boundary_model": spec.boundary_model} if resolved_path else {}),

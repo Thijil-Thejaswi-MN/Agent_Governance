@@ -1,8 +1,8 @@
 """Agent-facing broker RPC over a per-task Unix domain socket (M6.1).
 
-Exposes exactly seven endpoints to the sandboxed agent:
+Exposes exactly eight endpoints to the sandboxed agent:
     read_file, write_file, http_get, call_agent, request_access,
-    run_command_check, llm_complete
+    run_command_check, run_command_begin, llm_complete
 Dispatch is through an explicit table of handlers with whitelisted parameters;
 there is no generic attribute lookup, so approve/deny/grant (or any other broker
 or expansion-service method) are unreachable from this socket. Approval stays
@@ -11,10 +11,12 @@ with the user-facing control plane.
 Each request is authenticated by the task token (which the shim received over a
 pipe fd) and must belong to this socket's task. When the task's cgroup is known,
 the connecting peer (SO_PEERCRED) must also be a process inside that cgroup.
-Requests are size-limited and every call has a timeout.
+Requests are size-limited and every call has a timeout. At most MAX_CONNECTIONS are
+served at once, and the per-task lists kept in memory are bounded (audit finding A7).
 """
 from __future__ import annotations
 
+import collections
 import datetime
 import json
 import os
@@ -43,6 +45,8 @@ AGENT_ENDPOINTS = (
 )
 
 MAX_PENDING_CALLS = 64
+MAX_CONNECTIONS = 32  # served at once; more are closed straight away and counted
+MAX_REJECTIONS_KEPT = 200  # rejected requests kept for the receipt; the rest are only counted
 
 
 def _proc_ppid(pid: int) -> int | None:
@@ -110,7 +114,13 @@ class BrokerRPCServer:
         self.arm_timeout = arm_timeout
 
         self.armed = threading.Event()
-        self.llm_requests: list[list[dict[str, Any]]] = []  # messages sent to the model (evaluation ground truth)
+        # Messages sent to the model (evaluation ground truth uses the last); only the latest few are
+        # kept, the turn count is separate.
+        self.llm_requests: collections.deque[list[dict[str, Any]]] = collections.deque(maxlen=4)
+        self.llm_turns = 0
+        self.rejections_dropped = 0
+        self.connections_refused = 0
+        self._conn_slots = threading.BoundedSemaphore(MAX_CONNECTIONS)
         self.call_counts: dict[str, int] = {}
         self.rejections: list[dict[str, Any]] = []
         # Prompt-to-task attribution: one entry per command a tool call ran, and the
@@ -176,10 +186,28 @@ class BrokerRPCServer:
                 continue
             except OSError:
                 break
-            threading.Thread(target=self._serve, args=(conn,), daemon=True).start()
+            if not self._conn_slots.acquire(blocking=False):
+                with self._lock:
+                    self.connections_refused += 1
+                try:
+                    conn.close()
+                except OSError:
+                    pass
+                continue
+
+            def serve(c: socket.socket = conn) -> None:
+                try:
+                    self._serve(c)
+                finally:
+                    self._conn_slots.release()
+
+            threading.Thread(target=serve, daemon=True).start()
 
     def _reject(self, reason: str, method: str | None, peer: int | None) -> None:
         with self._lock:
+            if len(self.rejections) >= MAX_REJECTIONS_KEPT:
+                self.rejections_dropped += 1
+                return  # counted only: no further list entry or stored event for a flood
             self.rejections.append({
                 "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "method": method if method in AGENT_ENDPOINTS else (str(method)[:64] if method else None),
@@ -848,7 +876,8 @@ class BrokerRPCServer:
             raise ValueError("tools must be a list")
         with self._lock:
             self.llm_requests.append(messages)
-            turn_idx = len(self.llm_requests)
+            self.llm_turns += 1
+            turn_idx = self.llm_turns
         # The model, provider and options are fixed by the launcher, never by the agent.
         res = self.broker.llm_complete(token=token, messages=messages, tools=tools, model=self.llm_model, **self.llm_options)
         content = res.get("content") or ""
