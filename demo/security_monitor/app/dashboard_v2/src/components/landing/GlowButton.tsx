@@ -56,7 +56,7 @@ export const GlowButton: React.FC<GlowButtonProps> = ({
       type={type}
       disabled={disabled}
       onClick={onClick}
-      className={`relative inline-flex items-center justify-center min-h-[44px] px-6 py-2.5 rounded-full font-semibold text-[14px] text-white select-none transition-all duration-200 bg-gradient-to-r from-[#4338CA] via-[#BE185D] to-[#D97706] hover:brightness-110 hover:-translate-y-0.5 hover:shadow-[0_0_24px_rgba(245,158,11,0.35)] focus:outline-none focus:ring-2 focus:ring-[#3B82F6] focus:ring-offset-2 focus:ring-offset-black disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:brightness-100 disabled:hover:shadow-none ${className}`}
+      className={`relative inline-flex items-center justify-center min-h-[44px] px-6 py-2.5 rounded-full font-semibold text-[14px] text-white select-none transition-all duration-200 bg-gradient-to-r from-[#4338CA] via-[#BE185D] to-[#B45309] hover:brightness-105 hover:-translate-y-0.5 hover:shadow-[0_0_24px_rgba(245,158,11,0.35)] focus:outline-none focus:ring-2 focus:ring-[#3B82F6] focus:ring-offset-2 focus:ring-offset-black disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:brightness-100 disabled:hover:shadow-none ${className}`}
       {...rest}
     >
       {children}
