@@ -48,6 +48,13 @@ def test_signin_page_elements(page: Page, console_server):
     expect(page.locator("#results")).to_contain_text("From our evaluation")
     expect(page.locator("#results")).to_contain_text("0/32")
     expect(page.locator("#results")).to_contain_text("31/32")
+    # How it works: the five-card mosaic, with the chart labelled as evaluation results.
+    features = page.locator("#features")
+    features.scroll_into_view_if_needed()
+    expect(features.locator(".fm-card")).to_have_count(5)
+    expect(features.locator(".fm-chart [data-setup]")).to_have_count(4)
+    expect(features).to_contain_text("Evaluation results")
+    expect(features).to_contain_text("verify_receipt.py")
     text = page.locator("body").inner_text()
     assert banned_words_in(text, NEVER_SAY) == [], text
     page.set_viewport_size({"width": 390, "height": 844})
