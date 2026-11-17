@@ -75,3 +75,22 @@ export function recordsLine(s: RecordStats): string {
   if (s.failed) return `${plural(s.failed, 'record does', 'records do')} not check out.`;
   return `${s.verified.toLocaleString()} of ${s.checked.toLocaleString()} checked; none changed.`;
 }
+
+
+/** What the Records table may say about one run's record, from the server's check only.
+ *  'unknown': this user cannot read the records summary (or it failed to load), so no badge
+ *  is claimed; 'none': the server checked the stored records and this run has none. An older
+ *  server without verified_ids also gives 'unknown' rather than a green badge. */
+export type RecordBadge = 'checked' | 'events_only' | 'failed' | 'none' | 'unknown';
+
+export function recordBadge(
+  taskId: string,
+  summary: { failed_ids?: string[]; verified_ids?: string[]; events_only_ids?: string[] } | null,
+): RecordBadge {
+  if (!summary) return 'unknown';
+  if (summary.failed_ids?.includes(taskId)) return 'failed';
+  if (!summary.verified_ids) return 'unknown';
+  if (summary.events_only_ids?.includes(taskId)) return 'events_only';
+  if (summary.verified_ids.includes(taskId)) return 'checked';
+  return 'none';
+}

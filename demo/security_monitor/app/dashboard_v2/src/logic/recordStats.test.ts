@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decidedByPerson, decisionsLine, recordStats, recordsLine, stoppedLine } from './recordStats';
+import { decidedByPerson, decisionsLine, recordBadge, recordStats, recordsLine, stoppedLine } from './recordStats';
 
 const task = (id: string, stops: number, extra: Record<string, unknown> = {}) =>
   ({ task_id: id, prevented_count: stops, agent_id: 'a', request_text: 'r', workspace_root: '/w', status: 'COMPLETED', created_at: '', total_actions: 0, ...extra }) as any;
@@ -35,5 +35,20 @@ describe('what the records show', () => {
     const s = recordStats([], [], null);
     expect([stoppedLine(s), decisionsLine(s), recordsLine(s)]).toEqual(['No runs yet.', 'No requests decided yet.', 'No records yet.']);
     expect(recordsLine({ ...s, checked: 3, verified: 2, failed: 1 })).toBe('1 record does not check out.');
+  });
+});
+
+describe('recordBadge', () => {
+  const summary = { failed_ids: ['t_bad'], verified_ids: ['t_v1', 't_v0'], events_only_ids: ['t_v0'] };
+  it('labels each run only from what the server checked', () => {
+    expect(recordBadge('t_bad', summary)).toBe('failed');
+    expect(recordBadge('t_v1', summary)).toBe('checked');
+    expect(recordBadge('t_v0', summary)).toBe('events_only');
+    expect(recordBadge('t_running', summary)).toBe('none');
+  });
+  it('claims nothing without the summary or from an older server', () => {
+    expect(recordBadge('t_v1', null)).toBe('unknown');
+    expect(recordBadge('t_v1', { failed_ids: [] })).toBe('unknown');
+    expect(recordBadge('t_bad', { failed_ids: ['t_bad'] })).toBe('failed');
   });
 });

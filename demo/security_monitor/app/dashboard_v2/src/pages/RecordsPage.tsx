@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api/client';
-import { TaskRecord, ReceiptResponse, ExpansionItem } from '../types';
+import { TaskRecord, ReceiptResponse, ExpansionItem, RecordsSummary } from '../types';
 import { MetricCard } from '../components/ui/MetricCard';
 import { StatusPill } from '../components/ui/StatusPill';
 import { Button } from '../components/ui/Button';
-import { decisionsLine, recordStats, recordsLine, stoppedLine } from '../logic/recordStats';
+import { decisionsLine, recordBadge, recordStats, recordsLine, stoppedLine } from '../logic/recordStats';
 import { PALETTE } from '../logic/palette';
 import { Download, RefreshCw } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -19,7 +19,7 @@ interface ChainStep {
 export const RecordsPage: React.FC = () => {
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
   const [expansions, setExpansions] = useState<ExpansionItem[]>([]);
-  const [recordsSummary, setRecordsSummary] = useState<{ total: number; verified: number; failed: number; failed_ids: string[] } | null>(null);
+  const [recordsSummary, setRecordsSummary] = useState<RecordsSummary | null>(null);
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
   const [selectedReceipt, setSelectedReceipt] = useState<ReceiptResponse | null>(null);
   const [isChecking, setIsChecking] = useState(false);
@@ -245,8 +245,7 @@ export const RecordsPage: React.FC = () => {
                   filteredTasks.slice(0, 20).map(t => {
                     const isSelected = selectedTask?.task_id === t.task_id;
                     const stops = t.prevented_count || t.os_denials_count || 0;
-                    const isFailed = recordsSummary?.failed_ids?.includes(t.task_id);
-                    const isV0 = (t as any).receipt_version === 0 || (t as any).verified_scope === 'events_only';
+                    const badge = recordBadge(t.task_id, recordsSummary);
 
                     return (
                       <tr
@@ -271,12 +270,16 @@ export const RecordsPage: React.FC = () => {
                           )}
                         </td>
                         <td className="py-2 px-3">
-                          {isFailed ? (
+                          {badge === 'failed' ? (
                             <StatusPill tone="bad" label="Verification failed" />
-                          ) : isV0 ? (
+                          ) : badge === 'events_only' ? (
                             <StatusPill tone="info" label="events only" />
-                          ) : (
+                          ) : badge === 'checked' ? (
                             <StatusPill tone="ok" label="Record checked: no entries changed" />
+                          ) : badge === 'none' ? (
+                            <StatusPill tone="neutral" label="No stored record" />
+                          ) : (
+                            <StatusPill tone="neutral" label="Open to check" />
                           )}
                         </td>
                         <td className="py-2 px-4 text-right" onClick={e => e.stopPropagation()}>

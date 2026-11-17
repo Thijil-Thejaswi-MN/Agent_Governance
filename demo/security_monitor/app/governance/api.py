@@ -752,7 +752,7 @@ async def get_task_events(task_id: str, request: Request = None) -> list[dict[st
     return _build_unified_task_events(task_id, storage_events)
 
 
-_records_verification_cache: dict[str, tuple[float, bool]] = {}
+_records_verification_cache: dict[str, tuple[float, bool, str]] = {}
 _records_cache_lock = threading.Lock()
 
 
@@ -787,6 +787,9 @@ async def get_records_summary(request: Request = None) -> dict[str, Any]:
     verified = 0
     failed = 0
     failed_ids: list[str] = []
+    # Per record, so the console labels each row from what was checked, not by assumption.
+    verified_ids: list[str] = []
+    events_only_ids: list[str] = []
 
     for rf in candidate_files:
         try:
@@ -796,16 +799,20 @@ async def get_records_summary(request: Request = None) -> dict[str, Any]:
             with _records_cache_lock:
                 cached = _records_verification_cache.get(key)
             if cached and cached[0] == mtime:
-                is_valid = cached[1]
+                is_valid, scope = cached[1], cached[2]
             else:
                 data = json.loads(rf.read_text(encoding="utf-8"))
-                is_valid = verify_receipt(data)["ok"]
+                res = verify_receipt(data)
+                is_valid, scope = res["ok"], res.get("scope", "")
                 with _records_cache_lock:
-                    _records_verification_cache[key] = (mtime, is_valid)
+                    _records_verification_cache[key] = (mtime, is_valid, scope)
 
             total += 1
             if is_valid:
                 verified += 1
+                verified_ids.append(rf.stem)
+                if scope == "events_only":
+                    events_only_ids.append(rf.stem)
             else:
                 failed += 1
                 failed_ids.append(rf.stem)
@@ -819,6 +826,8 @@ async def get_records_summary(request: Request = None) -> dict[str, Any]:
         "verified": verified,
         "failed": failed,
         "failed_ids": failed_ids,
+        "verified_ids": verified_ids,
+        "events_only_ids": events_only_ids,
     }
 
 

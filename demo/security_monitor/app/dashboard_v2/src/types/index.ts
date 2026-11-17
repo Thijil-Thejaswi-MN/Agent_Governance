@@ -362,6 +362,10 @@ export interface RecordsSummary {
   verified: number;
   failed: number;
   failed_ids: string[];
+  /** Records that passed the check (both scopes). Older servers omit these lists. */
+  verified_ids?: string[];
+  /** Older v0 records: only the event list could be checked. */
+  events_only_ids?: string[];
 }
 
 // Evidence browser: recorded evaluation trials, read from the committed raw files.

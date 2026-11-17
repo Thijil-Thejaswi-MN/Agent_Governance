@@ -26,6 +26,7 @@ import {
   Role,
   PendingGroup,
   StandingRule,
+  RecordsSummary,
 } from '../types';
 import type { RuleDraft } from '../logic/rules';
 import type { ApprovalScope, ExpansionPreview } from '../logic/approval';
@@ -117,7 +118,7 @@ export const api = {
     request<ReceiptResponse>(`${API_BASE}/tasks/${taskId}/receipt`),
 
   getRecordsSummary: () =>
-    request<{ total: number; verified: number; failed: number; failed_ids: string[] }>(`${API_BASE}/records/summary`),
+    request<RecordsSummary>(`${API_BASE}/records/summary`),
 
   // Expansions
   getExpansions: (taskId?: string, status?: string) => {
