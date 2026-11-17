@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { AgentScan } from '../components/effects/AgentScan';
 import { api } from '../api/client';
 import { AgentInventoryItem, ConfiguredAgent, ExpansionItem, TaskRecord } from '../types';
 import { EmptyState, ErrorState, LoadingState } from '../components/common/States';
@@ -264,7 +265,8 @@ export const InventoryPage: React.FC = () => {
 
   return (
     <div className="max-w-[1200px] pb-12 flex flex-col gap-6">
-      <header className="flex flex-col gap-2">
+      <header className="flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-8">
+        <div className="flex flex-col gap-2 min-w-0 flex-1">
         <h1 id="inventory-headline" className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-[#E6E9EF]">
           {tasks == null && inventory.length === 0
             ? 'Agent inventory'
@@ -278,11 +280,15 @@ export const InventoryPage: React.FC = () => {
           request sets that, inside the agent's limit, and every tool call is checked against both. Counts come from real runs here; comparison runs (kernel lock off) are not counted.
           {cards.length > 0 && ` ${counts.high} high, ${counts.medium} medium and ${counts.low} low risk.`}
         </p>
+        </div>
+        {tasks && totalAgents > 0 && <AgentScan count={totalAgents} id="inventory-scan" size={132} />}
       </header>
       {error && !tasks ? (
         <ErrorState message={error} onRetry={load} id="inventory-error" />
       ) : !tasks ? (
-        <LoadingState label="Loading agents…" id="inventory-loading" />
+        <div className="card px-5 py-8 flex justify-center">
+          <AgentScan count={null} id="inventory-loading" />
+        </div>
       ) : (
         <>
           <section className="flex flex-col gap-3" id="governed-agents-section">

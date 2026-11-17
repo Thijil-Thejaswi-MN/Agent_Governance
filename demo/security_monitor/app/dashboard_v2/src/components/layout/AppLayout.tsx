@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
+import ClickSpark from '../effects/ClickSpark';
 import { OperatorAuthModal } from '../common/OperatorAuthModal';
 import { SignInRequired } from '../common/SignInRequired';
 import { useAuth } from '../../context/AuthContext';
@@ -112,6 +113,8 @@ export const AppLayout: React.FC = () => {
         Skip to content
       </a>
 
+      {/* A small spark where you click (React Bits ClickSpark); a short still burst with reduced motion. */}
+      <ClickSpark sparkColor={['#60A5FA', '#93C5FD']} sparkCount={8} sparkSize={9} sparkRadius={20} duration={420} className="flex flex-1 flex-col" style={{ height: 'auto' }}>
       <div className="flex flex-1 min-h-screen">
         <Sidebar
           waitingCount={waitingCount}
@@ -138,6 +141,7 @@ export const AppLayout: React.FC = () => {
           </div>
         )}
       </div>
+      </ClickSpark>
 
       <OperatorAuthModal />
     </div>

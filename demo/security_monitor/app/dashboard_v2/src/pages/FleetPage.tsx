@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { AgentScan } from '../components/effects/AgentScan';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { DotState, FleetDot, FleetSummary } from '../types';
@@ -41,7 +42,7 @@ export const FleetPage: React.FC = () => {
   if (!data) {
     return (
       <div className="max-w-[1360px] py-12" style={{ color: 'var(--text-2)' }}>
-        {error ? <p role="alert">{error}</p> : <p>Loading…</p>}
+        {error ? <p role="alert">{error}</p> : <AgentScan count={null} id="fleet-loading" />}
       </div>
     );
   }

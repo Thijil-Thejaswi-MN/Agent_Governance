@@ -11,6 +11,8 @@ import { DecisionCard } from '../components/v3/DecisionCard';
 import { DetailsDrawer, DetailsSection, KV } from '../components/v3/DetailsDrawer';
 import { EventTable, TechnicalTimeline } from '../components/v3/TechnicalTimeline';
 import { boundaryVersionLabel, receiptSentence, statusSentence } from '../logic/plain';
+import { runPhase } from '../logic/runPhase';
+import { RunProgress } from '../components/action/RunProgress';
 import { agentStarted, blockedAttempts, boundaryLabel, fenceBlocked, splitAttempts, fileName, isTerminal, justBlocked, outputsFromSteps, OutputPreview } from '../logic/runView';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -112,34 +114,18 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
     );
   }
 
-  const stepColor = (k: 'ask' | 'work' | 'done') => {
-    if (k === 'ask') return '#4ADE80';
-    if (k === 'work') return terminal ? '#4ADE80' : run.state === 'waiting_approval' ? '#FBBF24' : '#60A5FA';
-    return terminal ? (run.state === 'completed' ? '#4ADE80' : '#F87171') : 'var(--text-3)';
-  };
-
   return (
     <div className="max-w-[1280px]">
       <div className="flex flex-wrap items-center justify-between gap-3 pb-5 border-b border-[#1F2633]">
-        <ol aria-label="Progress" className="flex flex-wrap items-center gap-2.5 text-[14px] list-none p-0 m-0 min-h-[44px]" style={{ color: 'var(--text-3)' }}>
-          {readOnly ? (
+        {readOnly ? (
+          <ol aria-label="Progress" className="flex flex-wrap items-center gap-2.5 text-[14px] list-none p-0 m-0 min-h-[44px]" style={{ color: 'var(--text-3)' }}>
             <li>
               <Link to="/history">History</Link> <span aria-hidden="true">/</span> <span style={{ color: 'var(--text-2)' }}>One run</span>
             </li>
-          ) : (
-            <>
-              <li style={{ color: stepColor('ask') }}>Ask</li>
-              <li aria-hidden="true">—</li>
-              <li style={{ color: stepColor('work'), fontWeight: terminal ? 400 : 600 }} aria-current={terminal ? undefined : 'step'}>
-                {run.state === 'waiting_approval' ? 'Waiting for you' : 'Working'}
-              </li>
-              <li aria-hidden="true">—</li>
-              <li style={{ color: stepColor('done'), fontWeight: terminal ? 600 : 400 }} aria-current={terminal ? 'step' : undefined}>
-                Done
-              </li>
-            </>
-          )}
-        </ol>
+          </ol>
+        ) : (
+          <RunProgress view={runPhase(run.state, started, !!run.pending, run.receiptLoaded)} />
+        )}
         {!readOnly && !terminal && (
           <button
             id="stop-run-btn"
