@@ -24,7 +24,7 @@ try:
 except ImportError:
     HAS_PLAYWRIGHT = False
 
-from demo.security_monitor.tests.playwright_server import seed_waiting_task
+from demo.security_monitor.tests.playwright_server import NEVER_SAY, banned_words_in, no_horizontal_scroll, seed_waiting_task
 
 pytestmark = [
     pytest.mark.playwright,
@@ -41,7 +41,18 @@ def _sign_in_via_signin_page(page: Page, url: str, token: str) -> None:
 
 def test_signin_page_elements(page: Page, console_server):
     page.goto(f"{console_server.url}/dashboard/signin")
-    expect(page.locator("h1")).to_contain_text("Sign in to Agent Governance")
+    expect(page.locator("#signin-heading")).to_have_text("Sign in to Agent Governance")
+    expect(page.locator("h1")).to_contain_text("Agents, Governed")
+    # Evaluation results, said to be from the evaluation, not live.
+    expect(page.locator("#results [data-result]")).to_have_count(4)
+    expect(page.locator("#results")).to_contain_text("From our evaluation")
+    expect(page.locator("#results")).to_contain_text("0/32")
+    expect(page.locator("#results")).to_contain_text("31/32")
+    text = page.locator("body").inner_text()
+    assert banned_words_in(text, NEVER_SAY) == [], text
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert no_horizontal_scroll(page)
+    page.set_viewport_size({"width": 1440, "height": 900})
     
     # SSO button is disabled as required
     sso_btn = page.locator("button:has-text('Continue with company sign-in (SSO)')")
@@ -90,6 +101,10 @@ def test_auditor_records_screen_readonly(page: Page, console_server):
 
     page.goto(f"{console_server.url}/dashboard/records")
     expect(page.locator("body")).to_contain_text("No records yet.")
+    # The three record numbers come from the records; on an empty install they are 0.
+    for card in ("#stat-stopped", "#stat-decided", "#stat-records"):
+        expect(page.locator(card)).to_be_visible()
+    expect(page.locator("#stat-records")).to_have_attribute("data-value", "0")
     expect(page.locator("button:has-text('Export CSV')")).to_be_visible()
     expect(page.locator("body")).not_to_contain_text("Allow for this run")
     expect(page.locator("body")).not_to_contain_text("Deny all")

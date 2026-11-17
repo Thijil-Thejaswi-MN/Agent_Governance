@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api/client';
-import { TaskRecord, ReceiptResponse } from '../types';
-import { Download, RefreshCw, CheckCircle2, AlertCircle, FileText } from 'lucide-react';
+import { TaskRecord, ReceiptResponse, ExpansionItem } from '../types';
+import { StatCard } from '../components/stats/StatCard';
+import { decisionsLine, recordStats, recordsLine, stoppedLine } from '../logic/recordStats';
+import { Download, RefreshCw, CheckCircle2, AlertCircle, FileText, ShieldX, UserCheck, FileCheck2 } from 'lucide-react';
 
 interface ChainStep {
   idx: number;
@@ -12,6 +14,7 @@ interface ChainStep {
 
 export const RecordsPage: React.FC = () => {
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
+  const [expansions, setExpansions] = useState<ExpansionItem[]>([]);
   const [recordsSummary, setRecordsSummary] = useState<{ total: number; verified: number; failed: number; failed_ids: string[] } | null>(null);
   const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
   const [selectedReceipt, setSelectedReceipt] = useState<ReceiptResponse | null>(null);
@@ -21,11 +24,13 @@ export const RecordsPage: React.FC = () => {
 
   const fetchTasks = async () => {
     try {
-      const [res, summary] = await Promise.all([
+      const [res, summary, exps] = await Promise.all([
         api.getTasks(),
         api.getRecordsSummary().catch(() => null),
+        api.getExpansions().catch(() => [] as ExpansionItem[]),
       ]);
       setTasks(res);
+      setExpansions(exps);
       if (summary) setRecordsSummary(summary);
       if (res.length > 0 && !selectedTask) {
         setSelectedTask(res[0]);
@@ -127,6 +132,7 @@ export const RecordsPage: React.FC = () => {
   };
 
   const chainSteps = getChainSteps();
+  const stats = recordStats(tasks, expansions, recordsSummary);
 
   return (
     <div className="flex flex-col gap-6 font-sans">
@@ -157,7 +163,7 @@ export const RecordsPage: React.FC = () => {
           </h1>
         ) : (
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#E6E9EF]">
-            {tasks.length} records. All {tasks.length} checked: no entries changed.
+            {tasks.length} records. Checking them…
           </h1>
         )}
         <p className="text-[15px] text-[#A7B0C0] mt-1.5">
@@ -166,47 +172,42 @@ export const RecordsPage: React.FC = () => {
         </p>
       </section>
 
-      {/* KPI Cards */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div className="p-4 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col justify-between anim-rise">
-          <div className="text-[12px] font-medium text-[#8B95A7]">Records checked</div>
-          <div className="mt-2 text-3xl font-bold text-[#22C55E] tracking-tight">
-            {(recordsSummary ? recordsSummary.total : tasks.length).toLocaleString()}
-          </div>
-          <div className="mt-1 text-[12px] text-[#8B95A7]">
-            {recordsSummary && recordsSummary.failed > 0
-              ? `${recordsSummary.failed} failed check`
-              : recordsSummary && recordsSummary.total === 0
-              ? 'no records found'
-              : 'Record checked: no entries changed'}
-          </div>
-        </div>
-
-        <div className="p-4 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col justify-between anim-rise">
-          <div className="text-[12px] font-medium text-[#8B95A7]">Runs with a stop</div>
-          <div className="mt-2 text-3xl font-bold text-[#E6E9EF] tracking-tight">
-            {tasks.filter(t => (t.prevented_count || t.os_denials_count || 0) > 0).length}
-          </div>
-          <div className="mt-1 text-[12px] text-[#8B95A7]">stopped at fence</div>
-        </div>
-
-        <div className="p-4 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col justify-between anim-rise">
-          <div className="text-[12px] font-medium text-[#8B95A7]">Verified records</div>
-          <div className="mt-2 text-3xl font-bold text-[#E6E9EF] tracking-tight">
-            {recordsSummary ? recordsSummary.verified : tasks.length}
-          </div>
-          <div className="mt-1 text-[12px] text-[#8B95A7]">integrity confirmed</div>
-        </div>
-
-        <div className="p-4 rounded-xl bg-[#11151D] border border-[#1F2633] flex flex-col justify-between anim-rise">
-          <div className="text-[12px] font-medium text-[#8B95A7]">Failed records</div>
-          <div className={`mt-2 text-3xl font-bold tracking-tight ${recordsSummary && recordsSummary.failed > 0 ? 'text-[#EF4444]' : 'text-[#22C55E]'}`}>
-            {recordsSummary ? recordsSummary.failed : 0}
-          </div>
-          <div className="mt-1 text-[12px] text-[#8B95A7]">
-            {recordsSummary && recordsSummary.failed > 0 ? 'tampered or invalid' : 'none failed'}
-          </div>
-        </div>
+      {/* What the records show: three numbers, each counted from real records (logic/recordStats.ts). */}
+      <section id="records-stats" aria-label="What the records show" className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <StatCard
+          id="stat-stopped"
+          icon={<ShieldX className="w-3.5 h-3.5" />}
+          badge="Stopped at the fence"
+          value={stats.stopped}
+          suffix={stats.stopped === 1 ? 'action' : 'actions'}
+          tone={stats.stopped ? '#FCA5A5' : '#E6E9EF'}
+          sub={stoppedLine(stats)}
+          about="Things an agent tried that its task did not allow, refused by the tool broker or the kernel before they happened."
+          source="each run's broker and kernel counts (comparison runs left out)"
+        />
+        <StatCard
+          id="stat-decided"
+          icon={<UserCheck className="w-3.5 h-3.5" />}
+          badge="Decided by a person"
+          value={stats.decidedByPerson}
+          suffix={stats.decidedByPerson === 1 ? 'request' : 'requests'}
+          sub={decisionsLine(stats)}
+          about="Requests for more access that waited for someone to choose. Automatic policy, standing rules and timeouts are not counted here."
+          source="the approval requests and who resolved each one"
+          delayMs={90}
+        />
+        <StatCard
+          id="stat-records"
+          icon={<FileCheck2 className="w-3.5 h-3.5" />}
+          badge="Records that check out"
+          value={stats.verified}
+          suffix={`of ${stats.checked.toLocaleString()}`}
+          tone={stats.failed ? '#FCA5A5' : stats.checked ? '#86EFAC' : '#E6E9EF'}
+          sub={recordsLine(stats)}
+          about="Every entry of a run's record is linked to the one before it, and the server re-checks the whole chain."
+          source="the server's check of every stored record"
+          delayMs={180}
+        />
       </section>
 
       {/* Main Grid: Records Table (left) + Side Panel Chain (right) */}
