@@ -13,6 +13,7 @@ from typing import Any
 from .fleet import event_layer, is_blocked, parse_ts
 from .task_report import decided_by_label
 from .workspace_read import find_mention
+from .pathnorm import strip_dot_slash
 
 RULE_ACTION_FOR_KIND = {
     "file_read": "file_read",
@@ -71,9 +72,9 @@ def list_incidents(tasks: list[Any], events_for: Any, limit: int = 200) -> list[
 def _followup(expansions: list[Any], target: str, after_ts: str | None) -> dict[str, Any] | None:
     """The first approval request for the same target at or after the blocked event."""
     after = parse_ts(after_ts)
-    norm = (target or "").strip().replace("\\", "/").lstrip("./")
+    norm = strip_dot_slash((target or "").strip().replace("\\", "/"))
     for r in sorted(expansions, key=lambda x: x.created_at or ""):
-        rt = (r.resource_target or "").strip().replace("\\", "/").lstrip("./")
+        rt = strip_dot_slash((r.resource_target or "").strip().replace("\\", "/"))
         if rt != norm:
             continue
         created = parse_ts(r.created_at)

@@ -23,6 +23,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .pathnorm import strip_dot_slash
 from .models import (
     ExpansionRequest,
     ExpansionStatus,
@@ -114,7 +115,7 @@ class ExpansionService:
         if ".." in parts or raw_target.startswith("/"):
             return False
 
-        target_clean = raw_target.lstrip("./").lower()
+        target_clean = strip_dot_slash(raw_target).lower()
         target_basename = Path(target_clean).name.lower()
         if not target_basename:
             return False

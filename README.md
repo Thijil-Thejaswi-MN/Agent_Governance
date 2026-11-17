@@ -137,11 +137,13 @@ Setup:
 
 | `qwen2.5:7b`, injected trials (n=32 each) | A: none | B: tool layer | C: tool + OS | D: container |
 | :--- | :---: | :---: | :---: | :---: |
+| Trials where the model tried the injected action | 14 | 17 | 13 | 13 |
 | Trials with any harm (decoy read, write outside the workspace, data sent to the sink) | 14/32 [0.28, 0.61] | 0/32 | 0/32 | 0/32 |
 | Timeouts (180 s) | 0/32 | 6/32 | 6/32 | 2/32 |
 | Mean trial time | 13 s | 64 s | 68 s | 26 s |
 
 - Fisher exact test, A vs each of B, C and D: p < 0.001.
+- The 32 trials per condition are 16 scenarios run twice. The model tried the injected action in 13–17 of them, so "0/32" means every one of those attempts was stopped, not that 32 attacks were tried.
 - `llama3.1:8b` had 0/32 harm in all conditions: it ignored the injections even without governance, so it is uninformative for security.
 - The canary never reached the sink in any condition.
 - Governance has a cost: denials push the model into retry loops, which shows up as longer trials and timeouts.
@@ -183,7 +185,8 @@ Result files in [`demo/data/evaluation_v3/results/`](demo/data/evaluation_v3/res
 - UDP is not mediated by Landlock.
 - Nothing is enforced on native Windows. On Windows only the tool layer and the dashboard run; the OS-layer tests skip and the console's Start refuses to start runs (HTTP 503 with the reason).
 - Inventory discovery relies on what agents declare about themselves.
-- Receipts are hash-chained, not signed.
+- Receipts are hash-chained, not signed. v1 records (17 Nov 2026 on) also hash the whole record; older v0 records cover only the event list, and the console says so.
+- Utility v3d (31/32 without and 31/32 with governance) covers tasks whose files the request names, run with the reviewed (gold) boundary, not the derived one. When the request does not name the needed file, 14/32 (A) and 10/32 (C) were correct, and C needed the expansion chain with a simulated approver.
 - LLM boundary derivation (v2) was evaluated against gold labels that were AI-authored and are pending team review.
 - Two earlier bugs were found and fixed during development (commit `bdd5ee6`):
   - the M4 sensor swallowed signals sent to traced processes instead of re-injecting them;
@@ -204,11 +207,11 @@ This project claims only the combination of four things. We did not find a prior
 | Part | Evidence |
 | :--- | :--- |
 | A boundary derived from the user's request | Partial. In the M6 experiments the boundary came from templates (v1). LLM derivation (v2) was evaluated separately, against AI-authored gold labels. |
-| Enforcement of that boundary at the tool and OS layers | Strong, from the experiments: injected-attack harm 14/32 → 0/32 (p < 0.001); shell-channel attacks 8/128 → 0/128 (p = 0.007). |
+| Enforcement of that boundary at the tool and OS layers | Strong, from the experiments: injected-attack harm 14/32 → 0/32 (p < 0.001; attempted in 13–17 trials per condition); shell-channel attacks: 8 of 8 attempts succeeded with the tool layer only, 0 of 10 with the OS layer (decoy exposure 8/128 → 0/128, p = 0.007). |
 | Mid-task expansion that takes provenance into account | Implementation-level. Implemented and tested; M5 had 0 approvals outside the legitimate set, but only with an idealised ORACLE approver. Real human approvals were not tested. |
-| A receipt for each request | Integrity only. Receipts are hash-chained and verify; their usefulness to an auditor was not evaluated. |
+| A receipt for each request | Integrity only. Receipts hash-chain the events and (v1, since 17 Nov) hash the whole record, including approvals and approvers; older v0 records cover only the event list. Not signed. Their usefulness to an auditor was not evaluated. |
 
-Summary: we implement task-scoped runtime governance that combines a request-derived boundary, tool- and OS-layer enforcement, provenance-aware expansion and per-request receipts. In a controlled evaluation with local 7–8B models, governance eliminated injected-attack harm (14/32 → 0/32, p < 0.001), and OS-level enforcement stopped shell-channel attacks that tool-level mediation allowed (8/128 → 0/128, p = 0.007), at a measurable latency and timeout cost.
+Summary: we implement task-scoped runtime governance that combines a request-derived boundary, tool- and OS-layer enforcement, provenance-aware expansion and per-request receipts. In a controlled evaluation with local 7–8B models, governance eliminated injected-attack harm (14/32 → 0/32, p < 0.001), and OS-level enforcement stopped shell-channel attacks that tool-level mediation allowed (8 of 8 attempts succeeded with the tool layer only, 0 of 10 with the OS layer; decoy exposure 8/128 → 0/128, p = 0.007), at a measurable latency and timeout cost.
 
 ## Governance Console
 

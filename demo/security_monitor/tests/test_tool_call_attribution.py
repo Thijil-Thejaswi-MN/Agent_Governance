@@ -299,3 +299,12 @@ def test_two_tasks_at_once_never_share_a_label(tmp_path: Path) -> None:
     finally:
         _cleanup(ra)
         _cleanup(rb)
+
+
+def test_rpc_memory_stays_bounded(rpc) -> None:
+    """Audit finding A7: rejected requests and model messages are kept up to a limit only."""
+    srv, _ = rpc
+    for i in range(rpc_mod.MAX_REJECTIONS_KEPT + 50):
+        srv._reject("bad_token", "read_file", 123)
+    assert len(srv.rejections) == rpc_mod.MAX_REJECTIONS_KEPT and srv.rejections_dropped == 50
+    assert srv.llm_requests.maxlen == 4

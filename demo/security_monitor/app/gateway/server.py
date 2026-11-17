@@ -149,6 +149,30 @@ def create_app(
         response.headers["X-Governance-Demo"] = "1"
         return response
 
+    @app.middleware("http")
+    async def guard_legacy_controls(request: Request, call_next):
+        """The older A2A monitor's control routes (/api/v1/*: quarantine, restriction,
+        monitoring, policy, card registration, task dispatch, demo scenarios) change state.
+        Once an operator token (or a users file) is configured, which is also what allows a
+        non-loopback bind, they need the same operator token header as /api/governance
+        changes. Without one configured the server only binds to loopback (enforce_bind_policy).
+        Independent audit, finding A1."""
+        if request.url.path.startswith("/api/v1/") and request.method not in ("GET", "HEAD", "OPTIONS"):
+            from ..governance.api import _header_token
+            from ..governance.roles import authenticate_token
+
+            configured = bool(os.getenv("GOVERNANCE_OPERATOR_TOKEN")) or bool(
+                os.getenv("GOVERNANCE_USERS_FILE") and os.path.isfile(os.getenv("GOVERNANCE_USERS_FILE", ""))
+            )
+            if configured:
+                token = _header_token(request.headers.get("authorization"), request.headers.get("x-operator-token"))
+                if not token or not authenticate_token(token):
+                    return JSONResponse(
+                        status_code=401,
+                        content={"detail": "Invalid or missing operator token. Changes need the operator token header."},
+                    )
+        return await call_next(request)
+
     # --- Core System APIs ---
 
     @app.get("/health")

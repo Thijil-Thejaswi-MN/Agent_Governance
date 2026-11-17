@@ -53,7 +53,14 @@ export interface TaskReport {
   boundary: { initial: ReportBoundary | null; final: ReportBoundary | null };
   approvals: ReportApproval[];
   blocked: ReportBlocked[];
-  record: { available: boolean; verified: boolean; message: string | null; final_hash: string | null; event_count: number };
+  record: {
+    available: boolean;
+    verified: boolean;
+    verified_scope?: 'whole_record' | 'events_only' | null;
+    message: string | null;
+    final_hash: string | null;
+    event_count: number;
+  };
 }
 
 export function decisionLabel(a: Pick<ReportApproval, 'status' | 'scope'>): string {
@@ -93,6 +100,8 @@ export function addedLater(b: TaskReport['boundary']): string[] {
 
 export function recordLine(r: TaskReport['record']): { text: string; tone: 'ok' | 'bad' | 'none' } {
   if (!r.available) return { text: 'No record was saved for this run.', tone: 'none' };
+  if (r.verified && r.verified_scope === 'events_only')
+    return { text: 'Record checked: no entries changed (older record: approvals and settings are not covered)', tone: 'ok' };
   if (r.verified) return { text: 'Record checked: no entries changed', tone: 'ok' };
   return { text: `Record check failed: ${r.message || "the entries don't match"}.`, tone: 'bad' };
 }

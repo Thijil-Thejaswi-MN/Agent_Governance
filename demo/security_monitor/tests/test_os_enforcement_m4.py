@@ -36,11 +36,21 @@ from pathlib import Path
 
 import pytest
 
-# Skip this entire file on Windows; run exclusively on WSL/Linux
-pytestmark = pytest.mark.skipif(
-    sys.platform != "linux",
-    reason="Milestone 4 OS enforcement requires Linux kernel with Landlock & cgroups (WSL2)"
-)
+
+def _host_problem() -> str | None:
+    """These tests need Linux with a systemd --user manager and cgroup v2 (as on WSL2 and the
+    CI runner). Elsewhere they skip with the reason instead of failing on "Failed to connect
+    to bus" (independent audit, finding A8)."""
+    if sys.platform != "linux":
+        return "Milestone 4 OS enforcement requires Linux (WSL2)"
+    from demo.security_monitor.app.governance.launcher import TaskLauncher
+
+    problems = [p for p in TaskLauncher.check_prerequisites() if "systemd" in p or "cgroup" in p]
+    return "; ".join(problems) or None
+
+
+_PROBLEM = _host_problem()
+pytestmark = pytest.mark.skipif(_PROBLEM is not None, reason=f"needs the OS layer host: {_PROBLEM}")
 
 from demo.security_monitor.app.governance.os_layer.landlock import (
     LandlockSandbox,

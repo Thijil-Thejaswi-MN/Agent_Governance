@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Recomputes the hash chain of Task Receipt v0 files.
+"""Checks Task Receipt files (v1, and older v0).
 
 Usage: python scripts/verify_receipt.py receipts/<task_id>.json [more.json ...]
 Exit code 0 if every receipt verifies, 1 otherwise.
 
-"Verified" means: each event entry's hash equals SHA-256 over its canonical
-JSON (including the previous entry's hash), the final hash and entry count match
-the receipt's hash_chain block, and the verdict counts match the event list.
-The receipt is hash-chained, not signed.
+"Verified" means: the required fields are present; each event entry's hash equals SHA-256
+over its canonical JSON (including the previous entry's hash); the final hash, entry count
+and verdict counts match; and, for v1 records, the SHA-256 over the whole record matches
+hash_chain.document_sha256, so approvals, approvers, deliveries, the initial boundary and
+termination are covered too. Older v0 records report "events only".
+The receipt is hash-chained, not signed: someone who can rewrite the whole file and
+recompute every hash is not detected.
 """
 from __future__ import annotations
 
@@ -18,7 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from demo.security_monitor.app.governance.receipt import verify_chain  # noqa: E402
+from demo.security_monitor.app.governance.receipt import verify_receipt  # noqa: E402
 
 
 def verify_file(path: Path) -> tuple[bool, str]:
@@ -26,22 +29,8 @@ def verify_file(path: Path) -> tuple[bool, str]:
         r = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
         return False, f"unreadable: {e}"
-    events = r.get("events", [])
-    ok, final, msg = verify_chain(events)
-    if not ok:
-        return False, msg
-    hc = r.get("hash_chain", {})
-    if hc.get("count") != len(events):
-        return False, f"count mismatch: chain says {hc.get('count')}, list has {len(events)}"
-    if hc.get("final_hash") != final:
-        return False, "final_hash mismatch"
-    counts: dict[str, int] = {}
-    for e in events:
-        counts[e["verdict"]] = counts.get(e["verdict"], 0) + 1
-    declared = {k: v for k, v in r.get("event_counts", {}).get("by_verdict", {}).items() if v}
-    if declared != counts:
-        return False, f"verdict counts mismatch: declared {declared}, recomputed {counts}"
-    return True, f"ok ({len(events)} entries, final {final[:16]}...)"
+    res = verify_receipt(r)
+    return res["ok"], res["message"]
 
 
 def main(argv: list[str]) -> int:

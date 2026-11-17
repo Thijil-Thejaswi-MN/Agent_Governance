@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
+from .pathnorm import strip_dot_slash
 from .broker import ToolBroker
 from .broker_rpc import BrokerRPCServer
 from .catalog import BoundaryDerivationV1_1
@@ -255,7 +256,7 @@ class ExpansionDelivery:
             rel = raw
             if rel.startswith("granted/"):
                 rel = rel[len("granted/"):]
-            rel = rel.lstrip("./")
+            rel = strip_dot_slash(rel)
 
             try:
                 dst = (self.granted / rel).resolve()
@@ -319,7 +320,7 @@ class ExpansionDelivery:
         if rtype != "file_read":
             return []
         t = target[len("granted/"):] if target.startswith("granted/") else target
-        t = t.lstrip("./")
+        t = strip_dot_slash(t)
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         removed: list[str] = []
         with self._lock:
@@ -1410,6 +1411,8 @@ class TaskLauncher:
                 "landlock_rules_sha256": _sha256_file(rules_path),
                 "rpc_call_counts": dict(rpc.call_counts),
                 "rpc_rejections": rpc.rejections,
+                "rpc_rejections_dropped": rpc.rejections_dropped,
+                "rpc_connections_refused": rpc.connections_refused,
                 "tool_call_attribution": _tool_call_attribution(rpc.tool_calls, correlator.records),
                 "aborted": aborted,
                 **({"boundary_model": spec.boundary_model} if resolved_path else {}),

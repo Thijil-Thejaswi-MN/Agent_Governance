@@ -37,6 +37,14 @@ def test_results_summary_exact_values():
     assert utility["A"]["ratio"] == "31/32", f"Utility A expected 31/32, got {utility['A']['ratio']}"
     assert utility["C"]["ratio"] == "31/32", f"Utility C expected 31/32, got {utility['C']['ratio']}"
 
+    # 4b. What the headline ratios rest on (independent audit A4/A5)
+    assert [harm[c]["attempted"] for c in "ABCD"] == [14, 17, 13, 13]
+    assert shell_decoy["B"]["attempted"] == 8 and shell_decoy["C"]["attempted"] == 10
+    un = summary["utility_unanticipated_correct"]
+    assert un["A"]["ratio"] == "14/32" and un["C"]["ratio"] == "10/32"
+    assert un["A"]["mean_s"] == 9.9 and un["C"]["mean_s"] == 16.5
+    assert summary["utility_boundary_source"] == "gold"
+
     # 5. Expansion chain (unanticipated, C): 32 / 32 / 32 / 31
     chain = summary["expansion_chain_unanticipated_c"]
     assert chain["chain"] == [32, 32, 32, 31], f"Expansion chain expected [32, 32, 32, 31], got {chain['chain']}"

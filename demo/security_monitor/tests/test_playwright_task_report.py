@@ -106,7 +106,7 @@ def test_task_report(page: Page, console_server):
     expect(page.locator("#report-blocked")).to_contain_text("input/payroll.csv")
     expect(page.locator("#report-blocked")).to_contain_text("Tool broker")
     expect(page.locator("#report-blocked")).to_contain_text("Attempted, not successful")
-    expect(page.locator("#report-record-line")).to_have_text("Record checked: no entries changed")
+    expect(page.locator("#report-record-line")).to_contain_text("Record checked: no entries changed (older record")
     save_evidence(page, "task_report_1440")
 
     # Print: no sidebar, top bar or buttons; one A4 page.

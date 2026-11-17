@@ -425,7 +425,13 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
           <DetailsSection title="Task Receipt">
             {run.receipt?.receipt && run.receipt.available !== false ? (
               <>
-                <KV k="Hash chain" v={run.receipt.verified ? 'Verified (SHA-256 hash chain intact)' : `Does not verify: ${run.receipt.verification_message || 'mismatch'}`} id="receipt-verification" />
+                <KV k="Hash chain" v={
+                    !run.receipt.verified
+                      ? `Does not verify: ${run.receipt.verification_message || 'mismatch'}`
+                      : run.receipt.verified_scope === 'events_only'
+                        ? 'Verified: event chain only (older record, SHA-256, not signed)'
+                        : 'Verified: events chained and whole record hashed (SHA-256, not signed)'
+                  } id="receipt-verification" />
                 <KV k="Events in the chain" v={run.receipt.receipt?.hash_chain?.count ?? run.receipt.receipt?.events?.length ?? 0} />
                 <KV k="Last link of the chain" v={run.receipt.final_hash || run.receipt.receipt?.hash_chain?.final_hash || 'n/a'} />
                 <p className="m-0 text-[13px] leading-relaxed" style={{ color: 'var(--text-2)' }}>

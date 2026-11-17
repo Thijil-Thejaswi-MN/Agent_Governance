@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FileText, Pencil, Globe, Bot, Terminal, Hand } from 'lucide-react';
 import './FeatureMosaic.css';
+import type { HarmBar } from '../../logic/landingResults';
 
 // "What it does" on the sign-in page, after the "Task Engine" mosaic on motionsites.
 // Same five-card layout and entrance; our own content. Nothing here is a live number:
@@ -9,15 +10,7 @@ import './FeatureMosaic.css';
 
 const VERIFY_CMD = 'python scripts/verify_receipt.py receipts/<task_id>.json';
 
-// Injected tasks that caused harm, of 32 per setup (qwen2.5:7b, Review 2).
-const HARM = [
-  { key: 'NONE', label: 'No governance', harm: 14 },
-  { key: 'BROKER', label: 'Tool broker only', harm: 0 },
-  { key: 'OURS', label: 'Broker + kernel (ours)', harm: 0, ours: true },
-  { key: 'BOX', label: 'Per-task container', harm: 0 },
-];
 const MAX = 32;
-const PEAK = Math.max(...HARM.map(h => h.harm), 1);
 
 const Check: React.FC = () => (
   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -32,7 +25,7 @@ const Sparkles: React.FC = () => (
   </svg>
 );
 
-export const FeatureMosaic: React.FC = () => {
+export const FeatureMosaic: React.FC<{ harm?: HarmBar[] | null }> = ({ harm }) => {
   const ref = useRef<HTMLDivElement | null>(null);
   const [inView, setInView] = useState<boolean | null>(null);
   const [copied, setCopied] = useState(false);
@@ -174,27 +167,38 @@ export const FeatureMosaic: React.FC = () => {
         {/* 4. What it changed, in our evaluation */}
         <section className="fm-card fm-insights" aria-label="Evaluation result">
           <span className="fm-tag">Evaluation results</span>
-          <h2 className="fm-h2">14 → 0</h2>
-          <p className="fm-sub">injected tasks that caused harm, of 32</p>
-          <div
-            className="fm-chart"
-            role="img"
-            aria-label={`Injected tasks that caused harm, of ${MAX}: ${HARM.map(h => `${h.label} ${h.harm}`).join(', ')}`}
-          >
-            {HARM.map(h => (
-              <div className="fm-col" key={h.key} data-setup={h.key}>
-                <div
-                  className={`fm-bar${h.ours ? ' ours' : ''}`}
-                  style={{ height: `calc(${h.harm ? Math.round((h.harm / PEAK) * 240) : 36} * var(--u))` }}
-                  title={h.label}
-                >
-                  {h.harm}
-                </div>
-                <div className={`fm-day${h.ours ? ' ours' : ''}`}>{h.key}</div>
+          {harm && harm.length ? (
+            <>
+              <h2 className="fm-h2">
+                {harm[0].harm} → {harm.find(h => h.ours)?.harm ?? 0}
+              </h2>
+              <p className="fm-sub">injected tasks that caused harm, of {MAX}</p>
+              <div
+                className="fm-chart"
+                role="img"
+                aria-label={`Injected tasks that caused harm, of ${MAX}: ${harm.map(h => `${h.label} ${h.harm}`).join(', ')}`}
+              >
+                {harm.map(h => (
+                  <div className="fm-col" key={h.key} data-setup={h.key}>
+                    <div
+                      className={`fm-bar${h.ours ? ' ours' : ''}`}
+                      style={{ height: `calc(${h.harm ? Math.round((h.harm / Math.max(1, ...harm.map(x => x.harm))) * 240) : 36} * var(--u))` }}
+                      title={h.attempted != null ? `${h.label}: the agent tried in ${h.attempted} of ${MAX}` : h.label}
+                    >
+                      {h.harm}
+                    </div>
+                    <div className={`fm-day${h.ours ? ' ours' : ''}`}>{h.key}</div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <p className="fm-note">qwen2.5:7b, 32 injected tasks per setup, one machine</p>
+              <p className="fm-note">
+                qwen2.5:7b, {MAX} injected tasks per setup, one machine; the agent tried the attack in{' '}
+                {harm.map(h => h.attempted).filter(a => a != null).join(', ')} of them
+              </p>
+            </>
+          ) : (
+            <p className="fm-sub">The evaluation results are not available on this install.</p>
+          )}
         </section>
 
         {/* 5. Check a record */}
