@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import ClickSpark from '../effects/ClickSpark';
 import { OperatorAuthModal } from '../common/OperatorAuthModal';
-import { SignInRequired } from '../common/SignInRequired';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../api/client';
 import { onCountsRefresh } from '../../logic/countsRefresh';
@@ -97,7 +96,12 @@ export const AppLayout: React.FC = () => {
   // Every page sits in the v4 sidebar shell.
   const content = (
     <div key={`${location.pathname}#${authEpoch}`} className="anim-rise">
-      {needsSignIn && !isPublic ? <SignInRequired /> : <Outlet />}
+      {needsSignIn && !isPublic ? (
+        // Signed out on a page that needs sign-in: go to the landing page, and come back here after.
+        <Navigate to={`/signin?next=${encodeURIComponent(location.pathname + location.search)}`} replace />
+      ) : (
+        <Outlet />
+      )}
     </div>
   );
 

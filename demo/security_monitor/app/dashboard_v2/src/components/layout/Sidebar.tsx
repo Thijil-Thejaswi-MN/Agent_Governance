@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import {
   Shield,
   Layers,
@@ -68,6 +68,13 @@ export const Sidebar: React.FC<{
   onToggleCollapsed?: () => void;
 }> = ({ waitingCount = 0, totalTasks = 0, variant = 'rail', onClose, collapsed: collapsedProp = false, onToggleCollapsed }) => {
   const { role, user, team, hasToken, removeToken } = useAuth();
+  const navigate = useNavigate();
+  // Signing out goes back to the landing (sign-in) page, as on any website.
+  const signOut = () => {
+    onClose?.();
+    navigate('/signin', { replace: true });
+    removeToken();
+  };
   const currentRole = role || 'admin';
   const roleCfg = ROLE_COLORS[currentRole] || ROLE_COLORS.admin;
   const isDrawer = variant === 'drawer';
@@ -288,7 +295,7 @@ export const Sidebar: React.FC<{
             )}
           </div>
           <button
-            onClick={removeToken}
+            onClick={signOut}
             id={isDrawer ? undefined : 'sign-out-btn'}
             aria-label="Sign out"
             title="Sign out"

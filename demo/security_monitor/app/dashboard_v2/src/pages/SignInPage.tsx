@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Shield, Bot, Users, CheckCircle2, LayoutGrid, FileText, Cpu, ShieldCheck, FileCheck2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Role } from '../types';
-import { roleHome } from '../logic/journey';
+import { roleHome, safeNext } from '../logic/journey';
 import DotField from '../components/effects/DotField';
 import { formatCount, useCountUp } from '../hooks/useCountUp';
 import { FeatureMosaic } from '../components/landing/FeatureMosaic';
@@ -89,6 +89,7 @@ const ResultStat: React.FC<{ r: (typeof RESULTS)[number]; i: number }> = ({ r, i
 
 export const SignInPage: React.FC = () => {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const { saveToken } = useAuth();
   const [tokenInput, setTokenInput] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -115,7 +116,8 @@ export const SignInPage: React.FC = () => {
     try {
       const res = await saveToken(tokenInput.trim());
       const userRole: Role = (res?.user?.role as Role) || 'admin';
-      const destination = roleHome(userRole);
+      // Back to the page that needed sign-in, if any; otherwise the role's home.
+      const destination = safeNext(params.get('next')) || roleHome(userRole);
 
       // Highlight the matching role card for 1 second, then redirect
       setHighlightedRole(userRole);

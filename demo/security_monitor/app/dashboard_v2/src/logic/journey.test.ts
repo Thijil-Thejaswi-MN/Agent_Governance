@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Role } from '../types';
-import { roleHome, rootRedirect } from './journey';
+import { roleHome, rootRedirect, safeNext } from './journey';
 
 describe('rootRedirect (/dashboard)', () => {
   it('waits until the auth status has answered', () => {
@@ -34,5 +34,16 @@ describe('rootRedirect (/dashboard)', () => {
       expect(roleHome(role)).not.toBe('/');
     }
     expect(roleHome(null)).toBe('/run');
+  });
+});
+
+
+describe('return after sign-in', () => {
+  it('keeps console paths and drops everything else', () => {
+    expect(safeNext('/fleet')).toBe('/fleet');
+    expect(safeNext('/run/task_1?x=1')).toBe('/run/task_1?x=1');
+    for (const bad of [null, '', 'fleet', '//evil.example.com', '/\\evil.example.com', 'https://evil.example.com', '/signin', '/signin?next=/fleet', '/']) {
+      expect(safeNext(bad as any)).toBeNull();
+    }
   });
 });

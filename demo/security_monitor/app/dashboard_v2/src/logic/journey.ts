@@ -32,3 +32,16 @@ export function rootRedirect({ authChecked, hasToken, role }: RootRedirectInput)
   if (role) return roleHome(role);
   return hasToken ? null : '/signin';
 }
+
+/**
+ * Where to go after signing in when the sign-in page was opened from a page that needed it
+ * (`/signin?next=/fleet`). Only paths inside the console are accepted, so the parameter
+ * cannot send anyone to another site; anything else falls back to the role's home.
+ */
+export function safeNext(next: string | null | undefined): string | null {
+  if (!next) return null;
+  const p = next.trim();
+  if (!p.startsWith('/') || p.startsWith('//') || p.startsWith('/\\') || p.includes('://')) return null;
+  if (p === '/signin' || p.startsWith('/signin?') || p.startsWith('/signin/') || p === '/') return null;
+  return p;
+}

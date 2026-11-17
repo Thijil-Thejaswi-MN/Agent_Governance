@@ -89,15 +89,15 @@ def start_console_server(workdir: Path, env_overrides: dict[str, str] | None = N
 
 
 def sign_in(page, server: ConsoleServer, path: str = "/dashboard/history") -> None:
-    """Signs in through the UI: the sign-in state, the token modal, POST /auth/session.
+    """Signs in the way a person does: opening a page that needs sign-in goes to the landing
+    (sign-in) page with ?next=, the token is entered there, and the console returns to `path`.
 
     `path` must be a page that reads task data (Home and Results are public)."""
     page.goto(f"{server.url}{path}")
-    page.locator("#sign-in-btn").click()
-    modal = page.locator('div[role="dialog"]')
-    modal.locator("#operator-token-input").fill(server.token)
-    modal.locator("#operator-signin-btn").click()
-    modal.wait_for(state="hidden")
+    page.wait_for_url("**/dashboard/signin?next=*")
+    page.locator("#operator-token-input").fill(server.token)
+    page.locator("#sign-in-submit-btn").click()
+    page.wait_for_url(f"**{path}")
 
 
 def save_evidence(page, name: str) -> None:
