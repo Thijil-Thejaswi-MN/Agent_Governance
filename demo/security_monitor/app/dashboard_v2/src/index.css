@@ -503,3 +503,57 @@
     animation: none;
   }
 }
+
+/* Sign-in landing (after the "AI Runtime" hero on motionsites): dot-matrix headline made
+   from the bundled JetBrains Mono, no external fonts, video or logos. */
+.dot-matrix {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-weight: 600;
+  color: #ffffff;
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .dot-matrix {
+    color: transparent;
+    background-image: radial-gradient(circle at center, #ffffff 0 44%, rgba(255, 255, 255, 0) 50%);
+    background-size: 0.085em 0.085em;
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+}
+@keyframes landingReveal {
+  from {
+    opacity: 0;
+    transform: translateY(22px) scale(0.98);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+@keyframes landingSlideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.landing-anim {
+  opacity: 0;
+  animation: landingReveal 0.85s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation-delay: var(--d, 0s);
+}
+.landing-slide {
+  animation: landingSlideDown 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .landing-anim,
+  .landing-slide {
+    opacity: 1;
+    animation: none;
+  }
+}
