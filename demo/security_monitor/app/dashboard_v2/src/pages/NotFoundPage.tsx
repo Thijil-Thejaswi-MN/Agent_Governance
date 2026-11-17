@@ -6,29 +6,36 @@ export const NotFoundPage: React.FC = () => {
   const location = useLocation();
 
   return (
-    <div className="relative flex flex-col items-center justify-center min-h-[calc(100vh-140px)] px-4 py-12 text-center overflow-hidden select-none">
-      {/* Faint grid background */}
+    <div className="relative flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] -mx-4 -my-6 md:-m-8 px-4 py-12 text-center overflow-hidden select-none bg-[#0A0D12]">
+      {/* Soft blue glow behind the 404 */}
       <div
-        className="pointer-events-none absolute inset-0 z-0 opacity-20"
+        className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[300px] sm:w-[680px] sm:h-[380px] bg-blue-500/10 blur-[130px] rounded-full z-0"
+        aria-hidden="true"
+      />
+
+      {/* Edge-to-edge fine square grid with dots at line crossings */}
+      <div
+        data-testid="not-found-grid"
+        className="pointer-events-none absolute inset-0 z-0"
         style={{
           backgroundImage: `
-            repeating-linear-gradient(0deg, transparent, transparent 19px, rgba(59, 130, 246, 0.15) 19px, rgba(59, 130, 246, 0.15) 20px, transparent 20px, transparent 39px, rgba(59, 130, 246, 0.15) 39px, rgba(59, 130, 246, 0.15) 40px),
-            repeating-linear-gradient(90deg, transparent, transparent 19px, rgba(59, 130, 246, 0.15) 19px, rgba(59, 130, 246, 0.15) 20px, transparent 20px, transparent 39px, rgba(59, 130, 246, 0.15) 39px, rgba(59, 130, 246, 0.15) 40px),
-            radial-gradient(circle at 20px 20px, rgba(59, 130, 246, 0.25) 2px, transparent 2px),
-            radial-gradient(circle at 40px 40px, rgba(59, 130, 246, 0.25) 2px, transparent 2px)
+            repeating-linear-gradient(0deg, transparent, transparent 19px, rgba(96, 165, 250, 0.10) 19px, rgba(96, 165, 250, 0.10) 20px, transparent 20px, transparent 39px, rgba(96, 165, 250, 0.10) 39px, rgba(96, 165, 250, 0.10) 40px),
+            repeating-linear-gradient(90deg, transparent, transparent 19px, rgba(96, 165, 250, 0.10) 19px, rgba(96, 165, 250, 0.10) 20px, transparent 20px, transparent 39px, rgba(96, 165, 250, 0.10) 39px, rgba(96, 165, 250, 0.10) 40px),
+            radial-gradient(circle at 20px 20px, rgba(96, 165, 250, 0.22) 2px, transparent 2px),
+            radial-gradient(circle at 40px 40px, rgba(96, 165, 250, 0.22) 2px, transparent 2px)
           `,
           backgroundSize: '40px 40px, 40px 40px, 40px 40px, 40px 40px',
-          maskImage: 'radial-gradient(ellipse 65% 65% at 50% 50%, #000 20%, transparent 80%)',
-          WebkitMaskImage: 'radial-gradient(ellipse 65% 65% at 50% 50%, #000 20%, transparent 80%)',
+          maskImage: 'radial-gradient(ellipse 90% 90% at 50% 50%, #000 65%, transparent 100%)',
+          WebkitMaskImage: 'radial-gradient(ellipse 90% 90% at 50% 50%, #000 65%, transparent 100%)',
         }}
         aria-hidden="true"
       />
 
-      <div className="relative z-10 mx-auto flex w-full max-w-lg flex-col items-center text-center">
+      <div className="relative z-10 mx-auto flex w-full max-w-2xl flex-col items-center text-center">
         {/* Outlined dashed 404 SVG */}
         <svg
           viewBox="0 0 800 300"
-          className="w-full max-w-[18rem] sm:max-w-md select-none"
+          className="w-full max-w-[20rem] sm:max-w-lg md:max-w-xl select-none mx-auto"
           aria-hidden="true"
         >
           <text
@@ -36,11 +43,11 @@ export const NotFoundPage: React.FC = () => {
             y="50%"
             textAnchor="middle"
             dominantBaseline="middle"
-            fill="rgba(59, 130, 246, 0.08)"
-            stroke="#3B82F6"
+            fill="rgba(59, 130, 246, 0.18)"
+            stroke="#60A5FA"
             strokeWidth="2.5"
             strokeDasharray="40 20"
-            className="font-black tracking-tighter"
+            className="font-black tracking-tighter not-found-dash"
             style={{ fontSize: '20rem' }}
           >
             404
@@ -50,7 +57,7 @@ export const NotFoundPage: React.FC = () => {
         {/* Visually hidden 404 for screen readers */}
         <span className="sr-only">404</span>
 
-        <div className="mt-4 flex flex-col items-center gap-2">
+        <div className="mt-4 flex flex-col items-center gap-2 max-w-lg mx-auto">
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-[#E6E9EF]">
             This page doesn't exist.
           </h1>

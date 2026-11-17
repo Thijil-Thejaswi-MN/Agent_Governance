@@ -9,24 +9,9 @@ import { api } from '../../api/client';
 import { onCountsRefresh } from '../../logic/countsRefresh';
 import { readCollapsed, safeLocalStorage, writeCollapsed } from '../../logic/sidebarState';
 
-const PROTECTED_PATHS = [
-  '/overview',
-  '/team',
-  '/inbox',
-  '/records',
-  '/standing-rules',
-  '/run',
-  '/runs',
-  '/fleet',
-  '/history',
-  '/evidence',
-  '/report',
-  '/incidents',
-  '/inventory',
-];
+import { PROTECTED_PATHS, isProtectedPath } from '../../logic/protectedPaths';
 
-const isProtectedPath = (path: string): boolean =>
-  PROTECTED_PATHS.some(p => path === p || path.startsWith(`${p}/`));
+export { PROTECTED_PATHS, isProtectedPath };
 
 export const AppLayout: React.FC = () => {
   const location = useLocation();

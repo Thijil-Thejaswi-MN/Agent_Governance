@@ -61,16 +61,35 @@ def test_legacy_redirects_still_work(page: Page, console_server):
     expect(page).to_have_url(re.compile(r"/dashboard/fleet/?$"))
 
 
+def test_not_found_background_covers_main(page: Page, console_server):
+    page.goto(f"{console_server.url}/dashboard/no-such-page")
+    bg = page.locator("[data-testid='not-found-grid']")
+    expect(bg).to_be_visible()
+    main = page.locator("#main")
+    expect(main).to_be_visible()
+
+    bg_box = bg.bounding_box()
+    main_box = main.bounding_box()
+    assert bg_box is not None, "Background layer has no bounding box"
+    assert main_box is not None, "#main has no bounding box"
+    assert bg_box["width"] >= 0.95 * main_box["width"], (
+        f"Background width ({bg_box['width']}) is less than 95% of #main width ({main_box['width']})"
+    )
+
+
 def test_not_found_no_horizontal_scroll_at_375px(page: Page, console_server):
     page.set_viewport_size({"width": 375, "height": 667})
 
-    # Signed out at 375 px
+    # Unauthenticated visitor at 375 px
     page.goto(f"{console_server.url}/dashboard/no-such-page")
     expect(page.locator("h1")).to_have_text("This page doesn't exist.")
-    assert no_horizontal_scroll(page), "Page has horizontal scroll at 375 px (signed out)"
+    bg = page.locator("[data-testid='not-found-grid']")
+    expect(bg).to_be_visible()
+    assert no_horizontal_scroll(page), "Page has horizontal scroll at 375 px"
 
-    # Signed in at 375 px
+    # Authenticated operator at 375 px
     sign_in(page, console_server)
     page.goto(f"{console_server.url}/dashboard/no-such-page")
     expect(page.locator("h1")).to_have_text("This page doesn't exist.")
-    assert no_horizontal_scroll(page), "Page has horizontal scroll at 375 px (signed in)"
+    expect(bg).to_be_visible()
+    assert no_horizontal_scroll(page), "Page has horizontal scroll at 375 px (authenticated)"

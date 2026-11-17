@@ -557,3 +557,19 @@
     animation: none;
   }
 }
+
+@keyframes notFoundDash {
+  to {
+    stroke-dashoffset: -120;
+  }
+}
+
+.not-found-dash {
+  animation: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .not-found-dash {
+    animation: notFoundDash 24s linear infinite;
+  }
+}
+
