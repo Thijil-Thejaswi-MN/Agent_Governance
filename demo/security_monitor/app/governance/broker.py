@@ -45,6 +45,24 @@ class ToolBroker:
         self._event_counter += 1
         return f"evt_broker_{self._event_counter:04d}_{uuid.uuid4().hex[:6]}"
 
+    @staticmethod
+    def decided_by(ev: GovernanceEvent) -> str:
+        """Which precedence layer (policy_sim.TOOL_LAYERS) made this decision."""
+        if ev.kind == "authentication":
+            return "identity"
+        if ev.kind == "request_access":
+            return "access_request"
+        if ev.kind == "tool_invocation":
+            return "agent_tool_limit" if "tool limit" in (ev.rule_matched or "") else "boundary_tools"
+        if ev.action_taken in (TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
+            return "graduated_response"
+        return "boundary_resource"
+
+    def _record(self, ev: GovernanceEvent) -> None:
+        """Records a broker decision with the precedence layer that made it (decision reasons, item 1c)."""
+        ev.details = {**(ev.details or {}), "decided_by": self.decided_by(ev)}
+        self.storage.record_event(ev)
+
     def _check_and_consume_single_use(self, boundary: Any, resource_type: str, target: str) -> None:
         """Enforces single-use consumption for human-approved HIGH expansion grants."""
         if not boundary.parent_expansion_id:
@@ -155,7 +173,7 @@ class ToolBroker:
             rule_matched=status_or_reason,
             boundary_version=bnd_ver,
         )
-        self.storage.record_event(ev)
+        self._record(ev)
 
         return {
             "granted": granted,
@@ -196,7 +214,7 @@ class ToolBroker:
         if limit_eval is None:
             return
         action, prevented = self.policy_engine.decide(boundary, limit_eval)
-        self.storage.record_event(GovernanceEvent(
+        self._record(GovernanceEvent(
             event_id=self._generate_event_id(),
             timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
             source=EventSource.TOOL_BROKER,
@@ -238,7 +256,7 @@ class ToolBroker:
                 rule_matched="invalid or revoked task authorization token",
                 boundary_version=None,
             )
-            self.storage.record_event(event)
+            self._record(event)
             raise PermissionError("Access denied: Invalid or revoked task token")
         return res
 
@@ -289,7 +307,7 @@ class ToolBroker:
                 rule_matched=tool_eval.rule_matched,
                 boundary_version=boundary.version,
             )
-            self.storage.record_event(event)
+            self._record(event)
             raise PermissionError(f"Tool read_file not granted in task boundary: {tool_eval.rule_matched}")
 
         # Evaluate target file path
@@ -312,7 +330,7 @@ class ToolBroker:
             rule_matched=eval_res.rule_matched,
             boundary_version=boundary.version,
         )
-        self.storage.record_event(event)
+        self._record(event)
 
         target_display = eval_res.resolved_path or file_path
         if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
@@ -382,7 +400,7 @@ class ToolBroker:
                 rule_matched=tool_eval.rule_matched,
                 boundary_version=boundary.version,
             )
-            self.storage.record_event(event)
+            self._record(event)
             raise PermissionError(f"Tool write_file not granted: {tool_eval.rule_matched}")
 
         eval_res = self.evaluator.evaluate_file_access(boundary, file_path, is_write=True)
@@ -405,7 +423,7 @@ class ToolBroker:
             rule_matched=eval_res.rule_matched,
             boundary_version=boundary.version,
         )
-        self.storage.record_event(event)
+        self._record(event)
 
         target_display = eval_res.resolved_path or file_path
         if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
@@ -461,7 +479,7 @@ class ToolBroker:
             rule_matched=eval_res.rule_matched,
             boundary_version=boundary.version,
         )
-        self.storage.record_event(event)
+        self._record(event)
 
         if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
             raise PermissionError(f"Outbound network request to '{url}' denied by boundary: {eval_res.rule_matched}")
@@ -524,7 +542,7 @@ class ToolBroker:
             rule_matched=eval_res.rule_matched,
             boundary_version=boundary.version,
         )
-        self.storage.record_event(event)
+        self._record(event)
 
         if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
             raise PermissionError(f"HTTP redirect to '{redirect_target}' denied by boundary: {eval_res.rule_matched}")
@@ -561,7 +579,7 @@ class ToolBroker:
             rule_matched=eval_res.rule_matched,
             boundary_version=boundary.version,
         )
-        self.storage.record_event(event)
+        self._record(event)
 
         if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
             raise PermissionError(f"Command execution denied: {eval_res.rule_matched}")
@@ -636,6 +654,9 @@ class ToolBroker:
         if not boundary:
             raise RuntimeError(f"Active boundary not found for task {task_id}")
 
+        # The agent's own tool limit applies to sandboxed commands too (it used to be skipped
+        # here, so an agent without run_command could still run commands if the boundary had it).
+        self._check_agent_tool(task_id, agent_id, boundary, "run_command")
         eval_res = self.evaluator.evaluate_command(boundary, command)
         action, prevented = self.policy_engine.decide(boundary, eval_res)
 
@@ -656,7 +677,7 @@ class ToolBroker:
             rule_matched=eval_res.rule_matched,
             boundary_version=boundary.version,
         )
-        self.storage.record_event(event)
+        self._record(event)
 
         if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
             raise PermissionError(f"Command execution denied: {eval_res.rule_matched}")
@@ -693,7 +714,7 @@ class ToolBroker:
             rule_matched=eval_res.rule_matched,
             boundary_version=boundary.version,
         )
-        self.storage.record_event(event)
+        self._record(event)
 
         if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
             raise PermissionError(f"Communication with agent '{target_agent}' denied by boundary: {eval_res.rule_matched}")
@@ -763,7 +784,7 @@ class ToolBroker:
             rule_matched=eval_res.rule_matched,
             boundary_version=boundary.version,
         )
-        self.storage.record_event(event)
+        self._record(event)
 
         if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
             raise PermissionError(f"LLM inference denied by boundary: {eval_res.rule_matched}")

@@ -1,4 +1,5 @@
 import type { FileReviewResult } from '../components/v3/FileReview';
+import type { SimResult } from '../logic/policySim';
 import {
   SystemStatusResponse,
   TaskRecord,
@@ -292,6 +293,13 @@ export const api = {
   expireStandingRule: (ruleId: string) =>
     request<{ status: string; rule_id: string }>(`${API_BASE}/standing-rules/${ruleId}/expire`, {
       method: 'POST',
+    }),
+
+  // Policy check: what the broker would decide for one action (nothing is run).
+  simulatePolicy: (payload: Record<string, unknown>) =>
+    request<SimResult>(`${API_BASE}/policy/simulate`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
 
 };

@@ -131,3 +131,49 @@ def test_block_rule_decides_plain_request_and_leaves_escalated_one(page: Page, r
 
     page.get_by_role("button", name=f"Switch off rule {rule_id}").click()
     expect(page.locator(f'#rules-list li[data-rule-id="{rule_id}"]')).to_have_attribute("data-state", "switched_off")
+
+
+def test_check_a_decision_explains_layer_by_layer(page: Page, rules_server):
+    """The policy check (item 1c) shows what would happen and which check decides it."""
+    storage = GovernanceStorage(rules_server.db_path)
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    task_id = f"task_sim_{int(time.time() * 1000)}"
+    storage.save_task(TaskRecord(task_id=task_id, request_text="Summarise input/notes.txt", request_hash="h",
+                                 agent_id=AGENT, workspace_root="/tmp/ws_sim", status=TaskLifecycle.ACTIVE,
+                                 created_at=now))
+    storage.save_boundary(TaskBoundary(task_id=task_id, workspace_root="/tmp/ws_sim",
+                                       files_read=["input/notes.txt"], tools=["read_file"]))
+    _sign_in(page, rules_server.url, rules_server.token)
+    page.goto(f"{rules_server.url}/dashboard/standing-rules")
+    expect(page.locator("#policy-check")).to_be_visible()
+    page.locator("#sim-task").select_option(task_id)
+
+    page.locator("#sim-action").select_option("read_file")
+    page.locator("#sim-target").fill("input/notes.txt")
+    page.locator("#sim-check-btn").click()
+    result = page.locator("#sim-result")
+    expect(result).to_have_attribute("data-outcome", "allow")
+    expect(result).to_contain_text("Would be allowed")
+
+    page.locator("#sim-target").fill("input/payroll.csv")
+    page.locator("#sim-check-btn").click()
+    expect(result).to_have_attribute("data-outcome", "deny")
+    expect(result).to_have_attribute("data-decided-by", "boundary_resource")
+    expect(page.locator('#sim-steps li[data-layer="agent_tool_limit"]')).to_be_visible()
+
+    # A draft rule in the form is tested without being saved.
+    page.locator("#rule-agent").fill("*")
+    page.locator("#rule-target").fill("docs/plan.txt")
+    page.locator("#sim-action").select_option("ask_file_read")
+    page.locator("#sim-target").fill("docs/plan.txt")
+    expect(page.locator("#sim-use-draft")).to_be_checked()
+    page.locator("#sim-check-btn").click()
+    expect(result).to_have_attribute("data-outcome", "allow")
+    expect(result).to_have_attribute("data-decided-by", "standing_rules")
+    expect(result).to_contain_text("your draft rule")
+    assert not [r for r in storage.list_standing_rules() if r.get("target") == "docs/plan.txt"]
+    assert banned_words_in(page.locator("#policy-check").inner_text(), ["safe", "secure", "guaranteed", "tamper-proof"]) == []
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert no_horizontal_scroll(page)
+    save_evidence(page, "policy_check_390")

@@ -462,6 +462,19 @@ def _offered_tools(spec: "TaskSpec") -> list[dict[str, Any]] | None:
     limit = set(spec.agent_tools)
     return [t for t in base if t.get("function", {}).get("name") in limit]
 
+def _policy_section(initial: Any, final: Any) -> dict[str, Any]:
+    """Receipt section: the precedence order and the policy fingerprint at start and end (item 1c)."""
+    from .policy_sim import PRECEDENCE_VERSION, policy_version
+
+    out: dict[str, Any] = {"precedence": PRECEDENCE_VERSION}
+    try:
+        out["initial_policy_version"] = policy_version(initial) if initial is not None else None
+        out["final_policy_version"] = policy_version(final) if final is not None else None
+    except Exception as e:  # never let the fingerprint break a receipt
+        out["error"] = f"{type(e).__name__}: {e}"[:200]
+    return out
+
+
 class TaskLauncher:
     """Launches one task in its own scope + sandbox and produces its receipt."""
 
@@ -851,6 +864,10 @@ class TaskLauncher:
             # refused whatever the request allows.
             boundary.metadata["agent_tool_limit"] = sorted(spec.agent_tools)
             boundary.metadata["agent_tool_limit_agent"] = spec.agent_id
+            self.storage.save_boundary(boundary)
+        if spec.boundary_model == "v1.1":
+            # Tells the policy simulator which file evaluator the broker used for this task.
+            boundary.metadata["boundary_model"] = "v1.1"
             self.storage.save_boundary(boundary)
         if spec.condition:
             task.condition = spec.condition
@@ -1359,6 +1376,7 @@ class TaskLauncher:
             extra={
                 "llm_provider": provider_label,
                 "llm_model": llm_model,
+                "policy": _policy_section(initial_boundary, self.storage.get_boundary(task_id)),
                 "runtime_code_sha256": runtime_hashes,
                 "landlock_rules_sha256": _sha256_file(rules_path),
                 "rpc_call_counts": dict(rpc.call_counts),
