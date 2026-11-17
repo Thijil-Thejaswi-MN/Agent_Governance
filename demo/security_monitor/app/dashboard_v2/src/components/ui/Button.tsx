@@ -29,10 +29,11 @@ const sizeStyles: Record<ButtonSize, string> = {
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ variant = 'secondary', size = 'md', className = '', type = 'button', disabled, children, ...rest }, ref) => {
+  ({ variant = 'secondary', size = 'md', className = '', type = 'button', id, disabled, children, ...rest }, ref) => {
     return (
       <button
         ref={ref}
+        id={id}
         type={type}
         disabled={disabled}
         className={`inline-flex items-center justify-center transition-colors cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-bg ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}

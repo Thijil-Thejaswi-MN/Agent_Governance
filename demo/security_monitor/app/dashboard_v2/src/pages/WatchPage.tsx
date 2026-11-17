@@ -14,6 +14,7 @@ import { boundaryVersionLabel, receiptSentence, statusSentence } from '../logic/
 import { runPhase } from '../logic/runPhase';
 import { RunProgress } from '../components/action/RunProgress';
 import { agentStarted, blockedAttempts, boundaryLabel, fenceBlocked, splitAttempts, fileName, isTerminal, justBlocked, outputsFromSteps, OutputPreview } from '../logic/runView';
+import { Button } from '../components/ui/Button';
 
 const STATUS_LABELS: Record<string, string> = {
   idle: 'Idle',
@@ -127,16 +128,17 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
           <RunProgress view={runPhase(run.state, started, !!run.pending, run.receiptLoaded)} />
         )}
         {!readOnly && !terminal && (
-          <button
+          <Button
             id="stop-run-btn"
+            variant="danger"
+            size="md"
             onClick={requireToken(run.stop)}
             disabled={run.state === 'stopping'}
-            className="btn-ghost min-h-[44px] sm:min-h-[40px]"
-            style={{ borderColor: 'rgb(var(--bad-rgb) / 0.5)', color: 'var(--bad-text)' }}
+            className="min-h-[44px] sm:min-h-[40px]"
           >
             <Square className="w-4 h-4" />
             {run.state === 'stopping' ? 'Stopping…' : 'Stop'}
-          </button>
+          </Button>
         )}
       </div>
 
@@ -151,34 +153,58 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
         </div>
       )}
 
-      <div className="pt-6 pb-10 flex flex-wrap items-center gap-8 lg:gap-12">
-        <div className="flex-[1_1_420px] min-w-0 flex justify-center">
-          <Fence inside={insideNames} blocked={blockedNames} requested={requestedNames} live={live} gotThrough={isComparison} onOpen={terminal ? openByLabel : undefined} />
+      <div className="pt-6 pb-10 flex flex-wrap items-start gap-8 lg:gap-12">
+        <div className="flex-[1_1_460px] min-w-0">
+          <div className="relative overflow-hidden rounded-3xl border border-line bg-surface-1/40 p-4 sm:p-6 flex flex-col items-center">
+            <div className="pipeline-dots absolute inset-0 pointer-events-none" />
+
+            <div className="relative z-10 w-full flex flex-wrap items-center gap-2 mb-6">
+              <div
+                id="live-status-chip"
+                className="flex h-9 shrink-0 items-center justify-center gap-2 rounded-xl border border-line bg-surface-2 px-3"
+              >
+                <span className="relative flex size-2">
+                  {live && <span className="absolute inset-0 animate-ping rounded-full bg-ok opacity-60 motion-reduce:hidden" />}
+                  <span className={`relative size-full rounded-full ${live ? 'bg-ok' : run.state === 'stopped' || run.state === 'failed' ? 'bg-bad' : 'bg-fg-3'}`} />
+                </span>
+                <span className={`text-[13px] font-medium ${live ? 'text-ok' : 'text-fg-2'}`}>
+                  {live ? 'Live' : run.state === 'stopped' ? 'Stopped' : 'Finished'}
+                </span>
+              </div>
+              {run.task && (
+                <div className="flex h-9 items-center rounded-xl border border-line bg-surface-2 px-3 min-w-0" id="run-agent-line">
+                  <span className="truncate text-[13px] font-medium text-fg">
+                    <span>{agentNames[run.task.agent_id] || run.task.agent_id}</span>
+                    {run.task.model ? (
+                      <>
+                        <span className="text-fg-3"> · runs on </span>
+                        <span className="font-mono text-fg-2">{run.task.model}</span>
+                      </>
+                    ) : null}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="relative z-10 w-full flex flex-col items-center">
+              <div className="w-full flex justify-center py-2">
+                <Fence inside={insideNames} blocked={blockedNames} requested={requestedNames} live={live} gotThrough={isComparison} onOpen={terminal ? openByLabel : undefined} />
+              </div>
+              <div className="mt-6 text-center max-w-lg mx-auto px-2">
+                <h1
+                  id="run-status"
+                  data-state={run.state}
+                  aria-live="polite"
+                  className="m-0 font-display font-bold text-[24px] sm:text-[30px] leading-tight text-fg"
+                >
+                  {sentence}
+                </h1>
+              </div>
+            </div>
+          </div>
         </div>
 
         <section aria-label={run.pending ? 'Your decision' : 'What is happening'} className="flex-[1_1_380px] max-w-[540px] min-w-0 flex flex-col gap-5">
-          {run.task && (
-            <p className="m-0 text-[14px]" id="run-agent-line" style={{ color: 'var(--text-3)' }}>
-              <span style={{ color: 'var(--text-2)' }}>{agentNames[run.task.agent_id] || run.task.agent_id}</span>
-              {run.task.model ? (
-                <>
-                  {' · runs on '}
-                  <span className="mono" style={{ color: 'var(--text-2)' }}>
-                    {run.task.model}
-                  </span>
-                </>
-              ) : null}
-            </p>
-          )}
-          <h1
-            id="run-status"
-            data-state={run.state}
-            aria-live="polite"
-            className="m-0 font-display font-bold text-[28px] sm:text-[36px] leading-[1.15] text-fg"
-          >
-            {sentence}
-          </h1>
-
           {run.pending && (
             <DecisionCard
               key={run.pending.request_id}
@@ -193,9 +219,11 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
           )}
 
           {!run.pending && !terminal && (
-            <p className="m-0 text-[17px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
-              It can only touch what is inside the fence. If it needs anything more, it will ask you here.
-            </p>
+            <div className="rounded-2xl border border-line bg-surface-1 p-5 shadow-sm">
+              <p className="m-0 text-[16px] leading-relaxed text-fg-2">
+                It can only touch what is inside the fence. If it needs anything more, it will ask you here.
+              </p>
+            </div>
           )}
 
           {!terminal && !readOnly && (
@@ -208,7 +236,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
 
           {terminal && outputs.length > 0 && (
             <div
-              className="card p-5 cursor-pointer hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-strong"
+              className="rounded-2xl border border-line bg-surface-1 p-5 cursor-pointer shadow-sm hover:border-line-strong transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               id="output-preview"
               role="button"
               tabIndex={0}
@@ -222,38 +250,42 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
               }}
             >
               <div className="flex items-center gap-2 text-[15px] font-semibold">
-                <FileText className="w-4 h-4" style={{ color: 'var(--allowed)' }} />
-                <span className="mono text-[14px]">{outputs[0].name}</span>
+                <FileText className="w-4 h-4 text-ok" />
+                <span className="mono text-[14px] text-fg">{outputs[0].name}</span>
                 {outputs.length > 1 && (
-                  <span className="font-normal" style={{ color: 'var(--text-3)' }}>
+                  <span className="font-normal text-fg-3">
                     and {outputs.length - 1} more
                   </span>
                 )}
-                <span className="ml-auto text-[13px] font-normal" style={{ color: 'var(--text-3)' }}>
+                <span className="ml-auto text-[13px] font-normal text-fg-3">
                   Open
                 </span>
               </div>
-              <pre className="mt-3 mb-0 whitespace-pre-wrap text-[15px] leading-relaxed max-h-48 overflow-y-auto" style={{ fontFamily: 'Inter, sans-serif', color: 'var(--text)' }}>
+              <pre className="mt-3 mb-0 whitespace-pre-wrap text-[14px] leading-relaxed max-h-48 overflow-y-auto text-fg font-sans">
                 {outputs[0].content || '(empty file)'}
               </pre>
             </div>
           )}
           {terminal && run.privateCheck && (
-            <p
-              className="m-0 text-[15px] leading-relaxed"
-              id="private-check"
-              data-result={run.privateCheck}
-              style={{ color: run.privateCheck === 'leaked' ? 'var(--bad-text)' : 'var(--ok-text)' }}
-            >
-              {run.privateCheck === 'leaked'
-                ? 'Private file check: the output contains the private file’s unique code, so its content got out.'
-                : 'Private file check: the output does not contain the private file’s unique code, so none of its real content got out.'}
-            </p>
+            <div className="rounded-2xl border border-line bg-surface-1 p-4 shadow-sm">
+              <p
+                className="m-0 text-[14px] leading-relaxed"
+                id="private-check"
+                data-result={run.privateCheck}
+                style={{ color: run.privateCheck === 'leaked' ? 'var(--bad-text)' : 'var(--ok-text)' }}
+              >
+                {run.privateCheck === 'leaked'
+                  ? 'Private file check: the output contains the private file’s unique code, so its content got out.'
+                  : 'Private file check: the output does not contain the private file’s unique code, so none of its real content got out.'}
+              </p>
+            </div>
           )}
           {terminal && outputs.length === 0 && run.receiptLoaded && (
-            <p className="m-0 text-[16px]" style={{ color: 'var(--text-2)' }}>
-              The agent did not write any output.
-            </p>
+            <div className="rounded-2xl border border-line bg-surface-1 p-5 shadow-sm">
+              <p className="m-0 text-[15px] text-fg-2">
+                The agent did not write any output.
+              </p>
+            </div>
           )}
 
           {terminal && (
@@ -261,7 +293,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
               <span
                 id="record-status"
                 data-tone={record.tone}
-                className="inline-flex items-center gap-2 min-h-[44px] px-4 rounded-lg text-[14px] font-semibold"
+                className="inline-flex items-center gap-2 min-h-[44px] px-4 rounded-xl text-[14px] font-semibold"
                 style={
                   record.tone === 'ok'
                     ? { background: 'var(--ok-tint)', border: '1px solid rgb(var(--ok-rgb) / 0.45)', color: 'var(--ok-text)' }
@@ -283,13 +315,13 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
           )}
 
           {run.decisionNote && !run.pending && (
-            <p id="decision-note" role="status" className="m-0 text-[15px] leading-relaxed" style={{ color: 'var(--ok-lighter)' }}>
+            <p id="decision-note" role="status" className="m-0 text-[15px] leading-relaxed text-ok-lighter">
               {run.decisionNote}
             </p>
           )}
 
           {run.actionError && (
-            <div id="action-error" role="alert" className="px-4 py-3 rounded-xl text-[15px]" style={{ background: 'var(--bad-tint)', border: '1px solid rgb(var(--bad-rgb) / 0.45)', color: 'var(--bad-lighter)' }}>
+            <div id="action-error" role="alert" className="px-4 py-3 rounded-xl text-[15px] bg-bad-tint border border-bad/45 text-bad-lighter">
               {run.actionError}
             </div>
           )}

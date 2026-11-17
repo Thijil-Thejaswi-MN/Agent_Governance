@@ -121,7 +121,7 @@ export const TopBar: React.FC<TopBarProps> = ({ breadcrumb, activeAgentsCount = 
       {/* Right controls: active agents status badge */}
       <div className="flex items-center gap-3 ml-auto">
         {activeAgentsCount > 0 && (
-          <StatusPill tone="ok" label={`${activeAgentsCount} running`} />
+          <StatusPill tone="info" label={`${activeAgentsCount} running`} />
         )}
       </div>
     </header>

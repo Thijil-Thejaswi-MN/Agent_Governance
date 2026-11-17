@@ -504,6 +504,15 @@
   }
 }
 
+.pipeline-dots {
+  background-image: radial-gradient(
+    circle,
+    rgba(var(--text-rgb) / 0.08) 1.5px,
+    transparent 1.5px
+  );
+  background-size: 16px 16px;
+}
+
 
 .fence-chip {
   position: absolute;

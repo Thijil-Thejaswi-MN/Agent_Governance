@@ -7,6 +7,7 @@ import { BoundaryPreviewResponse, RunPreset, ConfiguredAgent, ActiveRunTask } fr
 import { fileName } from '../logic/runView';
 import { FileReview, FileReviewResult } from '../components/v3/FileReview';
 import { FileDrop } from '../components/upload/FileDrop';
+import { Button } from '../components/ui/Button';
 
 // Plain names for the existing presets (the ids and their prompts are the server's).
 const PRESET_LABELS: Record<string, string> = {
@@ -219,7 +220,7 @@ export const AskPage: React.FC = () => {
       setError(err.message || 'The run could not start.');
       setProblems(err.problems || []);
       if (err?.status === 409) {
-        api.getActiveRun().then(a => setActiveTask(a.task_id)).catch(() => {});
+        api.getActiveRun().then(a => setActiveTask(a.task_id)).catch(() => { });
       }
     } finally {
       setStarting(false);
@@ -260,7 +261,7 @@ export const AskPage: React.FC = () => {
         </div>
       ) : null}
 
-      <div className="card w-full flex flex-col gap-3 p-3 sm:p-4 text-left border-line-strong focus-within:border-accent transition-colors">
+      <div className="rounded-2xl border border-line bg-surface-1 w-full flex flex-col gap-3 p-3 sm:p-4 text-left transition-colors focus-within:border-line-strong shadow-sm">
         <label htmlFor="prompt-input" className="sr-only">
           Your request
         </label>
@@ -281,14 +282,14 @@ export const AskPage: React.FC = () => {
                 id="model-selector"
                 value={modelOverride}
                 onChange={e => setModelOverride(e.target.value)}
-                className="min-h-[44px] sm:min-h-[40px] px-3 rounded-lg text-[14px] outline-none bg-surface-1 text-fg border border-line-strong focus:border-accent"
+                className="min-h-[44px] sm:min-h-[40px] px-3 rounded-lg text-[14px] outline-none bg-surface-2 text-fg border border-line focus:border-line-strong"
               >
                 <option value="">
                   {agentModelMissing
                     ? `scripted (${agentModel} is not available)`
                     : agentModel
-                    ? `${agentModel} (the agent's own)`
-                    : "the agent's own"}
+                      ? `${agentModel} (the agent's own)`
+                      : "the agent's own"}
                 </option>
                 {models
                   .filter(m => m !== agentModel)
@@ -300,12 +301,12 @@ export const AskPage: React.FC = () => {
               </select>
             </label>
             {missingTools.length > 0 && (
-      <p className="basis-full m-0 text-[13px] leading-relaxed" id="agent-tools-missing" style={{ color: 'var(--wait-kpi)' }}>
-        This example needs <span className="mono">{missingTools.join(', ')}</span>, which {chosenAgent?.name} may not call, so
-        that step will be refused. Pick {presetAgent && presetAgent.id !== chosenAgent?.id ? presetAgent.name : 'an agent with that tool'} to run it, or keep {chosenAgent?.name} to show the refusal.
-      </p>
-    )}
-    <AgentModelNote agent={chosenAgent} model={effectiveModel} overridden={!!runModel} missing={agentModelMissing} ollamaReachable={ollamaReachable} />
+              <p className="basis-full m-0 text-[13px] leading-relaxed" id="agent-tools-missing" style={{ color: 'var(--wait-kpi)' }}>
+                This example needs <span className="mono">{missingTools.join(', ')}</span>, which {chosenAgent?.name} may not call, so
+                that step will be refused. Pick {presetAgent && presetAgent.id !== chosenAgent?.id ? presetAgent.name : 'an agent with that tool'} to run it, or keep {chosenAgent?.name} to show the refusal.
+              </p>
+            )}
+            <AgentModelNote agent={chosenAgent} model={effectiveModel} overridden={!!runModel} missing={agentModelMissing} ollamaReachable={ollamaReachable} />
             {role === 'admin' && (
               <label
                 className={`flex items-center gap-2 text-[13px] text-wait-kpi ${canCompare ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'}`}
@@ -346,9 +347,9 @@ export const AskPage: React.FC = () => {
         </label>
         {modelChooses && !review && (
           <div className="flex items-center gap-3">
-            <button id="ask-model-btn" type="button" onClick={checkFiles} disabled={reviewing} className="btn-ghost min-h-[40px] px-4">
+            <Button id="ask-model-btn" type="button" variant="secondary" size="md" onClick={checkFiles} disabled={reviewing} className="min-h-[40px] px-4">
               {reviewing ? 'Asking the model…' : 'Ask the model'}
-            </button>
+            </Button>
             {reviewError && (
               <span id="file-review-error" className="text-[14px]" style={{ color: 'var(--bad-text)' }}>
                 {reviewError}
@@ -417,15 +418,15 @@ export const AskPage: React.FC = () => {
       </div>
 
       {showAddFile && (
-        <div className="w-full card p-4 text-left space-y-4">
+        <div className="w-full rounded-2xl border border-line bg-surface-1 p-4 text-left space-y-4 shadow-sm">
           <FileDrop files={files} onFilesChange={setFiles} />
 
           <div className="relative flex items-center py-1">
-            <div className="flex-grow border-t border-line-strong"></div>
+            <div className="flex-grow border-t border-line"></div>
             <span className="flex-shrink mx-4 text-[12px] uppercase tracking-wider text-fg-3">
               or paste text
             </span>
-            <div className="flex-grow border-t border-line-strong"></div>
+            <div className="flex-grow border-t border-line"></div>
           </div>
 
           <label className="block text-[14px] text-fg-2">
@@ -433,7 +434,7 @@ export const AskPage: React.FC = () => {
             <input
               value={newPath}
               onChange={e => setNewPath(e.target.value)}
-              className="mt-1 w-full min-h-[44px] px-3 rounded-lg mono text-[14px] outline-none bg-surface-1 text-fg border border-line-strong focus:border-accent"
+              className="mt-1 w-full min-h-[44px] px-3 rounded-lg mono text-[14px] outline-none bg-surface-2 text-fg border border-line focus:border-line-strong"
             />
           </label>
           <label className="block text-[14px] text-fg-2">
@@ -442,13 +443,13 @@ export const AskPage: React.FC = () => {
               rows={4}
               value={newContent}
               onChange={e => setNewContent(e.target.value)}
-              className="mt-1 w-full px-3 py-2 rounded-lg mono text-[13px] outline-none bg-surface-1 text-fg border border-line-strong focus:border-accent"
+              className="mt-1 w-full px-3 py-2 rounded-lg mono text-[13px] outline-none bg-surface-2 text-fg border border-line focus:border-line-strong"
             />
           </label>
           {fileError && <div className="text-[14px] text-bad-text">{fileError}</div>}
-          <button className="btn-ghost min-h-[44px] sm:min-h-[40px]" onClick={addFile}>
+          <Button variant="secondary" size="md" className="min-h-[44px] sm:min-h-[40px]" onClick={addFile}>
             Add file
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -500,9 +501,19 @@ export function PresetGroups({
                 onClick={() => onChoose(p)}
                 className={`min-h-[44px] sm:min-h-[40px] px-4 rounded-lg text-[14px] cursor-pointer transition-colors border ${
                   presetId === p.id
-                    ? 'border-accent bg-accent/[0.14] text-fg font-semibold'
-                    : 'border-line-strong bg-surface-2 text-fg-2 hover:text-fg hover:border-accent'
+                    ? 'bg-surface-2 text-fg font-medium'
+                    : 'border-line bg-surface-2 text-fg-2 hover:text-fg hover:border-line-strong'
                 }`}
+                style={
+                  presetId === p.id
+                    ? {
+                        border: '1px solid transparent',
+                        backgroundImage: 'linear-gradient(var(--surface-2), var(--surface-2)), var(--accent-grad)',
+                        backgroundOrigin: 'border-box',
+                        backgroundClip: 'padding-box, border-box',
+                      }
+                    : undefined
+                }
               >
                 {PRESET_LABELS[p.id] || p.name}
               </button>
@@ -548,7 +559,7 @@ export function AgentSelector({
         id="agent-selector"
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="min-h-[44px] sm:min-h-[40px] px-3 rounded-lg text-[14px] outline-none bg-surface-1 text-fg border border-line-strong focus:border-accent"
+        className="min-h-[44px] sm:min-h-[40px] px-3 rounded-lg text-[14px] outline-none bg-surface-2 text-fg border border-line focus:border-line-strong"
       >
         {agents.map(a => (
           <option key={a.id} value={a.id}>
