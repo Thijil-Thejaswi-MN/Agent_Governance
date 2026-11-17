@@ -134,10 +134,12 @@ export interface ResultsSummary {
   generated_at: string;
   evaluation_label: string;
   model: string;
-  harm_injected: Record<string, { exposed: number; total: number; rate: number; ratio: string }>;
-  shell_only_decoy_exposure: Record<string, { exposed: number; total: number; rate: number; ratio: string }>;
+  harm_injected: Record<string, { exposed: number; total: number; rate: number; ratio: string; attempted?: number }>;
+  shell_only_decoy_exposure: Record<string, { exposed: number; total: number; rate: number; ratio: string; attempted?: number }>;
   shell_attacks_succeeded: Record<string, { succeeded: number; total: number; ratio: string }>;
   utility_anticipated_correct: Record<string, { correct: number; total: number; rate: number; ratio: string }>;
+  utility_unanticipated_correct?: Record<string, { correct: number; total: number; ratio: string; mean_s: number | null }>;
+  utility_boundary_source?: string;
   expansion_chain_unanticipated_c: {
     denied_before_request: number;
     requested: number;

@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Shield, Bot, Users, CheckCircle2, LayoutGrid, FileText, Cpu, ShieldCheck, FileCheck2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { Role } from '../types';
+import { ResultsSummary, Role } from '../types';
+import { api } from '../api/client';
+import { LandingResult, landingHarm, landingResults } from '../logic/landingResults';
 import { roleHome, safeNext } from '../logic/journey';
 import DotField from '../components/effects/DotField';
 import { formatCount, useCountUp } from '../hooks/useCountUp';
@@ -54,15 +56,6 @@ const ROLES: RoleCard[] = [
   },
 ];
 
-// Results from our own evaluation (Review 2, docs/FINAL_VERIFIED_RESULTS). Not live numbers:
-// the page says where they come from, and they only change when the evaluation is re-run.
-const RESULTS: { glyph: string; value: number; suffix: string; decimals?: number; label: string }[] = [
-  { glyph: '!', value: 0, suffix: '/32', label: 'injected tasks caused harm (14/32 without governance)' },
-  { glyph: '%', value: 31, suffix: '/32', label: 'normal tasks still done correctly (31/32 without)' },
-  { glyph: '+', value: 1.0, suffix: ' s', decimals: 1, label: 'added to a normal task (6.4 s to 7.4 s)' },
-  { glyph: '=', value: 0, suffix: '', label: 'broker and kernel disagreements over 552 boundaries' },
-];
-
 const delay = (d: string) => ({ '--d': d }) as React.CSSProperties;
 
 const TRUST = [
@@ -71,7 +64,7 @@ const TRUST = [
   { icon: <FileCheck2 className="w-[15px] h-[15px]" />, title: 'Hash-chained record' },
 ];
 
-const ResultStat: React.FC<{ r: (typeof RESULTS)[number]; i: number }> = ({ r, i }) => {
+const ResultStat: React.FC<{ r: LandingResult; i: number }> = ({ r, i }) => {
   const { ref, value } = useCountUp<HTMLDivElement>(r.value, 1500 + i * 80, 480 + i * 90);
   return (
     <div ref={ref} className="landing-anim flex flex-col items-center text-center gap-1.5" style={delay(`${0.5 + i * 0.08}s`)} data-result={i}>
@@ -96,6 +89,19 @@ export const SignInPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [highlightedRole, setHighlightedRole] = useState<Role | null>(null);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  // Evaluation figures come from results_summary.json (recomputed from the raw trials), not from this file.
+  const [summary, setSummary] = useState<ResultsSummary | null | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    api
+      .getResultsSummary()
+      .then(s => live && setSummary(s))
+      .catch(() => live && setSummary(null));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const results = landingResults(summary);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return;
@@ -278,14 +284,21 @@ export const SignInPage: React.FC = () => {
 
         {/* Results from the evaluation */}
         <section id="results" aria-label="Results from our evaluation" className="w-full max-w-[920px] pt-4 pb-10 flex flex-col gap-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-7">
-            {RESULTS.map((r, i) => (
-              <ResultStat key={r.label} r={r} i={i} />
-            ))}
-          </div>
+          {results ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-7">
+              {results.map((r, i) => (
+                <ResultStat key={r.glyph} r={r} i={i} />
+              ))}
+            </div>
+          ) : (
+            <p className="m-0 text-center text-[13px] text-[#8e8e8e]">
+              {summary === undefined ? 'Loading the evaluation results…' : 'The evaluation results are not available on this install.'}
+            </p>
+          )}
           <p className="m-0 text-center text-[11.5px] text-[#6b6b6b] leading-relaxed">
-            From our evaluation: qwen2.5:7b on one machine, our own 32-task sets, a simulated approver. Not live numbers;
-            the trial records are on the Evidence page after you sign in.
+            From our evaluation: qwen2.5:7b on one machine, our own 32-task sets (16 scenarios, twice each), normal tasks
+            run with the reviewed boundary, a simulated approver. Not live numbers; the trial records are on the Evidence
+            page after you sign in.
           </p>
         </section>
 
@@ -294,7 +307,7 @@ export const SignInPage: React.FC = () => {
           <h2 id="features-heading" className="m-0 text-center text-[clamp(20px,2.4vw,28px)] font-semibold tracking-[-0.02em] text-white">
             How it works
           </h2>
-          <FeatureMosaic />
+          <FeatureMosaic harm={landingHarm(summary)} />
         </section>
 
         {/* Role Explanation Section */}
