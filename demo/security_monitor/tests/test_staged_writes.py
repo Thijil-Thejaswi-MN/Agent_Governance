@@ -136,6 +136,38 @@ def test_delivery_lands_the_reviewed_snapshot(tmp_path: Path) -> None:
     assert delivery.deliver(task.task_id, "file_write", "output/extra.txt", True)["reason"] == "target_exists"
 
 
+def test_delivery_lands_the_snapshot_it_was_given_not_a_newer_one(tmp_path: Path) -> None:
+    """Independent audit #2, F-02: two snapshots of one target. The approval of the first
+    lands the first snapshot's bytes, never the newer ones."""
+    ws = _ws(tmp_path)
+    storage = GovernanceStorage(tmp_path / "g.db")
+    task, _ = TaskIntakeService(storage).submit_task("Summarise input/data.csv into output/summary.txt", "finance_bot", str(ws))
+    delivery = ExpansionDelivery(ws, storage, staging=True)
+    _stage(ws, "output/extra.txt", b"benign\n")
+    first = delivery.stage_snapshot("output/extra.txt")
+    _stage(ws, "output/extra.txt", b"something else\n")
+    second = delivery.stage_snapshot("output/extra.txt")
+    assert first["snapshot_id"] != second["snapshot_id"]
+    ExpansionService(storage, user_approval_hook=lambda req: True).request_and_wait(
+        task.task_id, task.agent_id, "file_write", "output/extra.txt", "needed")
+    # Without an id, two snapshots of one target are ambiguous and nothing lands.
+    assert delivery.deliver(task.task_id, "file_write", "output/extra.txt", True)["reason"] == "ambiguous_snapshot"
+    out = delivery.deliver(task.task_id, "file_write", "output/extra.txt", True, snapshot_id=first["snapshot_id"])
+    assert out["type"] == "file_land"
+    assert (ws / "output/extra.txt").read_bytes() == b"benign\n"
+
+
+def test_a_refused_write_drops_its_snapshot(tmp_path: Path) -> None:
+    ws = _ws(tmp_path)
+    storage = GovernanceStorage(tmp_path / "g.db")
+    task, _ = TaskIntakeService(storage).submit_task("Summarise input/data.csv into output/summary.txt", "finance_bot", str(ws))
+    delivery = ExpansionDelivery(ws, storage, staging=True)
+    _stage(ws, "output/extra.txt", b"x\n")
+    snap = delivery.stage_snapshot("output/extra.txt")
+    delivery.deliver(task.task_id, "file_write", "output/extra.txt", False, snapshot_id=snap["snapshot_id"])
+    assert snap["snapshot_id"] not in delivery._snapshots
+
+
 def test_delivery_without_staging_keeps_the_old_behaviour(tmp_path: Path) -> None:
     ws = _ws(tmp_path)
     storage = GovernanceStorage(tmp_path / "g.db")
@@ -208,6 +240,45 @@ def test_approved_request_lands_the_staged_content(tmp_path: Path) -> None:
     assert staged_events[-1].details["content_sha256"] == res["delivery"]["content_sha256"]
     req = storage.list_expansion_requests(task_id=srv.task_id)[-1]
     assert req.resource_target == "output/extra.txt" and req.status == ExpansionStatus.APPROVED
+
+
+def test_a_second_write_request_for_the_same_target_waits_for_the_first(tmp_path: Path) -> None:
+    """Independent audit #2, F-02: while a write is waiting for a person, a second request for
+    the same target is refused, and the first approval lands the bytes that person reviewed."""
+    import threading
+
+    ws = _ws(tmp_path)
+    storage = GovernanceStorage(tmp_path / "g.db")
+    task, _ = TaskIntakeService(storage).submit_task(
+        "Summarise input/data.csv into output/summary.txt", "finance_bot", str(ws))
+    token = "gov_tok_staged_2"
+    storage.save_token(token, task.task_id, task.agent_id)
+    asked, release = threading.Event(), threading.Event()
+
+    def hook(req):  # the person takes a while to decide
+        asked.set()
+        release.wait(10)
+        return True
+
+    exp = ExpansionService(storage, user_approval_hook=hook)
+    broker = ToolBroker(storage, expansion_service=exp, evaluator=ResolvedBoundaryEvaluator(storage))
+    srv = BrokerRPCServer(broker, tmp_path / "b.sock", task.task_id,
+                          delivery=ExpansionDelivery(ws, storage, staging=True))
+    _stage(ws, "output/extra.txt", b"reviewed\n")
+    first: dict = {}
+    t = threading.Thread(target=lambda: first.update(srv._h_request_access(
+        token, {"resource_type": "file_write", "resource_target": "output/extra.txt", "justification": "one"})))
+    t.start()
+    assert asked.wait(10)
+    _stage(ws, "output/extra.txt", b"swapped\n")
+    second = srv._h_request_access(
+        token, {"resource_type": "file_write", "resource_target": "output/extra.txt", "justification": "two"})
+    assert second["granted"] is False and second["status"] == "ALREADY_PENDING"
+    release.set()
+    t.join(10)
+    assert first["granted"] is True and first["delivery"]["type"] == "file_land"
+    assert (ws / "output/extra.txt").read_bytes() == b"reviewed\n"
+    assert srv._writes_in_review == set()
 
 
 def test_denied_request_lands_nothing(tmp_path: Path) -> None:
