@@ -152,3 +152,5 @@ class ExpansionRequest(BaseModel):
     used_count: int = 0
     timeout_seconds: float = 5.0
     reason: str | None = None
+    # "Allow for N minutes": when the grant ends on its own (ISO time). None: it ends with the run.
+    expires_at: str | None = None

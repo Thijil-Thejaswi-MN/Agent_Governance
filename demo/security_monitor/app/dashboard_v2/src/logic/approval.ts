@@ -1,6 +1,9 @@
 // Approval card: plain wording for the preview and the four decisions. No I/O.
 
-export type ApprovalScope = 'once' | 'run' | 'always';
+export type ApprovalScope = 'once' | 'run' | 'timed' | 'always';
+
+/** "Allow for N minutes": how long a timed grant lasts (the server's default). */
+export const TIMED_MINUTES = 10;
 
 export interface ExpansionPreview {
   request_id: string;
@@ -80,6 +83,7 @@ export function alwaysBlockedReason(opts: { canManageRules: boolean; rulePossibl
 export const SCOPE_REASON: Record<ApprovalScope, string> = {
   once: 'Allowed once in the console',
   run: 'Allowed for this run in the console',
+  timed: `Allowed for ${TIMED_MINUTES} minutes in the console`,
   always: 'Allowed for this run; a standing rule now covers it for this agent',
 };
 

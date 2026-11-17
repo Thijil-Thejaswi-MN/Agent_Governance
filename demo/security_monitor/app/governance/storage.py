@@ -203,6 +203,10 @@ class GovernanceStorage:
                 cursor.execute("ALTER TABLE governance_expansions ADD COLUMN reason TEXT")
             except Exception:
                 pass
+            try:
+                cursor.execute("ALTER TABLE governance_expansions ADD COLUMN expires_at TEXT")
+            except Exception:
+                pass
 
             # 7. Task OS identity (M6): task_id <-> cgroup path read from /proc/<pid>/cgroup
             cursor.execute("""
@@ -583,14 +587,15 @@ class GovernanceStorage:
                     request_id, task_id, agent_id, resource_type, resource_target,
                     justification, baseline_risk_tier, effective_risk_tier,
                     escalated_by_provenance, status, created_at, resolved_at,
-                    resolved_by, single_use, used_count, timeout_seconds, reason
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    resolved_by, single_use, used_count, timeout_seconds, reason, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(request_id) DO UPDATE SET
                     status=excluded.status,
                     resolved_at=coalesce(excluded.resolved_at, governance_expansions.resolved_at),
                     resolved_by=coalesce(excluded.resolved_by, governance_expansions.resolved_by),
                     used_count=excluded.used_count,
-                    reason=coalesce(excluded.reason, governance_expansions.reason)
+                    reason=coalesce(excluded.reason, governance_expansions.reason),
+                    expires_at=coalesce(excluded.expires_at, governance_expansions.expires_at)
                 """,
                 (
                     req.request_id,
@@ -610,6 +615,7 @@ class GovernanceStorage:
                     req.used_count,
                     req.timeout_seconds,
                     req.reason,
+                    req.expires_at,
                 ),
             )
             conn.commit()
@@ -687,6 +693,7 @@ class GovernanceStorage:
             used_count=r["used_count"],
             timeout_seconds=float(r["timeout_seconds"]),
             reason=r["reason"] if "reason" in r.keys() else None,
+            expires_at=r["expires_at"] if "expires_at" in r.keys() else None,
         )
 
 
@@ -841,6 +848,15 @@ class GovernanceStorage:
             except (TypeError, ValueError):
                 continue
         return out
+
+    def mark_expansion_expiry(self, request_id: str, expires_at: str) -> None:
+        """Gives a still-pending request an end time before it is approved ("Allow for N minutes")."""
+        with self.get_connection() as conn:
+            conn.execute(
+                "UPDATE governance_expansions SET expires_at = ? WHERE request_id = ? AND status = 'PENDING'",
+                (expires_at, request_id),
+            )
+            conn.commit()
 
     def mark_expansion_single_use(self, request_id: str) -> None:
         """Marks a still-pending request as single-use before it is approved ("Allow once")."""

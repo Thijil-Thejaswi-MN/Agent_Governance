@@ -6,6 +6,7 @@ import { decisionLead, decisionWarning, formatCountdown, secondsLeft } from '../
 import { fileName } from '../../logic/runView';
 import {
   ApprovalScope,
+  TIMED_MINUTES,
   ExpansionPreview,
   StagedSnapshot,
   formatBytes,
@@ -171,6 +172,19 @@ export const DecisionCard: React.FC<{
             >
               Allow once
             </button>
+            {exp.resource_type !== 'file_write' && (
+              <button
+                id={`allow-timed-btn-${exp.request_id}`}
+                type="button"
+                disabled={deciding}
+                onClick={() => onAllow('timed')}
+                className="btn-ghost flex-1 sm:flex-none"
+                style={{ minHeight: 52, padding: '0 22px' }}
+                title={`The grant ends by itself after ${TIMED_MINUTES} minutes; the agent cannot open it again after that.`}
+              >
+                Allow for {TIMED_MINUTES} minutes
+              </button>
+            )}
             <button
               id={`deny-btn-${exp.request_id}`}
               type="button"

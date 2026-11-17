@@ -226,7 +226,9 @@ class ExpansionDelivery:
         t_clean = target[len("granted/"):] if target.startswith("granted/") else target
         reqs = [r for r in self.storage.list_expansion_requests(task_id=task_id)
                 if r.resource_type == rtype and (r.resource_target == target or r.resource_target == t_clean)]
-        return reqs[-1] if reqs else None
+        # The newest request (the storage lists newest first): after a cancel or a time limit,
+        # a new approval of the same file must be the one that is delivered.
+        return max(reqs, key=lambda r: r.created_at) if reqs else None
 
     def deliver(self, task_id: str, rtype: str, target: str, granted: bool) -> dict[str, Any]:
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -486,6 +488,42 @@ class TaskLauncher:
         # Serialises "release the agent gate" against cancel(): either the agent starts
         # and cancel() kills its cgroup, or cancel() wins and the agent never starts.
         self._gate_lock = threading.Lock()
+
+    def expire_due_grants(self, task_id: str, now: datetime.datetime | None = None) -> list[str]:
+        """Ends every approved grant of this run whose time limit has passed. Returns their ids."""
+        expansion = self.live.get("expansion")
+        delivery = self.live.get("delivery")
+        if expansion is None or delivery is None:
+            return []
+        now = now or datetime.datetime.now(datetime.timezone.utc)
+        ended: list[str] = []
+        for req in self.storage.list_expansion_requests(task_id=task_id):
+            if req.status != ExpansionStatus.APPROVED or not req.expires_at or req.resource_type == "file_write":
+                continue
+            try:
+                due = datetime.datetime.fromisoformat(req.expires_at)
+            except ValueError:
+                continue
+            if due.tzinfo is None:
+                due = due.replace(tzinfo=datetime.timezone.utc)
+            if due > now:
+                continue
+            try:
+                expansion.revoke_request(req.request_id, "time_limit", final_status=ExpansionStatus.EXPIRED)
+            except (RuntimeError, ValueError):
+                continue  # already ended (a repeat of the same grant)
+            delivery.revoke(req.resource_type, req.resource_target, "time_limit")
+            ended.append(req.request_id)
+        return ended
+
+    def _expire_grants_loop(self, task_id: str, stop: threading.Event, every_s: float = 1.0) -> None:
+        while not stop.wait(every_s):
+            if self.live.get("expansion") is None:
+                return  # the run has ended
+            try:
+                self.expire_due_grants(task_id)
+            except Exception:
+                pass  # never let the expiry check take the run down
 
     def revoke_grant(self, request_id: str, revoked_by: str, reason: str = "") -> dict[str, Any]:
         """Cancels an approved grant of this live run: the request becomes REVOKED, a boundary
@@ -920,6 +958,11 @@ class TaskLauncher:
                               call_timeout=max(float(spec.approval_timeout_s) + 30.0, 120.0))
         rpc.start()
         self.live["rpc"] = rpc
+        # "Allow for N minutes": a grant past its end time is taken back like a cancel.
+        expiry_stop = threading.Event()
+        expiry_thread = threading.Thread(target=self._expire_grants_loop, args=(task_id, expiry_stop),
+                                         name=f"grant-expiry-{task_id}", daemon=True)
+        expiry_thread.start()
 
         cond = (spec.condition or "").strip()
         cond_upper = cond.upper()
@@ -1260,6 +1303,7 @@ class TaskLauncher:
             except Exception:
                 pass
             aloop.stop()
+            expiry_stop.set()
             self.live.pop("expansion", None)  # grants end with the run: nothing left to cancel
             delivery.cleanup()
             self.storage.revoke_token(token)

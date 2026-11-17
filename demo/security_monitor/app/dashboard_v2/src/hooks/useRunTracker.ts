@@ -6,7 +6,7 @@ import { requestCountsRefresh } from '../logic/countsRefresh';
 import { api } from '../api/client';
 import { ExpansionItem, ReceiptResponse, RunOutputFile, TaskBoundary, TaskRecord, TaskStep } from '../types';
 import { RunState, TERMINAL_STATES, isAgentLaunchStep } from '../logic/runView';
-import { ApprovalScope, SCOPE_REASON } from '../logic/approval';
+import { ApprovalScope, SCOPE_REASON, TIMED_MINUTES } from '../logic/approval';
 import { ruleSentenceText } from '../logic/rules';
 
 // No step for this long (or a stream error) -> stop trusting the stream and read stored state.
@@ -308,6 +308,7 @@ export function useRunTracker(taskId: string | undefined): RunTracker {
       try {
         const res = await api.approveExpansion(requestId, { decided_by: 'operator', reason: SCOPE_REASON[scope], scope });
         if (scope === 'once') setDecisionNote('Allowed once. The copy is removed after the agent’s first read (detected by the monitor).');
+        if (scope === 'timed') setDecisionNote(`Allowed for ${TIMED_MINUTES} minutes. After that the agent cannot open it again in this run.`);
         if (res.standing_rule) setDecisionNote(`Rule saved: ${ruleSentenceText(res.standing_rule)}`);
         setPending(null);
         setState(s => (s === 'waiting_approval' ? 'running' : s));
