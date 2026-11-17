@@ -19,6 +19,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from .models import ExpansionRequest, RiskTier
+from .pathnorm import strip_dot_slash
 
 
 class StandingRule(BaseModel):
@@ -80,7 +81,7 @@ def match_rule(
     if now is None:
         now = datetime.datetime.now(datetime.timezone.utc)
 
-    target_norm = req.resource_target.strip().replace("\\", "/")
+    target_norm = strip_dot_slash(req.resource_target.strip().replace("\\", "/"))
 
     for rule in rules:
         if not rule.is_active:
@@ -95,7 +96,7 @@ def match_rule(
             continue
 
         # Check team scope if rule specifies one
-        if rule.team and task_team and rule.team != task_team:
+        if rule.team and rule.team != task_team:  # a team rule never matches a task without that team (audit #2, F-08)
             continue
 
         # Check agent / profile match
@@ -108,7 +109,7 @@ def match_rule(
             continue
 
         # Check target match (exact match, normalized)
-        rule_target_norm = rule.target.strip().replace("\\", "/")
+        rule_target_norm = strip_dot_slash(rule.target.strip().replace("\\", "/"))
         if rule_target_norm == target_norm:
             return rule
 
