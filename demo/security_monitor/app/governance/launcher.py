@@ -42,6 +42,7 @@ from urllib.parse import urlparse
 from .broker import ToolBroker
 from .broker_rpc import BrokerRPCServer
 from .catalog import BoundaryDerivationV1_1
+from .derivation_grounded import GroundedLLMDerivation, ollama_client
 from .correlator import OSEventCorrelator
 from .expansion import ExpansionService
 from .intake import TaskIntakeService
@@ -115,6 +116,14 @@ class TaskSpec:
     # kept as the default for the evaluation harness. "v1.1": the M7 path (BoundaryDerivationV1_1;
     # broker and Landlock both compiled from resolve_boundary). Selected by the Run page and the CLI.
     boundary_model: str = "v1"
+    # How the boundary is derived on the v1.1 path. "template": the file names written in the
+    # request (BoundaryDerivationV1_1). "llm": a model proposes the files from the request and the
+    # task's input list, and deterministic rules keep only what is grounded
+    # (derivation_grounded.py); on any model failure the template is used and the boundary says so.
+    derivation: str = "template"
+    derivation_model: str | None = None
+    # Strict: inferred (not named) reads are dropped, for runs with no person to review them.
+    derivation_strict: bool = False
 
     @classmethod
     def from_file(cls, path: str | Path) -> "TaskSpec":
@@ -733,7 +742,19 @@ class TaskLauncher:
 
     def derive_boundary(self, spec: TaskSpec, ws: Path, mode: EnforcementMode) -> tuple[Any, Any]:
         """Intake: creates the task and derives its initial boundary (no workspace is created)."""
-        derivation = BoundaryDerivationV1_1() if spec.boundary_model == "v1.1" else None
+        derivation: Any = BoundaryDerivationV1_1() if spec.boundary_model == "v1.1" else None
+        if spec.derivation == "llm":
+            if spec.boundary_model != "v1.1":
+                raise ValueError("derivation='llm' needs boundary_model='v1.1' (one resolved boundary for both layers)")
+            model = spec.derivation_model or (spec.llm or {}).get("model") or "qwen2.5:7b"
+            derivation = GroundedLLMDerivation(
+                llm_client=ollama_client(model, (spec.llm or {}).get("base_url")),
+                available_inputs=sorted(spec.inputs),
+                model=model,
+                keep_inferred_reads=not spec.derivation_strict,
+            )
+        elif spec.derivation != "template":
+            raise ValueError(f"unknown derivation '{spec.derivation}' (template | llm)")
         intake = TaskIntakeService(self.storage, derivation=derivation)
         task, boundary = intake.submit_task(
             request_text=spec.prompt,

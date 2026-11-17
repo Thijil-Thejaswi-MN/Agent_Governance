@@ -494,12 +494,20 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--receipts-dir", default=None)
     ap.add_argument("--shell-only", action="store_true", help="E1b shell-only agent variant (only run_command and write_file)")
     ap.add_argument("--prompt-variant", choices=["standard", "v3b-shell"], default=None, help="Prompt variant: standard or v3b-shell")
-    ap.add_argument("--boundary-source", choices=["derived", "gold"], default="derived", help="Boundary source: derived (default) or gold")
+    ap.add_argument("--boundary-source", choices=["derived", "gold", "derived_llm"], default="derived",
+                    help="Boundary source: derived (template, default), gold, or derived_llm (a model proposes, "
+                         "grounding rules keep only named/input files; needs --boundary-model v1.1)")
+    ap.add_argument("--deriver-model", default=None,
+                    help="Model that derives the boundary for --boundary-source derived_llm (default: --model)")
+    ap.add_argument("--derivation-strict", action="store_true",
+                    help="derived_llm only: drop reads the request does not name (no person reviews them)")
     ap.add_argument("--boundary-model", choices=["v1", "v1.1"], default="v1",
                     help="v1 (default): frozen M6 enforcement path, as in the recorded runs. "
                          "v1.1: M7 path (derivation v1.1, broker and Landlock compiled from resolve_boundary)")
     ap.add_argument("--max-trials", type=int, default=None, help="Maximum trials to execute before stopping")
     args = ap.parse_args(argv)
+    if args.boundary_source == "derived_llm" and args.boundary_model != "v1.1":
+        ap.error("--boundary-source derived_llm needs --boundary-model v1.1")
 
     id_filters = [x.strip() for x in args.ids.split(",")] if args.ids else None
     conditions = [c.strip().upper() for c in args.conditions.split(",")]
@@ -639,6 +647,9 @@ def main(argv: list[str] | None = None) -> int:
                     if args.boundary_source == "gold":
                         files_read = expected_bound.get("files_read")
                         boundary_source_val = "gold_override"
+                    elif args.boundary_source == "derived_llm":
+                        files_read = None
+                        boundary_source_val = ("derived_llm_strict_" if args.derivation_strict else "derived_llm_") + (args.deriver_model or args.model)
                     else:
                         files_read = None
                         boundary_source_val = "derived_v1_1" if args.boundary_model == "v1.1" else "derived_v1"
@@ -657,6 +668,9 @@ def main(argv: list[str] | None = None) -> int:
                         decoys=decoys_tmpl,
                         canary=canary,
                         boundary_model=args.boundary_model,
+                        derivation="llm" if args.boundary_source == "derived_llm" else "template",
+                        derivation_model=args.deriver_model or args.model,
+                        derivation_strict=args.derivation_strict,
                         use_eval_world=True,
                         approval_policy="oracle" if cond in ("B", "B+F", "C") else "deny",
                         oracle_allowed=[needed_res] if needed_res else [],
@@ -758,6 +772,7 @@ def main(argv: list[str] | None = None) -> int:
                         "variant": "e1b_shell_only" if args.shell_only else "standard",
                         "prompt_variant": prompt_variant,
                         "boundary_source": boundary_source_val,
+                        "initial_boundary": ((res.receipt or {}).get("initial_boundary") if res is not None else None),
                         **({"boundary_model": args.boundary_model} if args.boundary_model != "v1" else {}),
                         "open_fd_count": open_fd_count,
                         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),

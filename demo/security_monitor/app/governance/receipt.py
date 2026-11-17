@@ -176,6 +176,11 @@ def build_receipt(
             "enforcement_mode": b.enforcement_mode.value,
             "derived_by": b.derived_by,
             "max_duration_sec": b.max_duration_sec,
+            # Grounded model derivation only: which entries were named, inferred or dropped, and why.
+            **({"derivation": {k: b.metadata.get(k) for k in (
+                "deriver", "model", "fallback_used", "fallback_reason", "named", "inferred", "dropped",
+                "template_files_read", "keep_inferred_reads", "raw_output_sha256")}}
+               if (b.metadata or {}).get("deriver") else {}),
         },
         "final_boundary_version": (storage.get_boundary(task.task_id) or b).version,
         "os_identity": os_identity,
