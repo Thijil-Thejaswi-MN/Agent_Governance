@@ -115,3 +115,43 @@ def test_auditor_records_screen_readonly(page: Page, console_server):
     expect(page.locator("button:has-text('Export CSV')")).to_be_visible()
     expect(page.locator("body")).not_to_contain_text("Allow for this run")
     expect(page.locator("body")).not_to_contain_text("Deny all")
+
+
+def test_landing_hero_pieces(page: Page, console_server):
+    page.goto(f"{console_server.url}/dashboard/signin")
+
+    # Three eyebrows are visible
+    expect(page.locator("#eyebrow-features")).to_have_text("WHAT IT DOES")
+    expect(page.locator("#eyebrow-results")).to_have_text("FROM OUR EVALUATION")
+    expect(page.locator("#eyebrow-roles")).to_have_text("ROLES")
+
+    # Eyebrows have aria-hidden decorative icons
+    for sel in ["#eyebrow-features", "#eyebrow-results", "#eyebrow-roles"]:
+        expect(page.locator(f"{sel} svg")).to_have_attribute("aria-hidden", "true")
+
+    # "See how it works" anchor to #features
+    outline_btn = page.locator("#see-how-it-works-btn")
+    expect(outline_btn).to_be_visible()
+    expect(outline_btn).to_have_attribute("href", "#features")
+    outline_btn.click()
+    page.wait_for_timeout(600)
+    expect(page.locator("#features")).to_be_in_viewport()
+
+    # Sign in with #sign-in-submit-btn works using sign_in helper
+    from demo.security_monitor.tests.playwright_server import sign_in
+    sign_in(page, console_server, path="/dashboard/run")
+
+    # No horizontal scroll at 375 px, 768 px, and 1440 px
+    for w in [375, 768, 1440]:
+        page.set_viewport_size({"width": w, "height": 900})
+        page.goto(f"{console_server.url}/dashboard/signin")
+        assert no_horizontal_scroll(page), f"Horizontal scroll detected at {w}px"
+
+    # With reduced motion, the beam animation is disabled (animationName is none)
+    page.emulate_media(reduced_motion="reduce")
+    page.goto(f"{console_server.url}/dashboard/signin")
+    anim = page.eval_on_selector(
+        ".hero-beam-glow",
+        "el => window.getComputedStyle(el).animationName"
+    )
+    assert anim == "none" or anim == "", f"Expected animation to be none, got {anim}"

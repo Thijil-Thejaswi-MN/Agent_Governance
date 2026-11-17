@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Shield, Bot, Users, CheckCircle2, LayoutGrid, FileText, Cpu, ShieldCheck, FileCheck2 } from 'lucide-react';
+import { Shield, Bot, Users, CheckCircle2, LayoutGrid, FileText, Cpu, ShieldCheck, FileCheck2, Sparkles, Star } from 'lucide-react';
+import { HeroBeam } from '../components/landing/HeroBeam';
+import { Eyebrow } from '../components/landing/Eyebrow';
+import { GlowButton } from '../components/landing/GlowButton';
 import { useAuth } from '../context/AuthContext';
 import { ResultsSummary, Role } from '../types';
 import { api } from '../api/client';
@@ -161,6 +164,7 @@ export const SignInPage: React.FC = () => {
               'radial-gradient(70% 45% at 50% 18%, rgba(147,197,253,0.18), transparent 70%), radial-gradient(90% 55% at 50% 78%, rgba(99,102,241,0.30), rgba(59,130,246,0.10) 45%, transparent 75%)',
           }}
         />
+        <HeroBeam prefersReducedMotion={prefersReducedMotion} />
         {!prefersReducedMotion && (
           <div className="absolute inset-0">
             <DotField gradientFrom="#3B82F6" gradientTo="#A5B4FC" baseOpacity={0.16} glowIntensity={0.08} holdToZoom={false} />
@@ -211,7 +215,7 @@ export const SignInPage: React.FC = () => {
 
           <h1 className="m-0 font-mono font-semibold text-white text-[clamp(28px,6.2vw,80px)] leading-[1.12] tracking-[-0.04em] max-sm:tracking-[-0.06em]">
             <span className="landing-anim dot-matrix block whitespace-nowrap" style={delay('0.12s')}>
-              Agents, Governed
+              Agents, <span className="dot-matrix-gradient">Governed</span>
             </span>
             <span className="landing-anim dot-matrix block whitespace-nowrap" style={delay('0.3s')}>
               At Runtime
@@ -225,6 +229,12 @@ export const SignInPage: React.FC = () => {
             Each AI agent touches only what its task needs. The tool broker and the Linux kernel enforce the same list,
             and every decision lands in a record you can check.
           </p>
+
+          <div className="landing-anim mt-5" style={delay('0.34s')}>
+            <GlowButton variant="outline" href="#features" id="see-how-it-works-btn">
+              See how it works
+            </GlowButton>
+          </div>
 
           {/* Sign-in panel */}
           <div
@@ -268,14 +278,15 @@ export const SignInPage: React.FC = () => {
                   disabled={isSubmitting || highlightedRole !== null}
                   className="flex-1 min-w-0 min-h-[44px] px-4 rounded-full border border-white/15 bg-black/60 text-white font-mono text-[13px] placeholder:text-[#6b6b6b] outline-none focus:border-white/60 transition-colors"
                 />
-                <button
+                <GlowButton
                   type="submit"
                   id="sign-in-submit-btn"
+                  variant="solid"
                   disabled={isSubmitting || !tokenInput.trim() || highlightedRole !== null}
-                  className="w-full sm:w-auto whitespace-nowrap px-6 min-h-[44px] rounded-full bg-white text-black font-semibold text-[14px] transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.02] disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:scale-100 shadow-[0_0_0_1px_rgba(255,255,255,0.15),0_0_22px_rgba(255,255,255,0.32),0_0_44px_rgba(255,255,255,0.12)]"
+                  className="w-full sm:w-auto whitespace-nowrap"
                 >
                   {isSubmitting ? 'Signing in…' : 'Sign in'}
-                </button>
+                </GlowButton>
               </div>
               {error && <div className="text-[12px] text-red-400 mt-1 font-medium">{error}</div>}
             </form>
@@ -283,7 +294,8 @@ export const SignInPage: React.FC = () => {
         </section>
 
         {/* Results from the evaluation */}
-        <section id="results" aria-label="Results from our evaluation" className="w-full max-w-[920px] pt-4 pb-10 flex flex-col gap-4">
+        <section id="results" aria-label="Results from our evaluation" className="w-full max-w-[920px] pt-4 pb-10 flex flex-col items-center gap-4">
+          <Eyebrow text="FROM OUR EVALUATION" icon={Shield} id="eyebrow-results" />
           {results ? (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-7">
               {results.map((r, i) => (
@@ -303,7 +315,8 @@ export const SignInPage: React.FC = () => {
         </section>
 
         {/* What it does (feature mosaic) */}
-        <section aria-labelledby="features-heading" className="w-full max-w-[1180px] flex flex-col gap-4 pb-14">
+        <section aria-labelledby="features-heading" className="w-full max-w-[1180px] flex flex-col items-center gap-4 pb-14">
+          <Eyebrow text="WHAT IT DOES" icon={Sparkles} id="eyebrow-features" />
           <h2 id="features-heading" className="m-0 text-center text-[clamp(20px,2.4vw,28px)] font-semibold tracking-[-0.02em] text-white">
             How it works
           </h2>
@@ -312,9 +325,12 @@ export const SignInPage: React.FC = () => {
 
         {/* Role Explanation Section */}
         <section id="roles" className="w-full max-w-4xl flex flex-col gap-3 pb-14">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-[14px] font-semibold text-white m-0">Your role</h2>
-            <span className="text-[12px] text-[#8e8e8e]">Each role opens on a different home. Your admin assigns roles.</span>
+          <div className="flex flex-col gap-1.5">
+            <Eyebrow text="ROLES" icon={Star} id="eyebrow-roles" className="self-start" />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-[14px] font-semibold text-white m-0">Your role</h2>
+              <span className="text-[12px] text-[#8e8e8e]">Each role opens on a different home. Your admin assigns roles.</span>
+            </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mt-1">
             {ROLES.map(r => {
