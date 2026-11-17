@@ -26,6 +26,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable
 
+from .pathnorm import strip_dot_slash
 from .llm_agent import RPC_MAX_REQUEST_BYTES, rpc_recv_frame, rpc_send_frame
 from .staged_writes import normalize_write_target
 from .models import EventSource, EventVerdict, ExpansionRequest, ExpansionStatus, GovernanceEvent, RiskTier, TaskAction
@@ -435,7 +436,7 @@ class BrokerRPCServer:
                 rel = raw
                 if rel.startswith("granted/"):
                     rel = rel[len("granted/"):]
-                rel = rel.lstrip("./")
+                rel = strip_dot_slash(rel)
 
                 try:
                     granted_dir = self.delivery.granted.resolve()

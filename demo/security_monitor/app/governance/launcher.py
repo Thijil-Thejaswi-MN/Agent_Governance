@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
+from .pathnorm import strip_dot_slash
 from .broker import ToolBroker
 from .broker_rpc import BrokerRPCServer
 from .catalog import BoundaryDerivationV1_1
@@ -255,7 +256,7 @@ class ExpansionDelivery:
             rel = raw
             if rel.startswith("granted/"):
                 rel = rel[len("granted/"):]
-            rel = rel.lstrip("./")
+            rel = strip_dot_slash(rel)
 
             try:
                 dst = (self.granted / rel).resolve()
@@ -319,7 +320,7 @@ class ExpansionDelivery:
         if rtype != "file_read":
             return []
         t = target[len("granted/"):] if target.startswith("granted/") else target
-        t = t.lstrip("./")
+        t = strip_dot_slash(t)
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
         removed: list[str] = []
         with self._lock:

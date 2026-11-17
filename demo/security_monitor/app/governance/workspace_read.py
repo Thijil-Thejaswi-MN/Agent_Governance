@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path, PurePosixPath
 from typing import Any
+from .pathnorm import strip_dot_slash
 
 MAX_SEARCH_FILE_BYTES = 2 * 1024 * 1024
 MAX_LINE_CHARS = 300
@@ -100,7 +101,7 @@ def file_preview(workspace_root: str | Path | None, resource_type: str, target: 
 def find_mention(workspace_root: str | Path | None, files: list[str], target: str) -> dict[str, Any] | None:
     """The first line, in the given workspace files (in order), that mentions `target`
     by its path or its file name. None when no such line is found."""
-    norm = str(target or "").strip().replace("\\", "/").lstrip("./")
+    norm = strip_dot_slash(str(target or "").strip().replace("\\", "/"))
     if not norm:
         return None
     name = PurePosixPath(norm).name

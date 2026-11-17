@@ -48,7 +48,9 @@ def granted_reads(files_read: list[str], available: list[str]) -> set[str]:
     """What the agent could actually read: globs and bare names expanded against the inputs."""
     out: set[str] = set()
     for entry in files_read:
-        e = entry.replace("\\", "/").lstrip("./")
+        e = entry.replace("\\", "/")
+        while e.startswith("./"):
+            e = e[2:]
         if any(c in e for c in "*?["):
             pat = e.replace("**", "*")
             out |= {p for p in available if fnmatch.fnmatch(p, pat)}
