@@ -110,6 +110,17 @@ def policy_version(boundary: TaskBoundary, rules: list[StandingRule] | None = No
     return f"pv_{digest[:16]}"
 
 
+def receipt_policy_section(initial: TaskBoundary | None, final: TaskBoundary | None) -> dict[str, Any]:
+    """Receipt section: the precedence order and the policy fingerprint at start and end."""
+    out: dict[str, Any] = {"precedence": PRECEDENCE_VERSION}
+    try:
+        out["initial_policy_version"] = policy_version(initial) if initial is not None else None
+        out["final_policy_version"] = policy_version(final) if final is not None else None
+    except Exception as e:  # never let the fingerprint break a receipt
+        out["error"] = f"{type(e).__name__}: {e}"[:200]
+    return out
+
+
 def _step(layer: str, result: str, reason: str) -> dict[str, str]:
     return {"layer": layer, "result": result, "reason": reason}
 

@@ -58,6 +58,7 @@ from .os_layer.sandbox_spec import (
 from .proxy import EgressProxyServer
 from .receipt import build_receipt, verify_chain
 from .resolved_boundary import ResolvedBoundaryEvaluator
+from .policy_sim import receipt_policy_section
 from .staged_writes import land_snapshot, normalize_write_target, snapshot_staged
 from .storage import GovernanceStorage
 
@@ -461,19 +462,6 @@ def _offered_tools(spec: "TaskSpec") -> list[dict[str, Any]] | None:
     base = spec.tools_schema if spec.tools_schema is not None else GOVERNED_TOOLS_SCHEMA
     limit = set(spec.agent_tools)
     return [t for t in base if t.get("function", {}).get("name") in limit]
-
-def _policy_section(initial: Any, final: Any) -> dict[str, Any]:
-    """Receipt section: the precedence order and the policy fingerprint at start and end (item 1c)."""
-    from .policy_sim import PRECEDENCE_VERSION, policy_version
-
-    out: dict[str, Any] = {"precedence": PRECEDENCE_VERSION}
-    try:
-        out["initial_policy_version"] = policy_version(initial) if initial is not None else None
-        out["final_policy_version"] = policy_version(final) if final is not None else None
-    except Exception as e:  # never let the fingerprint break a receipt
-        out["error"] = f"{type(e).__name__}: {e}"[:200]
-    return out
-
 
 class TaskLauncher:
     """Launches one task in its own scope + sandbox and produces its receipt."""
@@ -1374,9 +1362,9 @@ class TaskLauncher:
             os_identity={k: identity[k] for k in ("cgroup_path", "unit_name", "scope_pid", "source")} if identity else None,
             condition=spec.condition,
             extra={
+                "policy": receipt_policy_section(initial_boundary, self.storage.get_boundary(task_id)),
                 "llm_provider": provider_label,
                 "llm_model": llm_model,
-                "policy": _policy_section(initial_boundary, self.storage.get_boundary(task_id)),
                 "runtime_code_sha256": runtime_hashes,
                 "landlock_rules_sha256": _sha256_file(rules_path),
                 "rpc_call_counts": dict(rpc.call_counts),
