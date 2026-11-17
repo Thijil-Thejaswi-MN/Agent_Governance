@@ -37,8 +37,20 @@ AGENT_ENDPOINTS = (
     "call_agent",
     "request_access",
     "run_command_check",
+    "run_command_begin",
     "llm_complete",
 )
+
+MAX_PENDING_CALLS = 64
+
+
+def _proc_ppid(pid: int) -> int | None:
+    """Parent pid from /proc/<pid>/stat (the field after the parenthesised command name)."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="replace")
+        return int(stat.rsplit(")", 1)[1].split()[1])
+    except (OSError, IndexError, ValueError):
+        return None
 
 
 def _peer_pid(conn: socket.socket) -> int | None:
@@ -72,6 +84,8 @@ class BrokerRPCServer:
         delivery: Any | None = None,
         expected_cgroup: str | None = None,
         cgroup_reader: Callable[[int], str | None] | None = None,
+        call_placer: Callable[[int, str], dict[str, Any]] | None = None,
+        ppid_reader: Callable[[int], int | None] | None = None,
         read_timeout: float = 30.0,
         call_timeout: float = 120.0,
         llm_timeout: float = 330.0,
@@ -86,6 +100,8 @@ class BrokerRPCServer:
         self.delivery = delivery
         self.expected_cgroup = expected_cgroup
         self.cgroup_reader = cgroup_reader
+        self.call_placer = call_placer
+        self.ppid_reader = ppid_reader or _proc_ppid
         self.read_timeout = read_timeout
         self.call_timeout = call_timeout
         self.llm_timeout = llm_timeout
@@ -96,6 +112,11 @@ class BrokerRPCServer:
         self.llm_requests: list[list[dict[str, Any]]] = []  # messages sent to the model (evaluation ground truth)
         self.call_counts: dict[str, int] = {}
         self.rejections: list[dict[str, Any]] = []
+        # Prompt-to-task attribution: one entry per command a tool call ran, and the
+        # child cgroup (call_NNN) it ran in. Checked commands wait here for their spawn.
+        self.tool_calls: list[dict[str, Any]] = []
+        self._pending_calls: dict[str, dict[str, Any]] = {}
+        self._call_seq = 0
         self._sock: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stopping = False
@@ -108,6 +129,7 @@ class BrokerRPCServer:
             "call_agent": self._h_call_agent,
             "request_access": self._h_request_access,
             "run_command_check": self._h_run_command_check,
+            "run_command_begin": self._h_run_command_begin,
             "llm_complete": self._h_llm_complete,
         }
         assert tuple(self._handlers) == AGENT_ENDPOINTS
@@ -228,6 +250,9 @@ class BrokerRPCServer:
 
             with self._lock:
                 self.call_counts[method] = self.call_counts.get(method, 0) + 1
+            params = {k: v for k, v in params.items() if k != "_peer_pid"}
+            if method == "run_command_begin":
+                params["_peer_pid"] = peer  # from SO_PEERCRED, never from the agent
             timeout = self.llm_timeout if method == "llm_complete" else self.call_timeout
             ok, value = self._run_with_timeout(handler, token, params, timeout)
             conn.settimeout(self.read_timeout)
@@ -727,16 +752,17 @@ class BrokerRPCServer:
         cmd = _str_param(p, "command", 8192)
         try:
             res = self.broker.run_command_check(token, cmd)
+            call_id = self._new_call(cmd)
             self.broker.storage.record_task_step(
                 self.task_id,
                 kind="tool",
                 layer="broker",
                 verdict="ALLOW",
-                summary=f"run_command check allowed: {cmd[:60]}",
-                detail=f"Command: {cmd}",
+                summary=f"run_command check allowed ({call_id}): {cmd[:60]}",
+                detail=f"Command: {cmd}\nTool call: {call_id}",
                 source_label="enforced",
             )
-            return res
+            return {**res, "call_id": call_id} if isinstance(res, dict) else res
         except Exception as err:
             self.broker.storage.record_task_step(
                 self.task_id,
@@ -748,6 +774,69 @@ class BrokerRPCServer:
                 source_label="enforced",
             )
             raise
+
+    # --- prompt-to-task attribution (roadmap item 3) ---
+    def _new_call(self, command: str) -> str:
+        from .redaction import redact_command
+
+        with self._lock:
+            self._call_seq += 1
+            call_id = f"call_{self._call_seq:03d}"
+            entry = {
+                "call_id": call_id,
+                "tool": "run_command",
+                "command": redact_command(command)[:300],
+                "checked_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "started_at": None,
+                "pid": None,
+                "placed": False,
+                "cgroup": None,
+                "reason": "not_started",
+            }
+            self.tool_calls.append(entry)
+            self._pending_calls[call_id] = entry
+            while len(self._pending_calls) > MAX_PENDING_CALLS:  # checked but never spawned
+                stale = next(iter(self._pending_calls))
+                self._pending_calls.pop(stale)["reason"] = "never_started"
+        return call_id
+
+    def _h_run_command_begin(self, token: str, p: dict[str, Any]) -> Any:
+        """The shim has spawned an allowed command (held at a gate) and reports its pid.
+
+        The control plane, not the agent, moves that process into the task's child cgroup
+        call_NNN before the command runs. The pid must be a direct child of the calling
+        process, and each call_id is good for one spawn only. Attribution falls back to the
+        task root (never to another task) if the move is not possible.
+        """
+        call_id = _str_param(p, "call_id", 32)
+        pid = p.get("pid")
+        if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 1:
+            raise ValueError("pid must be a positive integer")
+        peer = p.get("_peer_pid")
+        with self._lock:
+            entry = self._pending_calls.pop(call_id, None)
+        if entry is None:
+            raise PermissionError(f"unknown or already used call_id '{call_id[:32]}'")
+        entry["started_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        entry["pid"] = pid
+        if not peer or self.ppid_reader(pid) != peer:
+            entry["reason"] = "pid_not_a_child_of_caller"
+            raise PermissionError("pid is not a child of the calling process")
+        if self.call_placer is None:
+            entry["reason"] = "no_placer"
+        else:
+            try:
+                out = self.call_placer(pid, call_id) or {}
+            except Exception as ex:  # attribution only: the command still runs, labelled task_root
+                out = {"ok": False, "reason": f"{type(ex).__name__}: {ex}"}
+            entry["placed"] = bool(out.get("ok"))
+            entry["cgroup"] = out.get("cgroup")
+            entry["reason"] = None if entry["placed"] else str(out.get("reason") or "placer_failed")[:300]
+        self._step("ALLOW",
+                   f"{call_id} started" + ("" if entry["placed"] else " (not placed in its own cgroup)"),
+                   f"Command: {entry['command']}\nPID: {pid}\n"
+                   + (f"cgroup: {entry['cgroup']}" if entry["placed"] else f"Reason: {entry['reason']}"))
+        return {"call_id": call_id, "placed": entry["placed"]}
 
     def _h_llm_complete(self, token: str, p: dict[str, Any]) -> Any:
         messages = p.get("messages")

@@ -6,6 +6,7 @@ unit name is only used to confirm the move into the scope has completed.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -45,12 +46,75 @@ def cgroup_dir(cgroup_path: str) -> Path:
     return CGROUP_ROOT / cgroup_path.lstrip("/")
 
 
-def cgroup_pids(cgroup_path: str) -> list[int]:
+def cgroup_pids(cgroup_path: str, recursive: bool = True) -> list[int]:
+    """Pids in the cgroup and (by default) in every child cgroup under it.
+
+    Commands run in per-tool-call child cgroups (call_NNN), so "is anything still
+    running in this task" has to look below the task scope too.
+    """
+    root = cgroup_dir(cgroup_path)
+    dirs = [root]
+    if recursive:
+        try:
+            dirs += sorted(d for d in root.rglob("*") if d.is_dir() and not d.is_symlink())
+        except OSError:
+            pass
+    pids: list[int] = []
+    for d in dirs:
+        try:
+            txt = (d / "cgroup.procs").read_text()
+        except OSError:
+            continue
+        pids += [int(x) for x in txt.split() if x.strip()]
+    return pids
+
+
+CALL_CGROUP = re.compile(r"^call_[0-9]{3,6}$")
+
+
+def place_in_child(cgroup_path: str, child: str, pid: int) -> str:
+    """Moves `pid` (which must sit directly in `cgroup_path`) into `cgroup_path/child`.
+
+    Used by the control plane to give each command a tool call starts its own child
+    cgroup, so every later fork of that command (background jobs, double forks,
+    setsid) stays labelled with the call. Returns the new cgroup path; raises
+    RuntimeError if the pid is not where it should be or the move did not happen.
+    """
+    if not CALL_CGROUP.match(child):
+        raise RuntimeError(f"bad child cgroup name {child!r}")
+    current = read_proc_cgroup(pid)
+    if current != cgroup_path:
+        raise RuntimeError(f"pid {pid} is not in the task cgroup (it is in {current!r})")
+    d = cgroup_dir(cgroup_path) / child
+    d.mkdir(mode=0o755, exist_ok=False)
+    target = cgroup_path.rstrip("/") + "/" + child
     try:
-        txt = (cgroup_dir(cgroup_path) / "cgroup.procs").read_text()
+        (d / "cgroup.procs").write_text(str(pid))
+    except OSError as e:
+        try:
+            d.rmdir()
+        except OSError:
+            pass
+        raise RuntimeError(f"moving pid {pid} into {target} failed: {e}") from e
+    after = read_proc_cgroup(pid)
+    if after != target:
+        raise RuntimeError(f"pid {pid} is in {after!r} after the move, expected {target!r}")
+    return target
+
+
+def remove_children(cgroup_path: str) -> list[str]:
+    """Removes the (empty) call_NNN child cgroups after a run. Returns those left behind."""
+    left: list[str] = []
+    try:
+        children = [d for d in cgroup_dir(cgroup_path).iterdir() if d.is_dir() and CALL_CGROUP.match(d.name)]
     except OSError:
-        return []
-    return [int(x) for x in txt.split() if x.strip()]
+        return left
+    for d in children:
+        try:
+            d.rmdir()
+        except OSError:
+            left.append(d.name)
+    return left
 
 
 def is_frozen(cgroup_path: str) -> bool:
