@@ -9,7 +9,24 @@ import { api } from '../../api/client';
 import { onCountsRefresh } from '../../logic/countsRefresh';
 import { readCollapsed, safeLocalStorage, writeCollapsed } from '../../logic/sidebarState';
 
-const PUBLIC_PATHS = ['/signin', '/results'];
+const PROTECTED_PATHS = [
+  '/overview',
+  '/team',
+  '/inbox',
+  '/records',
+  '/standing-rules',
+  '/run',
+  '/runs',
+  '/fleet',
+  '/history',
+  '/evidence',
+  '/report',
+  '/incidents',
+  '/inventory',
+];
+
+const isProtectedPath = (path: string): boolean =>
+  PROTECTED_PATHS.some(p => path === p || path.startsWith(`${p}/`));
 
 export const AppLayout: React.FC = () => {
   const location = useLocation();
@@ -31,7 +48,7 @@ export const AppLayout: React.FC = () => {
   const cleanPath = location.pathname.replace(/\/+$/, '') || '/';
   // Sign-in, and /dashboard itself while it redirects, render without the shell.
   const isSignInPage = cleanPath === '/signin' || cleanPath === '/';
-  const isPublic = PUBLIC_PATHS.includes(cleanPath);
+  const isProtected = isProtectedPath(cleanPath);
 
   // Poll pending count and active runs periodically, only while signed in and in the shell
   // (on the sign-in page, or signed out, every poll would be a 401 in the server log).
@@ -96,7 +113,7 @@ export const AppLayout: React.FC = () => {
   // Every page sits in the v4 sidebar shell.
   const content = (
     <div key={`${location.pathname}#${authEpoch}`} className="anim-rise">
-      {needsSignIn && !isPublic ? (
+      {needsSignIn && isProtected ? (
         // Signed out on a page that needs sign-in: go to the landing page, and come back here after.
         <Navigate to={`/signin?next=${encodeURIComponent(location.pathname + location.search)}`} replace />
       ) : (

@@ -35,6 +35,9 @@ const ReportPage = React.lazy(() => import('./pages/ReportPage').then(m => ({ de
 const SignInPage = React.lazy(() =>
   import('./pages/SignInPage').then(m => ({ default: m.SignInPage }))
 );
+const NotFoundPage = React.lazy(() =>
+  import('./pages/NotFoundPage').then(m => ({ default: m.NotFoundPage }))
+);
 
 const PageLoader: React.FC = () => (
   <div className="flex items-center justify-center min-h-[350px] text-[15px] text-[#8B95A7]">
@@ -104,7 +107,7 @@ export const App: React.FC = () => {
             <Route path="agents" element={<Navigate to="/fleet" replace />} />
             <Route path="evaluation" element={<Navigate to="/results" replace />} />
             <Route path="architecture" element={<Navigate to="/" replace />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={page(<NotFoundPage />)} />
           </Route>
         </Routes>
       </BrowserRouter>
