@@ -145,13 +145,15 @@ def test_landing_hero_pieces(page: Page, console_server):
     for w in [375, 768, 1440]:
         page.set_viewport_size({"width": w, "height": 900})
         page.goto(f"{console_server.url}/dashboard/signin")
+        expect(page.locator("#signin-heading")).to_be_visible()  # the lazy page has rendered
         assert no_horizontal_scroll(page), f"Horizontal scroll detected at {w}px"
 
     # With reduced motion, the beam animation is disabled (animationName is none)
     page.emulate_media(reduced_motion="reduce")
     page.goto(f"{console_server.url}/dashboard/signin")
-    anim = page.eval_on_selector(
-        ".hero-beam-glow",
-        "el => window.getComputedStyle(el).animationName"
-    )
+    # The sign-in page is lazy-loaded: wait for the beam before reading its style
+    # (eval_on_selector does not wait, which made this test flaky).
+    glow = page.locator(".hero-beam-glow")
+    expect(glow).to_be_attached()
+    anim = glow.evaluate("el => window.getComputedStyle(el).animationName")
     assert anim == "none" or anim == "", f"Expected animation to be none, got {anim}"
