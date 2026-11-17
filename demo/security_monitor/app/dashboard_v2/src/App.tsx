@@ -40,7 +40,7 @@ const NotFoundPage = React.lazy(() =>
 );
 
 const PageLoader: React.FC = () => (
-  <div className="flex items-center justify-center min-h-[350px] text-[15px] text-[#8B95A7]">
+  <div className="flex items-center justify-center min-h-[350px] text-[15px] text-fg-3">
     Loading…
   </div>
 );

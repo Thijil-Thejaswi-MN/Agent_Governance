@@ -12,10 +12,10 @@ const ICONS: Record<PhaseId, React.ComponentType<{ className?: string }>> = {
 };
 
 const TONE: Record<RunPhaseView['tone'], { color: string; background: string; border: string }> = {
-  busy: { color: '#BFDBFE', background: 'rgba(59,130,246,0.10)', border: 'rgba(59,130,246,0.35)' },
-  ask: { color: '#FDE68A', background: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.40)' },
-  ok: { color: '#BBF7D0', background: 'rgba(34,197,94,0.10)', border: 'rgba(34,197,94,0.35)' },
-  bad: { color: '#FECACA', background: 'rgba(239,68,68,0.10)', border: 'rgba(239,68,68,0.35)' },
+  busy: { color: 'var(--info-lighter)', background: 'rgba(59,130,246,0.10)', border: 'rgba(59,130,246,0.35)' },
+  ask: { color: 'var(--wait-lighter)', background: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.40)' },
+  ok: { color: 'var(--ok-lighter)', background: 'rgba(34,197,94,0.10)', border: 'rgba(34,197,94,0.35)' },
+  bad: { color: 'var(--bad-lighter)', background: 'rgba(239,68,68,0.10)', border: 'rgba(239,68,68,0.35)' },
 };
 
 /** The run's phase as one pill with step dots. Moves only when the run's real state does. */
@@ -52,7 +52,7 @@ export const RunProgress: React.FC<{ view: RunPhaseView }> = ({ view }) => {
             style={{
               width: i === view.current ? 14 : 6,
               height: 6,
-              background: i <= view.current ? tone.color : '#2A3344',
+              background: i <= view.current ? tone.color : 'var(--line-strong)',
               opacity: i < view.current ? 0.6 : 1,
             }}
           />

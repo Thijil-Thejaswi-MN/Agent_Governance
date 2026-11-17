@@ -117,8 +117,8 @@ export const FileDrop: React.FC<FileDropProps> = ({
   return (
     <div className="w-full space-y-3">
       <div>
-        <h3 className="text-[15px] font-semibold text-[#E6E9EF]">Give the agent a file</h3>
-        <p className="text-[13px] text-[#8B95A7] mt-0.5">
+        <h3 className="text-[15px] font-semibold text-fg">Give the agent a file</h3>
+        <p className="text-[13px] text-fg-3 mt-0.5">
           Text files only: up to 3 files, 50 KB each. The agent finds them in input/.
         </p>
       </div>
@@ -139,11 +139,11 @@ export const FileDrop: React.FC<FileDropProps> = ({
         onDrop={handleDrop}
         className={`relative flex flex-col items-center justify-center p-6 sm:p-8 rounded-xl border-2 border-dashed transition-colors duration-150 text-center select-none ${
           isLimitReached
-            ? 'border-[#2A3344] bg-[#0E121A]/50 opacity-60 cursor-not-allowed'
+            ? 'border-line-strong bg-surface-1/50 opacity-60 cursor-not-allowed'
             : isDragging
-            ? 'border-[#3B82F6] bg-[#3B82F6]/10 cursor-pointer ring-2 ring-[#3B82F6]/20'
-            : 'border-[#2A3344] hover:border-[#3B82F6]/60 bg-[#0E121A] cursor-pointer'
-        } bg-[repeating-linear-gradient(-45deg,rgba(255,255,255,0.02)_0px,rgba(255,255,255,0.02)_1px,transparent_1px,transparent_10px)] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]`}
+            ? 'border-accent bg-accent/10 cursor-pointer ring-2 ring-accent/20'
+            : 'border-line-strong hover:border-accent/60 bg-surface-1 cursor-pointer'
+        } bg-[repeating-linear-gradient(-45deg,rgba(255,255,255,0.02)_0px,rgba(255,255,255,0.02)_1px,transparent_1px,transparent_10px)] focus:outline-none focus:ring-2 focus:ring-accent`}
       >
         <input
           id="file-drop-input"
@@ -160,21 +160,21 @@ export const FileDrop: React.FC<FileDropProps> = ({
 
         {isLimitReached ? (
           <div className="flex flex-col items-center gap-2 py-2">
-            <div className="w-12 h-12 rounded-full border border-[#2A3344] bg-[#161B26] flex items-center justify-center text-[#8B95A7]">
+            <div className="w-12 h-12 rounded-full border border-line-strong bg-surface-3 flex items-center justify-center text-fg-3">
               <UploadCloud className="w-6 h-6" />
             </div>
-            <p className="text-[14px] font-medium text-[#8B95A7]">
+            <p className="text-[14px] font-medium text-fg-3">
               3 files added: remove one to add another
             </p>
           </div>
         ) : (
           <div className="flex flex-col items-center gap-2">
-            <div className="w-12 h-12 rounded-full border border-[#2A3344] bg-[#161B26] flex items-center justify-center text-[#3B82F6] mb-1">
+            <div className="w-12 h-12 rounded-full border border-line-strong bg-surface-3 flex items-center justify-center text-accent mb-1">
               <UploadCloud className="w-6 h-6" />
             </div>
             <div className="text-[14px]">
-              <span className="font-medium text-[#E6E9EF]">Click to upload</span>
-              <span className="text-[#8B95A7]"> or drag and drop</span>
+              <span className="font-medium text-fg">Click to upload</span>
+              <span className="text-fg-3"> or drag and drop</span>
             </div>
             <button
               type="button"
@@ -187,11 +187,11 @@ export const FileDrop: React.FC<FileDropProps> = ({
                   fileInputRef.current?.click();
                 }
               }}
-              className="mt-1 min-h-[44px] px-4 py-2 text-[13px] font-medium rounded-lg bg-[#1F2937] hover:bg-[#374151] text-[#E6E9EF] border border-[#2A3344] focus:outline-none focus:ring-2 focus:ring-[#3B82F6] transition-colors"
+              className="mt-1 min-h-[44px] px-4 py-2 text-[13px] font-medium rounded-lg bg-surface-3 hover:bg-surface-hover text-fg border border-line-strong focus:outline-none focus:ring-2 focus:ring-accent transition-colors"
             >
               Browse files
             </button>
-            <p className="text-[12px] text-[#8B95A7] mt-1">
+            <p className="text-[12px] text-fg-3 mt-1">
               TXT, CSV, TSV, MD, JSON, YAML or LOG (max. 50 KB)
             </p>
           </div>
@@ -199,7 +199,7 @@ export const FileDrop: React.FC<FileDropProps> = ({
       </div>
 
       {activeErrors.length > 0 && (
-        <div role="alert" className="text-[13px] text-[#FCA5A5] space-y-1">
+        <div role="alert" className="text-[13px] text-bad-text space-y-1">
           {activeErrors.map((err, i) => (
             <div key={i}>{err}</div>
           ))}

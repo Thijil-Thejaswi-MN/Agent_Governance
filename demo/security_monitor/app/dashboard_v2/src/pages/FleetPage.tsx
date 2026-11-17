@@ -59,10 +59,10 @@ export const FleetPage: React.FC = () => {
     <div>
       <div className="max-w-[1360px] pb-12 flex flex-wrap gap-6 lg:gap-8 items-start">
         <section aria-label="All agents" className="flex-[999_1_620px] min-w-0 flex flex-col gap-5">
-          <h1 id="fleet-headline" data-quiet={quiet} className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-[#E6E9EF]">
+          <h1 id="fleet-headline" data-quiet={quiet} className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-fg">
             {line1}
             <br />
-            <span style={{ color: data.need_you > 0 ? '#FBBF24' : 'var(--text-2)' }}>{line2}</span>
+            <span style={{ color: data.need_you > 0 ? 'var(--wait-kpi)' : 'var(--text-2)' }}>{line2}</span>
           </h1>
 
           {dots.length > 0 ? (
@@ -89,7 +89,7 @@ export const FleetPage: React.FC = () => {
             </p>
           )}
           {error && (
-            <p className="m-0 text-[14px]" role="alert" style={{ color: '#FCA5A5' }}>
+            <p className="m-0 text-[14px]" role="alert" style={{ color: 'var(--bad-text)' }}>
               Could not refresh: {error}
             </p>
           )}
@@ -97,7 +97,7 @@ export const FleetPage: React.FC = () => {
 
         <section aria-label="Needs attention" className="flex-[1_1_340px] max-w-[460px] min-w-0 flex flex-col gap-4">
           <div className="card p-5 flex flex-col gap-3">
-            <h2 className="m-0 text-[15px] font-semibold text-[#E6E9EF]">Needs you</h2>
+            <h2 className="m-0 text-[15px] font-semibold text-fg">Needs you</h2>
             {data.needs_you.length === 0 ? (
               <p className="m-0 text-[15px]" style={{ color: 'var(--text-2)' }} id="needs-you-empty">
                 Nothing is waiting for a decision.
@@ -120,7 +120,7 @@ export const FleetPage: React.FC = () => {
                     id={`review-${item.request_id}`}
                     to={`/run/${item.task_id}`}
                     className="inline-flex items-center min-h-[44px] px-4 rounded-lg font-semibold text-[14px] no-underline pulse-waiting"
-                    style={{ background: '#F59E0B', color: '#1A1203' }}
+                    style={{ background: 'var(--wait)', color: 'var(--wait-badge-text)' }}
                   >
                     Review
                   </Link>
@@ -130,7 +130,7 @@ export const FleetPage: React.FC = () => {
           </div>
 
           <div className="card p-5 flex flex-col gap-1">
-            <h2 className="m-0 mb-1 text-[15px] font-semibold text-[#E6E9EF]">Blocked in the last 24 hours</h2>
+            <h2 className="m-0 mb-1 text-[15px] font-semibold text-fg">Blocked in the last 24 hours</h2>
             {data.blocked.groups.length === 0 ? (
               <p className="m-0 text-[15px]" style={{ color: 'var(--text-2)' }} id="blocked-empty">
                 Nothing was blocked.
@@ -143,10 +143,10 @@ export const FleetPage: React.FC = () => {
                   className="flex items-baseline gap-3.5 py-3"
                   style={i < data.blocked.groups.length - 1 ? { borderBottom: '1px solid var(--border)' } : undefined}
                 >
-                  <span className="text-[24px] font-bold tracking-tight min-w-[48px]" style={{ color: '#F87171' }}>
+                  <span className="text-[24px] font-bold tracking-tight min-w-[48px]" style={{ color: 'var(--bad-light)' }}>
                     {g.count.toLocaleString('en-US')}
                   </span>
-                  <span className="text-[14px] text-[#A7B0C0]">{g.label}</span>
+                  <span className="text-[14px] text-fg-2">{g.label}</span>
                 </div>
               ))
             )}

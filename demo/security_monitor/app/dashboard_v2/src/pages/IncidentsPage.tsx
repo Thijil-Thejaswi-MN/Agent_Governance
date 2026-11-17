@@ -11,7 +11,7 @@ export const IncidentDetailView: React.FC<{ d: IncidentDetail }> = ({ d }) => {
   const m = mentionText(d);
   const link = ruleLink(d);
   return (
-    <div className="flex flex-col gap-3 pt-3 border-t border-[#1F2633]" data-incident-detail={d.incident_id}>
+    <div className="flex flex-col gap-3 pt-3 border-t border-line" data-incident-detail={d.incident_id}>
       <Row k="What happened">
         <span id={`incident-response-${d.incident_id}`}>{responseTaken(d)}</span>
       </Row>
@@ -20,7 +20,7 @@ export const IncidentDetailView: React.FC<{ d: IncidentDetail }> = ({ d }) => {
           {m.known ? <span className="font-mono">{m.text}</span> : <span style={{ color: 'var(--text-2)' }}>{m.text}</span>}
         </span>
         {d.mention && (
-          <blockquote className="m-0 mt-1.5 px-3 py-2 rounded-lg bg-[#0E121A] border-l-2 border-[#F59E0B] font-mono text-[13px] text-[#E6E9EF] [overflow-wrap:anywhere]">
+          <blockquote className="m-0 mt-1.5 px-3 py-2 rounded-lg bg-surface-1 border-l-2 border-wait font-mono text-[13px] text-fg [overflow-wrap:anywhere]">
             {d.mention.line}
           </blockquote>
         )}
@@ -84,7 +84,7 @@ export const IncidentsPage: React.FC = () => {
   return (
     <div className="max-w-[960px] pb-12 flex flex-col gap-5">
       <header className="flex flex-col gap-2">
-        <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-[#E6E9EF]">
+        <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-fg">
           {items == null ? 'Incidents' : items.length === 0 ? 'No incidents.' : `${items.length} blocked ${items.length === 1 ? 'action' : 'actions'}.`}
         </h1>
         <p className="m-0 text-[16px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
@@ -113,17 +113,17 @@ export const IncidentsPage: React.FC = () => {
                   aria-controls={`incident-body-${i.incident_id}`}
                   className="w-full text-left bg-transparent border-0 p-0 cursor-pointer flex items-start gap-3 min-h-[44px]"
                 >
-                  <ShieldX aria-hidden="true" className="w-5 h-5 mt-0.5 shrink-0" style={{ color: '#F87171' }} />
+                  <ShieldX aria-hidden="true" className="w-5 h-5 mt-0.5 shrink-0" style={{ color: 'var(--bad-light)' }} />
                   <span className="flex-1 min-w-0 flex flex-col gap-1">
-                    <span className="text-[16px] text-[#E6E9EF] [overflow-wrap:anywhere]">
-                      {triedLead(i)} <code className="font-mono text-[15px] text-[#BFDBFE]">{i.target || '—'}</code>
+                    <span className="text-[16px] text-fg [overflow-wrap:anywhere]">
+                      {triedLead(i)} <code className="font-mono text-[15px] text-info-lighter">{i.target || '—'}</code>
                     </span>
                     <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]" style={{ color: 'var(--text-2)' }}>
                       <span>{formatWhen(i.timestamp)}</span>
                       {i.comparison_mode || i.layer === 'comparison_unlocked' ? (
                         <span
                           data-incident-label="comparison"
-                          className="inline-flex items-center px-2 py-0.5 rounded text-[12px] font-semibold text-[#FBBF24] bg-[rgba(245,158,11,0.12)] border border-[rgba(245,158,11,0.25)]"
+                          className="inline-flex items-center px-2 py-0.5 rounded text-[12px] font-semibold text-wait-kpi bg-wait-tint border border-wait/25"
                         >
                           Comparison run: decoy was read (would be blocked by the kernel lock)
                         </span>
@@ -132,7 +132,7 @@ export const IncidentsPage: React.FC = () => {
                           <span>Stopped by: {stoppedBy(i.layer)}</span>
                           <span
                             className="inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-semibold"
-                            style={{ color: '#FCA5A5', background: 'rgba(239,68,68,0.12)' }}
+                            style={{ color: 'var(--bad-text)', background: 'var(--bad-tint)' }}
                           >
                             Attempted, not successful
                           </span>
@@ -173,6 +173,6 @@ const Row: React.FC<{ k: string; children: React.ReactNode }> = ({ k, children }
     <span className="text-[13px] sm:text-[14px]" style={{ color: 'var(--text-3)' }}>
       {k}
     </span>
-    <div className="min-w-0 text-[#E6E9EF]">{children}</div>
+    <div className="min-w-0 text-fg">{children}</div>
   </div>
 );

@@ -38,7 +38,7 @@ export const OperatorAuthModal: React.FC = () => {
       >
         <div className="flex items-center justify-between gap-3 p-5" style={{ borderBottom: '1px solid var(--line)' }}>
           <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-lg" style={{ background: 'rgba(59,130,246,0.14)', color: '#60A5FA' }}>
+            <div className="p-2.5 rounded-lg" style={{ background: 'var(--accent-tint)', color: 'var(--info)' }}>
               <KeyRound className="w-5 h-5" />
             </div>
             <div>
@@ -62,7 +62,7 @@ export const OperatorAuthModal: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           {isConfigured === false && (
-            <div className="flex items-start gap-2.5 p-3 rounded-xl text-[13px]" style={{ background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.35)', color: '#FDE68A' }}>
+            <div className="flex items-start gap-2.5 p-3 rounded-xl text-[13px]" style={{ background: 'var(--wait-tint)', border: '1px solid rgba(251,191,36,0.35)', color: 'var(--wait-lighter)' }}>
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               <span>
                 Note: Server currently has <code>GOVERNANCE_OPERATOR_TOKEN</code> unset. All task data and actions refuse with HTTP 403 until it is set.
@@ -83,12 +83,12 @@ export const OperatorAuthModal: React.FC = () => {
                 if (error) setError(null);
               }}
               placeholder="Paste GOVERNANCE_OPERATOR_TOKEN..."
-              className="w-full min-h-[44px] px-3 text-[15px] mono rounded-lg outline-none focus:border-[#3B82F6]"
+              className="w-full min-h-[44px] px-3 text-[15px] mono rounded-lg outline-none focus:border-accent"
               style={{ background: 'var(--field)', border: '1px solid var(--border-strong)', color: 'var(--text)' }}
               autoFocus
             />
             {error && (
-              <p className="mt-1.5 text-[13px]" style={{ color: '#FDA4AF' }}>
+              <p className="mt-1.5 text-[13px]" style={{ color: 'var(--bad-text)' }}>
                 {error}
               </p>
             )}

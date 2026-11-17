@@ -18,9 +18,9 @@ import {
 } from '../../logic/approval';
 
 const TIER_STYLE: Record<string, React.CSSProperties> = {
-  LOW: { color: '#86EFAC', background: 'rgba(34,197,94,0.12)', borderColor: 'rgba(34,197,94,0.35)' },
-  MEDIUM: { color: '#FCD34D', background: 'rgba(245,158,11,0.12)', borderColor: 'rgba(245,158,11,0.35)' },
-  HIGH: { color: '#FCA5A5', background: 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.35)' },
+  LOW: { color: 'var(--ok-text)', background: 'var(--ok-tint)', borderColor: 'rgb(var(--ok-rgb) / 0.35)' },
+  MEDIUM: { color: 'var(--wait-text)', background: 'var(--wait-tint)', borderColor: 'rgb(var(--wait-rgb) / 0.35)' },
+  HIGH: { color: 'var(--bad-text)', background: 'var(--bad-tint)', borderColor: 'rgb(var(--bad-rgb) / 0.35)' },
 };
 
 /** What is being asked for: name, folder, size and risk. No effects, so tests can render it. */
@@ -31,10 +31,10 @@ export const RequestPreview: React.FC<{ exp: ExpansionItem; preview: ExpansionPr
   const tier = String(preview?.risk_tier || exp.effective_risk_tier || '').toUpperCase();
   const risk = riskLabel(tier);
   return (
-    <div id="decision-preview" className="rounded-2xl px-4 py-3.5 flex flex-wrap items-start gap-x-3 gap-y-2 bg-[#0E121A] border border-[#1F2633]">
-      <Icon aria-hidden="true" className="w-5 h-5 mt-0.5 shrink-0" style={{ color: '#93C5FD' }} />
+    <div id="decision-preview" className="rounded-2xl px-4 py-3.5 flex flex-wrap items-start gap-x-3 gap-y-2 bg-surface-1 border border-line">
+      <Icon aria-hidden="true" className="w-5 h-5 mt-0.5 shrink-0" style={{ color: 'var(--info-text)' }} />
       <div className="min-w-[200px] flex-1 flex flex-col gap-1">
-        <span className="font-mono text-[15px] text-[#E6E9EF] [overflow-wrap:anywhere]">
+        <span className="font-mono text-[15px] text-fg [overflow-wrap:anywhere]">
           {preview?.name || fileName(exp.resource_target)}
         </span>
         <span id="decision-facts" className="text-[14px]" style={{ color: 'var(--text-2)' }}>
@@ -46,7 +46,7 @@ export const RequestPreview: React.FC<{ exp: ExpansionItem; preview: ExpansionPr
         data-tier={tier || 'UNKNOWN'}
         title={risk.hint}
         className="shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full border text-[12px] font-semibold whitespace-nowrap"
-        style={TIER_STYLE[tier] ?? { color: 'var(--text-2)', borderColor: '#2A3344' }}
+        style={TIER_STYLE[tier] ?? { color: 'var(--text-2)', borderColor: 'var(--line-strong)' }}
       >
         {risk.label}
       </span>
@@ -69,8 +69,8 @@ export const StagedContent: React.FC<{ staged: StagedSnapshot | null | undefined
       ) : (
         <pre
           id="decision-staged-content"
-          className="m-0 max-h-64 overflow-auto rounded-xl px-3 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] bg-[#0B0F16] border border-[#1F2633]"
-          style={{ color: '#E6E9EF' }}
+          className="m-0 max-h-64 overflow-auto rounded-xl px-3 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere] bg-surface-terminal border border-line"
+          style={{ color: 'var(--text)' }}
         >
           {staged.preview}
           {staged.truncated ? '\n… (only the start is shown: 2,000 characters)' : ''}
@@ -126,10 +126,10 @@ export const DecisionCard: React.FC<{
 
   return (
     <div id={`inline-approval-card-${exp.request_id}`} className="flex flex-col gap-5" data-state="waiting">
-      <p className="m-0 text-[18px] leading-relaxed" style={{ color: '#CBD5E1' }}>
+      <p className="m-0 text-[18px] leading-relaxed" style={{ color: 'var(--text-soft)' }}>
         {decisionLead(exp, triedBefore)
           .split(name)
-          .flatMap((part, i) => (i === 0 ? [part] : [<strong key={i} style={{ color: '#FDE68A' }}>{name}</strong>, part]))}
+          .flatMap((part, i) => (i === 0 ? [part] : [<strong key={i} style={{ color: 'var(--wait-lighter)' }}>{name}</strong>, part]))}
       </p>
       <RequestPreview exp={exp} preview={preview} />
       <StagedContent staged={preview?.staged} />
@@ -137,7 +137,7 @@ export const DecisionCard: React.FC<{
         <div
           id="decision-warning"
           className="px-[18px] py-4 rounded-2xl text-[15px] leading-normal"
-          style={{ background: 'rgba(251,113,133,0.08)', border: '1px solid rgba(251,113,133,0.35)', color: '#FECDD3' }}
+          style={{ background: 'rgb(var(--blocked-rgb) / 0.08)', border: '1px solid rgb(var(--blocked-rgb) / 0.35)', color: 'var(--blocked-text)' }}
         >
           Be careful: {warning.charAt(0).toLowerCase() + warning.slice(1)}
         </div>
@@ -156,7 +156,7 @@ export const DecisionCard: React.FC<{
               disabled={deciding}
               onClick={() => onAllow('run')}
               className="btn-primary pulse-waiting w-full sm:w-auto"
-              style={{ minHeight: 52, padding: '0 28px', background: 'linear-gradient(135deg, #34D399, #22D3EE)', color: '#04130F' }}
+              style={{ minHeight: 52, padding: '0 28px', background: 'linear-gradient(135deg, var(--role-admin), var(--cyan))', color: 'var(--role-admin-contrast)' }}
             >
               Allow for this run
             </button>
@@ -191,7 +191,7 @@ export const DecisionCard: React.FC<{
               disabled={deciding}
               onClick={() => setDenying(true)}
               className="btn-ghost flex-1 sm:flex-none"
-              style={{ minHeight: 52, padding: '0 22px', borderColor: 'rgba(251,113,133,0.45)', color: '#FECDD3' }}
+              style={{ minHeight: 52, padding: '0 22px', borderColor: 'rgb(var(--blocked-rgb) / 0.45)', color: 'var(--blocked-text)' }}
             >
               Block
             </button>
@@ -238,7 +238,7 @@ export const DecisionCard: React.FC<{
             maxLength={300}
             placeholder="Not needed for this task"
             className="min-h-[48px] px-4 rounded-[14px] text-[16px] outline-none"
-            style={{ background: 'var(--field)', border: '1px solid rgba(251,113,133,0.45)', color: 'var(--text)' }}
+            style={{ background: 'var(--field)', border: '1px solid rgb(var(--blocked-rgb) / 0.45)', color: 'var(--text)' }}
           />
           <div className="flex flex-wrap gap-3">
             <button
@@ -246,7 +246,7 @@ export const DecisionCard: React.FC<{
               type="submit"
               disabled={deciding || !reason.trim()}
               className="btn-ghost"
-              style={{ borderColor: 'rgba(251,113,133,0.6)', color: '#FECDD3' }}
+              style={{ borderColor: 'rgb(var(--blocked-rgb) / 0.6)', color: 'var(--blocked-text)' }}
             >
               Block
             </button>
@@ -257,7 +257,7 @@ export const DecisionCard: React.FC<{
         </form>
       )}
 
-      <span id="decision-countdown" className="text-[14px]" style={{ color: left <= 30 ? '#FDE68A' : 'var(--text-3)' }}>
+      <span id="decision-countdown" className="text-[14px]" style={{ color: left <= 30 ? 'var(--wait-lighter)' : 'var(--text-3)' }}>
         {formatCountdown(left)}
       </span>
     </div>

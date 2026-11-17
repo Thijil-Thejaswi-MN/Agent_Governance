@@ -4,13 +4,14 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell } from 
 import { api } from '../api/client';
 import { ResultsSummary } from '../types';
 import { HowItWorks } from '../components/v3/HowItWorks';
+import { PALETTE } from '../logic/palette';
 
 // One colour per condition, the same in every chart and legend.
 const CONDITION_COLORS: Record<'A' | 'B' | 'C' | 'D', string> = {
-  A: '#F87171',
-  B: '#FBBF24',
-  C: '#60A5FA',
-  D: '#A78BFA',
+  A: PALETTE.badLight,
+  B: PALETTE.waitKpi,
+  C: PALETTE.info,
+  D: PALETTE.roleTeamLead,
 };
 
 // What each step of the expansion chain is, in plain words (same order as the summary's steps).
@@ -26,7 +27,7 @@ const yLabel = (value: string) => ({
   angle: -90,
   position: 'insideLeft' as const,
   offset: 4,
-  style: { textAnchor: 'middle' as const, fill: '#A7B0C0', fontSize: 12 },
+  style: { textAnchor: 'middle' as const, fill: PALETTE.text2, fontSize: 12 },
 });
 
 // The axes show only the condition letter; this maps each letter to its name, in the bar's colour.
@@ -61,7 +62,7 @@ export const ResultsPage: React.FC = () => {
     return (
       <div className="p-8 text-center flex flex-col items-center gap-3" style={{ color: 'var(--text-2)' }}>
         Results summary not available.
-        <Link to="/evidence" id="open-evidence" className="underline" style={{ color: '#93C5FD' }}>
+        <Link to="/evidence" id="open-evidence" className="underline" style={{ color: 'var(--info-text)' }}>
           Open the recorded evidence
         </Link>
       </div>
@@ -136,19 +137,19 @@ export const ResultsPage: React.FC = () => {
     <div className="max-w-[1200px] pb-12 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
-          <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-[#E6E9EF]">Full results</h1>
+          <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-fg">Full results</h1>
           <p className="mt-2 mb-0 text-[15px]" style={{ color: 'var(--text-2)' }}>
             Recomputed directly from raw trial runs in <code className="mono">demo/data/evaluation_v3/results/</code>. Model: {summary.model}.
           </p>
         </div>
-        <span className="inline-flex items-center min-h-[36px] px-3 rounded-full text-[13px] font-semibold" style={{ background: 'rgba(59,130,246,0.12)', color: '#93C5FD', border: '1px solid rgba(59,130,246,0.4)' }}>
+        <span className="inline-flex items-center min-h-[36px] px-3 rounded-full text-[13px] font-semibold" style={{ background: 'var(--accent-tint)', color: 'var(--info-text)', border: '1px solid rgba(59,130,246,0.4)' }}>
           {summary.evaluation_label || '—'}
         </span>
       </div>
 
       <section className="card p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3" id="evidence-link">
         <div className="flex flex-col gap-1">
-          <h2 className="m-0 text-[17px] font-semibold text-[#E6E9EF]">See the attacks behind these numbers</h2>
+          <h2 className="m-0 text-[17px] font-semibold text-fg">See the attacks behind these numbers</h2>
           <p className="m-0 text-[14px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
             Pick any attack and see the hidden instruction in its input file, then the exact step where the agent acted on
             it in each setup, and what came back. Read straight from the raw trial files.
@@ -166,7 +167,7 @@ export const ResultsPage: React.FC = () => {
         <div className="card p-6 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1 sm:gap-4">
             <div>
-              <h2 className="m-0 text-[17px] font-semibold text-[#E6E9EF]">
+              <h2 className="m-0 text-[17px] font-semibold text-fg">
                 Harm in injected trials
               </h2>
               <p className="m-0 text-[14px]" style={{ color: 'var(--text-2)' }}>
@@ -181,10 +182,10 @@ export const ResultsPage: React.FC = () => {
           <div className="h-64 w-full" id="chart-harm">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={harmData} margin={{ top: 20, right: 20, left: 4, bottom: 20 }}>
-                <XAxis dataKey="id" tick={{ fontSize: 13 }} interval={0} stroke="#8B95A7" />
-                <YAxis domain={[0, harmA?.total || 32]} stroke="#8B95A7" width={44} label={yLabel('trials with harm')} />
+                <XAxis dataKey="id" tick={{ fontSize: 13 }} interval={0} stroke={PALETTE.text3} />
+                <YAxis domain={[0, harmA?.total || 32]} stroke={PALETTE.text3} width={44} label={yLabel('trials with harm')} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#11151D', borderColor: '#2A3344', borderRadius: '8px', color: '#E6E9EF', fontSize: '12px' }}
+                  contentStyle={{ backgroundColor: PALETTE.surface2, borderColor: PALETTE.lineStrong, borderRadius: '8px', color: PALETTE.text, fontSize: '12px' }}
                   labelFormatter={(_id, items) => (items?.[0]?.payload as { name?: string } | undefined)?.name ?? String(_id)}
                   cursor={{ fill: 'rgba(148,163,184,0.08)' }}
                 />
@@ -206,7 +207,7 @@ export const ResultsPage: React.FC = () => {
         <div className="card p-6 space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="m-0 text-[17px] font-semibold text-[#E6E9EF]">
+              <h2 className="m-0 text-[17px] font-semibold text-fg">
                 Shell Channel Attack Outcomes
               </h2>
               <p className="m-0 text-[14px]" style={{ color: 'var(--text-2)' }}>
@@ -218,10 +219,10 @@ export const ResultsPage: React.FC = () => {
           <div className="h-64 w-full" id="chart-shell">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={shellAttackData} margin={{ top: 20, right: 20, left: 4, bottom: 20 }}>
-                <XAxis dataKey="id" tick={{ fontSize: 13 }} interval={0} stroke="#8B95A7" />
-                <YAxis domain={[0, shellTop]} ticks={shellTicks} interval={0} allowDecimals={false} stroke="#8B95A7" width={44} label={yLabel('attacks that worked')} />
+                <XAxis dataKey="id" tick={{ fontSize: 13 }} interval={0} stroke={PALETTE.text3} />
+                <YAxis domain={[0, shellTop]} ticks={shellTicks} interval={0} allowDecimals={false} stroke={PALETTE.text3} width={44} label={yLabel('attacks that worked')} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#11151D', borderColor: '#2A3344', borderRadius: '8px', color: '#E6E9EF', fontSize: '12px' }}
+                  contentStyle={{ backgroundColor: PALETTE.surface2, borderColor: PALETTE.lineStrong, borderRadius: '8px', color: PALETTE.text, fontSize: '12px' }}
                   labelFormatter={(_id, items) => (items?.[0]?.payload as { name?: string } | undefined)?.name ?? String(_id)}
                   cursor={{ fill: 'rgba(148,163,184,0.08)' }}
                 />
@@ -242,14 +243,14 @@ export const ResultsPage: React.FC = () => {
 
       {/* Expansion Chain Progression */}
       <div className="card p-6 space-y-4">
-        <h2 className="m-0 text-[17px] font-semibold text-[#E6E9EF]">
+        <h2 className="m-0 text-[17px] font-semibold text-fg">
           Expansion Chain Progression (Unanticipated, C "Tool + OS layer")
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           {stepsList.map((st, i) => (
             <div key={i} className="p-4 rounded-lg" style={{ background: 'var(--card-2)', border: '1px solid var(--line)' }}>
               <span className="mono text-[12px] block" style={{ color: 'var(--text-3)' }}>{st.label}</span>
-              <div className="text-[26px] font-bold tracking-tight mt-1" style={{ color: '#60A5FA' }}>
+              <div className="text-[26px] font-bold tracking-tight mt-1" style={{ color: 'var(--info)' }}>
                 {st.value}
               </div>
               <p className="text-[13px] mt-1 mb-0" style={{ color: 'var(--text-2)' }}>{st.desc}</p>
@@ -261,7 +262,7 @@ export const ResultsPage: React.FC = () => {
       {/* Latency and Timeouts */}
       <div className="card p-6 space-y-4">
         <div>
-          <h2 className="m-0 text-[17px] font-semibold text-[#E6E9EF]">
+          <h2 className="m-0 text-[17px] font-semibold text-fg">
             Trial Durations & Timeouts
           </h2>
           <p className="m-0 text-[14px]" style={{ color: 'var(--text-2)' }} id="timings-basis">
@@ -290,7 +291,7 @@ export const ResultsPage: React.FC = () => {
 
       {/* Time per legitimate task */}
       <div className="card p-6 space-y-4" id="utility-timings">
-        <h2 className="m-0 text-[17px] font-semibold text-[#E6E9EF]">Time per legitimate task (anticipated, utility_v3d)</h2>
+        <h2 className="m-0 text-[17px] font-semibold text-fg">Time per legitimate task (anticipated, utility_v3d)</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
             { name: 'A "No governance"', v: ut?.A ? `${ut.A.mean_s}s` : '—', n: ut?.A?.total_trials },
@@ -308,7 +309,7 @@ export const ResultsPage: React.FC = () => {
 
       {/* Limitations List */}
       <div className="card p-6 space-y-3">
-        <h2 className="m-0 text-[17px] font-semibold text-[#E6E9EF]">
+        <h2 className="m-0 text-[17px] font-semibold text-fg">
           Evaluation Scope & Limitations
         </h2>
         <ul className="space-y-2 text-[14px] leading-relaxed list-disc pl-5 m-0" style={{ color: 'var(--text-2)' }}>

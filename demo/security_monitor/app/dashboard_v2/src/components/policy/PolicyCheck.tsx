@@ -15,15 +15,15 @@ import {
 } from '../../logic/policySim';
 
 const fieldCls =
-  'w-full min-w-0 min-h-[44px] px-3 rounded-lg bg-[#0E121A] border border-[#2A3344] text-[15px] text-[#E6E9EF] focus:outline-none focus:border-[#3B82F6]';
+  'w-full min-w-0 min-h-[44px] px-3 rounded-lg bg-surface-1 border border-line-strong text-[15px] text-fg focus:outline-none focus:border-accent';
 
 const OUTCOME_STYLE: Record<string, React.CSSProperties> = {
-  allow: { color: '#86EFAC', background: 'rgba(34,197,94,0.10)', borderColor: 'rgba(34,197,94,0.35)' },
-  deny: { color: '#FCA5A5', background: 'rgba(239,68,68,0.10)', borderColor: 'rgba(239,68,68,0.35)' },
-  ask: { color: '#FCD34D', background: 'rgba(245,158,11,0.10)', borderColor: 'rgba(245,158,11,0.35)' },
+  allow: { color: 'var(--ok-text)', background: 'var(--ok-tint)', borderColor: 'rgba(34,197,94,0.35)' },
+  deny: { color: 'var(--bad-text)', background: 'var(--bad-tint)', borderColor: 'rgba(239,68,68,0.35)' },
+  ask: { color: 'var(--wait-text)', background: 'var(--wait-tint)', borderColor: 'rgba(245,158,11,0.35)' },
 };
 
-const TONE_COLOR = { ok: '#86EFAC', bad: '#FCA5A5', ask: '#FCD34D', info: 'var(--text-3)' } as const;
+const TONE_COLOR = { ok: 'var(--ok-text)', bad: 'var(--bad-text)', ask: 'var(--wait-text)', info: 'var(--text-3)' } as const;
 
 /** "Check a decision": asks the server what the broker would do with one action of a run. */
 export const PolicyCheck: React.FC<{ draft: RuleDraft }> = ({ draft }) => {
@@ -71,7 +71,7 @@ export const PolicyCheck: React.FC<{ draft: RuleDraft }> = ({ draft }) => {
   return (
     <section id="policy-check" aria-labelledby="policy-check-heading" className="card p-5 flex flex-col gap-4">
       <div className="flex flex-col gap-1">
-        <h2 id="policy-check-heading" className="m-0 text-[17px] font-semibold text-[#E6E9EF]">
+        <h2 id="policy-check-heading" className="m-0 text-[17px] font-semibold text-fg">
           Check a decision
         </h2>
         <p className="m-0 text-[14px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
@@ -124,7 +124,7 @@ export const PolicyCheck: React.FC<{ draft: RuleDraft }> = ({ draft }) => {
               type="checkbox"
               checked={useDraft}
               onChange={e => setUseDraft(e.target.checked)}
-              className="accent-[#3B82F6]"
+              className="accent-accent"
             />
             Include the rule in the form above, as if it were saved and rules were on
           </label>
@@ -137,7 +137,7 @@ export const PolicyCheck: React.FC<{ draft: RuleDraft }> = ({ draft }) => {
       </form>
 
       {error && (
-        <p id="sim-error" role="alert" className="m-0 text-[14px]" style={{ color: '#FCA5A5' }}>
+        <p id="sim-error" role="alert" className="m-0 text-[14px]" style={{ color: 'var(--bad-text)' }}>
           {error}
         </p>
       )}
@@ -152,11 +152,11 @@ export const PolicyCheck: React.FC<{ draft: RuleDraft }> = ({ draft }) => {
               {OUTCOME_LABEL[result.outcome] || result.outcome}
             </span>
             <span className="text-[14px]" style={{ color: 'var(--text-2)' }}>
-              decided by <strong className="text-[#E6E9EF]">{layerLabel(result.decided_by)}</strong>
+              decided by <strong className="text-fg">{layerLabel(result.decided_by)}</strong>
               {result.draft_rule && result.rule_id === 'rule_draft' ? ' (your draft rule)' : ''}
             </span>
           </div>
-          <p className="m-0 text-[14px] text-[#E6E9EF] [overflow-wrap:anywhere]">{result.reason}</p>
+          <p className="m-0 text-[14px] text-fg [overflow-wrap:anywhere]">{result.reason}</p>
           <ol id="sim-steps" className="m-0 pl-5 flex flex-col gap-1.5 text-[14px]">
             {shownSteps(result).map((s, i) => (
               <li key={`${s.layer}-${i}`} data-layer={s.layer} data-result={s.result}>

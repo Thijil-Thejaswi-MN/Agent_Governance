@@ -18,7 +18,7 @@ import {
 
 const MAX_ROWS = 10;
 
-const TONE = { ok: '#16A34A', bad: '#DC2626', none: 'var(--text-2)' } as const;
+const TONE = { ok: 'var(--ok-strong)', bad: 'var(--bad-strong)', none: 'var(--text-2)' } as const;
 
 /** The printable sheet. No effects, so tests can render it. */
 export const ReportSheet: React.FC<{ report: TaskReport }> = ({ report }) => {
@@ -39,17 +39,17 @@ export const ReportSheet: React.FC<{ report: TaskReport }> = ({ report }) => {
         <div
           id="comparison-report-banner"
           role="status"
-          className="px-4 py-3 rounded-xl border border-[#F59E0B]/40 bg-[rgba(245,158,11,0.10)] text-[#FBBF24] text-[15px] font-medium flex items-center gap-2.5"
+          className="px-4 py-3 rounded-xl border border-wait/40 bg-wait-tint text-wait-kpi text-[15px] font-medium flex items-center gap-2.5"
         >
           <span className="font-bold">Notice:</span>
           <span>Comparison run: kernel lock off, for demonstration</span>
         </div>
       )}
-      <header className="flex flex-col gap-1 border-b border-[#1F2633] pb-4">
+      <header className="flex flex-col gap-1 border-b border-line pb-4">
         <p className="m-0 text-[12px] uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
           Task report
         </p>
-        <h1 className="m-0 font-display font-bold text-[22px] sm:text-[26px] leading-tight text-[#E6E9EF] [overflow-wrap:anywhere]">
+        <h1 className="m-0 font-display font-bold text-[22px] sm:text-[26px] leading-tight text-fg [overflow-wrap:anywhere]">
           {t.request_text}
         </h1>
         <p className="m-0 text-[13px]" style={{ color: 'var(--text-2)' }}>
@@ -210,7 +210,7 @@ const Fact: React.FC<{ k: string; v: string; mono?: boolean; id?: string; nowrap
     <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>
       {k}
     </span>
-    <span id={id} className={`text-[#E6E9EF] ${nowrap ? 'whitespace-nowrap' : '[overflow-wrap:anywhere]'} ${mono ? 'font-mono text-[13px]' : ''}`}>
+    <span id={id} className={`text-fg ${nowrap ? 'whitespace-nowrap' : '[overflow-wrap:anywhere]'} ${mono ? 'font-mono text-[13px]' : ''}`}>
       {v}
     </span>
   </div>
@@ -221,13 +221,13 @@ const ListFact: React.FC<{ k: string; items: string[]; empty?: string }> = ({ k,
     <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>
       {k}
     </span>
-    <span className="font-mono text-[13px] text-[#E6E9EF] [overflow-wrap:anywhere]">{items.length ? items.join(', ') : empty}</span>
+    <span className="font-mono text-[13px] text-fg [overflow-wrap:anywhere]">{items.length ? items.join(', ') : empty}</span>
   </div>
 );
 
 const Section: React.FC<{ title: string; id: string; children: React.ReactNode }> = ({ title, id, children }) => (
   <section id={id} className="flex flex-col gap-2 break-inside-avoid">
-    <h2 className="m-0 text-[15px] font-semibold text-[#E6E9EF]">{title}</h2>
+    <h2 className="m-0 text-[15px] font-semibold text-fg">{title}</h2>
     {children}
   </section>
 );
@@ -236,7 +236,7 @@ const Table: React.FC<{ head: string[]; rows: React.ReactNode[][]; more: number 
   <div className="overflow-x-auto">
     <table className="w-full text-left text-[13px] border-collapse">
       <thead>
-        <tr className="border-b border-[#1F2633]" style={{ color: 'var(--text-3)' }}>
+        <tr className="border-b border-line" style={{ color: 'var(--text-3)' }}>
           {head.map(h => (
             <th key={h} className="py-1.5 pr-3 font-normal text-[12px]">
               {h}
@@ -246,9 +246,9 @@ const Table: React.FC<{ head: string[]; rows: React.ReactNode[][]; more: number 
       </thead>
       <tbody>
         {rows.map((r, i) => (
-          <tr key={i} className="border-b border-[#1F2633] align-top">
+          <tr key={i} className="border-b border-line align-top">
             {r.map((c, j) => (
-              <td key={j} className="py-1.5 pr-3 text-[#E6E9EF]">
+              <td key={j} className="py-1.5 pr-3 text-fg">
                 {c}
               </td>
             ))}

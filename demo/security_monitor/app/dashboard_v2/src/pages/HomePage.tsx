@@ -29,11 +29,11 @@ export const HomePage: React.FC = () => {
   return (
     <div className="max-w-[1080px] mx-auto pt-6 sm:pt-12 pb-12 flex flex-col items-center gap-10 sm:gap-12 text-center">
       <div className="flex flex-col items-center gap-5">
-        <h1 className="m-0 font-display font-bold text-[34px] sm:text-[52px] leading-[1.08] max-w-[860px] text-[#E6E9EF]">
+        <h1 className="m-0 font-display font-bold text-[34px] sm:text-[52px] leading-[1.08] max-w-[860px] text-fg">
           AI agents should only touch{' '}
-          <span className="text-[#60A5FA]">what you asked for.</span>
+          <span className="text-info">what you asked for.</span>
         </h1>
-        <p className="m-0 text-[17px] sm:text-[18px] max-w-[620px] text-[#A7B0C0]">
+        <p className="m-0 text-[17px] sm:text-[18px] max-w-[620px] text-fg-2">
           We put a fence around the agent for each request. If it needs something more, it has to ask you.
         </p>
         <Link id="try-it" to="/run" className="btn-primary" style={{ minHeight: 44, padding: '0 28px', fontSize: 15 }}>
@@ -45,8 +45,8 @@ export const HomePage: React.FC = () => {
         <ol className="relative grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 list-none p-0 m-0">
           {STEPS.map(s => (
             <li key={s.title} className="card px-5 py-5 text-left">
-              <div className="text-[17px] font-semibold text-[#E6E9EF]">{s.title}</div>
-              <div className="mt-1.5 text-[15px] text-[#A7B0C0]">{s.body}</div>
+              <div className="text-[17px] font-semibold text-fg">{s.title}</div>
+              <div className="mt-1.5 text-[15px] text-fg-2">{s.body}</div>
             </li>
           ))}
         </ol>
@@ -58,27 +58,27 @@ export const HomePage: React.FC = () => {
             <div className="text-[34px] font-bold tracking-tight leading-tight">
               {harmA && harmC ? (
                 <>
-                  <span className="text-[#F87171]">{harmA.exposed}</span> <span className="text-[#8B95A7]">→</span>{' '}
-                  <span className="text-[#4ADE80]">{harmC.exposed}</span>
+                  <span className="text-bad-light">{harmA.exposed}</span> <span className="text-fg-3">→</span>{' '}
+                  <span className="text-ok-light">{harmC.exposed}</span>
                 </>
               ) : (
                 '—'
               )}
             </div>
-            <div className="mt-1 text-[14px] text-[#A7B0C0]">
+            <div className="mt-1 text-[14px] text-fg-2">
               tricked agents that caused harm{harmA ? `, out of ${harmA.total}` : ''}
             </div>
           </div>
           <div className="card px-5 py-5 text-left" id="metric-time">
-            <div className="text-[34px] font-bold tracking-tight leading-tight text-[#60A5FA]">
+            <div className="text-[34px] font-bold tracking-tight leading-tight text-info">
               {extra !== undefined ? `+${extra.toFixed(1)} s` : '—'}
             </div>
-            <div className="mt-1 text-[14px] text-[#A7B0C0]">
+            <div className="mt-1 text-[14px] text-fg-2">
               {ut?.A && ut?.C ? `extra per everyday task (${ut.A.mean_s} s → ${ut.C.mean_s} s)` : 'extra per everyday task'}
             </div>
           </div>
         </div>
-        <p className="m-0 text-[14px] text-[#8B95A7]">
+        <p className="m-0 text-[14px] text-fg-3">
           {failed ? 'The results file could not be loaded. ' : ''}In our tests with local AI models.{' '}
           <Link id="see-results" to="/results" className="inline-flex items-center min-h-[44px]">
             See the full results

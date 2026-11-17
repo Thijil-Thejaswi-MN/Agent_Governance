@@ -45,11 +45,11 @@ interface NavItem {
 }
 
 const ROLE_COLORS: Record<Role, { text: string; bg: string; dot: string; title: string }> = {
-  developer: { text: '#60A5FA', bg: 'rgba(96,165,250,0.15)', dot: '#60A5FA', title: 'Developer' },
-  team_lead: { text: '#A78BFA', bg: 'rgba(167,139,250,0.15)', dot: '#A78BFA', title: 'Team lead' },
-  security_reviewer: { text: '#FBBF24', bg: 'rgba(251,191,36,0.15)', dot: '#FBBF24', title: 'Security reviewer' },
-  admin: { text: '#34D399', bg: 'rgba(52,211,153,0.15)', dot: '#34D399', title: 'Admin' },
-  auditor: { text: '#F472B6', bg: 'rgba(244,114,182,0.15)', dot: '#F472B6', title: 'Auditor' },
+  developer: { text: 'var(--role-developer)', bg: 'rgba(var(--role-developer-rgb) / 0.15)', dot: 'var(--role-developer)', title: 'Developer' },
+  team_lead: { text: 'var(--role-team-lead)', bg: 'rgba(var(--role-team-lead-rgb) / 0.15)', dot: 'var(--role-team-lead)', title: 'Team lead' },
+  security_reviewer: { text: 'var(--role-security-reviewer)', bg: 'rgba(var(--role-security-reviewer-rgb) / 0.15)', dot: 'var(--role-security-reviewer)', title: 'Security reviewer' },
+  admin: { text: 'var(--role-admin)', bg: 'rgba(var(--role-admin-rgb) / 0.15)', dot: 'var(--role-admin)', title: 'Admin' },
+  auditor: { text: 'var(--role-auditor)', bg: 'rgba(var(--role-auditor-rgb) / 0.15)', dot: 'var(--role-auditor)', title: 'Auditor' },
 };
 
 // Roles the server lets start a run (PermissionMatrix.can_start_run).
@@ -97,9 +97,9 @@ export const Sidebar: React.FC<{
   if (signedIn && currentRole === 'admin') add('overview', { to: '/overview', label: 'Overview', icon: icon(Layers), end: true });
   if (signedIn && currentRole === 'team_lead') add('overview', { to: '/team', label: 'Team overview', icon: icon(Layers), end: true });
   if (signedIn) add('inventory', { to: '/inventory', label: 'Agents', icon: icon(Bot) });
-  if (signedIn && currentRole === 'admin') add('governance', { to: '/inbox', label: 'Approvals', icon: icon(Inbox), ...waitingBadge('#F59E0B') });
-  if (signedIn && currentRole === 'team_lead') add('governance', { to: '/inbox', label: 'Needs you', icon: icon(AlertOctagon), ...waitingBadge('#F59E0B') });
-  if (signedIn && currentRole === 'security_reviewer') add('governance', { to: '/inbox', label: 'Inbox', icon: icon(Inbox), end: true, ...waitingBadge('#FBBF24') });
+  if (signedIn && currentRole === 'admin') add('governance', { to: '/inbox', label: 'Approvals', icon: icon(Inbox), ...waitingBadge('var(--wait)') });
+  if (signedIn && currentRole === 'team_lead') add('governance', { to: '/inbox', label: 'Needs you', icon: icon(AlertOctagon), ...waitingBadge('var(--wait)') });
+  if (signedIn && currentRole === 'security_reviewer') add('governance', { to: '/inbox', label: 'Inbox', icon: icon(Inbox), end: true, ...waitingBadge('var(--wait-kpi)') });
   if (signedIn && ['admin', 'security_reviewer', 'auditor'].includes(currentRole))
     add('governance', { to: '/standing-rules', label: 'Policies', icon: icon(Sliders) });
   // Run only where the server lets the role start one.
@@ -113,7 +113,7 @@ export const Sidebar: React.FC<{
       to: '/records',
       label: 'Records',
       icon: icon(FileText),
-      ...(currentRole === 'auditor' ? { badge: totalTasks > 0 ? totalTasks : undefined, badgeColor: '#8B95A7', end: true } : {}),
+      ...(currentRole === 'auditor' ? { badge: totalTasks > 0 ? totalTasks : undefined, badgeColor: 'var(--text-3)', end: true } : {}),
     });
   add('audit', { to: '/results', label: 'Results', icon: icon(BarChart3) });
   // The recorded trials behind the results (the server serves them to signed-in users).
@@ -123,7 +123,7 @@ export const Sidebar: React.FC<{
   const tooltip = (text: string) => (
     <span
       aria-hidden="true"
-      className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50 whitespace-nowrap rounded-md border border-[#2A3344] bg-[#1A2232] px-2 py-1 text-[12px] font-medium text-[#E6E9EF] opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+      className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50 whitespace-nowrap rounded-md border border-line-strong bg-surface-hover px-2 py-1 text-[12px] font-medium text-fg opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
     >
       {text}
     </span>
@@ -143,25 +143,25 @@ export const Sidebar: React.FC<{
             collapsed ? 'justify-center w-11 h-11 mx-auto' : 'gap-3 px-3 min-h-[44px] md:min-h-[40px]'
           } ${
             isActive
-              ? 'bg-[#1A2232] text-[#E6E9EF] font-semibold'
-              : 'text-[#A7B0C0] hover:bg-[#141A24] hover:text-[#E6E9EF]'
+              ? 'bg-surface-hover text-fg font-semibold'
+              : 'text-fg-2 hover:bg-surface-navHover hover:text-fg'
           }`
         }
       >
         {({ isActive }) => (
           <>
             {collapsed && isActive && (
-              <span aria-hidden="true" className="absolute left-[-8px] top-2 bottom-2 w-[3px] rounded-full bg-[#3B82F6]" />
+              <span aria-hidden="true" className="absolute left-[-8px] top-2 bottom-2 w-[3px] rounded-full bg-accent" />
             )}
-            <span className={`relative flex-shrink-0 ${isActive ? 'text-[#E6E9EF]' : 'text-[#8B95A7]'}`}>
+            <span className={`relative flex-shrink-0 ${isActive ? 'text-fg' : 'text-fg-3'}`}>
               {item.icon}
               {collapsed && item.badge !== undefined && (
                 <span
                   aria-hidden="true"
                   className="absolute -top-2 -right-2.5 min-w-[16px] h-4 px-1 rounded-full text-[10px] leading-4 font-bold text-center"
                   style={{
-                    background: item.badgeColor || '#2A3344',
-                    color: item.badgeColor === '#F59E0B' || item.badgeColor === '#FBBF24' ? '#1A1203' : '#0B0E14',
+                    background: item.badgeColor || 'var(--line-strong)',
+                    color: item.badgeColor === 'var(--wait)' || item.badgeColor === 'var(--wait-kpi)' ? 'var(--wait-badge-text)' : 'var(--bg)',
                   }}
                 >
                   {item.badge}
@@ -177,8 +177,8 @@ export const Sidebar: React.FC<{
                   <span
                     className="ml-auto px-2 py-0.5 rounded-full text-[11px] font-bold"
                     style={{
-                      background: item.badgeColor || '#2A3344',
-                      color: item.badgeColor === '#F59E0B' || item.badgeColor === '#FBBF24' ? '#1A1203' : '#0B0E14',
+                      background: item.badgeColor || 'var(--line-strong)',
+                      color: item.badgeColor === 'var(--wait)' || item.badgeColor === 'var(--wait-kpi)' ? 'var(--wait-badge-text)' : 'var(--bg)',
                     }}
                   >
                     {item.badge}
@@ -199,8 +199,8 @@ export const Sidebar: React.FC<{
       id={isDrawer ? undefined : 'sidebar-rail'}
       className={
         isDrawer
-          ? 'relative flex w-[280px] max-w-[85vw] h-full bg-[#0E121A] border-r border-[#1F2633] p-4 flex-col gap-4 overflow-y-auto anim-drawer-left'
-          : `hidden md:flex flex-shrink-0 sticky top-0 z-40 h-screen bg-[#0E121A] border-r border-[#1F2633] flex-col gap-4 transition-[width] duration-200 ${
+          ? 'relative flex w-[280px] max-w-[85vw] h-full bg-surface-1 border-r border-line p-4 flex-col gap-4 overflow-y-auto anim-drawer-left'
+          : `hidden md:flex flex-shrink-0 sticky top-0 z-40 h-screen bg-surface-1 border-r border-line flex-col gap-4 transition-[width] duration-200 ${
               collapsed ? 'w-16 px-2 py-4 overflow-visible' : 'w-64 p-4 overflow-y-auto'
             }`
       }
@@ -218,7 +218,7 @@ export const Sidebar: React.FC<{
             aria-label={toggleLabel}
             aria-expanded={!collapsed}
             aria-controls="sidebar-rail"
-            className={`group relative inline-flex items-center justify-center w-10 h-10 md:w-9 md:h-9 rounded-lg text-[#A7B0C0] hover:text-[#E6E9EF] hover:bg-[#1A2232] bg-transparent border-none cursor-pointer flex-shrink-0 ${
+            className={`group relative inline-flex items-center justify-center w-10 h-10 md:w-9 md:h-9 rounded-lg text-fg-2 hover:text-fg hover:bg-surface-hover bg-transparent border-none cursor-pointer flex-shrink-0 ${
               collapsed ? '' : 'order-last ml-auto'
             }`}
           >
@@ -226,13 +226,13 @@ export const Sidebar: React.FC<{
             {collapsed && tooltip(toggleLabel)}
           </button>
         )}
-        <div className="w-8 h-8 rounded-lg bg-[#3B82F6] flex items-center justify-center text-white shadow-sm flex-shrink-0" aria-hidden={collapsed ? 'true' : undefined}>
+        <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center text-white shadow-sm flex-shrink-0" aria-hidden={collapsed ? 'true' : undefined}>
           <Shield className="w-4 h-4" />
         </div>
         {!collapsed && (
           <div className="min-w-0 flex-1">
-            <div className="font-bold text-[14px] text-[#E6E9EF] tracking-tight truncate">Agent Governance</div>
-            <div className="text-[12px] text-[#8B95A7] truncate">{team ? `${team} team` : 'Organization'}</div>
+            <div className="font-bold text-[14px] text-fg tracking-tight truncate">Agent Governance</div>
+            <div className="text-[12px] text-fg-3 truncate">{team ? `${team} team` : 'Organization'}</div>
           </div>
         )}
         {isDrawer && (
@@ -240,7 +240,7 @@ export const Sidebar: React.FC<{
             type="button"
             onClick={onClose}
             aria-label="Close menu"
-            className="inline-flex items-center justify-center w-11 h-11 rounded-lg text-[#A7B0C0] hover:text-[#E6E9EF] hover:bg-[#1A2232] bg-transparent border-none cursor-pointer"
+            className="inline-flex items-center justify-center w-11 h-11 rounded-lg text-fg-2 hover:text-fg hover:bg-surface-hover bg-transparent border-none cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -252,9 +252,9 @@ export const Sidebar: React.FC<{
         {groups.map((g, gi) => (
           <div key={g.key} role="group" aria-label={g.label} data-nav-group={g.key} className="flex flex-col gap-1">
             {collapsed ? (
-              gi > 0 && <div aria-hidden="true" className="mx-3 my-1.5 border-t border-[#1F2633]" />
+              gi > 0 && <div aria-hidden="true" className="mx-3 my-1.5 border-t border-line" />
             ) : (
-              <div className={`px-3 ${gi > 0 ? 'pt-3' : 'pt-1'} pb-1 text-[11px] font-semibold uppercase tracking-wider text-[#8B95A7]`} aria-hidden="true">
+              <div className={`px-3 ${gi > 0 ? 'pt-3' : 'pt-1'} pb-1 text-[11px] font-semibold uppercase tracking-wider text-fg-3`} aria-hidden="true">
                 {g.label}
               </div>
             )}
@@ -266,14 +266,14 @@ export const Sidebar: React.FC<{
       {/* User Chip, or sign-in when there is no session */}
       {hasToken ? (
         <div
-          className={`mt-auto flex items-center gap-2 rounded-xl bg-[#11151D] border border-[#1F2633] ${
+          className={`mt-auto flex items-center gap-2 rounded-xl bg-surface-2 border border-line ${
             collapsed ? 'flex-col p-1.5' : 'justify-between p-2'
           }`}
         >
           <div className="group relative flex items-center gap-2.5 min-w-0">
             <span
               aria-hidden="true"
-              className="flex-none w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-bold text-[#0B0E14]"
+              className="flex-none w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-bold text-bg"
               style={{ background: roleCfg.dot }}
             >
               {initials}
@@ -287,7 +287,7 @@ export const Sidebar: React.FC<{
               </>
             ) : (
               <div className="min-w-0">
-                <div className="font-semibold text-[13px] text-[#E6E9EF] truncate">{user?.name || 'Local Operator'}</div>
+                <div className="font-semibold text-[13px] text-fg truncate">{user?.name || 'Local Operator'}</div>
                 <div className="text-[11px] font-medium truncate" style={{ color: roleCfg.text }}>
                   {roleCfg.title} {team ? `· ${team}` : ''}
                 </div>
@@ -299,7 +299,7 @@ export const Sidebar: React.FC<{
             id={isDrawer ? undefined : 'sign-out-btn'}
             aria-label="Sign out"
             title="Sign out"
-            className="inline-flex items-center justify-center w-11 h-11 md:w-9 md:h-9 rounded-lg text-[#8B95A7] hover:text-[#E6E9EF] hover:bg-[#1A2232] transition-colors border-none bg-transparent cursor-pointer"
+            className="inline-flex items-center justify-center w-11 h-11 md:w-9 md:h-9 rounded-lg text-fg-3 hover:text-fg hover:bg-surface-hover transition-colors border-none bg-transparent cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
           </button>
@@ -311,7 +311,7 @@ export const Sidebar: React.FC<{
           onClick={onClose}
           aria-label={collapsed ? 'Sign in' : undefined}
           className={`group relative mt-auto btn-ghost min-h-[44px] ${collapsed ? 'w-11 px-0 mx-auto' : 'w-full'}`}
-          style={{ borderColor: 'rgba(245,158,11,0.45)', color: '#FCD34D' }}
+          style={{ borderColor: 'rgb(var(--wait-rgb) / 0.45)', color: 'var(--wait-text)' }}
         >
           <KeyRound className="w-4 h-4" />
           {collapsed ? tooltip('Sign in') : 'Sign in'}

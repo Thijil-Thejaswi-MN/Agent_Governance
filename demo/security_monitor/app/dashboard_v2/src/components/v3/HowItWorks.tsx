@@ -15,7 +15,7 @@ const Arrow: React.FC = () => (
   </div>
 );
 
-const Step: React.FC<{ title: string; body: string; accent?: string }> = ({ title, body, accent = '#60A5FA' }) => (
+const Step: React.FC<{ title: string; body: string; accent?: string }> = ({ title, body, accent = 'var(--info)' }) => (
   <div className="px-5 py-4 text-center" style={box}>
     <div className="font-display text-[18px] font-bold" style={{ color: accent }}>
       {title}
@@ -54,7 +54,7 @@ export const HowItWorks: React.FC = () => {
         <Step title="We draw the fence" body="The files it may read and write and the tools it may use. No network unless the request needs it." />
         <Arrow />
         <div className="p-4 rounded-xl space-y-3" style={{ border: '2px dashed rgba(59,130,246,0.6)' }} aria-label="The agent works inside two layers">
-          <div className="text-center text-[14px] font-semibold" style={{ color: '#93C5FD' }}>
+          <div className="text-center text-[14px] font-semibold" style={{ color: 'var(--info-text)' }}>
             The agent works inside the fence
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -74,8 +74,8 @@ export const HowItWorks: React.FC = () => {
         </div>
         <Arrow />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Step title="You decide extras" body="A request for anything more waits for you. If nobody answers in time, it stays blocked." accent="#FBBF24" />
-          <Step title="A record of every run" body="Checking the record shows whether any entry was changed afterwards." accent="#4ADE80" />
+          <Step title="You decide extras" body="A request for anything more waits for you. If nobody answers in time, it stays blocked." accent="var(--wait-kpi)" />
+          <Step title="A record of every run" body="Checking the record shows whether any entry was changed afterwards." accent="var(--ok-light)" />
         </div>
       </div>
 

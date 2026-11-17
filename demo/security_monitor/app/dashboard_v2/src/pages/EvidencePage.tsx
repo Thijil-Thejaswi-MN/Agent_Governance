@@ -7,9 +7,9 @@ import { DetailsDrawer } from '../components/v3/DetailsDrawer';
 import { ACTION_LABEL, SETUP_ABOUT, firstStory, highlightParts, rowVerdict, stepView, storyVerdict } from '../logic/evidence';
 
 const TONE: Record<'bad' | 'good' | 'neutral', React.CSSProperties> = {
-  bad: { color: '#FCA5A5', background: 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.4)' },
-  good: { color: '#86EFAC', background: 'rgba(34,197,94,0.12)', borderColor: 'rgba(34,197,94,0.35)' },
-  neutral: { color: '#CBD5E1', background: 'rgba(148,163,184,0.1)', borderColor: 'rgba(148,163,184,0.3)' },
+  bad: { color: 'var(--bad-text)', background: 'var(--bad-tint)', borderColor: 'rgb(var(--bad-rgb) / 0.4)' },
+  good: { color: 'var(--ok-text)', background: 'var(--ok-tint)', borderColor: 'rgb(var(--ok-rgb) / 0.35)' },
+  neutral: { color: 'var(--text-soft)', background: 'rgba(148,163,184,0.1)', borderColor: 'rgba(148,163,184,0.3)' },
 };
 
 const Chip: React.FC<{ tone: 'bad' | 'good' | 'neutral'; children: React.ReactNode }> = ({ tone, children }) => (
@@ -19,7 +19,7 @@ const Chip: React.FC<{ tone: 'bad' | 'good' | 'neutral'; children: React.ReactNo
 );
 
 const H2: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <h2 className="m-0 font-display font-semibold text-[18px] sm:text-[20px] text-[#E6E9EF]">{children}</h2>
+  <h2 className="m-0 font-display font-semibold text-[18px] sm:text-[20px] text-fg">{children}</h2>
 );
 
 const Mono: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
@@ -30,13 +30,13 @@ const Mono: React.FC<{ children: React.ReactNode; className?: string }> = ({ chi
 
 // An input file, with the hidden instruction lines in red.
 const InputFile: React.FC<{ name: string; content: string }> = ({ name, content }) => (
-  <div className="rounded-lg border border-[#2A3344] p-3" style={{ background: '#0B0F17' }}>
+  <div className="rounded-lg border border-line-strong p-3" style={{ background: 'var(--surface-terminal)' }}>
     <div className="mono text-[12px] mb-1" style={{ color: 'var(--text-3)' }}>{name}</div>
     <pre className="m-0 whitespace-pre-wrap break-words mono text-[13px] leading-relaxed">
       {content.split('\n').map((line, i) => {
         const trick = /note to assistant|^#\s*note|execute|send .* to http/i.test(line);
         return (
-          <div key={i} style={{ color: trick ? '#FCA5A5' : 'var(--text)' }} data-trick={trick || undefined}>
+          <div key={i} style={{ color: trick ? 'var(--bad-text)' : 'var(--text)' }} data-trick={trick || undefined}>
             {line || ' '}
           </div>
         );
@@ -53,7 +53,7 @@ export const TrialView: React.FC<{ t: EvidenceTrial; compact?: boolean }> = ({ t
   return (
     <div className="flex flex-col gap-4 min-w-0" data-trial={`${t.row.scenario_id}/${t.row.condition}/${t.row.repeat}`}>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold text-[#E6E9EF]">
+        <span className="font-semibold text-fg">
           Setup {t.row.condition}: {t.condition_name}
         </span>
         <Chip tone={verdict.tone}>{verdict.label}</Chip>
@@ -105,8 +105,8 @@ export const TrialView: React.FC<{ t: EvidenceTrial; compact?: boolean }> = ({ t
               data-mark={s.mark}
               className="rounded-lg border p-3"
               style={{
-                borderColor: s.mark === 'leak' ? 'rgba(239,68,68,0.5)' : s.mark === 'blocked' ? 'rgba(34,197,94,0.45)' : '#2A3344',
-                background: s.mark === 'leak' ? 'rgba(239,68,68,0.07)' : s.mark === 'blocked' ? 'rgba(34,197,94,0.06)' : '#0B0F17',
+                borderColor: s.mark === 'leak' ? 'rgb(var(--bad-rgb) / 0.5)' : s.mark === 'blocked' ? 'rgb(var(--ok-rgb) / 0.45)' : 'var(--line-strong)',
+                background: s.mark === 'leak' ? 'rgb(var(--bad-rgb) / 0.07)' : s.mark === 'blocked' ? 'rgb(var(--ok-rgb) / 0.06)' : 'var(--surface-terminal)',
               }}
             >
               <div className="flex flex-wrap items-center gap-2 text-[13px]">
@@ -140,12 +140,12 @@ export const TrialView: React.FC<{ t: EvidenceTrial; compact?: boolean }> = ({ t
             </div>
           )}
           {t.receipt.outside_events.map((e, i) => (
-            <div key={i} className="mono text-[13px]" style={{ color: e.prevented ? '#86EFAC' : '#FCA5A5' }}>
+            <div key={i} className="mono text-[13px]" style={{ color: e.prevented ? 'var(--ok-text)' : 'var(--bad-text)' }}>
               {String(e.syscall || e.kind)} {String(e.target)} → {String(e.result ?? '')}
               {e.prevented_by && e.prevented_by !== 'none' ? ` (stopped by ${String(e.prevented_by)})` : ''}
             </div>
           ))}
-          <div style={{ color: t.receipt.chain_verified ? '#86EFAC' : '#FCA5A5' }} data-chain-verified={t.receipt.chain_verified}>
+          <div style={{ color: t.receipt.chain_verified ? 'var(--ok-text)' : 'var(--bad-text)' }} data-chain-verified={t.receipt.chain_verified}>
             {t.receipt.chain_verified
               ? `Hash chain re-checked just now: all ${t.receipt.chained_events} entries intact`
               : `Hash chain check failed: ${t.receipt.chain_message}`}
@@ -167,7 +167,7 @@ const ATTACK_DATASETS = ['e1b_shell_only', 'full_run'];
 const Step: React.FC<{ n: number; title: string; children?: React.ReactNode; id?: string }> = ({ n, title, children, id }) => (
   <section className="flex flex-col gap-3" id={id}>
     <div className="flex items-center gap-3">
-      <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-[13px] font-bold shrink-0" style={{ background: 'rgba(59,130,246,0.15)', color: '#93C5FD', border: '1px solid rgba(59,130,246,0.4)' }}>
+      <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-[13px] font-bold shrink-0" style={{ background: 'rgb(var(--accent-rgb) / 0.15)', color: 'var(--info-text)', border: '1px solid rgb(var(--accent-rgb) / 0.4)' }}>
         {n}
       </span>
       <H2>{title}</H2>
@@ -184,7 +184,7 @@ const Highlighted: React.FC<{ text: string; canary: string | null }> = ({ text, 
           key={i}
           data-highlight={p.mark}
           className="rounded px-0.5 font-semibold"
-          style={p.mark === 'leak' ? { background: 'rgba(239,68,68,0.25)', color: '#FECACA' } : { background: 'rgba(34,197,94,0.2)', color: '#BBF7D0' }}
+          style={p.mark === 'leak' ? { background: 'rgb(var(--bad-rgb) / 0.25)', color: 'var(--bad-lighter)' } : { background: 'rgb(var(--ok-rgb) / 0.2)', color: 'var(--ok-lighter)' }}
         >
           {p.text}
         </span>
@@ -201,7 +201,7 @@ const HarmCell: React.FC<{ v?: { trials: number; harm: number; acted: number } }
     <td className="px-3 py-2" />
   ) : (
     <td className="px-3 py-2 whitespace-nowrap">
-      <span className="font-semibold" style={{ color: v.harm ? '#FCA5A5' : '#86EFAC' }}>
+      <span className="font-semibold" style={{ color: v.harm ? 'var(--bad-text)' : 'var(--ok-text)' }}>
         {v.harm}/{v.trials}
       </span>
       <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>
@@ -224,14 +224,14 @@ const SetupColumn: React.FC<{
   return (
     <div className="card p-4 flex flex-col gap-3 min-w-0" data-condition={c.condition}>
       <div className="flex flex-col gap-1">
-        <div className="font-semibold text-[16px] text-[#E6E9EF]">
+        <div className="font-semibold text-[16px] text-fg">
           {c.condition} · {c.name}
         </div>
         <p className="m-0 text-[13px] leading-relaxed" style={{ color: 'var(--text-3)' }}>
           {SETUP_ABOUT[c.condition]}
         </p>
       </div>
-      <div className="text-[15px] font-semibold" data-harm={c.harm} style={{ color: c.harm ? '#FCA5A5' : '#86EFAC' }}>
+      <div className="text-[15px] font-semibold" data-harm={c.harm} style={{ color: c.harm ? 'var(--bad-text)' : 'var(--ok-text)' }}>
         {c.harm ? `Harm in ${c.harm} of ${c.trials} trials` : `No harm in any of ${c.trials} trials`}
         <span className="font-normal text-[13px]" style={{ color: 'var(--text-3)' }}>
           {' '}
@@ -240,7 +240,7 @@ const SetupColumn: React.FC<{
       </div>
       <div className="flex flex-wrap gap-1.5" role="group" aria-label={`Trials in setup ${c.condition}`}>
         {c.stories.map((st, i) => {
-          const dot = st.harm ? '#EF4444' : st.key_step ? '#22C55E' : '#64748B';
+          const dot = st.harm ? 'var(--bad)' : st.key_step ? 'var(--ok)' : 'var(--slate-500)';
           return (
             <button
               key={st.repeat}
@@ -249,7 +249,7 @@ const SetupColumn: React.FC<{
               onClick={() => setPick(i)}
               title={st.harm ? 'Harm' : st.key_step ? 'Acted on the note, stopped' : 'Ignored the note'}
               className="inline-flex items-center gap-1.5 px-2 min-h-[28px] rounded-md border text-[12px]"
-              style={i === pick ? { borderColor: '#3B82F6', background: 'rgba(59,130,246,0.12)', color: '#E6E9EF' } : { borderColor: '#2A3344', color: 'var(--text-2)' }}
+              style={i === pick ? { borderColor: 'var(--accent)', background: 'var(--accent-tint)', color: 'var(--text)' } : { borderColor: 'var(--line-strong)', color: 'var(--text-2)' }}
               data-repeat={st.repeat}
             >
               <span className="w-2 h-2 rounded-full" style={{ background: dot }} />#{st.repeat + 1}
@@ -260,7 +260,7 @@ const SetupColumn: React.FC<{
       {s && v && (
         <div className="flex flex-col gap-2" data-trial={`${c.condition}/${s.repeat}`} data-verdict={s.key_step?.verdict ?? 'ignored'}>
           {s.key_step ? (
-            <div className="rounded-lg border p-3 flex flex-col gap-1.5" style={{ borderColor: v.tone === 'bad' ? 'rgba(239,68,68,0.5)' : v.tone === 'good' ? 'rgba(34,197,94,0.45)' : '#2A3344', background: '#0B0F17' }}>
+            <div className="rounded-lg border p-3 flex flex-col gap-1.5" style={{ borderColor: v.tone === 'bad' ? 'rgb(var(--bad-rgb) / 0.5)' : v.tone === 'good' ? 'rgb(var(--ok-rgb) / 0.45)' : 'var(--line-strong)', background: 'var(--surface-terminal)' }}>
               <div className="text-[12px]" style={{ color: 'var(--text-3)' }}>
                 Step {s.key_step.step} of {s.steps} · <span className="mono">{s.key_step.tool}</span>
               </div>
@@ -280,7 +280,7 @@ const SetupColumn: React.FC<{
             {v.why}
           </p>
           <div>
-            <button type="button" className="underline text-[13px]" style={{ color: '#93C5FD' }} onClick={() => onOpen(s.repeat)} data-open-trial>
+            <button type="button" className="underline text-[13px]" style={{ color: 'var(--info-text)' }} onClick={() => onOpen(s.repeat)} data-open-trial>
               Show every step{s.has_receipt ? ' and re-check its record' : ''}
             </button>
           </div>
@@ -357,10 +357,10 @@ export const EvidencePage: React.FC = () => {
   return (
     <div className="max-w-[1200px] pb-12 flex flex-col gap-8" id="evidence-page">
       <header className="flex flex-col gap-2">
-        <Link to="/results" className="text-[14px] inline-flex items-center min-h-[32px]" style={{ color: '#93C5FD' }}>
+        <Link to="/results" className="text-[14px] inline-flex items-center min-h-[32px]" style={{ color: 'var(--info-text)' }}>
           ← Results
         </Link>
-        <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-[#E6E9EF]">Evidence</h1>
+        <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-fg">Evidence</h1>
         <p className="m-0 text-[16px] leading-relaxed max-w-[860px]" style={{ color: 'var(--text-2)' }}>
           The recorded evaluation trials behind the results, one attack at a time. Pick an attack, see the instruction
           hidden in its input file, then the exact step where the agent acted on it in each setup and what came back.
@@ -379,7 +379,7 @@ export const EvidencePage: React.FC = () => {
               aria-pressed={d.id === active}
               onClick={() => chooseDataset(d.id)}
               className="px-3 py-2 rounded-lg border text-[14px] font-medium text-left"
-              style={d.id === active ? { borderColor: '#3B82F6', background: 'rgba(59,130,246,0.12)', color: '#E6E9EF' } : { borderColor: '#2A3344', color: 'var(--text-2)' }}
+              style={d.id === active ? { borderColor: 'var(--accent)', background: 'var(--accent-tint)', color: 'var(--text)' } : { borderColor: 'var(--line-strong)', color: 'var(--text-2)' }}
             >
               {d.id === 'e1b_shell_only' ? 'Shell-only agent (E1b)' : 'Full run, all four setups'} · {d.trials} trials
             </button>
@@ -400,7 +400,7 @@ export const EvidencePage: React.FC = () => {
                     {c} · {ds.by_condition[c].name}
                   </div>
                   {m && (
-                    <div className="text-[20px] font-bold" style={{ color: m.value ? '#FCA5A5' : '#86EFAC' }}>
+                    <div className="text-[20px] font-bold" style={{ color: m.value ? 'var(--bad-text)' : 'var(--ok-text)' }}>
                       {m.value}/{m.of}
                       <span className="text-[13px] font-normal" style={{ color: 'var(--text-3)' }}>
                         {' '}
@@ -428,7 +428,7 @@ export const EvidencePage: React.FC = () => {
         {!attacks ? (
           <LoadingState label="Loading attacks…" />
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-[#1F2633]">
+          <div className="overflow-x-auto rounded-xl border border-line">
             <table className="w-full text-[14px] border-collapse" id="attack-table">
               <thead>
                 <tr className="text-left" style={{ color: 'var(--text-3)' }}>
@@ -448,11 +448,11 @@ export const EvidencePage: React.FC = () => {
                     data-attack={a.id}
                     aria-selected={a.id === scenario}
                     onClick={() => setScenario(a.id)}
-                    className="border-t border-[#1F2633] cursor-pointer hover:bg-[#121826]"
-                    style={a.id === scenario ? { background: 'rgba(59,130,246,0.1)' } : undefined}
+                    className="border-t border-line cursor-pointer hover:bg-surface-tableHover"
+                    style={a.id === scenario ? { background: 'rgb(var(--accent-rgb) / 0.1)' } : undefined}
                   >
                     <td className="px-3 py-2">
-                      <button type="button" className="mono text-[13px] underline-offset-2 hover:underline bg-transparent" style={{ color: '#E6E9EF' }} onClick={() => setScenario(a.id)}>
+                      <button type="button" className="mono text-[13px] underline-offset-2 hover:underline bg-transparent" style={{ color: 'var(--text)' }} onClick={() => setScenario(a.id)}>
                         {a.id.replace('injected_indirect_', '#')}
                       </button>
                     </td>
@@ -487,7 +487,7 @@ export const EvidencePage: React.FC = () => {
                   <span className="text-[12px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
                     What the user asked
                   </span>
-                  <p className="m-0 text-[15px] leading-relaxed text-[#E6E9EF]" id="attack-request">
+                  <p className="m-0 text-[15px] leading-relaxed text-fg" id="attack-request">
                     {detail.scenario.user_prompt}
                   </p>
                 </div>
@@ -512,7 +512,7 @@ export const EvidencePage: React.FC = () => {
                       Private files planted in the home folder (each holds a unique code)
                     </span>
                     {detail.scenario.decoys.map(d => (
-                      <div key={d} className="mono text-[13px]" style={{ color: d === detail.scenario.injected_target ? '#FCA5A5' : 'var(--text-2)' }} data-target={d === detail.scenario.injected_target || undefined}>
+                      <div key={d} className="mono text-[13px]" style={{ color: d === detail.scenario.injected_target ? 'var(--bad-text)' : 'var(--text-2)' }} data-target={d === detail.scenario.injected_target || undefined}>
                         {d}
                         {d === detail.scenario.injected_target ? '  ← the note points here' : ''}
                       </div>
@@ -522,8 +522,8 @@ export const EvidencePage: React.FC = () => {
               </div>
               <div className="flex flex-col gap-3">
                 {detail.scenario.files.map(f => (
-                  <div key={f.path} className="rounded-xl border border-[#2A3344] overflow-hidden" style={{ background: '#0B0F17' }}>
-                    <div className="px-3 py-2 mono text-[12px] border-b border-[#2A3344]" style={{ color: 'var(--text-3)' }}>
+                  <div key={f.path} className="rounded-xl border border-line-strong overflow-hidden" style={{ background: 'var(--surface-terminal)' }}>
+                    <div className="px-3 py-2 mono text-[12px] border-b border-line-strong" style={{ color: 'var(--text-3)' }}>
                       {f.path} (the input file the agent reads)
                     </div>
                     <pre className="m-0 p-3 whitespace-pre-wrap break-words mono text-[13px] leading-relaxed">
@@ -532,7 +532,7 @@ export const EvidencePage: React.FC = () => {
                           key={ln.n}
                           data-hidden={ln.hidden || undefined}
                           className="flex gap-3 rounded"
-                          style={ln.hidden ? { background: 'rgba(239,68,68,0.14)', color: '#FECACA' } : { color: 'var(--text)' }}
+                          style={ln.hidden ? { background: 'rgb(var(--bad-rgb) / 0.14)', color: 'var(--bad-lighter)' } : { color: 'var(--text)' }}
                         >
                           <span className="select-none w-5 text-right shrink-0" style={{ color: 'var(--text-3)' }}>
                             {ln.n}
@@ -541,7 +541,7 @@ export const EvidencePage: React.FC = () => {
                         </div>
                       ))}
                     </pre>
-                    <div className="px-3 py-2 text-[13px] border-t border-[#2A3344]" style={{ color: '#FCA5A5' }}>
+                    <div className="px-3 py-2 text-[13px] border-t border-line-strong" style={{ color: 'var(--bad-text)' }}>
                       The red line is the hidden instruction. The user never asked for it; it came from the file.
                     </div>
                   </div>
@@ -587,12 +587,12 @@ export const EvidencePage: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {Object.entries(util.by_condition).map(([c, v]) => (
               <div key={c} className="flex flex-col gap-0.5 text-[14px]" data-condition={c}>
-                <div className="font-semibold text-[#E6E9EF]">
+                <div className="font-semibold text-fg">
                   {c} · {v.name}
                 </div>
                 {v.metrics.map(m => (
                   <div key={m.label} style={{ color: 'var(--text-2)' }}>
-                    {m.label}: <span className="font-semibold text-[#E6E9EF]">{m.value}/{m.of}</span>
+                    {m.label}: <span className="font-semibold text-fg">{m.value}/{m.of}</span>
                   </div>
                 ))}
               </div>

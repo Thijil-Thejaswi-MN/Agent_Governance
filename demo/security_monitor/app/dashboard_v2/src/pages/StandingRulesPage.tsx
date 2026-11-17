@@ -13,7 +13,7 @@ const EMPTY_DRAFT: RuleDraft = { agent_or_profile: '*', action: 'file_read', tar
 const STATE_LABEL = { active: 'Active', expired: 'Expired', switched_off: 'Switched off' } as const;
 
 const fieldCls =
-  'w-full min-w-0 min-h-[44px] px-3 rounded-lg bg-[#0E121A] border border-[#2A3344] text-[15px] text-[#E6E9EF] focus:outline-none focus:border-[#3B82F6]';
+  'w-full min-w-0 min-h-[44px] px-3 rounded-lg bg-surface-1 border border-line-strong text-[15px] text-fg focus:outline-none focus:border-accent';
 
 export const StandingRulesPage: React.FC = () => {
   const { role } = useAuth();
@@ -83,7 +83,7 @@ export const StandingRulesPage: React.FC = () => {
   return (
     <div className="max-w-[960px] pb-12 flex flex-col gap-6">
       <header className="flex flex-col gap-2">
-        <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-[#E6E9EF]">Policies</h1>
+        <h1 className="m-0 font-display font-bold text-[28px] sm:text-[32px] leading-[1.15] text-fg">Policies</h1>
         <p className="m-0 text-[16px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
           Standing rules decide requests that would otherwise wait for a person. High-risk requests, and requests
           that a file the agent read may have prompted, always go to a person.
@@ -96,8 +96,8 @@ export const StandingRulesPage: React.FC = () => {
         className="rounded-xl px-4 py-3 text-[14px] leading-relaxed"
         style={
           enabled
-            ? { background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.3)', color: '#BBF7D0' }
-            : { background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', color: '#FDE68A' }
+            ? { background: 'rgb(var(--ok-rgb) / 0.08)', border: '1px solid rgb(var(--ok-rgb) / 0.3)', color: 'var(--ok-lighter)' }
+            : { background: 'rgb(var(--wait-rgb) / 0.08)', border: '1px solid rgb(var(--wait-rgb) / 0.3)', color: 'var(--wait-lighter)' }
         }
       >
         {enabled
@@ -115,7 +115,7 @@ export const StandingRulesPage: React.FC = () => {
           aria-label="Add a rule"
           className="card p-5 flex flex-col gap-4"
         >
-          <h2 className="m-0 text-[17px] font-semibold text-[#E6E9EF]">Add a rule</h2>
+          <h2 className="m-0 text-[17px] font-semibold text-fg">Add a rule</h2>
           {prefilled && (
             <p id="rule-prefilled" className="m-0 text-[14px]" style={{ color: 'var(--text-2)' }}>
               Filled in from a blocked action. Check it, then save.
@@ -169,7 +169,7 @@ export const StandingRulesPage: React.FC = () => {
                 <label
                   key={r.value}
                   className={`inline-flex items-center gap-2 min-h-[44px] px-4 rounded-lg border cursor-pointer text-[14px] font-medium ${
-                    draft.response === r.value ? 'border-[#3B82F6] bg-[#3B82F6]/10 text-[#E6E9EF]' : 'border-[#2A3344] text-[#A7B0C0]'
+                    draft.response === r.value ? 'border-accent bg-accent/10 text-fg' : 'border-line-strong text-fg-2'
                   }`}
                   title={r.hint}
                 >
@@ -179,7 +179,7 @@ export const StandingRulesPage: React.FC = () => {
                     value={r.value}
                     checked={draft.response === r.value}
                     onChange={() => setDraft({ ...draft, response: r.value })}
-                    className="accent-[#3B82F6]"
+                    className="accent-accent"
                   />
                   {r.label}
                 </label>
@@ -203,12 +203,12 @@ export const StandingRulesPage: React.FC = () => {
             />
           </label>
 
-          <div className="rounded-lg px-4 py-3 bg-[#0E121A] border border-[#1F2633]" id="rule-preview">
+          <div className="rounded-lg px-4 py-3 bg-surface-1 border border-line" id="rule-preview">
             <RuleSentence rule={draft} />
           </div>
 
           {touched && problems.length > 0 && (
-            <ul id="rule-problems" className="m-0 pl-5 text-[14px]" style={{ color: '#FCA5A5' }}>
+            <ul id="rule-problems" className="m-0 pl-5 text-[14px]" style={{ color: 'var(--bad-text)' }}>
               {problems.map(p => (
                 <li key={p}>{p}</li>
               ))}
@@ -226,7 +226,7 @@ export const StandingRulesPage: React.FC = () => {
       <PolicyCheck draft={draft} />
 
       <section aria-labelledby="rules-heading" className="flex flex-col gap-3">
-        <h2 id="rules-heading" className="m-0 text-[17px] font-semibold text-[#E6E9EF]">
+        <h2 id="rules-heading" className="m-0 text-[17px] font-semibold text-fg">
           Standing rules {rules ? `(${activeCount} active)` : ''}
         </h2>
         {loadError ? (

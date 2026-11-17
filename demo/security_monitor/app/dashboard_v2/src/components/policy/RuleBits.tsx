@@ -2,9 +2,9 @@ import React from 'react';
 import { responseLabel, ruleSentence, RuleResponse } from '../../logic/rules';
 
 const CHIP: Record<RuleResponse, React.CSSProperties> = {
-  allow: { color: '#86EFAC', background: 'rgba(34,197,94,0.12)', borderColor: 'rgba(34,197,94,0.35)' },
-  ask: { color: '#FCD34D', background: 'rgba(245,158,11,0.12)', borderColor: 'rgba(245,158,11,0.35)' },
-  block: { color: '#FCA5A5', background: 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.35)' },
+  allow: { color: 'var(--ok-text)', background: 'var(--ok-tint)', borderColor: 'rgba(34,197,94,0.35)' },
+  ask: { color: 'var(--wait-text)', background: 'var(--wait-tint)', borderColor: 'rgba(245,158,11,0.35)' },
+  block: { color: 'var(--bad-text)', background: 'var(--bad-tint)', borderColor: 'rgba(239,68,68,0.35)' },
 };
 
 export const ResponseChip: React.FC<{ response?: string }> = ({ response }) => {
@@ -25,9 +25,9 @@ export const RuleSentence: React.FC<{
 }> = ({ rule }) => {
   const s = ruleSentence(rule);
   return (
-    <span className="text-[15px] leading-relaxed text-[#E6E9EF]">
+    <span className="text-[15px] leading-relaxed text-fg">
       {s.lead}{' '}
-      <code className="font-mono text-[14px] text-[#BFDBFE] [overflow-wrap:anywhere]">{s.target}</code>: {s.outcome}.
+      <code className="font-mono text-[14px] text-info-lighter [overflow-wrap:anywhere]">{s.target}</code>: {s.outcome}.
     </span>
   );
 };
