@@ -7,6 +7,12 @@ no task are UNATTRIBUTED. The sensor instance that emitted the event is kept as
 `tracer_task_hint` (tracer lineage) only to measure cross-attribution; it is
 never used to attribute.
 
+Within a task, `tool_call` says which tool call caused the event (roadmap item 3):
+each command a run_command tool call starts is moved by the control plane into a
+child cgroup `<task scope>/call_NNN` before it runs, and cgroup membership is
+inherited by every fork and survives re-parenting, so background jobs and double
+forks keep their call label. Events of the agent process itself are "task_root".
+
 Classification is against the current Task Boundary plus the sandbox runtime
 profile (system read/exec paths, task tmp, granted/, runtime code, broker socket).
 
@@ -53,6 +59,21 @@ def _iso_from_ms(ms: int | None) -> str:
         return datetime.datetime.now(datetime.timezone.utc).isoformat()
     return datetime.datetime.fromtimestamp(ms / 1000.0, tz=datetime.timezone.utc).isoformat()
 
+
+
+def tool_call_of(cg: str | None, task_cg: str | None) -> str | None:
+    """Which tool call an event belongs to, from where its cgroup sits under the task's.
+
+    "task_root" is the agent process itself (and anything not started through a tool
+    call); "call_NNN" is the child cgroup the control plane put that call's command in.
+    None when the event is not attributed to a task at all.
+    """
+    if not cg or not task_cg:
+        return None
+    if cg == task_cg:
+        return "task_root"
+    first = cg[len(task_cg.rstrip("/")) + 1:].split("/", 1)[0]
+    return first if re.match(r"^call_[0-9]{3,6}$", first) else "task_root_subtree"
 
 class OSEventCorrelator:
     """Consumes one task's sensor stream; thread-safe for a single reader."""
@@ -114,15 +135,20 @@ class OSEventCorrelator:
 
     # --- attribution ---
     def _attribute(self, cg: str, cg_status: str) -> tuple[str | None, str | None]:
+        tid, reason, _ = self._attribute_path(cg, cg_status)
+        return tid, reason
+
+    def _attribute_path(self, cg: str, cg_status: str) -> tuple[str | None, str | None, str | None]:
+        """(task id, reason if none, the task's own cgroup path that matched)."""
         if cg_status != "ok" or not cg:
-            return None, f"cgroup_{cg_status or 'missing'}"
+            return None, f"cgroup_{cg_status or 'missing'}", None
         for attempt in (0, 1):
             if attempt == 1 or not self._cg_table:
                 self._cg_table = self.storage.list_task_cgroups()
             for path, tid in self._cg_table.items():
                 if cg == path or cg.startswith(path.rstrip("/") + "/"):
-                    return tid, None
-        return None, "cgroup_not_in_task_table"
+                    return tid, None, path
+        return None, "cgroup_not_in_task_table", None
 
     # --- classification ---
     def _rel(self, path: str) -> str | None:
@@ -333,7 +359,8 @@ class OSEventCorrelator:
         self._n += 1
         pid = ev.get("pid")
         sc = ev.get("syscall")
-        attributed, unattr_reason = self._attribute(ev.get("cgroup_id", ""), ev.get("cgroup_status", ""))
+        attributed, unattr_reason, task_cg = self._attribute_path(ev.get("cgroup_id", ""), ev.get("cgroup_status", ""))
+        tool_call = tool_call_of(ev.get("cgroup_id", ""), task_cg)
 
         phase = "agent"
         if not self.setup_done:
@@ -391,6 +418,7 @@ class OSEventCorrelator:
             "tracer_task_hint": self.task_id,
             "phase": phase,
             "channel": channel,
+            "tool_call": tool_call,
             "verdict": verdict.value,
             "risk_tier": risk.value,
             "rule_matched": rule,
@@ -412,7 +440,8 @@ class OSEventCorrelator:
             kind=op,
             target=str(rec["target"])[:4096],
             details={k: rec[k] for k in ("syscall", "result", "ppid", "cgroup_path", "attribution_method",
-                                         "tracer_task_hint", "phase", "channel", "prevented_by", "observed_by")},
+                                         "tracer_task_hint", "phase", "channel", "tool_call", "prevented_by",
+                                         "observed_by")},
             verdict=verdict,
             risk_tier=risk,
             action_taken=action,

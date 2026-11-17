@@ -322,6 +322,13 @@ class AgentBrokerClient:
             return self.broker.run_command_check(self.token, command)
         return self._remote_call("run_command_check", {"command": command})
 
+    def run_command_begin(self, call_id: str, pid: int) -> dict[str, Any]:
+        """Reports the pid of a just-spawned, still-gated command so the control plane can
+        move it into that tool call's own cgroup (prompt-to-task attribution)."""
+        if self.broker:
+            return {"call_id": call_id, "placed": False}
+        return self._remote_call("run_command_begin", {"call_id": call_id, "pid": pid})
+
     def _remote_call(self, endpoint: str, payload: dict[str, Any]) -> Any:
         if self.uds_path:
             return self._uds_call(endpoint, payload)

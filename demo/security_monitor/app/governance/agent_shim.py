@@ -9,8 +9,9 @@ and executed with the system interpreter from a per-task read-only copy
 - Conditions B and C: mediated tools go to the broker over the same socket.
 - Conditions A and D: direct I/O execution, no broker tools, no request_access.
 - run_command:
-  - Conditions B and C: asks the broker (`run_command_check`); if allowed, executes
-    locally as child of shim.
+  - Conditions B and C: asks the broker (`run_command_check`); if allowed, spawns the
+    command held at a gate, reports its pid (`run_command_begin`) so the control plane can
+    move it into the tool call's own cgroup, then lets it run as a child of the shim.
   - Conditions A and D: executes directly as child of shim.
 
 Inputs arrive on inherited pipe fds:
@@ -63,6 +64,11 @@ def _truncate(text: str) -> tuple[str, bool]:
     return text[:OUTPUT_LIMIT] + f"\n...[truncated {len(text) - OUTPUT_LIMIT} chars]", True
 
 
+def _text(b: bytes | None) -> str:
+    """Same text as subprocess.run(text=True, errors="replace") gave (universal newlines)."""
+    return (b or b"").decode("utf-8", "replace").replace("\r\n", "\n").replace("\r", "\n")
+
+
 class SandboxedBrokerClient(AgentBrokerClient):
     """Broker client whose run_command executes locally after a broker check."""
 
@@ -72,7 +78,8 @@ class SandboxedBrokerClient(AgentBrokerClient):
         self.command_timeout = command_timeout
 
     def run_command(self, command: str) -> dict:
-        self.run_command_check(command)
+        check = self.run_command_check(command)
+        call_id = check.get("call_id") if isinstance(check, dict) else None
         env = {
             "PATH": "/usr/local/bin:/usr/bin:/bin",
             "HOME": os.environ.get("HOME", os.path.join(self.workspace, "tmp")),
@@ -82,23 +89,41 @@ class SandboxedBrokerClient(AgentBrokerClient):
         for k in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "GOVERNANCE_PROXY_PORT", "GOVERNANCE_PROXY_TOKEN"):
             if k in os.environ:
                 env[k] = os.environ[k]
+        # Gated spawn: the shell waits on stdin until the control plane has moved it into
+        # this tool call's own cgroup, so everything the command does (and everything it
+        # forks, even detached) is labelled with the call. The command itself still gets
+        # /dev/null as stdin, as before.
+        proc = subprocess.Popen(
+            ["/bin/sh", "-c", 'read -r _ || exit 125; exec /bin/sh -c "$0" </dev/null', command],
+            cwd=self.workspace,
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if call_id:
+            try:
+                self.run_command_begin(call_id, proc.pid)
+            except Exception:
+                pass  # attribution only: the command was allowed, it runs labelled task_root
         try:
-            res = subprocess.run(
-                ["/bin/sh", "-c", command],
-                cwd=self.workspace,
-                env=env,
-                capture_output=True,
-                text=True,
-                errors="replace",
-                timeout=self.command_timeout,
-                stdin=subprocess.DEVNULL,
-            )
-            out, t1 = _truncate(res.stdout)
-            err, t2 = _truncate(res.stderr)
-            return {"stdout": out, "stderr": err, "exit_code": res.returncode, "truncated": t1 or t2}
-        except subprocess.TimeoutExpired as te:
-            out, _ = _truncate((te.stdout or b"").decode("utf-8", "replace") if isinstance(te.stdout, bytes) else (te.stdout or ""))
+            proc.stdin.write(b"go\n")
+            proc.stdin.close()
+        except OSError:
+            pass
+        try:
+            stdout_b, stderr_b = proc.communicate(timeout=self.command_timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            try:
+                stdout_b, _ = proc.communicate(timeout=5.0)
+            except subprocess.TimeoutExpired:
+                stdout_b = b""
+            out, _ = _truncate(_text(stdout_b))
             return {"stdout": out, "stderr": f"command timed out after {self.command_timeout}s", "exit_code": -1, "truncated": True}
+        out, t1 = _truncate(_text(stdout_b))
+        err, t2 = _truncate(_text(stderr_b))
+        return {"stdout": out, "stderr": err, "exit_code": proc.returncode, "truncated": t1 or t2}
 
 
 class DirectIOClient(AgentBrokerClient):

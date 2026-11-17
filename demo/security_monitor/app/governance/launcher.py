@@ -462,6 +462,23 @@ def _offered_tools(spec: "TaskSpec") -> list[dict[str, Any]] | None:
     limit = set(spec.agent_tools)
     return [t for t in base if t.get("function", {}).get("name") in limit]
 
+def _tool_call_attribution(tool_calls: list[dict[str, Any]], records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Receipt section: each command a tool call ran, its cgroup, and the OS events labelled with it."""
+    by_call: dict[str, int] = {}
+    for r in records:
+        tc = r.get("tool_call")
+        if tc:
+            by_call[tc] = by_call.get(tc, 0) + 1
+    calls = [{**c, "os_events": by_call.get(c["call_id"], 0)} for c in tool_calls]
+    return {
+        "method": "per_tool_call_child_cgroup",
+        "calls": calls,
+        "placed": sum(1 for c in tool_calls if c.get("placed")),
+        "not_placed": sum(1 for c in tool_calls if c.get("started_at") and not c.get("placed")),
+        "os_events_by_tool_call": dict(sorted(by_call.items())),
+    }
+
+
 class TaskLauncher:
     """Launches one task in its own scope + sandbox and produces its receipt."""
 
@@ -619,6 +636,24 @@ class TaskLauncher:
         if has_cgroup:
             self.stop(reason)
         return {"killed": has_cgroup, "cancelled_before_start": not started}
+
+    # --- prompt-to-task attribution ---
+    def _place_call(self, pid: int, call_id: str) -> dict[str, Any]:
+        """Moves a gated command process into the task's child cgroup `call_id`.
+
+        Called by the broker RPC (control plane) when the shim reports a spawned command.
+        The process must still be in the task's own cgroup; it is never moved anywhere
+        outside this task's subtree.
+        """
+        cg = self.live.get("cgroup")
+        if not cg:
+            return {"ok": False, "reason": "task_cgroup_not_recorded"}
+        if self._frozen.is_set():
+            return {"ok": False, "reason": "task_frozen"}
+        try:
+            return {"ok": True, "cgroup": cgroup_ctl.place_in_child(cg, call_id, pid)}
+        except (RuntimeError, OSError) as e:
+            return {"ok": False, "reason": str(e)[:300]}
 
     # --- freeze / kill ---
     def _freeze(self, reason: str, detail: Any = None) -> None:
@@ -955,6 +990,7 @@ class TaskLauncher:
         self.live["expansion"] = expansion
         rpc = BrokerRPCServer(broker, ws / BROKER_SOCKET_NAME, task_id, llm_model=llm_model, llm_options=llm_options,
                               delivery=delivery, cgroup_reader=cgroup_ctl.read_proc_cgroup,
+                              call_placer=self._place_call,
                               call_timeout=max(float(spec.approval_timeout_s) + 30.0, 120.0))
         rpc.start()
         self.live["rpc"] = rpc
@@ -1095,7 +1131,10 @@ class TaskLauncher:
         shim_chain = [interpreter, "-E", "-s", "-B", str(ws / "runtime" / "agent_shim.py")]
 
         chain = [*world_cmd, *sensor_chain, *sandbox_chain, *shim_chain]
-        cmd = ["systemd-run", "--user", "--scope", "--quiet", f"--unit={unit}", "--", *env_args, *chain]
+        # Delegate=yes: the scope's subtree is ours, so each command a tool call runs can get its own
+        # child cgroup (call_NNN) for attribution. Freeze and kill act on the whole subtree.
+        cmd = ["systemd-run", "--user", "--scope", "--quiet", "-p", "Delegate=yes", f"--unit={unit}", "--",
+               *env_args, *chain]
 
         launcher_cg = cgroup_ctl.read_proc_cgroup(os.getpid())
         stdout_f = open(control / "sandbox_stdout.log", "wb")
@@ -1298,6 +1337,8 @@ class TaskLauncher:
             stdout_f.close()
             stderr_f.close()
             rpc.stop()
+            if self.live.get("cgroup"):
+                cgroup_ctl.remove_children(self.live["cgroup"])
             try:
                 aloop.run(proxy.stop())
             except Exception:
@@ -1363,6 +1404,7 @@ class TaskLauncher:
                 "landlock_rules_sha256": _sha256_file(rules_path),
                 "rpc_call_counts": dict(rpc.call_counts),
                 "rpc_rejections": rpc.rejections,
+                "tool_call_attribution": _tool_call_attribution(rpc.tool_calls, correlator.records),
                 "aborted": aborted,
                 **({"boundary_model": spec.boundary_model} if resolved_path else {}),
             },
