@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from .catalog import BoundaryDerivationV1_1, ServiceCatalog
+from .derivation_grounded import GroundedLLMDerivation, ollama_client
 from .launcher import TaskLauncher, TaskSpec
 from .models import EnforcementMode, TaskLifecycle, TaskRecord
 from .storage import GovernanceStorage
@@ -734,6 +735,106 @@ def preview_run_boundary(
     }
 
 
+# --- The model chooses the files; the requester checks them before Start (roadmap item 1b) ---
+
+_FILE_REVIEWS: dict[str, dict[str, Any]] = {}
+_FILE_REVIEWS_LOCK = threading.Lock()
+FILE_REVIEW_TTL_S = 30 * 60
+DERIVATION_TIMEOUT_S = 90.0
+
+
+def _review_key(prompt: str, inputs: list[str]) -> str:
+    return hashlib.sha256(json.dumps([prompt.strip(), sorted(inputs)]).encode()).hexdigest()
+
+
+def _run_inputs(preset_id: str | None, files: dict[str, str] | None) -> list[str]:
+    combined: dict[str, str] = {}
+    preset = PRESETS.get(preset_id or "") if preset_id else None
+    if preset and preset.get("files"):
+        combined.update(preset["files"])
+    if files:
+        combined.update(files)
+    return sorted(combined)
+
+
+def derive_files_for_review(
+    prompt: str,
+    preset_id: str | None = None,
+    files: dict[str, str] | None = None,
+    agent_id: str | None = None,
+    model: str | None = None,
+    llm_client: Any = None,
+) -> dict[str, Any]:
+    """Asks the agent's model which of the task's files it needs (derivation_grounded.py) and keeps
+    the result for the Start request. The requester can untick files, never add them: Start
+    passes the review id, and only files from this review can be enforced."""
+    if not prompt.strip():
+        raise ValueError("Write what the agent should do first.")
+    cfg = load_agents_config().get(agent_id or "finance_bot") or {}
+    chosen = model if model and model != "scripted" else (cfg.get("model") or DEFAULT_AGENT_MODEL)
+    inputs = _run_inputs(preset_id, files)
+    client = llm_client or ollama_client(chosen, timeout_s=DERIVATION_TIMEOUT_S)
+    b = GroundedLLMDerivation(client, available_inputs=inputs, model=chosen).derive(
+        task_id="review", request_text=prompt, workspace_root="/tmp/agent_preview")
+    meta = b.metadata or {}
+    fallback = bool(meta.get("fallback_used"))
+    inferred = set(meta.get("inferred", []))
+    review_id = f"review_{uuid.uuid4().hex[:16]}"
+    record = {
+        "created": time.monotonic(),
+        "key": _review_key(prompt, inputs),
+        "model": chosen,
+        "fallback": fallback,
+        "files_read": list(b.files_read),
+        "files_write": list(b.files_write),
+        "network": list(b.network),
+        "peer_agents": list(b.peer_agents),
+        "metadata": {k: meta.get(k) for k in ("deriver", "model", "named", "inferred", "dropped",
+                                              "template_files_read", "raw_output_sha256", "fallback_used",
+                                              "fallback_reason")},
+    }
+    with _FILE_REVIEWS_LOCK:
+        now = time.monotonic()
+        for k in [k for k, v in _FILE_REVIEWS.items() if now - v["created"] > FILE_REVIEW_TTL_S]:
+            _FILE_REVIEWS.pop(k, None)
+        while len(_FILE_REVIEWS) >= 200:
+            _FILE_REVIEWS.pop(next(iter(_FILE_REVIEWS)))
+        _FILE_REVIEWS[review_id] = record
+    return {
+        "review_id": review_id,
+        "model": chosen,
+        "fallback": fallback,
+        "fallback_reason": meta.get("fallback_reason") if fallback else None,
+        "reads": [{"path": p, "named": p not in inferred} for p in b.files_read],
+        "writes": [{"path": p, "named": p not in inferred} for p in b.files_write],
+        "dropped": list(meta.get("dropped") or []) if not fallback else [],
+        "inputs": inputs,
+    }
+
+
+def take_file_review(review_id: str, prompt: str, inputs: list[str], approved_reads: list[str] | None) -> dict[str, Any]:
+    """The reviewed boundary for Start: approved reads must come from the review (untick only)."""
+    with _FILE_REVIEWS_LOCK:
+        rec = _FILE_REVIEWS.get(review_id)
+    if rec is None or time.monotonic() - rec["created"] > FILE_REVIEW_TTL_S:
+        raise ValueError("The file check has expired. Check the files again.")
+    if rec["key"] != _review_key(prompt, inputs):
+        raise ValueError("The request or its files changed after the file check. Check the files again.")
+    reads = list(rec["files_read"]) if approved_reads is None else list(dict.fromkeys(approved_reads))
+    extra = [p for p in reads if p not in rec["files_read"]]
+    if extra:
+        raise ValueError(f"Only files from the check can be allowed; not checked: {', '.join(extra)}")
+    return {
+        "files_read": reads,
+        "files_write": rec["files_write"],
+        "network": rec["network"],
+        "peer_agents": rec["peer_agents"],
+        "metadata": {**rec["metadata"],
+                     "reviewed_in_console": True,
+                     "removed_by_reviewer": [p for p in rec["files_read"] if p not in reads]},
+    }
+
+
 HOST_REQUIREMENT = "OS-layer execution needs Linux/WSL2 with systemd --user, Landlock and cgroup v2"
 
 
@@ -923,7 +1024,11 @@ class ActiveRunManager:
         team: str | None = None,
         agent_id: str | None = None,
         comparison_mode: bool = False,
+        review_id: str | None = None,
+        approved_reads: list[str] | None = None,
     ) -> str:
+        # A file check from the Run page: validated before anything starts.
+        reviewed = take_file_review(review_id, prompt, _run_inputs(preset_id, files), approved_reads) if review_id else None
         agent_default = not model
         if agent_default:
             # No override: the agent's own model.
@@ -1026,6 +1131,7 @@ class ActiveRunManager:
                 boundary_model="v1.1",
                 network=preset_network,
                 agent_tools=list(cfg_info["tools"]) if cfg_info.get("tools") else None,
+                reviewed_boundary=reviewed,
                 **(_shell_only_agent() if preset and preset.get("shell_only") else _preset_tools(preset)),
             )
 
