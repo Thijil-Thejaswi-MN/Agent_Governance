@@ -114,6 +114,21 @@ def test_preset_2_decision_card_allow_continues(page: Page, console_server):
 
 
 @pytest.mark.os_layer
+def test_model_file_choice_falls_back_plainly_and_still_starts(page: Page, console_server):
+    """With no model reachable (as on the CI runner), asking the agent's model which files it
+    needs says so plainly, keeps the files the request names, and the run still starts."""
+    _open_ask(page, console_server, "summarise_csv")
+    page.locator("#model-chooses-toggle").check()
+    page.locator("#start-run-btn").click()
+    expect(page.locator("#run-error")).to_contain_text("Check the files first")
+    page.locator("#ask-model-btn").click()
+    expect(page.locator("#file-review-fallback")).to_be_visible(timeout=30000)
+    expect(page.locator("#file-review-fallback")).to_contain_text("could not be asked")
+    page.locator("#start-run-btn").click()
+    expect(page.locator("#run-status")).to_have_attribute("data-state", "completed", timeout=60000)
+
+
+@pytest.mark.os_layer
 def test_save_extra_file_card_shows_the_content_and_saves_it(page: Page, console_server):
     """A write the request never named: the card shows the exact staged content, and on
     approval that content is saved to output/ by the system (content-reviewed writes)."""

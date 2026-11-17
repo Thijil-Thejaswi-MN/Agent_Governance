@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { BoundaryPreviewResponse, RunPreset, ConfiguredAgent, ActiveRunTask } from '../types';
 import { fileName } from '../logic/runView';
+import { FileReview, FileReviewResult } from '../components/v3/FileReview';
 
 // Plain names for the existing presets (the ids and their prompts are the server's).
 const PRESET_LABELS: Record<string, string> = {
@@ -57,6 +58,14 @@ export const AskPage: React.FC = () => {
   const [newContent, setNewContent] = useState('');
   const [fileError, setFileError] = useState<string | null>(null);
 
+  // "Let the agent's model choose the files": the model's choice, checked by rules on the
+  // server, which the requester reviews (and can untick) before Start.
+  const [modelChooses, setModelChooses] = useState(false);
+  const [review, setReview] = useState<FileReviewResult | null>(null);
+  const [kept, setKept] = useState<string[]>([]);
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+
   useEffect(() => {
     Promise.all([
       api.getRunPresets(),
@@ -101,6 +110,35 @@ export const AskPage: React.FC = () => {
     }, 400);
     return () => clearTimeout(t);
   }, [prompt, presetId, files]);
+
+  // A review belongs to one request, one set of files and one agent: any change makes it stale.
+  useEffect(() => {
+    setReview(null);
+    setKept([]);
+    setReviewError(null);
+  }, [prompt, files, agentId, modelChooses]);
+
+  const checkFiles = async () => {
+    setReviewError(null);
+    if (!prompt.trim()) return setReviewError('Write what the agent should do first.');
+    if (!hasToken) return openAuthModal();
+    setReviewing(true);
+    try {
+      const res = await api.deriveRunFiles({
+        prompt: prompt.trim(),
+        preset: presetId,
+        files,
+        agent_id: agentId,
+        ...(modelOverride && modelOverride !== 'scripted' ? { model: modelOverride } : {}),
+      });
+      setReview(res);
+      setKept(res.reads.map(r => r.path));
+    } catch (err: any) {
+      setReviewError(err.message || 'The model could not be asked.');
+    } finally {
+      setReviewing(false);
+    }
+  };
 
   const chosenAgent = agents.find(a => a.id === agentId);
   const agentModel = chosenAgent?.model || '';
@@ -151,6 +189,10 @@ export const AskPage: React.FC = () => {
       openAuthModal();
       return;
     }
+    if (modelChooses && !review) {
+      setError("Check the files first: press \"Ask the model\" and review its choice.");
+      return;
+    }
     setStarting(true);
     try {
       const presetFiles = presets.find(p => p.id === presetId)?.files || {};
@@ -167,6 +209,7 @@ export const AskPage: React.FC = () => {
         files,
         agent_id: agentId,
         comparison_mode: comparisonMode && canCompare,
+        ...(modelChooses && review ? { review_id: review.review_id, approved_reads: kept } : {}),
       });
       navigate(`/run/${res.task_id}`);
     } catch (err: any) {
@@ -293,7 +336,42 @@ export const AskPage: React.FC = () => {
         </div>
       </div>
 
-      {preview && (reads.length > 0 || writes.length > 0) && (
+      <div className="flex flex-col gap-2" id="model-chooses-block">
+        <label className="flex items-center gap-2 text-[14px] cursor-pointer" style={{ color: 'var(--text-2)' }}>
+          <input
+            type="checkbox"
+            id="model-chooses-toggle"
+            checked={modelChooses}
+            onChange={e => setModelChooses(e.target.checked)}
+            className="rounded border-[#2A3344] bg-[#0E121A]"
+          />
+          <span>
+            Let {chosenAgent?.name || 'the agent'}'s model choose which files it needs (you check them before Start)
+          </span>
+        </label>
+        {modelChooses && !review && (
+          <div className="flex items-center gap-3">
+            <button id="ask-model-btn" type="button" onClick={checkFiles} disabled={reviewing} className="btn-ghost min-h-[40px] px-4">
+              {reviewing ? 'Asking the model…' : 'Ask the model'}
+            </button>
+            {reviewError && (
+              <span id="file-review-error" className="text-[14px]" style={{ color: '#FCA5A5' }}>
+                {reviewError}
+              </span>
+            )}
+          </div>
+        )}
+        {modelChooses && review && (
+          <FileReview
+            result={review}
+            agentName={chosenAgent?.name || 'The agent'}
+            kept={kept}
+            onToggle={p => setKept(k => (k.includes(p) ? k.filter(x => x !== p) : [...k, p]))}
+          />
+        )}
+      </div>
+
+      {preview && !(modelChooses && review) && (reads.length > 0 || writes.length > 0) && (
         <p id="allow-preview" className="m-0 text-[15px] text-[#A7B0C0] flex items-start gap-2">
           <span aria-hidden="true" className="mt-[7px] inline-block w-2 h-2 rounded-[3px] bg-[#22C55E] flex-none" />
           <span>

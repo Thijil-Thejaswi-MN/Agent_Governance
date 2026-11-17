@@ -124,6 +124,9 @@ class TaskSpec:
     derivation_model: str | None = None
     # Strict: inferred (not named) reads are dropped, for runs with no person to review them.
     derivation_strict: bool = False
+    # A boundary the requester checked on the Run page (run_manager.take_file_review): the model's
+    # grounded choice, minus any file they unticked. Applied as derived, with its account.
+    reviewed_boundary: dict[str, Any] | None = None
 
     @classmethod
     def from_file(cls, path: str | Path) -> "TaskSpec":
@@ -769,6 +772,17 @@ class TaskLauncher:
         )
         if spec.files_read is not None:
             boundary.files_read = list(spec.files_read)
+            self.storage.save_boundary(boundary)
+        if spec.reviewed_boundary is not None:
+            rv = spec.reviewed_boundary
+            boundary.files_read = list(rv["files_read"])
+            if rv.get("files_write"):
+                boundary.files_write = sorted(set(rv["files_write"]) | set(spec.output_targets or []))
+            boundary.network = list(rv.get("network") or [])
+            boundary.peer_agents = list(rv.get("peer_agents") or [])
+            boundary.metadata.update(rv.get("metadata") or {})
+            fallback = bool((rv.get("metadata") or {}).get("fallback_used"))
+            boundary.derived_by = "grounded_llm_fallback_template_v1_1" if fallback else "grounded_llm_v1_reviewed"
             self.storage.save_boundary(boundary)
         if spec.network:
             boundary.network = sorted(set(boundary.network) | set(spec.network))

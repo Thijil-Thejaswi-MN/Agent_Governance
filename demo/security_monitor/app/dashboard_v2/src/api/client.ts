@@ -1,3 +1,4 @@
+import type { FileReviewResult } from '../components/v3/FileReview';
 import {
   SystemStatusResponse,
   TaskRecord,
@@ -231,7 +232,21 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  startRun: (payload: { prompt: string; preset?: string; model?: string; files?: Record<string, string>; agent_id?: string; comparison_mode?: boolean }) =>
+  deriveRunFiles: (payload: { prompt: string; preset?: string; files?: Record<string, string>; agent_id?: string; model?: string }) =>
+    request<FileReviewResult>(`${API_BASE}/run/derive`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  startRun: (payload: {
+    prompt: string;
+    preset?: string;
+    model?: string;
+    files?: Record<string, string>;
+    agent_id?: string;
+    comparison_mode?: boolean;
+    review_id?: string;
+    approved_reads?: string[];
+  }) =>
     request<{ task_id: string; status: string; message: string }>(`${API_BASE}/run`, {
       method: 'POST',
       body: JSON.stringify(payload),

@@ -34,6 +34,8 @@ from .run_manager import (
     load_agents_config,
     get_run_manager,
     preview_run_boundary,
+    derive_files_for_review,
+    sanitize_input_files,
 )
 
 from . import evidence as evidence_store
@@ -1703,6 +1705,17 @@ class RunStartRequest(BaseModel):
     agent_id: str | None = None
     files: dict[str, str] = Field(default_factory=dict)
     comparison_mode: bool = False
+    # A file check from POST /run/derive: the model's choice, and the files the requester kept.
+    review_id: str | None = None
+    approved_reads: list[str] | None = None
+
+
+class RunDeriveRequest(BaseModel):
+    prompt: str
+    preset: str | None = None
+    files: dict[str, str] = Field(default_factory=dict)
+    agent_id: str | None = None
+    model: str | None = None
 
 
 @governance_router.get("/evidence/datasets")
@@ -1807,6 +1820,29 @@ async def preview_task_run(req: RunPreviewRequest) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail=f"Preview derivation failed: {e}")
 
 
+@governance_router.post("/run/derive")
+async def derive_run_files(
+    req: RunDeriveRequest,
+    request: Request,
+    _token: str = Depends(verify_operator_token),
+) -> dict[str, Any]:
+    """Asks the agent's model which of the task's files it needs. Every suggestion is checked
+    by fixed rules (derivation_grounded.py); the requester reviews the result before Start."""
+    user = authenticate_token(_token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+    if not PermissionMatrix.can_start_run(user):
+        raise HTTPException(status_code=403, detail="Forbidden: Role not authorized to start a run.")
+    if req.agent_id is not None and req.agent_id not in load_agents_config():
+        raise HTTPException(status_code=422, detail=f"Invalid agent_id '{req.agent_id}'.")
+    try:
+        sanitize_input_files(req.files)
+        return await asyncio.to_thread(
+            derive_files_for_review, req.prompt, req.preset, req.files, req.agent_id, req.model)
+    except ValueError as ve:
+        raise HTTPException(status_code=422, detail=str(ve))
+
+
 @governance_router.post("/run")
 async def start_governed_task_run(
     req: RunStartRequest,
@@ -1865,6 +1901,8 @@ async def start_governed_task_run(
             team=user.team,
             agent_id=req.agent_id,
             comparison_mode=req.comparison_mode,
+            review_id=req.review_id,
+            approved_reads=req.approved_reads,
         )
         msg = (
             "Task execution initiated under comparison mode (Condition B: kernel lock off)."
