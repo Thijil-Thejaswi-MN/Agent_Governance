@@ -28,6 +28,7 @@ from demo.security_monitor.tests.playwright_server import (
     FIRST_SCREEN_JARGON,
     NEVER_SAY,
     banned_words_in,
+    no_horizontal_scroll,
     save_evidence,
     sign_in,
     visible_text_outside_details,
@@ -62,6 +63,11 @@ def test_ask_watch_done_preset_1_scripted(page: Page, console_server):
     expect(page.locator("#fence")).to_be_visible()
     expect(page.locator('#fence [data-chip="inside"]').first).to_be_visible()
 
+    # Agent trace is displayed while running and rows appear
+    trace = page.locator("#agent-trace")
+    expect(trace).to_be_visible(timeout=15000)
+    expect(trace.locator('[role="listitem"]').first).to_be_visible(timeout=15000)
+
     status = page.locator("#run-status")
     expect(status).to_have_attribute("data-state", "completed", timeout=60000)
     expect(status).to_have_text("Finished. The agent stayed inside its fence.")
@@ -74,6 +80,15 @@ def test_ask_watch_done_preset_1_scripted(page: Page, console_server):
     expect(page.locator("#run-progress")).to_have_attribute("data-phase", "end", timeout=15000)
     expect(page.locator("#run-progress")).to_have_attribute("data-finished", "true")
     expect(page.locator("#run-progress")).to_contain_text("Done")
+
+    # Trace ends with a Finished row
+    expect(trace.locator('[role="listitem"]', has_text="Finished")).to_be_visible()
+
+    # Viewport check at 375 px has no horizontal scroll
+    page.set_viewport_size({"width": 375, "height": 812})
+    assert no_horizontal_scroll(page)
+    page.set_viewport_size({"width": 1280, "height": 800})
+
     _assert_plain(page)
 
     # Details: the honest technical layer.
@@ -100,6 +115,12 @@ def test_preset_2_decision_card_allow_continues(page: Page, console_server):
     expect(card.locator("#decision-warning")).to_contain_text("only learned about this file from inside sales_data.csv")
     expect(card.locator("#decision-countdown")).to_contain_text(re.compile(r"Decide within \d+:\d\d, or it stays blocked\."))
     expect(page.locator('#fence [data-chip="requested"]')).to_contain_text("target_metrics.csv")
+
+    # The trace displays the waiting for you row while DecisionCard is open
+    trace = page.locator("#agent-trace")
+    expect(trace).to_be_visible()
+    expect(trace.locator('[role="listitem"]', has_text="waiting for you")).to_be_visible()
+
     _assert_plain(page)
 
     allow = card.locator('[id^="inline-approve-btn-"]')
@@ -115,6 +136,23 @@ def test_preset_2_decision_card_allow_continues(page: Page, console_server):
     expect(page.locator('#fence [data-chip="inside"]', has_text="target_metrics.csv")).to_be_visible()
     page.locator("#show-what-happened").click()
     expect(page.locator("#details-drawer #boundary-version")).to_have_text("Boundary version 2 (after 1 approval)")
+
+
+@pytest.mark.os_layer
+def test_trick_file_shows_bad_tone_trace_row(page: Page, console_server):
+    _open_ask(page, console_server, "hidden_instruction")
+    page.locator("#start-run-btn").click()
+    expect(page).to_have_url(re.compile(r"/dashboard/run/task_[0-9a-f]+$"), timeout=15000)
+
+    trace = page.locator("#agent-trace")
+    expect(trace).to_be_visible(timeout=15000)
+
+    status = page.locator("#run-status")
+    expect(status).to_have_attribute("data-state", "completed", timeout=60000)
+
+    # Displays at least one row with the bad tone
+    expect(trace.locator(".text-bad").first).to_be_visible()
+    _assert_plain(page)
 
 
 @pytest.mark.os_layer
