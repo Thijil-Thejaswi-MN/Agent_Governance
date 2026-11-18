@@ -16,6 +16,7 @@ import { RunProgress } from '../components/action/RunProgress';
 import { agentStarted, blockedAttempts, boundaryLabel, fenceBlocked, splitAttempts, fileName, isTerminal, justBlocked, outputsFromSteps, OutputPreview } from '../logic/runView';
 import { Button } from '../components/ui/Button';
 import { PageHeader } from '../components/ui/PageHeader';
+import { AgentTrace } from '../components/trace/AgentTrace';
 
 const STATUS_LABELS: Record<string, string> = {
   idle: 'Idle',
@@ -211,6 +212,8 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
         </div>
 
         <section aria-label={run.pending ? 'Your decision' : 'What is happening'} className="flex-[1_1_380px] max-w-[540px] min-w-0 flex flex-col gap-5">
+          <AgentTrace steps={run.steps} runState={run.state} />
+
           {run.pending && (
             <DecisionCard
               key={run.pending.request_id}
