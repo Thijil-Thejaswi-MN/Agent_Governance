@@ -7,7 +7,7 @@ import { outcomeLabel } from '../logic/plain';
 import { getTone } from '../logic/tones';
 import { PageHeader } from '../components/ui/PageHeader';
 import { StatusPill } from '../components/ui/StatusPill';
-import { Button } from '../components/ui/Button';
+import { Button, buttonClasses } from '../components/ui/Button';
 import {
   ReportApproval,
   ReportBlocked,
@@ -196,10 +196,8 @@ export const ReportPage: React.FC = () => {
           <FileJson className="w-4 h-4" aria-hidden="true" /> JSON
         </Button>
         {taskId && (
-          <a id="report-csv-link" href={api.getTaskReportCsvUrl(taskId)} download className="no-underline inline-flex">
-            <Button variant="ghost" size="md" className="inline-flex items-center gap-2">
-              <Download className="w-4 h-4" aria-hidden="true" /> CSV
-            </Button>
+          <a id="report-csv-link" href={api.getTaskReportCsvUrl(taskId)} download className={buttonClasses('ghost', 'md', 'gap-2')}>
+            <Download className="w-4 h-4" aria-hidden="true" /> CSV
           </a>
         )}
       </div>

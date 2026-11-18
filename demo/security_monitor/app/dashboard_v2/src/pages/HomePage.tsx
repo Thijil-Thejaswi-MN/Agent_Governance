@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { ResultsSummary } from '../types';
 import { MetricCard } from '../components/ui/MetricCard';
-import { Button } from '../components/ui/Button';
+import { buttonClasses } from '../components/ui/Button';
 
 const STEPS = [
   { title: '1. You ask', body: '“Summarise sales_data.csv”' },
@@ -38,10 +38,8 @@ export const HomePage: React.FC = () => {
         <p className="m-0 text-[17px] sm:text-[18px] max-w-[620px] text-fg-2">
           We put a fence around the agent for each request. If it needs something more, it has to ask you.
         </p>
-        <Link id="try-it" to="/run" className="no-underline">
-          <Button variant="primary" size="lg" className="min-h-[44px] px-7 text-[15px]">
-            Try it
-          </Button>
+        <Link id="try-it" to="/run" className={buttonClasses('primary', 'lg', 'min-h-[44px] px-7 text-[15px]')}>
+          Try it
         </Link>
       </div>
 
