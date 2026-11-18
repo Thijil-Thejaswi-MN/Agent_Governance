@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { ResultsSummary } from '../types';
+import { MetricCard } from '../components/ui/MetricCard';
+import { Button } from '../components/ui/Button';
 
 const STEPS = [
   { title: '1. You ask', body: '“Summarise sales_data.csv”' },
@@ -27,7 +29,7 @@ export const HomePage: React.FC = () => {
   const extra = ut?.extra_s_c_vs_a;
 
   return (
-    <div className="max-w-[1080px] mx-auto pt-6 sm:pt-12 pb-12 flex flex-col items-center gap-10 sm:gap-12 text-center">
+    <div className="max-w-[1080px] mx-auto pt-6 sm:pt-12 pb-12 flex flex-col items-center gap-10 sm:gap-12 text-center font-sans">
       <div className="flex flex-col items-center gap-5">
         <h1 className="m-0 font-display font-bold text-[34px] sm:text-[52px] leading-[1.08] max-w-[860px] text-fg">
           AI agents should only touch{' '}
@@ -36,15 +38,17 @@ export const HomePage: React.FC = () => {
         <p className="m-0 text-[17px] sm:text-[18px] max-w-[620px] text-fg-2">
           We put a fence around the agent for each request. If it needs something more, it has to ask you.
         </p>
-        <Link id="try-it" to="/run" className="btn-primary" style={{ minHeight: 44, padding: '0 28px', fontSize: 15 }}>
-          Try it
+        <Link id="try-it" to="/run" className="no-underline">
+          <Button variant="primary" size="lg" className="min-h-[44px] px-7 text-[15px]">
+            Try it
+          </Button>
         </Link>
       </div>
 
       <div className="relative w-full" aria-label="How it works">
         <ol className="relative grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 list-none p-0 m-0">
           {STEPS.map(s => (
-            <li key={s.title} className="card px-5 py-5 text-left">
+            <li key={s.title} className="p-5 rounded-xl border border-line bg-surface-1 text-left">
               <div className="text-[17px] font-semibold text-fg">{s.title}</div>
               <div className="mt-1.5 text-[15px] text-fg-2">{s.body}</div>
             </li>
@@ -54,33 +58,33 @@ export const HomePage: React.FC = () => {
 
       <div className="w-full flex flex-col items-center gap-3">
         <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 max-w-[640px]">
-          <div className="card px-5 py-5 text-left" id="metric-harm">
-            <div className="text-[34px] font-bold tracking-tight leading-tight">
-              {harmA && harmC ? (
-                <>
-                  <span className="text-bad-light">{harmA.exposed}</span> <span className="text-fg-3">→</span>{' '}
-                  <span className="text-ok-light">{harmC.exposed}</span>
-                </>
+          <MetricCard
+            id="metric-harm"
+            label="Tricked agents that caused harm"
+            value={
+              harmA && harmC ? (
+                <span>
+                  <span className="text-bad">{harmA.exposed}</span> <span className="text-fg-3">→</span>{' '}
+                  <span className="text-ok">{harmC.exposed}</span>
+                </span>
               ) : (
                 '—'
-              )}
-            </div>
-            <div className="mt-1 text-[14px] text-fg-2">
-              tricked agents that caused harm{harmA ? `, out of ${harmA.total}` : ''}
-            </div>
-          </div>
-          <div className="card px-5 py-5 text-left" id="metric-time">
-            <div className="text-[34px] font-bold tracking-tight leading-tight text-info">
-              {extra !== undefined ? `+${extra.toFixed(1)} s` : '—'}
-            </div>
-            <div className="mt-1 text-[14px] text-fg-2">
-              {ut?.A && ut?.C ? `extra per everyday task (${ut.A.mean_s} s → ${ut.C.mean_s} s)` : 'extra per everyday task'}
-            </div>
-          </div>
+              )
+            }
+            note={harmA ? `out of ${harmA.total} attack trials` : undefined}
+            tone="default"
+          />
+          <MetricCard
+            id="metric-time"
+            label="Extra per everyday task"
+            value={extra !== undefined ? `+${extra.toFixed(1)} s` : '—'}
+            note={ut?.A && ut?.C ? `${ut.A.mean_s} s → ${ut.C.mean_s} s` : undefined}
+            tone="default"
+          />
         </div>
         <p className="m-0 text-[14px] text-fg-3">
           {failed ? 'The results file could not be loaded. ' : ''}In our tests with local AI models.{' '}
-          <Link id="see-results" to="/results" className="inline-flex items-center min-h-[44px]">
+          <Link id="see-results" to="/results" className="inline-flex items-center text-info hover:underline min-h-[44px]">
             See the full results
           </Link>
         </p>

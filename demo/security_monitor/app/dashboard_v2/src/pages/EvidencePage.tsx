@@ -5,6 +5,7 @@ import { AttackDetail, AttackRow, AttackStory, EvidenceDataset, EvidenceTrial } 
 import { ErrorState, LoadingState } from '../components/common/States';
 import { DetailsDrawer } from '../components/v3/DetailsDrawer';
 import { PageHeader } from '../components/ui/PageHeader';
+import { MetricCard } from '../components/ui/MetricCard';
 import { ACTION_LABEL, SETUP_ABOUT, firstStory, highlightParts, rowVerdict, stepView, storyVerdict } from '../logic/evidence';
 
 const TONE: Record<'bad' | 'good' | 'neutral', React.CSSProperties> = {
@@ -199,9 +200,9 @@ const Highlighted: React.FC<{ text: string; canary: string | null }> = ({ text, 
 // One cell of the attack picker: harm in this setup, out of its trials.
 const HarmCell: React.FC<{ v?: { trials: number; harm: number; acted: number } }> = ({ v }) =>
   !v ? (
-    <td className="px-3 py-2" />
+    <td className="px-4 py-2" />
   ) : (
-    <td className="px-3 py-2 whitespace-nowrap">
+    <td className="px-4 py-2 whitespace-nowrap">
       <span className="font-semibold" style={{ color: v.harm ? 'var(--bad-text)' : 'var(--ok-text)' }}>
         {v.harm}/{v.trials}
       </span>
@@ -394,20 +395,14 @@ export const EvidencePage: React.FC = () => {
             {conds.map(c => {
               const m = ds.by_condition[c].metrics.find(x => x.label === 'Attack trials with harm');
               return (
-                <div key={c} className="card p-3 flex flex-col gap-0.5" data-condition={c}>
-                  <div className="text-[13px]" style={{ color: 'var(--text-3)' }}>
-                    {c} · {ds.by_condition[c].name}
-                  </div>
-                  {m && (
-                    <div className="text-[20px] font-bold" style={{ color: m.value ? 'var(--bad-text)' : 'var(--ok-text)' }}>
-                      {m.value}/{m.of}
-                      <span className="text-[13px] font-normal" style={{ color: 'var(--text-3)' }}>
-                        {' '}
-                        attack trials with harm
-                      </span>
-                    </div>
-                  )}
-                </div>
+                <MetricCard
+                  key={c}
+                  data-condition={c}
+                  label={`${c} · ${ds.by_condition[c].name}`}
+                  value={m ? `${m.value}/${m.of}` : '—'}
+                  note="attack trials with harm"
+                  tone={m && m.value > 0 ? 'bad' : 'ok'}
+                />
               );
             })}
           </div>
@@ -427,14 +422,14 @@ export const EvidencePage: React.FC = () => {
         {!attacks ? (
           <LoadingState label="Loading attacks…" />
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-line">
-            <table className="w-full text-[14px] border-collapse" id="attack-table">
+          <div className="overflow-x-auto rounded-xl border border-line bg-surface-1">
+            <table className="w-full text-[13px] border-collapse" id="attack-table">
               <thead>
-                <tr className="text-left" style={{ color: 'var(--text-3)' }}>
-                  <th className="px-3 py-2 font-medium">Attack</th>
-                  <th className="px-3 py-2 font-medium">The hidden note asks the agent to</th>
+                <tr className="bg-surface-2 text-[12px] uppercase tracking-wider text-fg-3 font-semibold border-b border-line text-left">
+                  <th className="px-4 py-2.5 font-medium">Attack</th>
+                  <th className="px-4 py-2.5 font-medium">The hidden note asks the agent to</th>
                   {conds.map(c => (
-                    <th key={c} className="px-3 py-2 font-medium whitespace-nowrap">
+                    <th key={c} className="px-4 py-2.5 font-medium whitespace-nowrap">
                       {c}: harm
                     </th>
                   ))}
@@ -447,16 +442,17 @@ export const EvidencePage: React.FC = () => {
                     data-attack={a.id}
                     aria-selected={a.id === scenario}
                     onClick={() => setScenario(a.id)}
-                    className="border-t border-line cursor-pointer hover:bg-surface-tableHover"
-                    style={a.id === scenario ? { background: 'rgb(var(--accent-rgb) / 0.1)' } : undefined}
+                    className={`h-11 min-h-[44px] cursor-pointer transition-colors border-b border-line last:border-b-0 ${
+                      a.id === scenario ? 'bg-surface-2 font-medium' : 'hover:bg-surface-2/50'
+                    }`}
                   >
-                    <td className="px-3 py-2">
-                      <button type="button" className="mono text-[13px] underline-offset-2 hover:underline bg-transparent" style={{ color: 'var(--text)' }} onClick={() => setScenario(a.id)}>
+                    <td className="px-4 py-2">
+                      <button type="button" className="mono text-[13px] underline-offset-2 hover:underline bg-transparent border-none p-0 cursor-pointer text-fg" onClick={() => setScenario(a.id)}>
                         {a.id.replace('injected_indirect_', '#')}
                       </button>
                     </td>
-                    <td className="px-3 py-2" style={{ color: 'var(--text-2)' }}>
-                      {ACTION_LABEL[a.injected_action] || a.injected_action}: <span className="mono text-[13px]">{a.injected_target}</span>
+                    <td className="px-4 py-2" style={{ color: 'var(--text-2)' }}>
+                      {ACTION_LABEL[a.injected_action] || a.injected_action}: <span className="mono text-[13px] text-fg">{a.injected_target}</span>
                       {a.phrasing === 'indirect_reference' && (
                         <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>
                           {' '}

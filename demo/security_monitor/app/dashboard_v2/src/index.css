@@ -616,8 +616,18 @@
     animation: none !important;
     transform: none !important;
   }
-  .report-sheet {
+  .report-sheet,
+  .report-sheet > div,
+  .report-sheet section,
+  .report-sheet table,
+  .report-sheet tr,
+  .report-sheet th,
+  .report-sheet td {
     background: #fff !important;
+    background-color: #fff !important;
+    border-color: #d4d4d8 !important;
+  }
+  .report-sheet {
     border: none !important;
     box-shadow: none !important;
     padding: 0 !important;

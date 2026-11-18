@@ -8,14 +8,17 @@ import { needsYouSentence } from '../logic/plain';
 import { HourCell, agentRows, hourlyHeat, startOfLocalDay } from '../logic/teamStats';
 import { loadTodayEvents } from '../api/events';
 import { PageHeader } from '../components/ui/PageHeader';
+import { MetricCard } from '../components/ui/MetricCard';
+import { StatusPill } from '../components/ui/StatusPill';
+import { Button } from '../components/ui/Button';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
 
-const CELL: Record<HourCell, { bg: string; label: string }> = {
-  none: { bg: 'rgba(139,149,167,0.10)', label: 'nothing' },
-  quiet: { bg: 'rgba(34,197,94,0.45)', label: 'a run started' },
-  asked: { bg: 'var(--wait)', label: 'asked for something' },
-  stopped: { bg: 'var(--bad)', label: 'stopped at the fence' },
+const CELL: Record<HourCell, { bgClass: string; label: string }> = {
+  none: { bgClass: 'bg-surface-2', label: 'nothing' },
+  quiet: { bgClass: 'bg-accent/40', label: 'a run started' },
+  asked: { bgClass: 'bg-wait', label: 'asked for something' },
+  stopped: { bgClass: 'bg-bad', label: 'stopped at the fence' },
 };
 
 export const TeamLeadPage: React.FC = () => {
@@ -82,6 +85,13 @@ export const TeamLeadPage: React.FC = () => {
   const top = rows.find(r => r.stops > 0);
   const teamLabel = currentTeam ? `${currentTeam} ` : '';
 
+  const recordsAllChecked = Boolean(
+    recordsSummary &&
+    recordsSummary.total > 0 &&
+    recordsSummary.verified === recordsSummary.total &&
+    recordsSummary.failed === 0
+  );
+
   return (
     <div className="flex flex-col gap-6 font-sans">
       <PageHeader
@@ -97,16 +107,28 @@ export const TeamLeadPage: React.FC = () => {
       />
 
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <Kpi id="kpi-running" label="Agents running" value={rows.length ? `${running} / ${rows.length}` : '—'} sub={rows.length ? `${rows.length - running} idle` : 'No agents yet'} />
-        <Kpi id="kpi-waiting" label="Waiting for you" value={String(waiting)} sub={waiting ? 'review requests below' : 'nothing waiting'} color="var(--wait-kpi)" />
-        <Kpi
+        <MetricCard
+          id="kpi-running"
+          label="Agents running"
+          value={rows.length ? `${running} / ${rows.length}` : '—'}
+          note={rows.length ? `${rows.length - running} idle` : 'No agents yet'}
+          tone="default"
+        />
+        <MetricCard
+          id="kpi-waiting"
+          label="Waiting for you"
+          value={String(waiting)}
+          note={waiting ? 'review requests below' : 'nothing waiting'}
+          tone={waiting > 0 ? 'wait' : 'default'}
+        />
+        <MetricCard
           id="kpi-stopped"
           label="Stopped at the fence"
           value={String(stoppedToday)}
-          sub="today, from the record"
-          color={stoppedToday ? 'var(--bad)' : 'var(--text)'}
+          note="today, from the record"
+          tone={stoppedToday > 0 ? 'bad' : 'default'}
         />
-        <Kpi
+        <MetricCard
           id="kpi-records"
           label="Records checked"
           value={
@@ -116,18 +138,18 @@ export const TeamLeadPage: React.FC = () => {
                 ? `${Math.round((recordsSummary.verified / recordsSummary.total) * 100)}%`
                 : `${recordsSummary.failed} failed`
           }
-          sub={
+          note={
             !recordsSummary
               ? 'Not available for this role'
               : recordsSummary.total === 0
                 ? 'No records yet'
                 : `${recordsSummary.verified} of ${recordsSummary.total} records checked`
           }
-          color={recordsSummary && recordsSummary.failed > 0 ? 'var(--bad)' : recordsSummary && recordsSummary.total ? 'var(--ok)' : 'var(--text)'}
+          tone={recordsSummary && recordsSummary.failed > 0 ? 'bad' : recordsAllChecked ? 'ok' : 'default'}
         />
       </section>
 
-      <section className="p-5 rounded-xl bg-surface-2 border border-line flex flex-col gap-3">
+      <section className="p-5 rounded-xl bg-surface-1 border border-line flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-[15px] font-bold text-fg">When each agent hit the fence</h2>
@@ -136,7 +158,7 @@ export const TeamLeadPage: React.FC = () => {
           <div className="flex flex-wrap items-center gap-3 text-[12px] text-fg-3">
             {(['quiet', 'asked', 'stopped'] as HourCell[]).map(c => (
               <span key={c} className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-sm" style={{ background: CELL[c].bg }} /> {CELL[c].label}
+                <span className={`w-2.5 h-2.5 rounded-sm ${CELL[c].bgClass}`} /> {CELL[c].label}
               </span>
             ))}
           </div>
@@ -156,7 +178,7 @@ export const TeamLeadPage: React.FC = () => {
               </div>
               {heat.map(row => (
                 <div key={row.agentId} className="grid grid-cols-[160px_repeat(24,1fr)] gap-1 items-center" data-agent={row.agentId}>
-                  <div className="font-mono text-[12px] truncate pr-2" style={{ color: 'var(--indigo-light)' }} title={row.agentId}>
+                  <div className="font-mono text-[12px] truncate pr-2 text-accent-strong" title={row.agentId}>
                     {row.agentId}
                   </div>
                   {row.cells.map((cell, h) => (
@@ -165,8 +187,7 @@ export const TeamLeadPage: React.FC = () => {
                       data-hour={h}
                       data-cell={cell}
                       title={`${row.agentId} · ${HOURS[h]} · ${CELL[cell].label}`}
-                      className="h-4 rounded-sm"
-                      style={{ background: CELL[cell].bg }}
+                      className={`h-4 rounded-sm ${CELL[cell].bgClass}`}
                     />
                   ))}
                 </div>
@@ -177,42 +198,33 @@ export const TeamLeadPage: React.FC = () => {
       </section>
 
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="lg:col-span-2 p-5 rounded-xl bg-surface-2 border border-line flex flex-col gap-3">
+        <div className="lg:col-span-2 p-5 rounded-xl bg-surface-1 border border-line flex flex-col gap-3">
           <h2 className="text-[15px] font-bold text-fg">Team agents</h2>
           {rows.length === 0 ? (
             <EmptyState id="team-agents-empty" title="No agents yet." body="Agents appear here after their first run." />
           ) : (
-            <div className="overflow-x-auto">
+            <div className="rounded-xl border border-line bg-surface-1 overflow-hidden">
               <table className="w-full text-left text-[13px] border-collapse">
                 <thead>
-                  <tr className="border-b border-line text-fg-3 font-medium text-[12px]">
-                    <th className="pb-2.5 font-normal">Agent</th>
-                    <th className="pb-2.5 font-normal">Owner</th>
-                    <th className="pb-2.5 font-normal">Actions</th>
-                    <th className="pb-2.5 font-normal">Stops</th>
-                    <th className="pb-2.5 font-normal">Status</th>
+                  <tr className="bg-surface-2 text-[12px] uppercase tracking-wider text-fg-3 font-semibold border-b border-line">
+                    <th className="px-4 py-2.5 font-medium">Agent</th>
+                    <th className="px-4 py-2.5 font-medium">Owner</th>
+                    <th className="px-4 py-2.5 font-medium">Actions</th>
+                    <th className="px-4 py-2.5 font-medium">Stops</th>
+                    <th className="px-4 py-2.5 font-medium">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
                   {rows.map(agent => (
-                    <tr key={agent.agentId}>
-                      <td className="py-2.5 font-mono text-fg font-medium">{agent.agentId}</td>
-                      <td className="py-2.5 text-fg-2">{agent.owner ?? '—'}</td>
-                      <td className="py-2.5 text-fg">{agent.actions.toLocaleString()}</td>
-                      <td className="py-2.5 font-semibold" style={{ color: agent.stops > 0 ? 'var(--bad-light)' : 'var(--text-3)' }}>
+                    <tr key={agent.agentId} className="h-11 min-h-[44px] hover:bg-surface-2/50 transition-colors">
+                      <td className="px-4 py-2.5 font-mono text-fg font-medium">{agent.agentId}</td>
+                      <td className="px-4 py-2.5 text-fg-2">{agent.owner ?? '—'}</td>
+                      <td className="px-4 py-2.5 text-fg">{agent.actions.toLocaleString()}</td>
+                      <td className={`px-4 py-2.5 font-semibold ${agent.stops > 0 ? 'text-bad' : 'text-fg-3'}`}>
                         {agent.stops}
                       </td>
-                      <td className="py-2.5">
-                        <span
-                          className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold"
-                          style={
-                            agent.running
-                              ? { backgroundColor: 'var(--ok-tint)', color: 'var(--ok-light)' }
-                              : { backgroundColor: 'rgba(139,149,167,0.15)', color: 'var(--text-2)' }
-                          }
-                        >
-                          {agent.running ? 'running' : 'idle'}
-                        </span>
+                      <td className="px-4 py-2.5">
+                        <StatusPill tone={agent.running ? 'ok' : 'neutral'} label={agent.running ? 'running' : 'idle'} />
                       </td>
                     </tr>
                   ))}
@@ -222,29 +234,37 @@ export const TeamLeadPage: React.FC = () => {
           )}
         </div>
 
-        <div className="p-5 rounded-xl bg-surface-2 border border-wait-line flex flex-col gap-3">
+        <div className="p-5 rounded-xl bg-surface-1 border border-line flex flex-col gap-3">
           <div className="text-[12px] font-bold text-wait-kpi tracking-wider uppercase">Needs you · {waiting}</div>
           {waiting === 0 ? (
             <p id="needs-you-empty" className="m-0 text-[14px] text-fg-2">
               Nothing is waiting for you.
             </p>
           ) : (
-            <div className="flex flex-col gap-3">
+            <div className="rounded-xl border border-line bg-surface-1 overflow-hidden divide-y divide-line">
               {expansions.map(req => (
-                <div key={req.request_id} className="p-3.5 rounded-xl bg-bg border border-line flex flex-col gap-2">
-                  <div className="text-[13px] text-fg [overflow-wrap:anywhere]">
-                    <span className="font-mono" style={{ color: 'var(--indigo-light)' }}>{req.agent_id}</span> wants <b>{req.resource_target}</b>
+                <div
+                  key={req.request_id}
+                  className="min-h-[44px] px-4 py-2.5 flex items-center justify-between gap-3 hover:bg-surface-2/50 transition-colors text-[14px]"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] text-fg [overflow-wrap:anywhere]">
+                      <span className="font-mono text-accent-strong">{req.agent_id}</span> wants <b>{req.resource_target}</b>
+                    </div>
+                    <div className="text-[12px] text-fg-2">
+                      {needsYouSentence(req)}
+                    </div>
                   </div>
-                  <div className="text-[12px]" style={{ color: req.escalated_by_provenance ? 'var(--bad-text)' : 'var(--text-2)' }}>
-                    {needsYouSentence(req)}
-                  </div>
-                  <div className="mt-1">
-                    <button
+                  <div className="flex items-center gap-2 shrink-0">
+                    <StatusPill tone="wait" label="Waiting" />
+                    <Button
+                      variant="secondary"
+                      size="sm"
                       onClick={() => navigate(`/run/${req.task_id}`)}
-                      className="btn-primary min-h-[36px] px-3 text-[12px]"
+                      className="min-h-[36px] px-3 text-[12px]"
                     >
                       Review
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -256,13 +276,3 @@ export const TeamLeadPage: React.FC = () => {
     </div>
   );
 };
-
-const Kpi: React.FC<{ id: string; label: string; value: string; sub: string; color?: string }> = ({ id, label, value, sub, color = 'var(--text)' }) => (
-  <div id={id} className="p-4 rounded-xl bg-surface-2 border border-line flex flex-col justify-between anim-rise">
-    <div className="text-[12px] font-medium text-fg-3">{label}</div>
-    <div className="mt-2 text-3xl font-bold tracking-tight" style={{ color }} data-value>
-      {value}
-    </div>
-    <div className="mt-1 text-[12px] text-fg-3">{sub}</div>
-  </div>
-);

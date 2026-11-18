@@ -19,15 +19,16 @@ import {
 } from '../logic/overview';
 import { layerLabel } from '../logic/report';
 import { needsYouSentence } from '../logic/plain';
-import { PALETTE } from '../logic/palette';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
+import { MetricCard } from '../components/ui/MetricCard';
+import { StatusPill } from '../components/ui/StatusPill';
 
-const STATE: Record<AgentState, { color: string; label: string }> = {
-  asking: { color: PALETTE.wait, label: 'asking you' },
-  stopped: { color: PALETTE.bad, label: 'stopped in the last hour' },
-  running: { color: PALETTE.accent, label: 'running' },
-  idle: { color: PALETTE.slate500, label: 'idle' },
+const STATE_CONFIG: Record<AgentState, { label: string; dotClass: string }> = {
+  asking: { label: 'asking you', dotClass: 'bg-wait' },
+  stopped: { label: 'stopped in the last hour', dotClass: 'bg-bad' },
+  running: { label: 'running', dotClass: 'bg-info' },
+  idle: { label: 'idle', dotClass: 'bg-fg-3' },
 };
 
 export const AdminOverviewPage: React.FC = () => {
@@ -107,6 +108,13 @@ export const AdminOverviewPage: React.FC = () => {
   const watch = agentRows(overviewTasks).filter(r => r.stops > 0).slice(0, 5);
   const teamOf = new Map(overviewTasks.map(t => [t.agent_id, t.team || null]));
 
+  const recordsAllChecked = Boolean(
+    recordsSummary &&
+    recordsSummary.total > 0 &&
+    recordsSummary.verified === recordsSummary.total &&
+    recordsSummary.failed === 0
+  );
+
   return (
     <div className="flex flex-col gap-6 font-sans">
       <PageHeader
@@ -131,16 +139,40 @@ export const AdminOverviewPage: React.FC = () => {
       />
 
       <section className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
-        <Kpi id="kpi-active" label="Active agents" value={String(dots.filter(d => d.state !== 'idle').length)} sub={dots.length ? `${dots.length} ${dots.length === 1 ? 'agent' : 'agents'} in all` : 'No agents yet'} />
-        <Kpi id="kpi-runs" label="Runs, last 24 hours" value={String(runs24.length)} sub={medianRun == null ? 'No finished runs' : `median ${formatDuration(medianRun)}`} />
-        <Kpi id="kpi-stopped" label="Actions stopped" value={String(stopped24)} sub="last 24 hours" color={stopped24 ? PALETTE.bad : PALETTE.text} />
-        <Kpi id="kpi-waiting" label="Waiting for a decision" value={String(pending.length)} sub={pending.length ? 'see the list below' : 'nothing waiting'} color={pending.length ? PALETTE.waitKpi : PALETTE.text} />
-        <Kpi
+        <MetricCard
+          id="kpi-active"
+          label="Active agents"
+          value={String(dots.filter(d => d.state !== 'idle').length)}
+          note={dots.length ? `${dots.length} ${dots.length === 1 ? 'agent' : 'agents'} in all` : 'No agents yet'}
+          tone="default"
+        />
+        <MetricCard
+          id="kpi-runs"
+          label="Runs, last 24 hours"
+          value={String(runs24.length)}
+          note={medianRun == null ? 'No finished runs' : `median ${formatDuration(medianRun)}`}
+          tone="default"
+        />
+        <MetricCard
+          id="kpi-stopped"
+          label="Actions stopped"
+          value={String(stopped24)}
+          note="last 24 hours"
+          tone={stopped24 > 0 ? 'bad' : 'default'}
+        />
+        <MetricCard
+          id="kpi-waiting"
+          label="Waiting for a decision"
+          value={String(pending.length)}
+          note={pending.length ? 'see the list below' : 'nothing waiting'}
+          tone={pending.length > 0 ? 'wait' : 'default'}
+        />
+        <MetricCard
           id="kpi-records"
           label="Records checked"
           value={!recordsSummary || recordsSummary.total === 0 ? '—' : recordsSummary.failed === 0 ? `${Math.round((recordsSummary.verified / recordsSummary.total) * 100)}%` : `${recordsSummary.failed} failed`}
-          sub={!recordsSummary || recordsSummary.total === 0 ? 'No records yet' : `${recordsSummary.verified} of ${recordsSummary.total} records checked`}
-          color={recordsSummary && recordsSummary.failed > 0 ? PALETTE.bad : recordsSummary && recordsSummary.total ? PALETTE.ok : PALETTE.text}
+          note={!recordsSummary || recordsSummary.total === 0 ? 'No records yet' : `${recordsSummary.verified} of ${recordsSummary.total} records checked`}
+          tone={recordsAllChecked ? 'ok' : 'default'}
         />
       </section>
 
@@ -153,9 +185,9 @@ export const AdminOverviewPage: React.FC = () => {
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-4 text-[12px] text-fg-3">
-            {(Object.keys(STATE) as AgentState[]).map(s => (
+            {(Object.keys(STATE_CONFIG) as AgentState[]).map(s => (
               <span key={s} className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full" style={{ background: STATE[s].color }} /> {STATE[s].label}
+                <span className={`w-2 h-2 rounded-full ${STATE_CONFIG[s].dotClass}`} /> {STATE_CONFIG[s].label}
               </span>
             ))}
           </div>
@@ -163,48 +195,55 @@ export const AdminOverviewPage: React.FC = () => {
         {dots.length === 0 ? (
           <EmptyState id="map-empty" title="No agents yet." body="Agents appear here after their first run." />
         ) : mode === 'individual' ? (
-          <div data-view="individual" className="rounded-[28px] border-2 border-dashed border-accent/50 bg-accent/[0.04] p-4 flex flex-wrap gap-2">
-            {dots.map(d => (
-              <AgentChip key={d.agentId} d={d} />
-            ))}
+          <div
+            id="live-agent-map"
+            data-view="individual"
+            className="relative overflow-hidden rounded-3xl border border-line bg-surface-1/40 p-6 flex flex-wrap gap-2"
+          >
+            <div className="pipeline-dots absolute inset-0 pointer-events-none" />
+            <div className="relative z-10 flex flex-wrap gap-2 w-full">
+              {dots.map(d => (
+                <AgentChip key={d.agentId} d={d} />
+              ))}
+            </div>
           </div>
         ) : (
-          <div data-view={mode} className="overflow-x-auto">
+          <div id="live-agent-map" data-view={mode} className="rounded-xl border border-line bg-surface-1 overflow-hidden">
             <table className="w-full text-left text-[13px] border-collapse">
               <thead>
-                <tr className="border-b border-line text-fg-3 text-[12px]">
-                  <th className="pb-2 pr-3 font-normal">Team</th>
-                  <th className="pb-2 pr-3 font-normal">Agents</th>
-                  <th className="pb-2 pr-3 font-normal">Active</th>
-                  <th className="pb-2 pr-3 font-normal">Waiting</th>
+                <tr className="bg-surface-2 text-[12px] uppercase tracking-wider text-fg-3 font-semibold border-b border-line">
+                  <th className="px-4 py-2.5 font-medium">Team</th>
+                  <th className="px-4 py-2.5 font-medium">Agents</th>
+                  <th className="px-4 py-2.5 font-medium">Active</th>
+                  <th className="px-4 py-2.5 font-medium">Waiting</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
                 {teams.slice(0, 20).map(g => (
-                  <tr key={g.team}>
-                    <td className="py-2 text-fg">{g.team}</td>
-                    <td className="py-2">{g.agents.toLocaleString()}</td>
-                    <td className="py-2">{g.running.toLocaleString()}</td>
-                    <td className="py-2" style={{ color: g.waiting ? 'var(--wait-kpi)' : 'var(--text-3)' }}>
+                  <tr key={g.team} className="h-11 min-h-[44px] hover:bg-surface-2/50 transition-colors">
+                    <td className="px-4 py-2 text-fg font-medium">{g.team}</td>
+                    <td className="px-4 py-2 text-fg">{g.agents.toLocaleString()}</td>
+                    <td className="px-4 py-2 text-fg">{g.running.toLocaleString()}</td>
+                    <td className={`px-4 py-2 ${g.waiting ? 'text-wait-kpi font-semibold' : 'text-fg-3'}`}>
                       {g.waiting}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {teams.length > 20 && <p className="m-0 mt-2 text-[12px] text-fg-3">and {teams.length - 20} more teams</p>}
+            {teams.length > 20 && <p className="m-0 p-3 text-[12px] text-fg-3 border-t border-line">and {teams.length - 20} more teams</p>}
           </div>
         )}
       </section>
 
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="lg:col-span-2 p-5 rounded-xl bg-surface-2 border border-line flex flex-col gap-3">
+        <div className="lg:col-span-2 p-5 rounded-xl bg-surface-1 border border-line flex flex-col gap-3">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <h2 className="text-[15px] font-bold text-fg">Agent actions per hour</h2>
             <div className="flex items-center gap-3 text-[12px] text-fg-3">
-              <Legend color={PALETTE.accent} label="allowed" />
-              <Legend color={PALETTE.bad} label="stopped" />
-              <Legend color={PALETTE.wait} label="asked" />
+              <Legend dotClass="bg-ok" label="allowed" />
+              <Legend dotClass="bg-bad" label="stopped" />
+              <Legend dotClass="bg-wait" label="asked" />
             </div>
           </div>
           {!anyToday ? (
@@ -223,11 +262,11 @@ export const AdminOverviewPage: React.FC = () => {
                   >
                     <div data-bar="asked" style={{ height: `${(h.asked / peak) * 100}%`, background: 'var(--wait)' }} />
                     <div data-bar="stopped" style={{ height: `${(h.stopped / peak) * 100}%`, background: 'var(--bad)' }} />
-                    <div data-bar="allowed" style={{ height: `${(h.allowed / peak) * 100}%`, background: 'var(--accent)' }} />
+                    <div data-bar="allowed" style={{ height: `${(h.allowed / peak) * 100}%`, background: 'var(--ok)' }} />
                   </div>
                 ))}
               </div>
-              <div className="flex text-[11px] text-fg-3">
+              <div className="flex text-[11px] text-fg-3 border-t border-line pt-1">
                 {[0, 6, 12, 18].map(h => (
                   <span key={h} className="flex-1">{`${String(h).padStart(2, '0')}:00`}</span>
                 ))}
@@ -236,12 +275,12 @@ export const AdminOverviewPage: React.FC = () => {
           )}
         </div>
 
-        <div className="p-5 rounded-xl bg-surface-2 border border-line flex flex-col gap-3">
+        <div className="p-5 rounded-xl bg-surface-1 border border-line flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <h2 className="text-[15px] font-bold text-fg">Waiting for a decision</h2>
-            <button onClick={() => navigate('/inbox')} className="text-[13px] text-info bg-transparent border-none cursor-pointer hover:underline min-h-[36px]">
+            <Button variant="ghost" size="sm" onClick={() => navigate('/inbox')} className="text-[13px] text-info hover:underline min-h-[32px] px-2">
               All →
-            </button>
+            </Button>
           </div>
           {pending.length === 0 ? (
             <p id="waiting-empty" className="m-0 py-6 text-[14px] text-fg-3">
@@ -254,7 +293,7 @@ export const AdminOverviewPage: React.FC = () => {
                   type="button"
                   key={exp.request_id}
                   onClick={() => navigate(`/run/${exp.task_id}`)}
-                  className="text-left p-3 rounded-lg bg-surface-3 border border-line cursor-pointer hover:border-line-strong flex flex-col gap-1"
+                  className="text-left p-3 rounded-lg bg-surface-2 border border-line cursor-pointer hover:bg-surface-2/70 hover:border-line-strong flex flex-col gap-1 transition-colors"
                 >
                   <span className="text-[13px] font-semibold text-fg [overflow-wrap:anywhere]">
                     {exp.agent_id} → {exp.resource_target}
@@ -268,65 +307,75 @@ export const AdminOverviewPage: React.FC = () => {
       </section>
 
       <section className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <div className="p-5 rounded-xl bg-surface-2 border border-line flex flex-col gap-3">
-          <h2 className="text-[15px] font-bold text-fg">Top stop patterns</h2>
-          <span className="text-[12px] text-fg-3 -mt-2">last 24 hours</span>
+        <div className="p-5 rounded-xl bg-surface-1 border border-line flex flex-col gap-3">
+          <div>
+            <h2 className="text-[15px] font-bold text-fg">Top stop patterns</h2>
+            <span className="text-[12px] text-fg-3">last 24 hours</span>
+          </div>
           {!fleet || fleet.blocked.groups.length === 0 ? (
             <p id="patterns-empty" className="m-0 py-4 text-[14px] text-fg-3">
               Nothing was stopped in the last 24 hours.
             </p>
           ) : (
-            <table className="w-full text-left text-[13px] border-collapse">
-              <thead>
-                <tr className="border-b border-line text-fg-3 text-[12px]">
-                  <th className="pb-2 pr-3 font-normal">Pattern</th>
-                  <th className="pb-2 pr-3 font-normal">Agents</th>
-                  <th className="pb-2 pr-3 font-normal">Stops</th>
-                  <th className="pb-2 pr-3 font-normal">Stopped by</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {fleet.blocked.groups.map(g => (
-                  <tr key={g.target_class}>
-                    <td className="py-2.5 pr-3 text-fg">{g.label}</td>
-                    <td className="py-2.5">{g.agent_count}</td>
-                    <td className="py-2.5 pr-3 text-bad-light font-semibold">{g.count}</td>
-                    <td className="py-2.5 pr-3 text-fg-2">{Object.keys(g.by_layer).map(layerLabel).join(', ') || '—'}</td>
+            <div className="rounded-xl border border-line bg-surface-1 overflow-hidden">
+              <table className="w-full text-left text-[13px] border-collapse">
+                <thead>
+                  <tr className="bg-surface-2 text-[12px] uppercase tracking-wider text-fg-3 font-semibold border-b border-line">
+                    <th className="px-4 py-2.5 font-medium">Pattern</th>
+                    <th className="px-4 py-2.5 font-medium">Agents</th>
+                    <th className="px-4 py-2.5 font-medium">Stops</th>
+                    <th className="px-4 py-2.5 font-medium">Stopped by</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {fleet.blocked.groups.map(g => (
+                    <tr key={g.target_class} className="h-11 min-h-[44px] hover:bg-surface-2/50 transition-colors">
+                      <td className="px-4 py-2.5 text-fg font-medium">{g.label}</td>
+                      <td className="px-4 py-2.5 text-fg">{g.agent_count}</td>
+                      <td className="px-4 py-2.5 text-bad font-semibold">{g.count}</td>
+                      <td className="px-4 py-2.5 text-fg-2 font-mono text-[12px]">{Object.keys(g.by_layer).map(layerLabel).join(', ') || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
 
-        <div className="p-5 rounded-xl bg-surface-2 border border-line flex flex-col gap-3">
-          <h2 className="text-[15px] font-bold text-fg">Agents to watch</h2>
-          <span className="text-[12px] text-fg-3 -mt-2">most stops, all runs</span>
+        <div className="p-5 rounded-xl bg-surface-1 border border-line flex flex-col gap-3">
+          <div>
+            <h2 className="text-[15px] font-bold text-fg">Agents to watch</h2>
+            <span className="text-[12px] text-fg-3">most stops, all runs</span>
+          </div>
           {watch.length === 0 ? (
             <p id="watch-empty" className="m-0 py-4 text-[14px] text-fg-3">
               No agent has been stopped.
             </p>
           ) : (
-            <table className="w-full text-left text-[13px] border-collapse">
-              <thead>
-                <tr className="border-b border-line text-fg-3 text-[12px]">
-                  <th className="pb-2 pr-3 font-normal">Agent</th>
-                  <th className="pb-2 pr-3 font-normal">Team</th>
-                  <th className="pb-2 pr-3 font-normal">Status</th>
-                  <th className="pb-2 pr-3 font-normal">Stops</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {watch.map(r => (
-                  <tr key={r.agentId}>
-                    <td className="py-2.5 pr-3 font-mono text-fg">{r.agentId}</td>
-                    <td className="py-2.5 pr-3 text-fg-2">{teamOf.get(r.agentId) || '—'}</td>
-                    <td className="py-2.5">{r.running ? 'running' : 'idle'}</td>
-                    <td className="py-2.5 pr-3 text-bad-light font-semibold">{r.stops}</td>
+            <div className="rounded-xl border border-line bg-surface-1 overflow-hidden">
+              <table className="w-full text-left text-[13px] border-collapse">
+                <thead>
+                  <tr className="bg-surface-2 text-[12px] uppercase tracking-wider text-fg-3 font-semibold border-b border-line">
+                    <th className="px-4 py-2.5 font-medium">Agent</th>
+                    <th className="px-4 py-2.5 font-medium">Team</th>
+                    <th className="px-4 py-2.5 font-medium">Status</th>
+                    <th className="px-4 py-2.5 font-medium">Stops</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {watch.map(r => (
+                    <tr key={r.agentId} className="h-11 min-h-[44px] hover:bg-surface-2/50 transition-colors">
+                      <td className="px-4 py-2.5 font-mono text-fg font-medium">{r.agentId}</td>
+                      <td className="px-4 py-2.5 text-fg-2">{teamOf.get(r.agentId) || '—'}</td>
+                      <td className="px-4 py-2.5">
+                        <StatusPill tone={r.running ? 'info' : 'neutral'} label={r.running ? 'running' : 'idle'} />
+                      </td>
+                      <td className="px-4 py-2.5 text-bad font-semibold">{r.stops}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </section>
@@ -334,30 +383,23 @@ export const AdminOverviewPage: React.FC = () => {
   );
 };
 
-const AgentChip: React.FC<{ d: AgentDot }> = ({ d }) => (
-  <span
-    data-agent={d.agentId}
-    data-state={d.state}
-    title={`${d.agentId} · ${STATE[d.state].label}${d.team ? ` · team ${d.team}` : ''}`}
-    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-2 border border-line-strong text-[13px] font-mono text-fg"
-  >
-    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: STATE[d.state].color }} />
-    {d.agentId}
-  </span>
-);
+const AgentChip: React.FC<{ d: AgentDot }> = ({ d }) => {
+  const cfg = STATE_CONFIG[d.state];
+  return (
+    <span
+      data-agent={d.agentId}
+      data-state={d.state}
+      title={`${d.agentId} · ${cfg.label}${d.team ? ` · team ${d.team}` : ''}`}
+      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-2 border border-line text-[13px] font-mono text-fg"
+    >
+      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${cfg.dotClass}`} />
+      {d.agentId}
+    </span>
+  );
+};
 
-const Legend: React.FC<{ color: string; label: string }> = ({ color, label }) => (
+const Legend: React.FC<{ dotClass: string; label: string }> = ({ dotClass, label }) => (
   <span className="flex items-center gap-1.5">
-    <span className="w-2.5 h-2.5 rounded-sm" style={{ background: color }} /> {label}
+    <span className={`w-2.5 h-2.5 rounded-sm ${dotClass}`} /> {label}
   </span>
-);
-
-const Kpi: React.FC<{ id: string; label: string; value: string; sub: string; color?: string }> = ({ id, label, value, sub, color = 'var(--text)' }) => (
-  <div id={id} className="p-4 rounded-xl bg-surface-2 border border-line flex flex-col justify-between anim-rise">
-    <div className="text-[12px] font-medium text-fg-3">{label}</div>
-    <div className="mt-2 text-2xl sm:text-3xl font-bold" style={{ color }} data-value>
-      {value}
-    </div>
-    <div className="text-[12px] text-fg-3">{sub}</div>
-  </div>
 );
