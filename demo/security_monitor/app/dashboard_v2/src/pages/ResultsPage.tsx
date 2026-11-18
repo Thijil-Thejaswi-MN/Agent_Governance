@@ -6,7 +6,7 @@ import { ResultsSummary } from '../types';
 import { HowItWorks } from '../components/v3/HowItWorks';
 import { PALETTE } from '../logic/palette';
 import { PageHeader } from '../components/ui/PageHeader';
-import { Button } from '../components/ui/Button';
+import { buttonClasses } from '../components/ui/Button';
 
 // Ours (Condition C) is --accent, others are --text-3 bars.
 const CONDITION_COLORS: Record<'A' | 'B' | 'C' | 'D', string> = {
@@ -159,10 +159,8 @@ export const ResultsPage: React.FC = () => {
             it in each setup, and what came back. Read straight from the raw trial files.
           </p>
         </div>
-        <Link to="/evidence" id="open-evidence" className="no-underline shrink-0">
-          <Button variant="primary" size="md">
-            Open the recorded evidence
-          </Button>
+        <Link to="/evidence" id="open-evidence" className={buttonClasses('primary', 'md', 'shrink-0')}>
+          Open the recorded evidence
         </Link>
       </section>
 

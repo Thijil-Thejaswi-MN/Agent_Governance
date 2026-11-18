@@ -36,6 +36,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({
       <div className="text-[12px] sm:text-[13px] font-medium text-fg-3">{label}</div>
       <div
         id={valueId}
+        data-value
         className={`text-3xl font-semibold leading-none tabular-nums tracking-tight ${toneValueStyles[tone]}`}
       >
         {value}

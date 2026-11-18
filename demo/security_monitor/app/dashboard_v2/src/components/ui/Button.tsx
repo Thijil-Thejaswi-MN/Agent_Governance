@@ -28,6 +28,12 @@ const sizeStyles: Record<ButtonSize, string> = {
   'icon-sm': 'h-8 w-8 p-0 justify-center rounded-lg',
 };
 
+/** The button look for a link (<Link>/<a>), so a link is never wrapped around a <button>:
+ *  nested interactive elements give two tab stops and are invalid HTML. */
+export function buttonClasses(variant: ButtonVariant = 'secondary', size: ButtonSize = 'md', className = ''): string {
+  return `inline-flex items-center justify-center no-underline transition-colors cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-bg ${variantStyles[variant]} ${sizeStyles[size]} ${className}`;
+}
+
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ variant = 'secondary', size = 'md', className = '', type = 'button', id, disabled, children, ...rest }, ref) => {
     return (
@@ -36,7 +42,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         id={id}
         type={type}
         disabled={disabled}
-        className={`inline-flex items-center justify-center transition-colors cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-bg ${variantStyles[variant]} ${sizeStyles[size]} ${className}`}
+        className={buttonClasses(variant, size, className)}
         {...rest}
       >
         {children}

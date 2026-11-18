@@ -4,7 +4,10 @@ import { Download, FileJson, Printer } from 'lucide-react';
 import { api } from '../api/client';
 import { ErrorState, LoadingState } from '../components/common/States';
 import { outcomeLabel } from '../logic/plain';
+import { getTone } from '../logic/tones';
 import { PageHeader } from '../components/ui/PageHeader';
+import { StatusPill } from '../components/ui/StatusPill';
+import { Button, buttonClasses } from '../components/ui/Button';
 import {
   ReportApproval,
   ReportBlocked,
@@ -18,8 +21,6 @@ import {
 } from '../logic/report';
 
 const MAX_ROWS = 10;
-
-const TONE = { ok: 'var(--ok-strong)', bad: 'var(--bad-strong)', none: 'var(--text-2)' } as const;
 
 /** The printable sheet. No effects, so tests can render it. */
 export const ReportSheet: React.FC<{ report: TaskReport }> = ({ report }) => {
@@ -35,7 +36,7 @@ export const ReportSheet: React.FC<{ report: TaskReport }> = ({ report }) => {
   const stopped = report.blocked.length - gotThrough;
 
   return (
-    <article id="report-sheet" className="report-sheet card p-6 sm:p-8 flex flex-col gap-6 text-[14px] leading-relaxed">
+    <article id="report-sheet" className="report-sheet flex flex-col gap-6 text-[14px] leading-relaxed">
       {(report.task.comparison_mode || report.task.condition === 'B') && (
         <div
           id="comparison-report-banner"
@@ -46,31 +47,39 @@ export const ReportSheet: React.FC<{ report: TaskReport }> = ({ report }) => {
           <span>Comparison run: kernel lock off, for demonstration</span>
         </div>
       )}
-      <PageHeader
-        title={t.request_text}
-        subtitle={
-          <span>
-            <span className="font-mono">{t.task_id}</span> · generated {formatWhen(report.generated_at)}
-          </span>
-        }
-        className="border-b border-line pb-4"
-      />
 
-      <section aria-label="Run" className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3">
-        <Fact k="Requested by" v={t.requester || '—'} id="report-requester" />
-        <Fact k="Agent" v={t.agent_name || t.agent_id} id="report-agent" />
-        <Fact k="Model" v={t.model || '—'} mono id="report-model" />
-        <Fact k="Outcome" v={outcomeLabel(t.status).text} id="report-outcome" />
-        <Fact k="Agent owner" v={t.agent_owner ? `${t.agent_owner}${t.team ? ` (${t.team})` : ''}` : t.team || '—'} id="report-agent-owner" />
-        <Fact k="Started" v={formatWhen(t.started_at || t.created_at)} nowrap />
-        <Fact k="Ended" v={formatWhen(t.completed_at)} nowrap />
-        <Fact k="Approvals" v={String(report.approvals.length)} />
-        {isComparison ? (
-          <Fact k="Got through (lock off)" v={String(gotThrough)} />
-        ) : (
-          <Fact k="Blocked actions" v={String(report.blocked.length)} />
-        )}
-      </section>
+      <div className="p-6 sm:p-8 rounded-xl bg-surface-1 border border-line flex flex-col gap-6">
+        <PageHeader
+          title={t.request_text}
+          subtitle={
+            <span>
+              <span className="font-mono">{t.task_id}</span> · generated {formatWhen(report.generated_at)}
+            </span>
+          }
+          className="border-b border-line pb-4"
+        />
+
+        <section aria-label="Run" className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3">
+          <Fact k="Requested by" v={t.requester || '—'} id="report-requester" />
+          <Fact k="Agent" v={t.agent_name || t.agent_id} id="report-agent" />
+          <Fact k="Model" v={t.model || '—'} mono id="report-model" />
+          <Fact
+            k="Outcome"
+            v={outcomeLabel(t.status).text}
+            id="report-outcome"
+            pill={<StatusPill tone={getTone(t.status)} label={outcomeLabel(t.status).text} />}
+          />
+          <Fact k="Agent owner" v={t.agent_owner ? `${t.agent_owner}${t.team ? ` (${t.team})` : ''}` : t.team || '—'} id="report-agent-owner" />
+          <Fact k="Started" v={formatWhen(t.started_at || t.created_at)} nowrap />
+          <Fact k="Ended" v={formatWhen(t.completed_at)} nowrap />
+          <Fact k="Approvals" v={String(report.approvals.length)} />
+          {isComparison ? (
+            <Fact k="Got through (lock off)" v={String(gotThrough)} />
+          ) : (
+            <Fact k="Blocked actions" v={String(report.blocked.length)} />
+          )}
+        </section>
+      </div>
 
       <Section title="Boundary" id="report-boundary">
         {initial ? (
@@ -80,24 +89,24 @@ export const ReportSheet: React.FC<{ report: TaskReport }> = ({ report }) => {
             <ListFact k="Added after a decision" items={added} empty="nothing" />
           </div>
         ) : (
-          <p className="m-0" style={{ color: 'var(--text-2)' }}>No boundary was stored for this run.</p>
+          <p className="m-0 text-fg-2">No boundary was stored for this run.</p>
         )}
       </Section>
 
       <Section title={`Approvals (${report.approvals.length})`} id="report-approvals">
         {report.approvals.length === 0 ? (
-          <p className="m-0" style={{ color: 'var(--text-2)' }}>The agent asked for nothing beyond its boundary.</p>
+          <p className="m-0 text-fg-2">The agent asked for nothing beyond its boundary.</p>
         ) : (
           <Table
             head={['Asked for', 'Decision', 'Who', 'When']}
             rows={approvals.shown.map(a => [
-              <span className="font-mono [overflow-wrap:anywhere]">{a.target}</span>,
-              <span>
-                {decisionLabel(a)}
-                {a.prompted_by_file && <span style={{ color: 'var(--text-3)' }}> · prompted by a file it read</span>}
+              <span key="target" className="font-mono [overflow-wrap:anywhere] text-fg">{a.target}</span>,
+              <span key="decision" className="inline-flex items-center gap-1.5 flex-wrap">
+                <StatusPill tone={a.status === 'APPROVED' ? 'ok' : a.status === 'DENIED' ? 'bad' : 'wait'} label={decisionLabel(a)} />
+                {a.prompted_by_file && <span className="text-fg-3 text-[12px]">· prompted by a file it read</span>}
               </span>,
-              a.decided_by_label,
-              formatWhen(a.decided_at),
+              <span key="who" className="text-fg-2">{a.decided_by_label}</span>,
+              <span key="when" className="text-fg-3 whitespace-nowrap">{formatWhen(a.decided_at)}</span>,
             ])}
             more={approvals.more}
           />
@@ -113,19 +122,15 @@ export const ReportSheet: React.FC<{ report: TaskReport }> = ({ report }) => {
         id="report-blocked"
       >
         {report.blocked.length === 0 ? (
-          <p className="m-0" style={{ color: 'var(--text-2)' }}>Nothing was blocked.</p>
+          <p className="m-0 text-fg-2">Nothing was blocked.</p>
         ) : (
           <Table
             head={['Tried', isComparison ? 'Layer' : 'Stopped by', 'Result', 'When']}
             rows={blocked.shown.map(b => [
-              <span className="font-mono [overflow-wrap:anywhere]">{b.target || '—'}</span>,
-              b.layer === 'comparison_unlocked'
-                ? 'None: kernel lock off (comparison mode)'
-                : layerLabel(b.layer),
-              b.layer === 'comparison_unlocked'
-                ? 'Got through: the private file was read (the kernel lock blocks this in a normal run)'
-                : 'Attempted, not successful',
-              formatWhen(b.timestamp),
+              <span key="tried" className="font-mono [overflow-wrap:anywhere] text-fg">{b.target || '—'}</span>,
+              <span key="layer" className="text-fg-2">{b.layer === 'comparison_unlocked' ? 'None: kernel lock off (comparison mode)' : layerLabel(b.layer)}</span>,
+              <span key="result" className="text-fg-2">{b.layer === 'comparison_unlocked' ? 'Got through: the private file was read (the kernel lock blocks this in a normal run)' : 'Attempted, not successful'}</span>,
+              <span key="when" className="text-fg-3 whitespace-nowrap">{formatWhen(b.timestamp)}</span>,
             ])}
             more={blocked.more}
           />
@@ -133,13 +138,16 @@ export const ReportSheet: React.FC<{ report: TaskReport }> = ({ report }) => {
       </Section>
 
       <Section title="Record" id="report-record">
-        <p className="m-0 font-semibold" style={{ color: TONE[rec.tone] }} id="report-record-line" data-tone={rec.tone}>
-          {rec.text}
-        </p>
+        <div id="report-record-line" data-tone={rec.tone}>
+          <StatusPill
+            tone={rec.tone === 'ok' ? 'ok' : rec.tone === 'bad' ? 'bad' : 'neutral'}
+            label={rec.text}
+          />
+        </div>
         {report.record.available && (
-          <p className="m-0 text-[12px] [overflow-wrap:anywhere]" style={{ color: 'var(--text-3)' }}>
+          <p className="m-0 text-[12px] [overflow-wrap:anywhere] text-fg-3">
             {report.record.event_count} hash-chained entries (SHA-256) · last link of the chain{' '}
-            <span className="font-mono">{report.record.final_hash || '—'}</span>
+            <span className="font-mono text-fg">{report.record.final_hash || '—'}</span>
           </p>
         )}
       </Section>
@@ -175,20 +183,20 @@ export const ReportPage: React.FC = () => {
   };
 
   return (
-    <div className="max-w-[880px] pb-12 flex flex-col gap-5">
+    <div className="max-w-[880px] pb-12 flex flex-col gap-5 font-sans">
       <div data-print-hide className="flex flex-wrap items-center gap-3">
-        <Link to={taskId ? `/history/${taskId}` : '/history'} className="text-[15px] inline-flex items-center min-h-[44px]">
+        <Link to={taskId ? `/history/${taskId}` : '/history'} className="text-[14px] text-fg-2 hover:text-fg inline-flex items-center min-h-[44px]">
           ← Back to the run
         </Link>
         <span className="flex-1" />
-        <button id="report-print-btn" type="button" className="btn-primary min-h-[44px] px-5 inline-flex items-center gap-2" onClick={() => window.print()} disabled={!report}>
+        <Button id="report-print-btn" variant="primary" size="md" onClick={() => window.print()} disabled={!report} className="inline-flex items-center gap-2">
           <Printer className="w-4 h-4" aria-hidden="true" /> Print / Save as PDF
-        </button>
-        <button id="report-json-btn" type="button" className="btn-ghost min-h-[44px] px-4 inline-flex items-center gap-2" onClick={downloadJson} disabled={!report}>
+        </Button>
+        <Button id="report-json-btn" variant="ghost" size="md" onClick={downloadJson} disabled={!report} className="inline-flex items-center gap-2">
           <FileJson className="w-4 h-4" aria-hidden="true" /> JSON
-        </button>
+        </Button>
         {taskId && (
-          <a id="report-csv-link" href={api.getTaskReportCsvUrl(taskId)} download className="btn-ghost min-h-[44px] px-4 inline-flex items-center gap-2 no-underline">
+          <a id="report-csv-link" href={api.getTaskReportCsvUrl(taskId)} download className={buttonClasses('ghost', 'md', 'gap-2')}>
             <Download className="w-4 h-4" aria-hidden="true" /> CSV
           </a>
         )}
@@ -204,20 +212,27 @@ export const ReportPage: React.FC = () => {
   );
 };
 
-const Fact: React.FC<{ k: string; v: string; mono?: boolean; id?: string; nowrap?: boolean }> = ({ k, v, mono, id, nowrap }) => (
+const Fact: React.FC<{ k: string; v: string; mono?: boolean; id?: string; nowrap?: boolean; pill?: React.ReactNode }> = ({
+  k,
+  v,
+  mono,
+  id,
+  nowrap,
+  pill,
+}) => (
   <div className="flex flex-col min-w-0">
-    <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>
+    <span className="text-[12px] uppercase tracking-wider text-fg-3 font-semibold">
       {k}
     </span>
     <span id={id} className={`text-fg ${nowrap ? 'whitespace-nowrap' : '[overflow-wrap:anywhere]'} ${mono ? 'font-mono text-[13px]' : ''}`}>
-      {v}
+      {pill || v}
     </span>
   </div>
 );
 
 const ListFact: React.FC<{ k: string; items: string[]; empty?: string }> = ({ k, items, empty = 'nothing' }) => (
   <div className="flex flex-col min-w-0">
-    <span className="text-[12px]" style={{ color: 'var(--text-3)' }}>
+    <span className="text-[12px] uppercase tracking-wider text-fg-3 font-semibold">
       {k}
     </span>
     <span className="font-mono text-[13px] text-fg [overflow-wrap:anywhere]">{items.length ? items.join(', ') : empty}</span>
@@ -225,29 +240,29 @@ const ListFact: React.FC<{ k: string; items: string[]; empty?: string }> = ({ k,
 );
 
 const Section: React.FC<{ title: string; id: string; children: React.ReactNode }> = ({ title, id, children }) => (
-  <section id={id} className="flex flex-col gap-2 break-inside-avoid">
-    <h2 className="m-0 text-[15px] font-semibold text-fg">{title}</h2>
+  <section id={id} className="p-6 sm:p-8 rounded-xl bg-surface-1 border border-line flex flex-col gap-3 break-inside-avoid">
+    <h2 className="m-0 text-[12px] uppercase tracking-wider text-fg-3 font-semibold">{title}</h2>
     {children}
   </section>
 );
 
 const Table: React.FC<{ head: string[]; rows: React.ReactNode[][]; more: number }> = ({ head, rows, more }) => (
-  <div className="overflow-x-auto">
+  <div className="overflow-x-auto rounded-xl border border-line bg-surface-1">
     <table className="w-full text-left text-[13px] border-collapse">
       <thead>
-        <tr className="border-b border-line" style={{ color: 'var(--text-3)' }}>
+        <tr className="bg-surface-2 text-[12px] uppercase tracking-wider text-fg-3 font-semibold border-b border-line">
           {head.map(h => (
-            <th key={h} className="py-1.5 pr-3 font-normal text-[12px]">
+            <th key={h} className="px-4 py-2.5 font-medium">
               {h}
             </th>
           ))}
         </tr>
       </thead>
-      <tbody>
+      <tbody className="divide-y divide-line">
         {rows.map((r, i) => (
-          <tr key={i} className="border-b border-line align-top">
+          <tr key={i} className="h-11 min-h-[44px] hover:bg-surface-2/50 transition-colors">
             {r.map((c, j) => (
-              <td key={j} className="py-1.5 pr-3 text-fg">
+              <td key={j} className="px-4 py-2.5 text-fg align-middle">
                 {c}
               </td>
             ))}
@@ -256,7 +271,7 @@ const Table: React.FC<{ head: string[]; rows: React.ReactNode[][]; more: number 
       </tbody>
     </table>
     {more > 0 && (
-      <p className="m-0 mt-1.5 text-[12px]" style={{ color: 'var(--text-3)' }}>
+      <p className="m-0 p-3 text-[12px] text-fg-3 border-t border-line">
         and {more} more in the CSV and JSON downloads
       </p>
     )}

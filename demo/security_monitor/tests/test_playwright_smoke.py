@@ -97,3 +97,32 @@ def test_page_header_single_heading_and_topbar_breadcrumb(page: Page, console_se
         breadcrumb = page.locator("[data-topbar] [aria-label='Breadcrumb']")
         expect(breadcrumb).to_contain_text(page_name)
 
+
+def test_overview_agent_map_kpis_and_report_print(page: Page, console_server):
+    """Overview agent map has no dashed border and all five KPI cards are visible;
+    Report page in print emulation has a white background."""
+    from demo.security_monitor.tests.playwright_server import seed_finished_task
+    seed_task_id = seed_finished_task(console_server.db_path, "smoke_report")
+
+    sign_in(page, console_server, path="/dashboard/overview")
+    page.goto(f"{console_server.url}/dashboard/overview")
+
+    # 1. Five KPI cards are visible
+    for kpi_id in ["#kpi-active", "#kpi-runs", "#kpi-stopped", "#kpi-waiting", "#kpi-records"]:
+        expect(page.locator(kpi_id)).to_be_visible()
+
+    # 2. Overview's agent map has no dashed border
+    map_locator = page.locator("#live-agent-map")
+    expect(map_locator).to_be_visible()
+    border_style = map_locator.evaluate("el => getComputedStyle(el).borderStyle")
+    assert border_style != "dashed", f"Expected non-dashed border style, got {border_style}"
+
+    # 3. Report page in print emulation has a white background
+    page.goto(f"{console_server.url}/dashboard/report/{seed_task_id}")
+    expect(page.locator("#report-sheet")).to_be_visible()
+    page.emulate_media(media="print")
+    sheet_bg = page.locator("#report-sheet").evaluate("el => getComputedStyle(el).backgroundColor")
+    assert sheet_bg in ["rgb(255, 255, 255)", "#ffffff", "white", "rgba(0, 0, 0, 0)"], (
+        f"Expected white background in print mode, got {sheet_bg}"
+    )
+

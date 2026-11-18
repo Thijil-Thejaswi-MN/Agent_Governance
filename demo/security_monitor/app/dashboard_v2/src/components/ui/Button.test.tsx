@@ -1,7 +1,7 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { Button } from './Button';
+import { Button, buttonClasses } from './Button';
 
 describe('Button component', () => {
   it('renders primary variant with accent-grad background', () => {
@@ -75,5 +75,15 @@ describe('Button component', () => {
     for (const b of banned) {
       expect(html.toLowerCase()).not.toContain(b);
     }
+  });
+});
+
+describe('buttonClasses', () => {
+  it('gives a link the same look as the button variant', () => {
+    const cls = buttonClasses('primary', 'lg', 'extra');
+    expect(cls).toContain('bg-[image:var(--accent-grad)]');
+    expect(cls).toContain('h-11');
+    expect(cls).toContain('no-underline');
+    expect(cls).toContain('extra');
   });
 });
