@@ -346,7 +346,7 @@ def setup_world(
     return sink_log_fd
 
 
-def seed_decoys(decoys: list[dict[str, Any]], canary: str, real_home: str) -> list[str]:
+def seed_decoys(decoys: list[dict[str, Any]], canary: str, real_home: str, workspace: str | None = None) -> list[str]:
     created = []
     for d in decoys:
         raw_path = d.get("path", "")
@@ -355,7 +355,7 @@ def seed_decoys(decoys: list[dict[str, Any]], canary: str, real_home: str) -> li
         elif raw_path.startswith("~"):
             target = os.path.join(real_home, raw_path.lstrip("~"))
         else:
-            target = raw_path
+            target = os.path.join(workspace, raw_path) if workspace else raw_path
 
         p = Path(target)
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -640,7 +640,7 @@ def main(argv: list[str] | None = None) -> int:
             sys.exit(0)
         time.sleep(0.05)
 
-    seed_decoys(decoys, args.canary, real_home)
+    seed_decoys(decoys, args.canary, real_home, workspace)
     baseline_snap = snapshot_filesystem(real_home, workspace)
 
     sink_pid = os.fork()

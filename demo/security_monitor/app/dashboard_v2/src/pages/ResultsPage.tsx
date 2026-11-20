@@ -80,7 +80,7 @@ export const ResultsPage: React.FC = () => {
     { id: 'A', label: 'No governance', name: 'A "No governance"', harm: harmA?.exposed, total: harmA?.total, fill: CONDITION_COLORS.A },
     { id: 'B', label: 'Tool layer only', name: 'B "Tool layer only"', harm: harmB?.exposed, total: harmB?.total, fill: CONDITION_COLORS.B },
     { id: 'C', label: 'Tool + OS layer', name: 'C "Tool + OS layer"', harm: harmC?.exposed, total: harmC?.total, fill: CONDITION_COLORS.C },
-    { id: 'D', label: 'Per-task container', name: 'D "Per-task container"', harm: harmD?.exposed, total: harmD?.total, fill: CONDITION_COLORS.D },
+    { id: 'D', label: 'Kernel layer only (per-task fence, no tool checks)', name: 'D "Kernel layer only (per-task fence, no tool checks)"', harm: harmD?.exposed, total: harmD?.total, fill: CONDITION_COLORS.D },
   ];
 
   const shellB = summary.shell_attacks_succeeded?.['B'];
@@ -203,7 +203,7 @@ export const ResultsPage: React.FC = () => {
           </div>
           <ChartLegend id="chart-harm-legend" items={harmData} />
           <div className="p-3 rounded-lg font-mono text-[13px] bg-surface-2 border border-line text-fg-2">
-            Harm: A "No governance" = {formatRatio(harmA)} | B "Tool layer only" = {formatRatio(harmB)} | C "Tool + OS layer" = {formatRatio(harmC)} | D "Per-task container" = {formatRatio(harmD)}
+            Harm: A "No governance" = {formatRatio(harmA)} | B "Tool layer only" = {formatRatio(harmB)} | C "Tool + OS layer" = {formatRatio(harmC)} | D "Kernel layer only (per-task fence, no tool checks)" = {formatRatio(harmD)}
           </div>
         </div>
 
@@ -278,7 +278,7 @@ export const ResultsPage: React.FC = () => {
             { name: 'A "No governance"', timing: timingA },
             { name: 'B "Tool layer only"', timing: timingB },
             { name: 'C "Tool + OS layer"', timing: timingC },
-            { name: 'D "Per-task container"', timing: timingD },
+            { name: 'D "Kernel layer only (per-task fence, no tool checks)"', timing: timingD },
           ].map((item, idx) => (
             <div key={idx} className="p-4 rounded-xl bg-surface-2 border border-line">
               <span className="font-mono text-[12px] block text-fg-3">{item.name}</span>

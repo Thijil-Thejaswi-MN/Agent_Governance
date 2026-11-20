@@ -318,6 +318,76 @@ def compile_landlock_rules_resolved(
     }
 
 
+def compile_landlock_rules_workspace_sandbox(
+    workspace_root: str | Path,
+    proxy_port: int | None = None,
+    runtime_dir: str | Path | None = None,
+    extra_ro_paths: list[str] | None = None,
+) -> dict[str, Any]:
+    """Compiles the Landlock rules dict for condition W (workspace sandbox baseline).
+    Grants read+write on the WHOLE task workspace directory (all current and future files/subfolders),
+    read on the system paths the agent needs to run (same as C/D), and nothing else."""
+    root = Path(os.path.realpath(workspace_root))
+    rules: list[dict[str, Any]] = []
+    provenance: list[dict[str, Any]] = []
+    by_path: dict[str, dict[str, Any]] = {}
+
+    def add(path: str | Path, access: list[str], optional: bool = False, why: str = "") -> None:
+        key = str(path)
+        if key in by_path:
+            r = by_path[key]
+            r["access"] = sorted(set(r["access"]) | set(access))
+            if not optional:
+                r.pop("optional", None)
+        else:
+            r = {"path": key, "access": list(access)}
+            if optional:
+                r["optional"] = True
+            by_path[key] = r
+            rules.append(r)
+        if why:
+            provenance.append({"path": key, "access": list(access), "from": why})
+
+    # System paths needed by agent (same as C/D)
+    for p in SYSTEM_RX_PATHS:
+        add(p, RX, optional=not os.path.exists(p))
+    for p in SYSTEM_RO_PATHS:
+        add(p, RO_DIR if os.path.isdir(p) else RO_FILE, optional=not os.path.exists(p))
+    for p in SYSTEM_RW_FILES:
+        add(p, ["read_file", "write_file"], optional=not os.path.exists(p))
+    for p in extra_ro_paths or []:
+        add(p, RO_DIR if os.path.isdir(p) else RO_FILE, why="extra_ro")
+
+    # Interpreter and runtime virtualenv
+    interp = os.path.realpath(sys.executable)
+    if not any(interp.startswith(p) for p in SYSTEM_RX_PATHS):
+        add(interp, RX if os.path.isdir(interp) else ["execute", "read_file"], why="runtime_interpreter")
+        venv_prefix = getattr(sys, "base_prefix", None) or getattr(sys, "prefix", None)
+        if venv_prefix and venv_prefix != "/usr" and os.path.exists(venv_prefix):
+            add(venv_prefix, RO_DIR, why="runtime_venv")
+
+    tmp_dir = root / "tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+
+    if runtime_dir:
+        add(Path(os.path.realpath(runtime_dir)), RO_DIR, why="agent_runtime_code")
+
+    # WHOLE workspace directory: grants RW_DIR on root (all files and subfolders, current and future)
+    add(root, RW_DIR, why="workspace_sandbox_root")
+
+    return {
+        "version": 1,
+        "task_tmp": str(tmp_dir),
+        "tcp_connect_ports": [int(proxy_port)] if proxy_port else [],
+        "rules": rules,
+        "_compile_report": {
+            "compiler": "workspace_sandbox",
+            "workspace_rules": provenance,
+            "skipped": [],
+        },
+    }
+
+
 def write_rules_file(spec: dict[str, Any], path: str | Path) -> Path:
     """Writes the enforcer-consumable rules (without the compile report) as ASCII JSON."""
     out = {k: v for k, v in spec.items() if not k.startswith("_")}

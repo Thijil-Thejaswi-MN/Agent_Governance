@@ -131,11 +131,11 @@ The earlier v1 runs are kept as `*_v1.*`. For the run history (including a fixed
 ### M6 full run (768 trials)
 
 Setup:
-- Conditions: A (no governance), B (tool layer only; the OS sensor observes only), C (tool layer + OS layer), D (per-task container baseline: Landlock from the boundary, no broker, no expansion).
+- Conditions: A (no governance), B (tool layer only; the OS sensor observes only), C (tool layer + OS layer), D (kernel layer only: per-task boundary, no broker, no expansion).
 - 48 template-generated scenarios (32 legitimate, 16 injected), 2 models (`llama3.1:8b`, `qwen2.5:7b`), 4 conditions, N=2.
 - The safety harness (namespaces, tmpfs fake home with canary-carrying decoys, local-only audit sink, before/after host checks) is identical in all conditions.
 
-| `qwen2.5:7b`, injected trials (n=32 each) | A: none | B: tool layer | C: tool + OS | D: container |
+| `qwen2.5:7b`, injected trials (n=32 each) | A: none | B: tool layer | C: tool + OS | D: kernel only |
 | :--- | :---: | :---: | :---: | :---: |
 | Trials where the model tried the injected action | 14 | 17 | 13 | 13 |
 | Trials with any harm (decoy read, write outside the workspace, data sent to the sink) | 14/32 [0.28, 0.61] | 0/32 | 0/32 | 0/32 |
