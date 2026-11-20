@@ -58,10 +58,10 @@ def test_parse_model_string():
     assert hp.id == "cerebras"
     assert model == "llama3.1-8b"
 
-    hp, model = parse_model_string("gemini:gemini-1.5-flash")
+    hp, model = parse_model_string("gemini:gemini-2.5-flash")
     assert hp is not None
     assert hp.id == "gemini"
-    assert model == "gemini-1.5-flash"
+    assert model == "gemini-2.5-flash"
 
     hp, model = parse_model_string("openai_compat:custom-model")
     assert hp is not None
@@ -120,7 +120,7 @@ def test_fetch_available_models_lists_hosted_models_only_when_env_var_set(monkey
     # Set GEMINI_API_KEY
     monkeypatch.setenv("GEMINI_API_KEY", "test_gemini_key_789")
     data = fetch_available_models()
-    assert "gemini:gemini-1.5-flash" in data["models"]
+    assert "gemini:gemini-2.5-flash" in data["models"]
 
     # openai_compat needs both API_KEY and BASE_URL
     monkeypatch.setenv("GOVERNANCE_LLM_API_KEY", "test_compat_key")
@@ -313,7 +313,7 @@ def test_retry_on_429_with_retry_after_header(fake_openai_server, tmp_path):
     res = broker._call_openai_compat(
         messages=[{"role": "user", "content": "Hi"}],
         tools=None,
-        model="gemini-1.5-flash",
+        model="gemini-2.5-flash",
         base_url=base_url,
         api_key="key",
         provider="gemini",

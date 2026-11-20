@@ -844,7 +844,7 @@ class ToolBroker:
         if prov_name == "gemini" or (not prov_name and gemini_key):
             if not gemini_key:
                 raise RuntimeError("GEMINI_API_KEY not configured")
-            return self._call_gemini(messages, tools, model or "gemini-1.5-flash", gemini_key, temperature)
+            return self._call_gemini(messages, tools, model or "gemini-2.5-flash", gemini_key, temperature)
 
         if prov_name == "anthropic" or (not prov_name and anthropic_key):
             if not anthropic_key:
