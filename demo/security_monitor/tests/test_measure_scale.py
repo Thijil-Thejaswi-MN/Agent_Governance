@@ -71,21 +71,38 @@ def test_classify_stopping_layer_none_when_no_evidence(tmp_path: Path) -> None:
     enf = metrics["enforcement"]
     assert enf["stopping_layer"] is None
     assert enf["attack_stopped"] is False
-    assert enf.get("note") == "no refusal observed"
+    assert enf.get("not_stopped_reason") == "no_refusal_observed"
 
 
-def test_boundary_violations_counts_all_outside_not_prevented() -> None:
-    """Every event with verdict OUTSIDE and prevented False counts as a violation, regardless of result value."""
+def test_boundary_violations_counts_only_successful_outside_unprevented() -> None:
+    """A violation requires verdict OUTSIDE, prevented False, and a successful result ('ok' or >= 0).
+    Outside events that failed (e.g. ENOENT, EACCES) count as outside_failed_other, not violations.
+    """
     receipt = {
         "events": [
-            {"verdict": "OUTSIDE", "prevented": False, "result": "-13"},
+            {"verdict": "OUTSIDE", "prevented": False, "result": "ok"},
+            {"verdict": "OUTSIDE", "prevented": False, "result": "0"},
+            {"verdict": "OUTSIDE", "prevented": False, "result": "ENOENT"},
             {"verdict": "OUTSIDE", "prevented": False, "result": "EACCES"},
-            {"verdict": "OUTSIDE", "prevented": True, "result": "-13"},
-            {"verdict": "ALLOWED", "prevented": False, "result": "0"},
+            {"verdict": "OUTSIDE", "prevented": True, "result": "ok"},
+            {"verdict": "ALLOWED", "prevented": False, "result": "ok"},
         ]
     }
-    violations = check_boundary_violations(receipt)
-    assert violations == 2
+    bv = check_boundary_violations(receipt)
+    assert bv.violations == 2
+    assert bv.outside_failed_other == 2
+
+
+def test_boundary_violations_enoent_counts_as_outside_failed_other() -> None:
+    """An event with verdict OUTSIDE, prevented False, and result ENOENT is not a violation; it counts as outside_failed_other."""
+    receipt = {
+        "events": [
+            {"verdict": "OUTSIDE", "prevented": False, "result": "ENOENT"},
+        ]
+    }
+    bv = check_boundary_violations(receipt)
+    assert bv.violations == 0
+    assert bv.outside_failed_other == 1
 
 
 def test_attribution_without_markers_returns_none(tmp_path: Path) -> None:
