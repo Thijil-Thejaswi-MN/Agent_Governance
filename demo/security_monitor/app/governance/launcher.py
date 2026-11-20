@@ -54,6 +54,7 @@ from .os_layer.sandbox_spec import (
     SYSTEM_RX_PATHS,
     compile_landlock_rules,
     compile_landlock_rules_resolved,
+    compile_landlock_rules_workspace_sandbox,
     write_rules_file,
 )
 from .proxy import EgressProxyServer
@@ -941,6 +942,11 @@ class TaskLauncher:
         # 1. Intake: task + boundary
         ws = self.workspace_base / f"ws_{uuid.uuid4().hex[:12]}"
         task, boundary = self.derive_boundary(spec, ws, mode)
+        cond = (spec.condition or "").strip()
+        cond_upper = cond.upper()
+        if cond_upper == "W":
+            boundary.derived_by = "workspace_sandbox"
+            self.storage.save_boundary(boundary)
         initial_boundary = boundary.model_copy(deep=True)
         task_id = task.task_id
         self.live["task_id"] = task_id
@@ -968,6 +974,17 @@ class TaskLauncher:
                 raise ValueError(f"input path escapes workspace: {rel}")
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(content, encoding="utf-8")
+        # In-workspace decoys (not added to boundary)
+        for d in (spec.decoys or []):
+            raw_path = d.get("path", "")
+            if raw_path and not raw_path.startswith("~"):
+                dp = (ws / raw_path)
+                if not str(dp.resolve()).startswith(str(ws.resolve()) + "/"):
+                    raise ValueError(f"decoy path escapes workspace: {raw_path}")
+                dp.parent.mkdir(parents=True, exist_ok=True)
+                dtmpl = d.get("content_template", "PRIVATE DOCUMENT ref={CANARY}")
+                dcontent = dtmpl.replace("{CANARY}", spec.canary or "")
+                dp.write_text(dcontent, encoding="utf-8")
         runtime_hashes = {}
         for f in RUNTIME_FILES:
             shutil.copyfile(HERE / f, ws / "runtime" / f)
@@ -1028,13 +1045,15 @@ class TaskLauncher:
 
         cond = (spec.condition or "").strip()
         cond_upper = cond.upper()
-        is_direct = cond_upper in ("A", "D")
-        needs_enforcer = cond_upper in ("C", "D") or (not cond_upper)
-        proxy_for_landlock = proxy_port if cond_upper != "D" else None
+        is_direct = cond_upper in ("A", "D", "W")
+        needs_enforcer = cond_upper in ("C", "D", "W") or (not cond_upper)
+        proxy_for_landlock = proxy_port if cond_upper not in ("D", "W") else None
         sensor_freeze_on_outside = cond_upper in ("C", "D", "B+F", "B_F", "BF") or (not cond_upper)
 
         # Sandbox spec compiled from the boundary
-        if file_evaluator is not None:
+        if cond_upper == "W":
+            spec_rules = compile_landlock_rules_workspace_sandbox(ws, proxy_for_landlock, runtime_dir=ws / "runtime")
+        elif file_evaluator is not None:
             spec_rules = compile_landlock_rules_resolved(file_evaluator.resolve(boundary), proxy_for_landlock,
                                                          runtime_dir=ws / "runtime")
         else:
@@ -1134,7 +1153,7 @@ class TaskLauncher:
         ]
 
         world_cmd = []
-        if spec.use_eval_world or bool(spec.decoys) or cond in ("A", "B", "C", "D"):
+        if spec.use_eval_world or bool(spec.decoys) or cond in ("A", "B", "C", "D", "W"):
             real_user_home = str(Path.home())
             world_cmd = [
                 interpreter, "-E", "-s", "-B", str(EVAL_WORLD_PY),
@@ -1299,7 +1318,7 @@ class TaskLauncher:
             isolation["isolation_level"] = achieved
             isolation["seccomp_filter_baseline"] = seccomp_baseline
             isolation["requirement_problems"] = problems
-            requires_rules = cond_upper in ("C", "D")
+            requires_rules = cond_upper in ("C", "D", "W")
             if requires_rules and isolation.get("enforcer") != "rules":
                 aborted = "condition requires boundary-compiled isolation; refusing legacy_workspace"
                 self._freeze("isolation_below_condition_requirement", problems)
@@ -1437,6 +1456,7 @@ class TaskLauncher:
                 "rpc_connections_refused": rpc.connections_refused,
                 "tool_call_attribution": _tool_call_attribution(rpc.tool_calls, correlator.records),
                 "aborted": aborted,
+                **({"boundary_source": "workspace_sandbox"} if cond_upper == "W" else {}),
                 **({"boundary_model": spec.boundary_model} if resolved_path else {}),
             },
         )

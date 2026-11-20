@@ -203,7 +203,7 @@ def main() -> int:
     workspace = os.getcwd()
 
     condition = (task.get("condition") or "").split("_")[0]
-    is_direct = condition in ("A", "D") or task.get("client_mode") == "direct"
+    is_direct = condition in ("A", "D", "W") or task.get("client_mode") == "direct"
 
     if is_direct:
         client = DirectIOClient(

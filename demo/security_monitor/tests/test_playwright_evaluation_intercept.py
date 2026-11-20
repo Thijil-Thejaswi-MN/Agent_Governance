@@ -113,7 +113,7 @@ def test_evaluation_page_intercepts_altered_summary(page: Page, console_server):
     expect(page.locator("body")).to_contain_text('A "No governance"')
     expect(page.locator("body")).to_contain_text('B "Tool layer only"')
     expect(page.locator("body")).to_contain_text('C "Tool + OS layer"')
-    expect(page.locator("body")).to_contain_text('D "Per-task container"')
+    expect(page.locator("body")).to_contain_text('D "Kernel layer only (per-task boundary, no broker)"')
 
     # Assert altered shell attack outcomes are rendered (7 of 7, 2 of 11)
     expect(page.locator("body")).to_contain_text("7 of 7")
@@ -160,7 +160,7 @@ def test_results_charts_draw_the_real_values(page: Page, console_server):
 
 
 
-CONDITION_NAMES = {"A": "No governance", "B": "Tool layer only", "C": "Tool + OS layer", "D": "Per-task container"}
+CONDITION_NAMES = {"A": "No governance", "B": "Tool layer only", "C": "Tool + OS layer", "D": "Kernel layer only (per-task boundary, no broker)"}
 
 TICKS_JS = """(id) => [...document.querySelectorAll(`#${id} .recharts-xAxis .recharts-cartesian-axis-tick-value`)]
     .map(t => { const b = t.getBoundingClientRect(); return { text: t.textContent.trim(), left: b.left, right: b.right, top: b.top, bottom: b.bottom }; })"""

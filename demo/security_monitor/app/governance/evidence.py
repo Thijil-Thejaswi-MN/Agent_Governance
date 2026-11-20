@@ -26,7 +26,7 @@ CONDITIONS = {
     "A": "No governance",
     "B": "Tool layer only",
     "C": "Tool layer + kernel (ours)",
-    "D": "Per-task container",
+    "D": "Kernel layer only (per-task boundary, no broker)",
 }
 
 # Fixed list: the browser never opens a file whose name comes from a request.

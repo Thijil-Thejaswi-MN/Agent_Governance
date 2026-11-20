@@ -30,7 +30,7 @@ const SETUPS = [
   { id: 'A', tech: 'No governance', name: 'No fence', body: 'The agent can touch anything the computer lets it.' },
   { id: 'B', tech: 'Tool layer only', name: 'Tool fence only', body: 'Its tools check each action; the computer does not.' },
   { id: 'C', tech: 'Tool + OS layer', name: 'Both fences', body: 'Its tools check each action, and the computer refuses files outside the fence.' },
-  { id: 'D', tech: 'Per-task container', name: 'Computer fence only', body: 'The computer refuses files outside the fence; the agent cannot ask for more.' },
+  { id: 'D', tech: 'Kernel layer only (per-task boundary, no broker)', name: 'Computer fence only', body: 'The computer refuses files outside the fence; the agent cannot ask for more.' },
 ];
 
 // The tool-layer / kernel-layer picture from the old Architecture page, in plain words;

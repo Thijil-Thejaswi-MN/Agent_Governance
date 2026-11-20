@@ -205,7 +205,7 @@ We claim that combination plus measured results. We do not claim "first task-sco
 ## 8. Experiments these enable (all measured, none assumed)
 
 - **E1. Condition C = tool layer + OS layer, with indirect-path scenarios.** `run_command` returns in a new suite, and the agent reads or exfiltrates files through shell or Python instead of the read tool. Expected outcome: the tool layer misses these and the OS layer prevents them. Report the measured result either way. This closes the M5 caveat that the OS layer was not active in the agent evaluation.
-- **E2. Per-task container baseline** (only the task's files mounted, no network), compared with governed + expansion on utility and security.
+- **E2. Kernel layer only (per-task boundary, no broker)** (only the task's files mounted, no network), compared with governed + expansion on utility and security.
 - **E3. Attribution under concurrency** (R2–R4 vs the AgentSight-style heuristic).
 - **E4. Tamper suite.**
 - **E5. Overhead.** Wall time and syscall latency with the sensor on and off, reported as measured.

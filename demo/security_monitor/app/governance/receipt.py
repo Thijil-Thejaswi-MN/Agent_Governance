@@ -213,6 +213,8 @@ def build_receipt(
             receipt["llm_provider"] = extra["llm_provider"]
         if extra.get("llm_model"):
             receipt["llm_model"] = extra["llm_model"]
+        if extra.get("boundary_source"):
+            receipt["boundary_source"] = extra["boundary_source"]
     return seal(receipt)
 
 

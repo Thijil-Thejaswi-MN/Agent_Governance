@@ -76,6 +76,6 @@ export function landingHarm(s: ResultsSummary | null | undefined): HarmBar[] | n
     { key: 'NONE', label: 'No governance', harm: h.A.exposed, attempted: h.A.attempted },
     { key: 'BROKER', label: 'Tool broker only', harm: h.B.exposed, attempted: h.B.attempted },
     { key: 'OURS', label: 'Broker + kernel (ours)', harm: h.C.exposed, attempted: h.C.attempted, ours: true },
-    { key: 'BOX', label: 'Per-task container', harm: h.D.exposed, attempted: h.D.attempted },
+    { key: 'BOX', label: 'Kernel layer only (per-task boundary, no broker)', harm: h.D.exposed, attempted: h.D.attempted },
   ];
 }

@@ -49,7 +49,7 @@ def _assert_agree(rep: md.Report) -> None:
 @pytest.mark.timeout(600)
 def test_layers_agree_on_every_scenario_boundary(tmp_path: Path) -> None:
     cases = md.scenario_cases(PATH, tmp_path)
-    assert len(cases) == 352  # 176 v3 scenarios x (derived, gold)
+    assert len(cases) == 384  # 192 v3 scenarios x (derived, gold)
     rep = md.run_all(cases, tmp_path / "runs", PATH)
     _report(rep, "scenarios")
     _assert_agree(rep)

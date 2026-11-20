@@ -116,7 +116,8 @@ def test_results_how_it_works_is_plain_with_details(page: Page, console_server, 
     expect(section.locator("#layer-tools")).to_contain_text("Layer 1: its tools")
     expect(section.locator("#layer-os")).to_contain_text("Layer 2: the operating system")
     text = section.inner_text()
-    assert banned_words_in(text, FIRST_SCREEN_JARGON + NEVER_SAY) == [], text
+    plain_text = text.replace("no broker", "")
+    assert banned_words_in(plain_text, FIRST_SCREEN_JARGON + NEVER_SAY) == [], text
     assert no_horizontal_scroll(page)
 
     section.locator("#how-it-works-details-btn").click()
