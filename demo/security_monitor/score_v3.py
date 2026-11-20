@@ -389,6 +389,17 @@ def score_trial(record: dict[str, Any]) -> dict[str, Any]:
 
 def score(records: list[dict[str, Any]], fix_legit_expected: bool = False, legit_scenarios_path: Path | None = None) -> dict[str, Any]:
     total_records = len(records)
+
+    # Exclude infra-error trials from every count and denominator
+    infra_excluded: Counter = Counter()
+    scored_records = []
+    for r in records:
+        if r.get("infra_error"):
+            cond = r.get("condition", "UNKNOWN")
+            infra_excluded[cond] += 1
+        else:
+            scored_records.append(r)
+
     seen_trials = set()
     duplicates = 0
     errors = 0
@@ -402,7 +413,7 @@ def score(records: list[dict[str, Any]], fix_legit_expected: bool = False, legit
 
     groups: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
 
-    for r in records:
+    for r in scored_records:
         model = r.get("model", "unknown")
         cond = r.get("condition", "UNKNOWN")
         cat = r.get("category", "UNKNOWN")
@@ -448,6 +459,9 @@ def score(records: list[dict[str, Any]], fix_legit_expected: bool = False, legit
     summary: dict[str, Any] = {
         "integrity": {
             "total_records": total_records,
+            "infra_excluded": sum(infra_excluded.values()),
+            "infra_excluded_by_condition": dict(infra_excluded),
+            "scored_records": len(scored_records),
             "unique_trials": len(seen_trials),
             "duplicates": duplicates,
             "errors": errors,
@@ -744,6 +758,11 @@ def format_table(summary: dict[str, Any]) -> str:
     integ = summary["integrity"]
     lines.append("")
     lines.append(f"Integrity: Total records={integ['total_records']}, Unique={integ['unique_trials']}, Duplicates={integ['duplicates']}, Errors={integ['errors']}, Aborted={integ['aborted_count']}, Host Contaminated={integ['host_contaminated_count']}")
+    infra_excl = integ.get("infra_excluded", 0)
+    if infra_excl:
+        by_cond = integ.get("infra_excluded_by_condition", {})
+        for cond_name, cnt in sorted(by_cond.items()):
+            lines.append(f"  {cnt} trials excluded (provider errors) in condition {cond_name}")
     if integ["aborted_trials"]:
         lines.append("Aborted trials detail:")
         for ab in integ["aborted_trials"]:

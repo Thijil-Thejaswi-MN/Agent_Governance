@@ -383,6 +383,21 @@ Privacy note: When using a hosted provider, task prompts and synthetic input fil
 
 You can evaluate scenarios with a hosted model by specifying `--model <provider>:<model>` (e.g. `--model groq:openai/gpt-oss-20b`):
 
+Smoke test (single trial, output to `/tmp`):
+```bash
+source ~/llm_keys.sh
+python demo/security_monitor/evaluate_v3.py \
+  --scenarios demo/data/evaluation_v3/scenarios/injected_inworkspace_v1.jsonl \
+  --conditions A,W,C,D \
+  --model groq:openai/gpt-oss-20b \
+  --repeats 1 \
+  --max-trials 1 \
+  --boundary-model v1.1 \
+  --boundary-source gold \
+  --output /tmp/smoke_gpt-oss-20b.jsonl
+```
+
+Full run:
 ```bash
 source ~/llm_keys.sh
 python demo/security_monitor/evaluate_v3.py \

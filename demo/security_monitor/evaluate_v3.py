@@ -172,18 +172,25 @@ def test_llm_preflight(storage: GovernanceStorage, llm_cfg: dict[str, Any]) -> N
 
 
 def is_provider_infra_error(err: Any) -> bool:
-    """Returns True if the error indicates a model provider infrastructure failure."""
+    """Returns True if the error indicates a model provider infrastructure failure.
+
+    Only model-call failures count: HTTP 4xx/5xx from the provider endpoint,
+    rate-limit / auth / model-not-found messages, and connection errors to the
+    provider.  Agent-side timeouts, command timeouts, and tool errors are real
+    results and must NOT be classified as infrastructure errors.
+    """
     if not err:
         return False
     s = str(err).lower()
-    if re.search(r'\b[45]\d\d\b', s) or re.search(r'http\s+[45]\d\d', s):
+    # Match "HTTP 4xx" / "HTTP 5xx" or "status 429" etc., but not bare numbers
+    # like "task_500" or "file_404".
+    if re.search(r'(?:http|status)[_ ]?[45]\d\d', s):
         return True
     if any(k in s for k in (
         "rate limit", "rate_limit", "quota",
         "bad key", "invalid api key", "unauthorized", "authentication",
         "model not found", "model_not_found",
         "connect error", "connection refused", "remote disconnected", "reset by peer",
-        "timed out", "timeout",
     )):
         return True
     return False
@@ -842,15 +849,16 @@ def main(argv: list[str] | None = None) -> int:
                             res = launcher.run(spec)
                             if is_hosted and res is not None:
                                 extra = getattr(res, "receipt", {}).get("extra", {}) or {}
+                                llm_errors = extra.get("llm_errors", 0)
                                 last_llm_err = extra.get("last_llm_error")
-                                shim_err = (getattr(res, "shim_result", None) or {}).get("error")
-                                cand_err = last_llm_err or (str(shim_err) if shim_err else None)
-                                if cand_err and is_provider_infra_error(cand_err):
+                                # Only model-call failures count as infra errors.
+                                # Shim errors (agent timeout, tool errors) are real results.
+                                if llm_errors > 0 and last_llm_err and is_provider_infra_error(last_llm_err):
                                     if attempt < 2:
                                         time.sleep(2.0 * (attempt + 1))
                                         continue
                                     is_infra_err = True
-                                    infra_err_msg = redact_llm_error(cand_err, max_chars=300)
+                                    infra_err_msg = redact_llm_error(last_llm_err, max_chars=300)
                                     trial_error = infra_err_msg
                                     break
                             break
@@ -993,7 +1001,6 @@ def main(argv: list[str] | None = None) -> int:
                         return 0
 
     print(f"Completed {trial_idx} trials. Infra errors: {total_infra_errors}. Output saved to {out_path}")
-    return 0
     return 0
 
 
