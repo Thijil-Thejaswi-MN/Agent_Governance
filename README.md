@@ -366,14 +366,16 @@ The launcher prints a JSON summary that includes `task_id` and the receipt path.
 
 In addition to local Ollama, governed agents can call hosted OpenAI-compatible APIs when the corresponding environment variable is set:
 
-| Provider | Base URL | Key environment variable | Default model |
+| Provider | Base URL | Key environment variable | Model (environment variable, fallback) |
 |---|---|---|---|
-| Groq | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` | `qwen/qwen3-32b` |
-| Cerebras | `https://api.cerebras.ai/v1` | `CEREBRAS_API_KEY` | `llama3.1-8b` |
-| Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `GEMINI_API_KEY` | `gemini-1.5-flash` |
-| Generic | `GOVERNANCE_LLM_BASE_URL` | `GOVERNANCE_LLM_API_KEY` | `default` |
+| Groq | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` | `GROQ_MODEL`, `qwen/qwen3-32b` |
+| Cerebras | `https://api.cerebras.ai/v1` | `CEREBRAS_API_KEY` | `CEREBRAS_MODEL`, `llama3.1-8b` |
+| Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `GEMINI_API_KEY` | `GEMINI_MODEL`, `gemini-2.5-flash` |
+| Generic | `GOVERNANCE_LLM_BASE_URL` | `GOVERNANCE_LLM_API_KEY` | `GOVERNANCE_LLM_MODEL`, `default` |
 
-A model string with a provider prefix (e.g. `groq:qwen/qwen3-32b`, `cerebras:llama3.1-8b`, `gemini:gemini-1.5-flash`) selects the provider. When a key is set on the server, the model appears in the console's Model menu.
+Hosted model names change often: check the provider's current model list and set the model variable rather than relying on the fallback.
+
+A model string with a provider prefix (e.g. `groq:qwen/qwen3-32b`, `cerebras:llama3.1-8b`, `gemini:gemini-2.5-flash`) selects the provider. When a key is set on the server, the model appears in the console's Model menu.
 
 Privacy note: When using a hosted provider, task prompts and synthetic input file contents are sent across the network to that external provider. The published evaluation results in this repository are measured with `qwen2.5:7b` running locally on Ollama.
 

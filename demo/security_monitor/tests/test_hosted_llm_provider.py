@@ -468,3 +468,17 @@ def test_task_record_hosted_model_disclosure(tmp_path, fake_openai_server, monke
     assert receipt.get("hosted_model_note") == "hosted model: the task's prompts and file contents were sent to groq"
     assert receipt.get("llm_provider") == "groq"
     assert receipt.get("llm_model") == "qwen/qwen3-32b"
+
+
+def test_each_hosted_model_can_be_set_by_env(monkeypatch):
+    """Hosted model names change often: GROQ_MODEL / CEREBRAS_MODEL / GEMINI_MODEL /
+    GOVERNANCE_LLM_MODEL choose the model shown in the console and used without a model name."""
+    from demo.security_monitor.app.governance.llm_providers import HOSTED_PROVIDERS, parse_model_string
+    monkeypatch.setenv("GROQ_MODEL", "llama-3.1-8b-instant")
+    monkeypatch.setenv("GOVERNANCE_LLM_MODEL", "my-model")
+    assert HOSTED_PROVIDERS["groq"].default_model == "llama-3.1-8b-instant"
+    assert parse_model_string("groq")[1] == "llama-3.1-8b-instant"
+    assert parse_model_string("groq:other-model")[1] == "other-model"
+    assert HOSTED_PROVIDERS["openai_compat"].default_model == "my-model"
+    monkeypatch.delenv("GROQ_MODEL")
+    assert HOSTED_PROVIDERS["groq"].default_model == "qwen/qwen3-32b"

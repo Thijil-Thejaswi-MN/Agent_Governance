@@ -15,7 +15,14 @@ class HostedProvider:
     name: str
     base_url: str
     env_var: str
-    default_model: str
+    fallback_model: str
+
+    @property
+    def default_model(self) -> str:
+        """The model shown in the console. Hosted model names change often, so each provider's
+        model can be set with <ID>_MODEL (e.g. GROQ_MODEL); the built-in name is only a fallback."""
+        env = "GOVERNANCE_LLM_MODEL" if self.id == "openai_compat" else f"{self.id.upper()}_MODEL"
+        return (os.environ.get(env) or self.fallback_model).strip()
 
     def get_base_url(self) -> str:
         if self.id == "openai_compat":
@@ -40,28 +47,28 @@ HOSTED_PROVIDERS: dict[str, HostedProvider] = {
         name="Groq",
         base_url="https://api.groq.com/openai/v1",
         env_var="GROQ_API_KEY",
-        default_model="qwen/qwen3-32b",
+        fallback_model="qwen/qwen3-32b",
     ),
     "cerebras": HostedProvider(
         id="cerebras",
         name="Cerebras",
         base_url="https://api.cerebras.ai/v1",
         env_var="CEREBRAS_API_KEY",
-        default_model="llama3.1-8b",
+        fallback_model="llama3.1-8b",
     ),
     "gemini": HostedProvider(
         id="gemini",
         name="Gemini",
         base_url="https://generativelanguage.googleapis.com/v1beta/openai",
         env_var="GEMINI_API_KEY",
-        default_model="gemini-1.5-flash",
+        fallback_model="gemini-2.5-flash",
     ),
     "openai_compat": HostedProvider(
         id="openai_compat",
         name="OpenAI-compatible",
         base_url="",
         env_var="GOVERNANCE_LLM_API_KEY",
-        default_model=os.environ.get("GOVERNANCE_LLM_MODEL", "default"),
+        fallback_model="default",
     ),
 }
 
