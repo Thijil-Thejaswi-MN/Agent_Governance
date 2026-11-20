@@ -48,20 +48,20 @@ from app.governance.storage import GovernanceStorage
 # ---------------------------------------------------------------------------
 
 def test_parse_model_string():
-    hp, model = parse_model_string("groq:qwen/qwen3-32b")
+    hp, model = parse_model_string("groq:qwen/qwen3.8-27b")
     assert hp is not None
     assert hp.id == "groq"
-    assert model == "qwen/qwen3-32b"
+    assert model == "qwen/qwen3.8-27b"
 
-    hp, model = parse_model_string("cerebras:llama3.1-8b")
+    hp, model = parse_model_string("cerebras:gpt-oss-120b")
     assert hp is not None
     assert hp.id == "cerebras"
-    assert model == "llama3.1-8b"
+    assert model == "gpt-oss-120b"
 
-    hp, model = parse_model_string("gemini:gemini-2.5-flash")
+    hp, model = parse_model_string("gemini:gemini-3.8-flash")
     assert hp is not None
     assert hp.id == "gemini"
-    assert model == "gemini-2.5-flash"
+    assert model == "gemini-3.8-flash"
 
     hp, model = parse_model_string("openai_compat:custom-model")
     assert hp is not None
@@ -72,7 +72,7 @@ def test_parse_model_string():
     hp, model = parse_model_string("groq")
     assert hp is not None
     assert hp.id == "groq"
-    assert model == "qwen/qwen3-32b"
+    assert model == "qwen/qwen3.8-27b"
 
     # Plain names and Ollama tags are unchanged
     hp, model = parse_model_string("qwen2.5:7b")
@@ -91,7 +91,7 @@ def test_parse_model_string():
     assert hp is None
     assert model == ""
 
-    assert is_hosted_model("groq:qwen/qwen3-32b") is True
+    assert is_hosted_model("groq:qwen/qwen3.8-27b") is True
     assert is_hosted_model("qwen2.5:7b") is False
     assert is_hosted_model("scripted") is False
 
@@ -108,19 +108,19 @@ def test_fetch_available_models_lists_hosted_models_only_when_env_var_set(monkey
     # Set GROQ_API_KEY: only groq appears
     monkeypatch.setenv("GROQ_API_KEY", "test_groq_key_123")
     data = fetch_available_models()
-    assert "groq:qwen/qwen3-32b" in data["models"]
-    assert "cerebras:llama3.1-8b" not in data["models"]
+    assert "groq:qwen/qwen3.8-27b" in data["models"]
+    assert "cerebras:gpt-oss-120b" not in data["models"]
 
     # Set CEREBRAS_API_KEY as well
     monkeypatch.setenv("CEREBRAS_API_KEY", "test_cerebras_key_456")
     data = fetch_available_models()
-    assert "groq:qwen/qwen3-32b" in data["models"]
-    assert "cerebras:llama3.1-8b" in data["models"]
+    assert "groq:qwen/qwen3.8-27b" in data["models"]
+    assert "cerebras:gpt-oss-120b" in data["models"]
 
     # Set GEMINI_API_KEY
     monkeypatch.setenv("GEMINI_API_KEY", "test_gemini_key_789")
     data = fetch_available_models()
-    assert "gemini:gemini-2.5-flash" in data["models"]
+    assert "gemini:gemini-3.8-flash" in data["models"]
 
     # openai_compat needs both API_KEY and BASE_URL
     monkeypatch.setenv("GOVERNANCE_LLM_API_KEY", "test_compat_key")
@@ -135,10 +135,10 @@ def test_fetch_available_models_lists_hosted_models_only_when_env_var_set(monkey
 def test_validate_model_checks_env_var(monkeypatch):
     monkeypatch.delenv("GROQ_API_KEY", raising=False)
     with pytest.raises(ValueError, match="not configured"):
-        validate_model("groq:qwen/qwen3-32b")
+        validate_model("groq:qwen/qwen3.8-27b")
 
     monkeypatch.setenv("GROQ_API_KEY", "valid_key")
-    assert validate_model("groq:qwen/qwen3-32b") == "groq:qwen/qwen3-32b"
+    assert validate_model("groq:qwen/qwen3.8-27b") == "groq:qwen/qwen3.8-27b"
     assert validate_model("scripted") == "scripted"
 
 
@@ -223,7 +223,7 @@ def test_bearer_header_sent_and_no_options_field(fake_openai_server, tmp_path):
     res = broker._call_openai_compat(
         messages=[{"role": "user", "content": "Analyze sales"}],
         tools=[{"type": "function", "function": {"name": "read_file", "parameters": {}}}],
-        model="qwen/qwen3-32b",
+        model="qwen/qwen3.8-27b",
         base_url=base_url,
         api_key="TEST_SECRET_BEARER_KEY_123",
         temperature=0.2,
@@ -234,7 +234,7 @@ def test_bearer_header_sent_and_no_options_field(fake_openai_server, tmp_path):
     assert res["role"] == "assistant"
     assert res["content"] == "Hello from fake hosted LLM"
     assert res["provider"] == "groq"
-    assert res["model"] == "qwen/qwen3-32b"
+    assert res["model"] == "qwen/qwen3.8-27b"
 
     assert len(fake_openai_server.captured_requests) == 1
     req = fake_openai_server.captured_requests[0]
@@ -245,7 +245,7 @@ def test_bearer_header_sent_and_no_options_field(fake_openai_server, tmp_path):
     body = req["body"]
     assert "options" not in body
     assert "seed" not in body
-    assert body["model"] == "qwen/qwen3-32b"
+    assert body["model"] == "qwen/qwen3.8-27b"
     assert body["temperature"] == 0.2
     assert body["max_tokens"] == 150
     assert len(body["tools"]) == 1
@@ -282,7 +282,7 @@ def test_tool_calls_parsed_correctly(fake_openai_server, tmp_path):
     res = broker._call_openai_compat(
         messages=[{"role": "user", "content": "Read the file"}],
         tools=[{"type": "function", "function": {"name": "read_file"}}],
-        model="llama3.1-8b",
+        model="gpt-oss-120b",
         base_url=base_url,
         api_key="key",
         provider="cerebras",
@@ -313,7 +313,7 @@ def test_retry_on_429_with_retry_after_header(fake_openai_server, tmp_path):
     res = broker._call_openai_compat(
         messages=[{"role": "user", "content": "Hi"}],
         tools=None,
-        model="gemini-2.5-flash",
+        model="gemini-3.8-flash",
         base_url=base_url,
         api_key="key",
         provider="gemini",
@@ -337,7 +337,7 @@ def test_five_x_429_raises_rate_limit_error(fake_openai_server, tmp_path):
         broker._call_openai_compat(
             messages=[{"role": "user", "content": "Hi"}],
             tools=None,
-            model="qwen/qwen3-32b",
+            model="qwen/qwen3.8-27b",
             base_url=base_url,
             api_key="key",
             provider="groq",
@@ -384,7 +384,7 @@ def test_api_key_never_appears_in_records_steps_logs_or_errors(fake_openai_serve
         res = broker.llm_complete(
             token=token,
             messages=[{"role": "user", "content": "Test"}],
-            model="groq:qwen/qwen3-32b",
+            model="groq:qwen/qwen3.8-27b",
             base_url=base_url,
         )
 
@@ -408,7 +408,7 @@ def test_api_key_never_appears_in_records_steps_logs_or_errors(fake_openai_serve
         broker.llm_complete(
             token=token,
             messages=[{"role": "user", "content": "Test"}],
-            model="groq:qwen/qwen3-32b",
+            model="groq:qwen/qwen3.8-27b",
             base_url=base_url,
         )
     assert secret_key not in str(exc_info.value)
@@ -429,7 +429,7 @@ def test_task_record_hosted_model_disclosure(tmp_path, fake_openai_server, monke
 
     # Query models
     models_resp = client.get("/api/governance/run/models", headers=headers).json()
-    assert "groq:qwen/qwen3-32b" in models_resp["models"]
+    assert "groq:qwen/qwen3.8-27b" in models_resp["models"]
 
     # Verify receipt generated with hosted model note
     from app.governance.receipt import build_receipt
@@ -458,7 +458,7 @@ def test_task_record_hosted_model_disclosure(tmp_path, fake_openai_server, monke
         os_identity=None,
         extra={
             "llm_provider": "groq",
-            "llm_model": "qwen/qwen3-32b",
+            "llm_model": "qwen/qwen3.8-27b",
             "hosted_model_note": "hosted model: the task's prompts and file contents were sent to groq",
         },
     )
@@ -467,7 +467,7 @@ def test_task_record_hosted_model_disclosure(tmp_path, fake_openai_server, monke
     assert "hosted model: the task's prompts and file contents were sent to groq" in json.dumps(receipt)
     assert receipt.get("hosted_model_note") == "hosted model: the task's prompts and file contents were sent to groq"
     assert receipt.get("llm_provider") == "groq"
-    assert receipt.get("llm_model") == "qwen/qwen3-32b"
+    assert receipt.get("llm_model") == "qwen/qwen3.8-27b"
 
 
 def test_each_hosted_model_can_be_set_by_env(monkeypatch):
@@ -481,4 +481,4 @@ def test_each_hosted_model_can_be_set_by_env(monkeypatch):
     assert parse_model_string("groq:other-model")[1] == "other-model"
     assert HOSTED_PROVIDERS["openai_compat"].default_model == "my-model"
     monkeypatch.delenv("GROQ_MODEL")
-    assert HOSTED_PROVIDERS["groq"].default_model == "qwen/qwen3-32b"
+    assert HOSTED_PROVIDERS["groq"].default_model == "qwen/qwen3.8-27b"

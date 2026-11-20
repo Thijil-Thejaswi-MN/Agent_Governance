@@ -368,14 +368,14 @@ In addition to local Ollama, governed agents can call hosted OpenAI-compatible A
 
 | Provider | Base URL | Key environment variable | Model (environment variable, fallback) |
 |---|---|---|---|
-| Groq | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` | `GROQ_MODEL`, `qwen/qwen3-32b` |
-| Cerebras | `https://api.cerebras.ai/v1` | `CEREBRAS_API_KEY` | `CEREBRAS_MODEL`, `llama3.1-8b` |
-| Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `GEMINI_API_KEY` | `GEMINI_MODEL`, `gemini-2.5-flash` |
+| Groq | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` | `GROQ_MODEL`, `qwen/qwen3.8-27b` |
+| Cerebras | `https://api.cerebras.ai/v1` | `CEREBRAS_API_KEY` | `CEREBRAS_MODEL`, `gpt-oss-120b` |
+| Gemini | `https://generativelanguage.googleapis.com/v1beta/openai` | `GEMINI_API_KEY` | `GEMINI_MODEL`, `gemini-3.8-flash` |
 | Generic | `GOVERNANCE_LLM_BASE_URL` | `GOVERNANCE_LLM_API_KEY` | `GOVERNANCE_LLM_MODEL`, `default` |
 
 Hosted model names change often: check the provider's current model list and set the model variable rather than relying on the fallback.
 
-A model string with a provider prefix (e.g. `groq:qwen/qwen3-32b`, `cerebras:llama3.1-8b`, `gemini:gemini-2.5-flash`) selects the provider. When a key is set on the server, the model appears in the console's Model menu.
+A model string with a provider prefix (e.g. `groq:qwen/qwen3.8-27b`, `cerebras:gpt-oss-120b`, `gemini:gemini-3.8-flash`) selects the provider. When a key is set on the server, the model appears in the console's Model menu.
 
 Privacy note: When using a hosted provider, task prompts and synthetic input file contents are sent across the network to that external provider. The published evaluation results in this repository are measured with `qwen2.5:7b` running locally on Ollama.
 

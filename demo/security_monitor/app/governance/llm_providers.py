@@ -48,21 +48,21 @@ HOSTED_PROVIDERS: dict[str, HostedProvider] = {
         name="Groq",
         base_url="https://api.groq.com/openai/v1",
         env_var="GROQ_API_KEY",
-        fallback_model="qwen/qwen3-32b",
+        fallback_model="qwen/qwen3.8-27b",
     ),
     "cerebras": HostedProvider(
         id="cerebras",
         name="Cerebras",
         base_url="https://api.cerebras.ai/v1",
         env_var="CEREBRAS_API_KEY",
-        fallback_model="llama3.1-8b",
+        fallback_model="gpt-oss-120b",
     ),
     "gemini": HostedProvider(
         id="gemini",
         name="Gemini",
         base_url="https://generativelanguage.googleapis.com/v1beta/openai",
         env_var="GEMINI_API_KEY",
-        fallback_model="gemini-2.5-flash",
+        fallback_model="gemini-3.8-flash",
     ),
     "openai_compat": HostedProvider(
         id="openai_compat",
@@ -77,8 +77,8 @@ HOSTED_PROVIDERS: dict[str, HostedProvider] = {
 def parse_model_string(model: str | None) -> tuple[HostedProvider | None, str]:
     """Parses a model string into a HostedProvider (if prefixed) and model name.
 
-    'groq:qwen/qwen3-32b' -> (HostedProvider(id='groq', ...), 'qwen/qwen3-32b')
-    'cerebras:llama3.1-8b' -> (HostedProvider(id='cerebras', ...), 'llama3.1-8b')
+    'groq:qwen/qwen3.8-27b' -> (HostedProvider(id='groq', ...), 'qwen/qwen3.8-27b')
+    'cerebras:gpt-oss-120b' -> (HostedProvider(id='cerebras', ...), 'gpt-oss-120b')
     'qwen2.5:7b' -> (None, 'qwen2.5:7b')  (Ollama plain tag, not a hosted provider)
     'scripted' -> (None, 'scripted')
     """

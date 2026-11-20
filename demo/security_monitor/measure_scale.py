@@ -1190,7 +1190,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--real-models",
         type=str,
-        default="groq:qwen/qwen-2.5-32b,cerebras:llama3.1-8b,gemini:gemini-2.5-flash",
+        default="groq:qwen/qwen3.8-27b,groq:openai/gpt-oss-20b,groq:openai/gpt-oss-120b",
         help="Comma-separated hosted models for real runs",
     )
     parser.add_argument("--output", type=str, default="", help="Path for JSON output (defaults based on --real)")
