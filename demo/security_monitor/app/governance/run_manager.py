@@ -26,6 +26,11 @@ from typing import Any
 from .catalog import BoundaryDerivationV1_1, ServiceCatalog
 from .derivation_grounded import GroundedLLMDerivation, ollama_client
 from .launcher import TaskLauncher, TaskSpec
+from .llm_providers import (
+    HOSTED_PROVIDERS,
+    get_available_hosted_models,
+    parse_model_string,
+)
 from .models import EnforcementMode, TaskLifecycle, TaskRecord
 from .storage import GovernanceStorage
 
@@ -646,9 +651,12 @@ def list_installed_models() -> list[str] | None:
 
 
 def fetch_available_models() -> dict[str, Any]:
-    """Installed Ollama models (only what is really installed; 'scripted' is always available)."""
+    """Installed Ollama models plus any configured hosted models; 'scripted' is always available."""
     installed = list_installed_models()
-    models = installed or []
+    models = list(installed or [])
+    for h in get_available_hosted_models():
+        if h["id"] not in models:
+            models.append(h["id"])
     default_model = "qwen2.5:7b" if "qwen2.5:7b" in models else (models[0] if models else "scripted")
     return {
         "models": models,
@@ -659,10 +667,18 @@ def fetch_available_models() -> dict[str, Any]:
 
 
 def validate_model(model: str) -> str:
-    """Accepts 'scripted' or an installed Ollama model name; raises ValueError (HTTP 422) otherwise."""
+    """Accepts 'scripted', a configured hosted model (provider:model), or an installed Ollama model name;
+    raises ValueError (HTTP 422) otherwise."""
     name = (model or "").strip()
     if name.lower() == "scripted":
         return "scripted"
+
+    provider, model_name = parse_model_string(name)
+    if provider is not None:
+        if not provider.is_available():
+            raise ValueError(f"Hosted provider '{provider.id}' is not configured (missing {provider.env_var}).")
+        return f"{provider.id}:{model_name}"
+
     installed = list_installed_models()
     if name not in (installed or []):
         available = ", ".join(installed) if installed else "none (Ollama unreachable)"
@@ -1094,6 +1110,7 @@ class ActiveRunManager:
             task_id = f"task_{uuid.uuid4().hex[:12]}"
 
             is_scripted = model == "scripted"
+            hp, model_name = parse_model_string(model)
             if is_scripted:
                 steps = preset.get("scripted_steps", []) if preset else [
                     {"tool": "read_file", "args": {"path": "input/sales_data.csv"}},
@@ -1103,6 +1120,13 @@ class ActiveRunManager:
                 llm_cfg = {
                     "provider": "scripted",
                     "steps": steps,
+                }
+            elif hp is not None:
+                llm_cfg = {
+                    "provider": hp.id,
+                    "model": model_name,
+                    "base_url": hp.get_base_url(),
+                    "temperature": 0.0,
                 }
             else:
                 # Console runs cap each model reply (the evaluation scripts do not set this).

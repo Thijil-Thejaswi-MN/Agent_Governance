@@ -784,7 +784,43 @@ class ToolBroker:
                 **kwargs,
             )
 
-        # 2. Local Ollama provider dispatch (http://127.0.0.1:11434/v1)
+        # 2. Hosted OpenAI-compatible provider dispatch (Groq, Cerebras, Gemini, openai_compat)
+        from .llm_providers import parse_model_string, HOSTED_PROVIDERS
+
+        hosted_provider = None
+        target_model = model
+
+        if model:
+            hp, parsed_model = parse_model_string(model)
+            if hp is not None:
+                hosted_provider = hp
+                target_model = parsed_model
+
+        prov_name = (provider or os.environ.get("GOVERNANCE_LLM_PROVIDER") or "").lower()
+        if hosted_provider is None and prov_name in HOSTED_PROVIDERS:
+            hosted_provider = HOSTED_PROVIDERS[prov_name]
+            target_model = target_model or hosted_provider.default_model
+
+        if hosted_provider is not None:
+            base_url = kwargs.get("base_url") or hosted_provider.get_base_url()
+            api_key = kwargs.get("api_key") or hosted_provider.get_api_key()
+            if not api_key:
+                raise RuntimeError(f"{hosted_provider.env_var} not configured for provider {hosted_provider.id}")
+            if not base_url:
+                raise RuntimeError(f"Base URL not configured for provider {hosted_provider.id}")
+            max_tokens = int(kwargs.get("max_tokens") or os.environ.get("OLLAMA_MAX_TOKENS") or 0)
+            return self._call_openai_compat(
+                messages=messages,
+                tools=tools,
+                model=target_model or hosted_provider.default_model,
+                base_url=base_url,
+                api_key=api_key,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                provider=hosted_provider.id,
+            )
+
+        # 3. Local Ollama provider dispatch (http://127.0.0.1:11434/v1)
         prov_name = (provider or os.environ.get("GOVERNANCE_LLM_PROVIDER") or "").lower()
         if prov_name == "ollama" or (not prov_name and os.environ.get("OLLAMA_MODEL")):
             ollama_model = model or os.environ.get("OLLAMA_MODEL") or "llama3.1:8b"
@@ -808,7 +844,7 @@ class ToolBroker:
         if prov_name == "gemini" or (not prov_name and gemini_key):
             if not gemini_key:
                 raise RuntimeError("GEMINI_API_KEY not configured")
-            return self._call_gemini(messages, tools, model or "gemini-1.5-flash", gemini_key, temperature)
+            return self._call_gemini(messages, tools, model or "gemini-2.5-flash", gemini_key, temperature)
 
         if prov_name == "anthropic" or (not prov_name and anthropic_key):
             if not anthropic_key:
@@ -824,6 +860,100 @@ class ToolBroker:
             "No LLM provider configured (set GOVERNANCE_LLM_PROVIDER=ollama with running Ollama, "
             "or configure OPENAI_API_KEY, GEMINI_API_KEY, or ANTHROPIC_API_KEY, or supply a mock/stub provider)."
         )
+
+    def _call_openai_compat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None,
+        model: str,
+        base_url: str,
+        api_key: str,
+        temperature: float = 0.0,
+        max_tokens: int = 0,
+        timeout: float = 300.0,
+        provider: str = "openai_compat",
+    ) -> dict[str, Any]:
+        """Invokes a hosted OpenAI-compatible provider (/chat/completions) with retry on 429/503.
+
+        Standard OpenAI request payload only (model, messages, tools, temperature, max_tokens);
+        no Ollama options or seed fields.
+        """
+        import httpx
+        import time
+
+        root_url = base_url.rstrip("/")
+        if root_url.endswith("/chat/completions"):
+            endpoint_url = root_url
+        else:
+            endpoint_url = f"{root_url}/chat/completions"
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if tools:
+            payload["tools"] = tools
+        if max_tokens and max_tokens > 0:
+            payload["max_tokens"] = max_tokens
+
+        max_tries = 5
+        client_timeout = httpx.Timeout(timeout, connect=5.0)
+
+        for attempt in range(max_tries):
+            try:
+                with httpx.Client(timeout=client_timeout) as client:
+                    resp = client.post(endpoint_url, json=payload, headers=headers)
+                    if resp.status_code in (429, 503):
+                        if attempt < max_tries - 1:
+                            retry_after_hdr = resp.headers.get("Retry-After") or resp.headers.get("retry-after")
+                            sleep_s = None
+                            if retry_after_hdr:
+                                try:
+                                    sleep_s = float(retry_after_hdr)
+                                except ValueError:
+                                    sleep_s = None
+                            if sleep_s is None:
+                                sleep_s = min(max(2.0 * (2 ** attempt), 2.0), 30.0)
+                            else:
+                                sleep_s = min(max(sleep_s, 0.0), 30.0)
+                            time.sleep(sleep_s)
+                            continue
+                        raise RuntimeError(f"{provider} rate limit exceeded: HTTP {resp.status_code} after {max_tries} attempts")
+
+                    resp.raise_for_status()
+                    data = resp.json()
+                    choices = data.get("choices") or []
+                    choice = choices[0].get("message", {}) if choices else {}
+
+                    return {
+                        "role": choice.get("role", "assistant"),
+                        "content": choice.get("content"),
+                        "tool_calls": choice.get("tool_calls"),
+                        "provider": provider,
+                        "model": model,
+                        "usage": data.get("usage"),
+                    }
+            except (httpx.ConnectError, httpx.TimeoutException) as ce:
+                if attempt < max_tries - 1:
+                    time.sleep(min(max(2.0 * (2 ** attempt), 2.0), 30.0))
+                    continue
+                err_msg = str(ce).replace(api_key, "[REDACTED]") if api_key else str(ce)
+                raise RuntimeError(
+                    f"{provider} service is unreachable or timed out at {endpoint_url} after {max_tries} attempts: {err_msg}"
+                ) from None
+            except httpx.HTTPStatusError as hse:
+                err_msg = str(hse).replace(api_key, "[REDACTED]") if api_key else str(hse)
+                raise RuntimeError(f"{provider} request failed with HTTP {hse.response.status_code}: {err_msg}") from None
+            except Exception as e:
+                if "rate limit" in str(e).lower():
+                    raise
+                err_msg = str(e).replace(api_key, "[REDACTED]") if api_key else str(e)
+                raise RuntimeError(f"{provider} call failed: {err_msg}") from None
 
     def _call_ollama(
         self,

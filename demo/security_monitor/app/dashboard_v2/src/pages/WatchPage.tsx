@@ -185,7 +185,13 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
                     {run.task.model ? (
                       <>
                         <span className="text-fg-3"> · runs on </span>
-                        <span className="font-mono text-fg-2">{run.task.model}</span>
+                        <span className="font-mono text-fg-2">
+                          {run.task.llm_provider && run.task.llm_provider !== 'ollama' && run.task.llm_provider !== 'scripted'
+                            ? (run.task.model.startsWith(run.task.llm_provider + ':')
+                                ? run.task.model
+                                : `${run.task.llm_provider}:${run.task.model}`)
+                            : run.task.model}
+                        </span>
                       </>
                     ) : null}
                   </span>
@@ -409,10 +415,12 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
           {run.streamNote && <KV k="Live updates" v={run.streamNote} id="stream-note" />}
           {run.task && <KV k="Agent" v={run.task.agent_id} />}
           {run.task && <KV k="Request" v={run.task.request_text} />}
-          {run.task?.model ? (
-            <KV k="Model" v={run.task.model} id="run-model" />
-          ) : (
-            run.task?.llm_provider && <KV k="Model provider" v={run.task.llm_provider} />
+          {run.task?.llm_provider && <KV k="Model provider" v={run.task.llm_provider} id="run-model-provider" />}
+          {run.task?.model && <KV k="Model" v={run.task.model} id="run-model" />}
+          {run.task?.hosted_model_note && (
+            <p className="m-0 text-[13px] leading-relaxed text-fg-3" id="hosted-model-note">
+              {run.task.hosted_model_note}
+            </p>
           )}
         </DetailsSection>
 
