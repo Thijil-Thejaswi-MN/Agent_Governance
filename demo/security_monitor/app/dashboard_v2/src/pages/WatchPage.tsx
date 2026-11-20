@@ -187,7 +187,9 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
                         <span className="text-fg-3"> · runs on </span>
                         <span className="font-mono text-fg-2">
                           {run.task.llm_provider && run.task.llm_provider !== 'ollama' && run.task.llm_provider !== 'scripted'
-                            ? `${run.task.llm_provider}:${run.task.model}`
+                            ? (run.task.model.startsWith(run.task.llm_provider + ':')
+                                ? run.task.model
+                                : `${run.task.llm_provider}:${run.task.model}`)
                             : run.task.model}
                         </span>
                       </>
