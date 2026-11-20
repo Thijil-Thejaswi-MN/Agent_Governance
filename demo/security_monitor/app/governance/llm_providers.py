@@ -1,0 +1,110 @@
+"""Hosted OpenAI-compatible LLM providers (Groq, Cerebras, Gemini, generic).
+
+Maintains base URLs, API key environment variables, default models,
+and model string parsing for governed agent inference.
+"""
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class HostedProvider:
+    id: str
+    name: str
+    base_url: str
+    env_var: str
+    default_model: str
+
+    def get_base_url(self) -> str:
+        if self.id == "openai_compat":
+            return os.environ.get("GOVERNANCE_LLM_BASE_URL", self.base_url)
+        return self.base_url
+
+    def get_api_key(self) -> str | None:
+        return os.environ.get(self.env_var)
+
+    def is_available(self) -> bool:
+        key = self.get_api_key()
+        if not key:
+            return False
+        if self.id == "openai_compat":
+            return bool(self.get_base_url())
+        return True
+
+
+HOSTED_PROVIDERS: dict[str, HostedProvider] = {
+    "groq": HostedProvider(
+        id="groq",
+        name="Groq",
+        base_url="https://api.groq.com/openai/v1",
+        env_var="GROQ_API_KEY",
+        default_model="qwen/qwen3-32b",
+    ),
+    "cerebras": HostedProvider(
+        id="cerebras",
+        name="Cerebras",
+        base_url="https://api.cerebras.ai/v1",
+        env_var="CEREBRAS_API_KEY",
+        default_model="llama3.1-8b",
+    ),
+    "gemini": HostedProvider(
+        id="gemini",
+        name="Gemini",
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+        env_var="GEMINI_API_KEY",
+        default_model="gemini-1.5-flash",
+    ),
+    "openai_compat": HostedProvider(
+        id="openai_compat",
+        name="OpenAI-compatible",
+        base_url="",
+        env_var="GOVERNANCE_LLM_API_KEY",
+        default_model=os.environ.get("GOVERNANCE_LLM_MODEL", "default"),
+    ),
+}
+
+
+def parse_model_string(model: str | None) -> tuple[HostedProvider | None, str]:
+    """Parses a model string into a HostedProvider (if prefixed) and model name.
+
+    'groq:qwen/qwen3-32b' -> (HostedProvider(id='groq', ...), 'qwen/qwen3-32b')
+    'cerebras:llama3.1-8b' -> (HostedProvider(id='cerebras', ...), 'llama3.1-8b')
+    'qwen2.5:7b' -> (None, 'qwen2.5:7b')  (Ollama plain tag, not a hosted provider)
+    'scripted' -> (None, 'scripted')
+    """
+    if not model:
+        return None, ""
+    name = model.strip()
+    if ":" in name:
+        prefix, rest = name.split(":", 1)
+        prefix_lower = prefix.lower()
+        if prefix_lower in HOSTED_PROVIDERS:
+            hp = HOSTED_PROVIDERS[prefix_lower]
+            actual = rest.strip() or hp.default_model
+            return hp, actual
+    if name.lower() in HOSTED_PROVIDERS:
+        hp = HOSTED_PROVIDERS[name.lower()]
+        return hp, hp.default_model
+    return None, name
+
+
+def is_hosted_model(model: str | None) -> bool:
+    """True if the model string selects a hosted provider."""
+    hp, _ = parse_model_string(model)
+    return hp is not None
+
+
+def get_available_hosted_models() -> list[dict[str, str]]:
+    """Returns hosted models whose API key is set on the server."""
+    available: list[dict[str, str]] = []
+    for pid, provider in HOSTED_PROVIDERS.items():
+        if provider.is_available():
+            available.append({
+                "id": f"{pid}:{provider.default_model}",
+                "provider": pid,
+                "model": provider.default_model,
+                "label": f"{pid}: {provider.default_model} (hosted)",
+            })
+    return available

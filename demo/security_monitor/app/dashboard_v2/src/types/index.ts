@@ -27,6 +27,7 @@ export interface TaskRecord {
   condition?: string | null;
   comparison_mode?: boolean;
   model?: string | null;
+  hosted_model_note?: string | null;
 }
 
 export interface TaskBoundary {

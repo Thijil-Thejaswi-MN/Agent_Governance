@@ -28,6 +28,21 @@ const MAX_FILE_BYTES = 51200;
 const joinNames = (xs: string[]) =>
   xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
 
+const HOSTED_PREFIXES = ['groq:', 'cerebras:', 'gemini:', 'openai_compat:'];
+
+function formatModelOption(m: string): string {
+  if (m === 'scripted') {
+    return 'scripted: fixed steps, no AI (for repeatable demos)';
+  }
+  const prefix = HOSTED_PREFIXES.find(p => m.toLowerCase().startsWith(p));
+  if (prefix) {
+    const prov = prefix.slice(0, -1);
+    const model = m.slice(prefix.length);
+    return `${prov}: ${model} (hosted)`;
+  }
+  return `${m} (override for this run)`;
+}
+
 export const AskPage: React.FC = () => {
   const navigate = useNavigate();
   const { hasToken, openAuthModal, role } = useAuth();
@@ -294,7 +309,7 @@ export const AskPage: React.FC = () => {
                   .filter(m => m !== agentModel)
                   .map(m => (
                     <option key={m} value={m}>
-                      {m === 'scripted' ? 'scripted: fixed steps, no AI (for repeatable demos)' : `${m} (override for this run)`}
+                      {formatModelOption(m)}
                     </option>
                   ))}
               </select>

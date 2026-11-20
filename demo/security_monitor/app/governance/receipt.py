@@ -207,6 +207,12 @@ def build_receipt(
     }
     if extra:
         receipt["extra"] = extra
+        if extra.get("hosted_model_note"):
+            receipt["hosted_model_note"] = extra["hosted_model_note"]
+        if extra.get("llm_provider"):
+            receipt["llm_provider"] = extra["llm_provider"]
+        if extra.get("llm_model"):
+            receipt["llm_model"] = extra["llm_model"]
     return seal(receipt)
 
 

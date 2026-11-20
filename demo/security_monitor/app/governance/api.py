@@ -505,6 +505,13 @@ def _extract_os_receipt_events(task_id: str) -> list[dict[str, Any]]:
 
 
 def _extract_llm_provider(task: Any, task_id: str) -> str:
+    mgr = get_run_manager()
+    slot = getattr(mgr, "_runs", {}).get(task_id)
+    if slot and hasattr(slot, "spec") and slot.spec.llm:
+        prov = slot.spec.llm.get("provider")
+        if prov:
+            return str(prov)
+
     receipts_dir = get_receipt_dir()
     r_file = receipts_dir / f"{task_id}.json"
     if not r_file.exists():
@@ -524,6 +531,15 @@ def _extract_llm_provider(task: Any, task_id: str) -> str:
         p = task.extra.get("llm_provider")
         if p:
             return str(p)
+    task_model = getattr(task, "model", None)
+    if task_model:
+        from .llm_providers import parse_model_string
+        hp, _ = parse_model_string(task_model)
+        if hp:
+            return hp.id
+        if task_model in ("scripted", "scripted_mock"):
+            return "scripted"
+        return "ollama"
     return "unknown"
 
 
@@ -735,7 +751,10 @@ async def get_task_detail(task_id: str, request: Request = None) -> dict[str, An
     task_dict = task.model_dump()
     task_dict["llm_provider"] = llm_provider
     task_dict["condition"] = getattr(task, "condition", None)
-    task_dict["comparison_mode"] = getattr(task, "condition", None) == "B" 
+    task_dict["comparison_mode"] = getattr(task, "condition", None) == "B"
+    from .llm_providers import HOSTED_PROVIDERS
+    if llm_provider in HOSTED_PROVIDERS:
+        task_dict["hosted_model_note"] = f"hosted model: the task's prompts and file contents were sent to {llm_provider}" 
 
     return {
         "task": task_dict,

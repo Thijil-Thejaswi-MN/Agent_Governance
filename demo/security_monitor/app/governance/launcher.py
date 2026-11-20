@@ -59,6 +59,7 @@ from .os_layer.sandbox_spec import (
 from .proxy import EgressProxyServer
 from .receipt import build_receipt, verify_chain
 from .resolved_boundary import ResolvedBoundaryEvaluator
+from .llm_providers import HOSTED_PROVIDERS
 from .policy_sim import receipt_policy_section
 from .staged_writes import land_snapshot, normalize_write_target, snapshot_staged
 from .storage import GovernanceStorage
@@ -1426,6 +1427,8 @@ class TaskLauncher:
                 "policy": receipt_policy_section(initial_boundary, self.storage.get_boundary(task_id)),
                 "llm_provider": provider_label,
                 "llm_model": llm_model,
+                **({"hosted_model_note": f"hosted model: the task's prompts and file contents were sent to {provider_label}"}
+                   if provider_label in HOSTED_PROVIDERS else {}),
                 "runtime_code_sha256": runtime_hashes,
                 "landlock_rules_sha256": _sha256_file(rules_path),
                 "rpc_call_counts": dict(rpc.call_counts),
