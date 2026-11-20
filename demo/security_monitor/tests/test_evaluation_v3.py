@@ -698,3 +698,260 @@ class TestConditionWAndInWorkspaceDecoys:
 
         scored = score(smoke_records)
         assert scored["integrity"]["total_records"] == len(smoke_records)
+
+
+class TestHostedModelEvaluation:
+    def test_model_string_to_llm_config(self) -> None:
+        """Verifies model-string to llm config for hosted, local ollama, and scripted."""
+        from demo.security_monitor.evaluate_v3 import resolve_llm_config
+
+        cfg_groq = resolve_llm_config("groq:openai/gpt-oss-20b")
+        assert cfg_groq == {
+            "provider": "groq",
+            "model": "openai/gpt-oss-20b",
+            "temperature": 0.0,
+        }
+
+        cfg_qwen = resolve_llm_config("qwen2.5:7b")
+        assert cfg_qwen == {
+            "provider": "ollama",
+            "model": "qwen2.5:7b",
+        }
+
+        cfg_scripted = resolve_llm_config("scripted")
+        assert cfg_scripted == {
+            "provider": "scripted",
+            "model": "scripted",
+        }
+
+    def test_hosted_run_skips_digest_lookup_and_records_provider_fields(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """A hosted run skips the Ollama digest lookup and records model_provider, model_name, model_digest, deterministic."""
+        from unittest.mock import MagicMock
+        import demo.security_monitor.evaluate_v3 as eval_mod
+
+        digest_called = False
+        def fake_get_model_digest(m: str) -> str:
+            nonlocal digest_called
+            digest_called = True
+            return "should_not_be_called"
+
+        monkeypatch.setattr(eval_mod, "get_model_digest", fake_get_model_digest)
+        monkeypatch.setattr(eval_mod, "test_llm_preflight", lambda storage, cfg: None)
+        monkeypatch.setattr(eval_mod, "get_git_dirty", lambda repo: False)
+
+        mock_launcher = MagicMock()
+        mock_res = MagicMock()
+        mock_res.receipt_path = tmp_path / "rc.json"
+        mock_res.receipt = {"initial_boundary": {}, "extra": {}}
+        mock_res.workspace = tmp_path / "ws"
+        mock_res.workspace.mkdir(parents=True, exist_ok=True)
+        mock_res.shim_result = {"status": "completed", "tool_history": []}
+        mock_res.aborted = None
+        mock_launcher.run.return_value = mock_res
+        monkeypatch.setattr(eval_mod, "TaskLauncher", lambda *args, **kwargs: mock_launcher)
+
+        scenario_p = tmp_path / "sc.jsonl"
+        sc_obj = {
+            "id": "injected_inworkspace_01",
+            "category": "injected_inworkspace",
+            "authored_by": "test",
+            "user_prompt": "Run summary",
+            "input_files": {},
+            "expected_boundary": {},
+            "decoys": [],
+        }
+        scenario_p.write_text(json.dumps(sc_obj) + "\n", encoding="utf-8")
+        out_p = tmp_path / "out.jsonl"
+
+        ret = eval_mod.main([
+            "--scenarios", str(scenario_p),
+            "--conditions", "A",
+            "--model", "groq:openai/gpt-oss-20b",
+            "--repeats", "1",
+            "--output", str(out_p),
+            "--workspace-base", str(tmp_path / "ws_base"),
+        ])
+        assert ret == 0
+        assert digest_called is False, "get_model_digest must be skipped for hosted runs"
+
+        records = [json.loads(l) for l in out_p.read_text(encoding="utf-8").splitlines() if l.strip()]
+        assert len(records) == 1
+        r = records[0]
+        assert r["model"] == "groq:openai/gpt-oss-20b"
+        assert r["model_provider"] == "groq"
+        assert r["model_name"] == "openai/gpt-oss-20b"
+        assert r["model_digest"] == "hosted:groq:openai/gpt-oss-20b"
+        assert r["deterministic"] is False
+        assert r["infra_error"] is False
+
+    def test_failing_test_call_aborts_before_trial_1(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """A failing pre-flight test call aborts with SystemExit before trial 1 using a fake provider."""
+        import httpx
+        from demo.security_monitor.app.governance.llm_providers import HostedProvider, HOSTED_PROVIDERS
+        from demo.security_monitor.app.governance.storage import GovernanceStorage
+        from demo.security_monitor.evaluate_v3 import test_llm_preflight
+
+        fake_provider = HostedProvider(
+            id="broken_provider",
+            name="Broken Provider",
+            base_url="https://api.broken.test/v1",
+            env_var="BROKEN_KEY",
+            fallback_model="broken-model",
+        )
+        monkeypatch.setitem(HOSTED_PROVIDERS, "broken_provider", fake_provider)
+        monkeypatch.setenv("BROKEN_KEY", "dummy_key")
+
+        def fake_post(*args, **kwargs):
+            raise httpx.ConnectError("Failed to connect to provider")
+        monkeypatch.setattr(httpx.Client, "post", fake_post)
+
+        db_p = tmp_path / "gov.db"
+        storage = GovernanceStorage(db_p)
+
+        llm_cfg = {"provider": "broken_provider", "model": "broken-model", "temperature": 0.0}
+
+        with pytest.raises(SystemExit) as exc_info:
+            test_llm_preflight(storage, llm_cfg)
+
+        assert "Pre-flight model check failed" in str(exc_info.value)
+
+    def test_provider_error_inside_trial_gives_infra_error_and_rerun_by_resume(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """A provider error inside a trial marks infra_error: true and is re-run by --resume."""
+        from unittest.mock import MagicMock
+        import demo.security_monitor.evaluate_v3 as eval_mod
+
+        monkeypatch.setattr(eval_mod, "get_git_dirty", lambda repo: False)
+        monkeypatch.setattr(eval_mod, "test_llm_preflight", lambda storage, cfg: None)
+        monkeypatch.setattr(eval_mod.time, "sleep", lambda s: None)
+
+        scenario_p = tmp_path / "sc.jsonl"
+        sc_obj = {
+            "id": "injected_inworkspace_01",
+            "category": "injected_inworkspace",
+            "authored_by": "test",
+            "user_prompt": "Run summary",
+            "input_files": {},
+            "expected_boundary": {},
+            "decoys": [],
+        }
+        scenario_p.write_text(json.dumps(sc_obj) + "\n", encoding="utf-8")
+        out_p = tmp_path / "results_infra.jsonl"
+
+        mock_launcher = MagicMock()
+        mock_launcher.run.side_effect = RuntimeError("groq rate limit exceeded: HTTP 429 after 5 attempts Bearer secret123")
+        monkeypatch.setattr(eval_mod, "TaskLauncher", lambda *args, **kwargs: mock_launcher)
+
+        ret1 = eval_mod.main([
+            "--scenarios", str(scenario_p),
+            "--conditions", "A",
+            "--model", "groq:openai/gpt-oss-20b",
+            "--repeats", "1",
+            "--output", str(out_p),
+            "--workspace-base", str(tmp_path / "ws_base"),
+        ])
+        assert ret1 == 0
+
+        lines1 = [json.loads(l) for l in out_p.read_text(encoding="utf-8").splitlines() if l.strip()]
+        assert len(lines1) == 1
+        r1 = lines1[0]
+        assert r1["infra_error"] is True
+        assert "rate limit exceeded" in r1["infra_error_message"]
+        assert "secret123" not in r1["infra_error_message"]
+        assert r1["aborted"] == "infra_error"
+        assert r1["ground_truth"]["decoy_content_exposed"] is False
+        assert r1["ground_truth"]["written_outside"] is False
+
+        mock_res = MagicMock()
+        mock_res.receipt_path = tmp_path / "rc.json"
+        mock_res.receipt = {"initial_boundary": {}, "extra": {}}
+        mock_res.workspace = tmp_path / "ws"
+        mock_res.workspace.mkdir(parents=True, exist_ok=True)
+        mock_res.shim_result = {"status": "completed", "tool_history": []}
+        mock_res.aborted = None
+        mock_launcher.run.side_effect = None
+        mock_launcher.run.return_value = mock_res
+
+        ret2 = eval_mod.main([
+            "--scenarios", str(scenario_p),
+            "--conditions", "A",
+            "--model", "groq:openai/gpt-oss-20b",
+            "--repeats", "1",
+            "--output", str(out_p),
+            "--workspace-base", str(tmp_path / "ws_base"),
+            "--resume",
+        ])
+        assert ret2 == 0
+
+        lines2 = [json.loads(l) for l in out_p.read_text(encoding="utf-8").splitlines() if l.strip()]
+        assert len(lines2) == 2
+        assert lines2[0]["infra_error"] is True
+        assert lines2[1]["infra_error"] is False
+
+        call_count_before = mock_launcher.run.call_count
+        ret3 = eval_mod.main([
+            "--scenarios", str(scenario_p),
+            "--conditions", "A",
+            "--model", "groq:openai/gpt-oss-20b",
+            "--repeats", "1",
+            "--output", str(out_p),
+            "--workspace-base", str(tmp_path / "ws_base"),
+            "--resume",
+        ])
+        assert ret3 == 0
+        assert mock_launcher.run.call_count == call_count_before
+
+    def test_qwen_digest_check_runs_for_qwen(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """The reference digest verification still runs for qwen2.5:7b."""
+        from unittest.mock import MagicMock
+        import demo.security_monitor.evaluate_v3 as eval_mod
+
+        monkeypatch.setattr(eval_mod, "get_git_dirty", lambda repo: False)
+
+        scenario_p = tmp_path / "sc.jsonl"
+        scenario_p.write_text(json.dumps({
+            "id": "injected_inworkspace_01",
+            "category": "injected_inworkspace",
+            "authored_by": "test",
+            "user_prompt": "Run summary",
+            "input_files": {},
+            "expected_boundary": {},
+            "decoys": [],
+        }) + "\n", encoding="utf-8")
+
+        # Case 1: digest matches
+        monkeypatch.setattr(eval_mod, "get_model_digest", lambda m: "845dbda0ea48ed749caafd9e6037047aa19acfcfd82e704d7ca97d631a0b697e")
+        monkeypatch.setattr(eval_mod, "test_llm_preflight", lambda storage, cfg: None)
+        mock_launcher = MagicMock()
+        mock_res = MagicMock()
+        mock_res.receipt_path = tmp_path / "rc.json"
+        mock_res.receipt = {"initial_boundary": {}, "extra": {}}
+        mock_res.workspace = tmp_path / "ws"
+        mock_res.workspace.mkdir(parents=True, exist_ok=True)
+        mock_res.shim_result = {"status": "completed", "tool_history": []}
+        mock_res.aborted = None
+        mock_launcher.run.return_value = mock_res
+        monkeypatch.setattr(eval_mod, "TaskLauncher", lambda *args, **kwargs: mock_launcher)
+
+        out_ok = tmp_path / "out_ok.jsonl"
+        ret = eval_mod.main([
+            "--scenarios", str(scenario_p),
+            "--conditions", "A",
+            "--model", "qwen2.5:7b",
+            "--repeats", "1",
+            "--output", str(out_ok),
+            "--workspace-base", str(tmp_path / "ws_base1"),
+        ])
+        assert ret == 0
+
+        # Case 2: digest mismatch raises AssertionError
+        monkeypatch.setattr(eval_mod, "get_model_digest", lambda m: "bad_mismatched_digest_12345")
+        out_bad = tmp_path / "out_bad.jsonl"
+        with pytest.raises(AssertionError, match="Model digest mismatch for qwen2.5:7b"):
+            eval_mod.main([
+                "--scenarios", str(scenario_p),
+                "--conditions", "A",
+                "--model", "qwen2.5:7b",
+                "--repeats", "1",
+                "--output", str(out_bad),
+                "--workspace-base", str(tmp_path / "ws_base2"),
+            ])
