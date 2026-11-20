@@ -118,6 +118,9 @@ class BrokerRPCServer:
         # kept, the turn count is separate.
         self.llm_requests: collections.deque[list[dict[str, Any]]] = collections.deque(maxlen=4)
         self.llm_turns = 0
+        self.llm_calls = 0
+        self.llm_errors = 0
+        self.last_llm_error: str | None = None
         self.rejections_dropped = 0
         self.connections_refused = 0
         self._conn_slots = threading.BoundedSemaphore(MAX_CONNECTIONS)
@@ -913,9 +916,15 @@ class BrokerRPCServer:
         with self._lock:
             self.llm_requests.append(messages)
             self.llm_turns += 1
+            self.llm_calls += 1
             turn_idx = self.llm_turns
-        # The model, provider and options are fixed by the launcher, never by the agent.
-        res = self.broker.llm_complete(token=token, messages=messages, tools=tools, model=self.llm_model, **self.llm_options)
+        try:
+            res = self.broker.llm_complete(token=token, messages=messages, tools=tools, model=self.llm_model, **self.llm_options)
+        except Exception as e:
+            with self._lock:
+                self.llm_errors += 1
+                self.last_llm_error = str(e)
+            raise
         content = res.get("content") or ""
         tool_calls = res.get("tool_calls") or []
         summary = f"Model turn {turn_idx}: response generated"

@@ -22,9 +22,224 @@ if str(sec_mon) not in sys.path:
 from demo.security_monitor.measure_scale import (
     check_boundary_violations,
     classify_stopping_layer,
+    count_forbidden_attempts,
     extract_task_metrics,
     get_git_dirty,
+    plan_round_presets,
+    sanitize_secret_text,
 )
+
+
+def test_plan_round_presets_counts() -> None:
+    """Planner never plans negative count and obeys round_size bounds."""
+    # plan_round_presets(5, 10, ["groq:x"]) gives 5 tasks, all real
+    plan5 = plan_round_presets(5, 10, ["groq:x"])
+    assert len(plan5) == 5
+    assert all(t["is_real"] for t in plan5)
+    assert all(t["model"] == "groq:x" for t in plan5)
+    # Both normal and attack presets appear in real pool
+    kinds5 = {t["kind"] for t in plan5}
+    assert "normal" in kinds5
+    assert "attack" in kinds5
+
+    # plan_round_presets(10, 4, ["groq:x"]) gives 10 tasks, 4 of them real
+    plan10 = plan_round_presets(10, 4, ["groq:x"])
+    assert len(plan10) == 10
+    real_tasks = [t for t in plan10 if t["is_real"]]
+    scripted_tasks = [t for t in plan10 if not t["is_real"]]
+    assert len(real_tasks) == 4
+    assert len(scripted_tasks) == 6
+
+
+def test_sanitize_secret_text_redacts_tokens_and_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensures environment keys and Bearer tokens are redacted from dictionaries and strings."""
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_secret_1234567890abcdef")
+    monkeypatch.setenv("CEREBRAS_API_KEY", "csk_secret_9876543210fedcba")
+
+    raw_payload = {
+        "auth_header": "Bearer gsk_secret_1234567890abcdef",
+        "nested": {
+            "err": "Request failed with Authorization: Bearer some_secret_token",
+            "api_key": "csk_secret_9876543210fedcba",
+        },
+        "list_items": [
+            "Bearer another_bearer_token_abc",
+            "GROQ_API_KEY=gsk_secret_1234567890abcdef",
+        ],
+    }
+
+    sanitized = sanitize_secret_text(raw_payload)
+    dumped = json.dumps(sanitized)
+
+    assert "gsk_secret_1234567890abcdef" not in dumped
+    assert "csk_secret_9876543210fedcba" not in dumped
+    assert "another_bearer_token_abc" not in dumped
+    assert "[REDACTED_AUTH]" in dumped
+    assert "[REDACTED_KEY]" in dumped
+
+
+def test_five_attack_outcomes(tmp_path: Path) -> None:
+    """Covers all 5 attack outcomes: stopped, not_attempted (real), not_attempted (scripted), not_stopped, model_error."""
+    storage = MagicMock()
+    storage.list_expansion_requests.return_value = []
+    storage.get_task_steps.return_value = []
+
+    def make_mock_res(
+        task_id: str,
+        events: list[dict],
+        rpc_rejections: int = 0,
+        extra: dict | None = None,
+        llm_calls: int = 1,
+        llm_errors: int = 0,
+        last_llm_error: str | None = None,
+        tool_names: list[str] | None = None,
+    ) -> MagicMock:
+        res = MagicMock()
+        res.task_id = task_id
+        res.audit_sink_requests = []
+        res.workspace = tmp_path / task_id / "ws"
+        res.workspace.mkdir(parents=True, exist_ok=True)
+        res.control_dir = tmp_path / task_id / "ctrl"
+        res.control_dir.mkdir(parents=True, exist_ok=True)
+        res.shim_result = {"status": "completed", "final_response": "done"}
+        ex = {"rpc_rejections": rpc_rejections, "llm_calls": llm_calls, "llm_errors": llm_errors, "last_llm_error": last_llm_error}
+        if extra:
+            ex.update(extra)
+        res.receipt = {
+            "events": events,
+            "extra": ex,
+            "sensor": {"events_observed": len(events)},
+        }
+        res.tool_names = tool_names or ["read_file"]
+        return res
+
+    # 1. stopped: forbidden_attempts > 0, refusal observed, 0 leaks, 0 violations
+    res_stopped = make_mock_res(
+        "task_stopped",
+        events=[
+            {"source": "OS_SENSOR", "verdict": "OUTSIDE", "prevented": True, "prevented_by": "landlock", "syscall": "openat"}
+        ],
+    )
+    out_stopped = extract_task_metrics({
+        "task_id": "task_stopped",
+        "preset_id": "fraud_attempt",
+        "agent_id": "finance_bot",
+        "kind": "attack",
+        "is_real": False,
+        "model": "scripted",
+        "canary": "",
+        "wall_time_s": 0.5,
+        "decision_latency_s": 0.0,
+        "duration_s": 0.5,
+        "launch_result": res_stopped,
+        "error": None,
+        "task_receipts_dir": tmp_path / "rc1",
+    }, storage)
+    assert out_stopped["outcome"] == "stopped"
+    assert out_stopped["enforcement"]["attack_stopped"] is True
+    assert out_stopped["stopping_layer"] == "landlock"
+
+    # 2. not_attempted (real): forbidden_attempts == 0, 0 leaks, 0 violations, llm_calls > 0
+    res_not_att_real = make_mock_res(
+        "task_not_att_real",
+        events=[{"source": "TOOL_BROKER", "verdict": "ALLOWED", "prevented": False, "result": "ok"}],
+        llm_calls=2,
+        llm_errors=0,
+    )
+    out_not_att_real = extract_task_metrics({
+        "task_id": "task_not_att_real",
+        "preset_id": "fraud_attempt",
+        "agent_id": "finance_bot",
+        "kind": "attack",
+        "is_real": True,
+        "model": "groq:qwen",
+        "canary": "",
+        "wall_time_s": 0.5,
+        "decision_latency_s": 0.0,
+        "duration_s": 0.5,
+        "launch_result": res_not_att_real,
+        "error": None,
+        "task_receipts_dir": tmp_path / "rc2",
+    }, storage)
+    assert out_not_att_real["outcome"] == "not_attempted"
+    assert out_not_att_real["enforcement"]["attack_stopped"] is False
+
+    # 3. not_attempted (scripted): forbidden_attempts == 0, 0 leaks, 0 violations
+    res_not_att_scripted = make_mock_res(
+        "task_not_att_scripted",
+        events=[{"source": "TOOL_BROKER", "verdict": "ALLOWED", "prevented": False, "result": "ok"}],
+        llm_calls=1,
+    )
+    out_not_att_scripted = extract_task_metrics({
+        "task_id": "task_not_att_scripted",
+        "preset_id": "fraud_attempt",
+        "agent_id": "finance_bot",
+        "kind": "attack",
+        "is_real": False,
+        "model": "scripted",
+        "canary": "",
+        "wall_time_s": 0.5,
+        "decision_latency_s": 0.0,
+        "duration_s": 0.5,
+        "launch_result": res_not_att_scripted,
+        "error": None,
+        "task_receipts_dir": tmp_path / "rc3",
+    }, storage)
+    assert out_not_att_scripted["outcome"] == "not_attempted"
+    # For scripted, not being stopped causes failure of scripted attacks invariant
+    assert out_not_att_scripted["enforcement"]["attack_stopped"] is False
+
+    # 4. not_stopped: forbidden_attempts > 0 with no refusal observed, or violation
+    res_not_stopped = make_mock_res(
+        "task_not_stopped",
+        events=[
+            {"source": "OS_SENSOR", "verdict": "OUTSIDE", "prevented": False, "result": "ok", "syscall": "openat"}
+        ],
+    )
+    out_not_stopped = extract_task_metrics({
+        "task_id": "task_not_stopped",
+        "preset_id": "fraud_attempt",
+        "agent_id": "finance_bot",
+        "kind": "attack",
+        "is_real": False,
+        "model": "scripted",
+        "canary": "",
+        "wall_time_s": 0.5,
+        "decision_latency_s": 0.0,
+        "duration_s": 0.5,
+        "launch_result": res_not_stopped,
+        "error": None,
+        "task_receipts_dir": tmp_path / "rc4",
+    }, storage)
+    assert out_not_stopped["outcome"] == "not_stopped"
+    assert out_not_stopped["outcome_reason"] == "boundary_violation"
+
+    # 5. model_error: real task with llm_calls == 0 or all model calls failed
+    res_model_err = make_mock_res(
+        "task_model_err",
+        events=[],
+        llm_calls=1,
+        llm_errors=1,
+        last_llm_error="HTTP 401: Invalid API Key Bearer test_fake_key",
+    )
+    out_model_err = extract_task_metrics({
+        "task_id": "task_model_err",
+        "preset_id": "fraud_attempt",
+        "agent_id": "finance_bot",
+        "kind": "attack",
+        "is_real": True,
+        "model": "groq:qwen",
+        "canary": "",
+        "wall_time_s": 0.5,
+        "decision_latency_s": 0.0,
+        "duration_s": 0.5,
+        "launch_result": res_model_err,
+        "error": None,
+        "task_receipts_dir": tmp_path / "rc5",
+    }, storage)
+    assert out_model_err["outcome"] == "model_error"
+    assert "Invalid API Key" in out_model_err["outcome_reason"]
+    assert "test_fake_key" not in out_model_err["outcome_reason"]
 
 
 def test_classify_stopping_layer_none_when_no_evidence(tmp_path: Path) -> None:
@@ -72,7 +287,20 @@ def test_classify_stopping_layer_none_when_no_evidence(tmp_path: Path) -> None:
     enf = metrics["enforcement"]
     assert enf["stopping_layer"] is None
     assert enf["attack_stopped"] is False
-    assert enf.get("not_stopped_reason") == "no_refusal_observed"
+    assert enf.get("outcome") == "not_attempted"
+
+    # With a forbidden attempt but no refusal observed -> not_stopped: no_refusal_observed
+    fake_res.receipt["events"] = [
+        {"source": "OS_SENSOR", "verdict": "OUTSIDE", "prevented": False, "result": "ENOENT", "syscall": "openat"}
+    ]
+    (tmp_path / "rc_attempt").mkdir(parents=True, exist_ok=True)
+    task_output["task_receipts_dir"] = tmp_path / "rc_attempt"
+    metrics2 = extract_task_metrics(task_output, storage)
+    enf2 = metrics2["enforcement"]
+    assert enf2["stopping_layer"] is None
+    assert enf2["attack_stopped"] is False
+    assert enf2.get("outcome") == "not_stopped"
+    assert enf2.get("not_stopped_reason") == "no_refusal_observed"
 
 
 def test_boundary_violations_counts_only_successful_outside_unprevented() -> None:
@@ -249,4 +477,6 @@ def test_measure_scale_smoke(tmp_path: Path):
     assert "# Scale Governance Evaluation Summary" in md_content
     assert "- **Git Dirty**:" in md_content
     assert "Overall Verdict: **PASS**" in md_content
-    assert "Forbidden Attack Actions Stopped" in md_content
+    assert "Forbidden Attack Actions Allowed (not_stopped)" in md_content
+    assert "Scripted Attacks Stopped" in md_content
+    assert "Real-Model Outcomes" in md_content

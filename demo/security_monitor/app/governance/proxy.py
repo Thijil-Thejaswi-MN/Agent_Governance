@@ -49,6 +49,7 @@ class EgressProxyServer:
         self.server: asyncio.Server | None = None
         self._is_running = False
         self._event_counter = 0
+        self._client_tasks: set[asyncio.Task] = set()
 
     @property
     def listening_port(self) -> int:
@@ -68,25 +69,34 @@ class EgressProxyServer:
         return actual_port
 
     async def stop(self) -> None:
+        self._is_running = False
         if self.server:
             self.server.close()
-            await self.server.wait_closed()
-            self._is_running = False
+            try:
+                await self.server.wait_closed()
+            except Exception:
+                pass
+        if self._client_tasks:
+            for task in list(self._client_tasks):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*list(self._client_tasks), return_exceptions=True)
+            self._client_tasks.clear()
 
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        curr_task = asyncio.current_task()
+        if curr_task is not None:
+            self._client_tasks.add(curr_task)
+            curr_task.add_done_callback(self._client_tasks.discard)
         try:
             # Read HTTP request line
             line = await reader.readline()
             if not line:
-                writer.close()
-                await writer.wait_closed()
                 return
 
             req_line = line.decode("utf-8", errors="replace").strip()
             parts = req_line.split()
             if len(parts) < 3:
-                writer.close()
-                await writer.wait_closed()
                 return
 
             method, target, version = parts[0], parts[1], parts[2]
@@ -157,9 +167,10 @@ class EgressProxyServer:
                 )
                 self.storage.record_event(evt)
                 writer.write(b"HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Bearer\r\n\r\n")
-                await writer.drain()
-                writer.close()
-                await writer.wait_closed()
+                try:
+                    await asyncio.wait_for(writer.drain(), timeout=1.0)
+                except Exception:
+                    pass
                 return
 
             # 3. Resolve destination IP
@@ -216,9 +227,10 @@ class EgressProxyServer:
 
             if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
                 writer.write(b"HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\n\r\nGovernance Proxy: Destination outside task boundary\r\n")
-                await writer.drain()
-                writer.close()
-                await writer.wait_closed()
+                try:
+                    await asyncio.wait_for(writer.drain(), timeout=1.0)
+                except Exception:
+                    pass
                 return
 
             # A single-use network grant is used up by this connection, as it is through
@@ -230,9 +242,10 @@ class EgressProxyServer:
                 remote_reader, remote_writer = await asyncio.open_connection(target_connect_ip, dst_port)
             except Exception as e:
                 writer.write(f"HTTP/1.1 502 Bad Gateway\r\n\r\n{e}\r\n".encode("utf-8"))
-                await writer.drain()
-                writer.close()
-                await writer.wait_closed()
+                try:
+                    await asyncio.wait_for(writer.drain(), timeout=1.0)
+                except Exception:
+                    pass
                 return
 
             if method.upper() == "CONNECT":
@@ -284,11 +297,12 @@ class EgressProxyServer:
                 return_exceptions=True,
             )
 
+        except asyncio.CancelledError:
+            pass
         except Exception as e:
             logger.debug(f"Proxy connection exception: {e}")
         finally:
             try:
                 writer.close()
-                await writer.wait_closed()
             except Exception:
                 pass
