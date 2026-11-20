@@ -6,6 +6,7 @@ and model string parsing for governed agent inference.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 
 
@@ -115,3 +116,35 @@ def get_available_hosted_models() -> list[dict[str, str]]:
                 "label": f"{pid}: {provider.default_model} (hosted)",
             })
     return available
+
+
+def redact_llm_error(error: Any, max_chars: int | None = 300) -> str | None:
+    """Redacts tokens, query keys, and environment API keys from error messages."""
+    if error is None:
+        return None
+    s = str(error)
+    # 1. Remove Bearer values
+    s = re.sub(r'Bearer\s+[A-Za-z0-9\-._~+/]+=*', '[REDACTED_AUTH]', s, flags=re.IGNORECASE)
+    s = re.sub(r'Bearer\b[^\s,]*', '[REDACTED_AUTH]', s, flags=re.IGNORECASE)
+
+    # 2. Remove key=... query parameters
+    s = re.sub(r'([?&]key=)[^&\s]+', r'\1[REDACTED_KEY]', s, flags=re.IGNORECASE)
+    s = re.sub(r'(\bkey=)[^&\s,]+', r'\1[REDACTED_KEY]', s, flags=re.IGNORECASE)
+
+    # 3. Remove values of configured environment variables if set
+    for env_var in (
+        "GROQ_API_KEY",
+        "CEREBRAS_API_KEY",
+        "GEMINI_API_KEY",
+        "GOVERNANCE_LLM_API_KEY",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+    ):
+        val = os.environ.get(env_var)
+        if val and len(val.strip()) >= 4:
+            s = s.replace(val.strip(), "[REDACTED_KEY]")
+
+    if max_chars is not None and len(s) > max_chars:
+        s = s[:max_chars]
+
+    return s

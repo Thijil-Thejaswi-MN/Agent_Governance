@@ -428,7 +428,18 @@ class _AsyncLoopThread:
         return asyncio.run_coroutine_threadsafe(coro, self.loop).result(timeout)
 
     def stop(self) -> None:
-        self.loop.call_soon_threadsafe(self.loop.stop)
+        async def _shutdown() -> None:
+            tasks = [t for t in asyncio.all_tasks(self.loop) if t is not asyncio.current_task()]
+            for t in tasks:
+                t.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            self.loop.stop()
+
+        try:
+            asyncio.run_coroutine_threadsafe(_shutdown(), self.loop).result(timeout=2.0)
+        except Exception:
+            self.loop.call_soon_threadsafe(self.loop.stop)
         self.thread.join(timeout=2.0)
         try:
             self.loop.close()
@@ -1451,6 +1462,9 @@ class TaskLauncher:
                 "runtime_code_sha256": runtime_hashes,
                 "landlock_rules_sha256": _sha256_file(rules_path),
                 "rpc_call_counts": dict(rpc.call_counts),
+                "llm_calls": getattr(rpc, "llm_calls", rpc.call_counts.get("llm_complete", 0)),
+                "llm_errors": getattr(rpc, "llm_errors", 0),
+                "last_llm_error": getattr(rpc, "last_llm_error", None),
                 "rpc_rejections": rpc.rejections,
                 "rpc_rejections_dropped": rpc.rejections_dropped,
                 "rpc_connections_refused": rpc.connections_refused,
