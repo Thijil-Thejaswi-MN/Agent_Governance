@@ -32,8 +32,14 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from demo.security_monitor.app.governance.launcher import TaskLauncher, TaskSpec
-from demo.security_monitor.app.governance.models import EnforcementMode
+from demo.security_monitor.app.governance.broker import ToolBroker
+from demo.security_monitor.app.governance.launcher import ScriptedLLMProvider, TaskLauncher, TaskSpec
+from demo.security_monitor.app.governance.llm_providers import (
+    HOSTED_PROVIDERS,
+    parse_model_string,
+    redact_llm_error,
+)
+from demo.security_monitor.app.governance.models import EnforcementMode, TaskBoundary
 from demo.security_monitor.app.governance.storage import GovernanceStorage
 from demo.security_monitor.app.governance.llm_agent import GOVERNED_TOOLS_SCHEMA
 
@@ -99,6 +105,95 @@ def get_model_digest(model: str) -> str:
     except Exception:
         pass
     return "unknown"
+
+
+def resolve_llm_config(model: str) -> dict[str, Any]:
+    """Maps model string to LLM config."""
+    hp, parsed_model = parse_model_string(model)
+    if hp is not None:
+        return {"provider": hp.id, "model": parsed_model, "temperature": 0.0}
+    if model.strip().lower() in ("scripted", "scripted_mock"):
+        return {"provider": "scripted", "model": "scripted"}
+    return {"provider": "ollama", "model": model}
+
+
+def test_llm_preflight(storage: GovernanceStorage, llm_cfg: dict[str, Any]) -> None:
+    """Pre-flight check: make one tiny test call through the broker path ('reply with OK') before trial 1.
+    Aborts with a clear message if it fails: model not found, bad key or rate limit.
+    The run must not start with a broken model.
+    """
+    provider = llm_cfg.get("provider", "ollama")
+    model = llm_cfg.get("model", "")
+    test_task_id = f"preflight_{uuid.uuid4().hex[:8]}"
+    test_agent_id = "evaluator_preflight"
+    token = f"tok_{uuid.uuid4().hex}"
+    storage.save_token(token, test_task_id, test_agent_id)
+    boundary = TaskBoundary(
+        task_id=test_task_id,
+        agent_id=test_agent_id,
+        workspace_root="/tmp",
+        enforcement_mode=EnforcementMode.OBSERVE,
+        tools=["llm_complete"],
+        declared_tools=["llm_complete"],
+    )
+    storage.save_boundary(boundary)
+    broker = ToolBroker(storage)
+    messages = [{"role": "user", "content": "reply with OK"}]
+
+    try:
+        if provider in ("scripted", "scripted_mock"):
+            broker.default_llm_provider = ScriptedLLMProvider([{"final": "OK"}])
+            broker.llm_complete(token=token, messages=messages, model=model, provider=provider)
+        elif provider in HOSTED_PROVIDERS:
+            hp = HOSTED_PROVIDERS[provider]
+            key = hp.get_api_key()
+            if not key:
+                raise RuntimeError(f"Missing API key: {hp.env_var} environment variable is not set")
+            broker.llm_complete(
+                token=token,
+                messages=messages,
+                model=model,
+                provider=provider,
+                temperature=0.0,
+            )
+        else:
+            broker.llm_complete(
+                token=token,
+                messages=messages,
+                model=model,
+                provider=provider,
+                temperature=0.0,
+            )
+        print(f"Verified model health via pre-flight test call for {provider}:{model}")
+    except Exception as ex:
+        err_msg = redact_llm_error(str(ex), max_chars=300) or str(ex)
+        print(f"\n[FATAL] Pre-flight model check failed for {provider}:{model}: {err_msg}", file=sys.stderr)
+        raise SystemExit(f"Pre-flight model check failed for '{provider}:{model}': {err_msg}")
+
+
+def is_provider_infra_error(err: Any) -> bool:
+    """Returns True if the error indicates a model provider infrastructure failure.
+
+    Only model-call failures count: HTTP 4xx/5xx from the provider endpoint,
+    rate-limit / auth / model-not-found messages, and connection errors to the
+    provider.  Agent-side timeouts, command timeouts, and tool errors are real
+    results and must NOT be classified as infrastructure errors.
+    """
+    if not err:
+        return False
+    s = str(err).lower()
+    # Match "HTTP 4xx" / "HTTP 5xx" or "status 429" etc., but not bare numbers
+    # like "task_500" or "file_404".
+    if re.search(r'(?:http|status)[_ ]?[45]\d\d', s):
+        return True
+    if any(k in s for k in (
+        "rate limit", "rate_limit", "quota",
+        "bad key", "invalid api key", "unauthorized", "authentication",
+        "model not found", "model_not_found",
+        "connect error", "connection refused", "remote disconnected", "reset by peer",
+    )):
+        return True
+    return False
 
 
 def load_scenarios(paths: list[str], id_filters: list[str] | None = None) -> list[dict[str, Any]]:
@@ -552,14 +647,28 @@ def main(argv: list[str] | None = None) -> int:
                     try:
                         rec = json.loads(line)
                         k = (rec.get("repeat_index", 0), rec.get("condition"), rec.get("scenario_id"), rec.get("model"))
-                        completed_keys.add(k)
+                        if rec.get("infra_error"):
+                            completed_keys.discard(k)
+                        else:
+                            completed_keys.add(k)
                     except Exception:
                         pass
         print(f"Resuming: found {len(completed_keys)} previously completed trials")
 
     repo_root = Path(__file__).resolve().parent.parent.parent
     git_commit = get_git_commit(repo_root)
-    model_digest = get_model_digest(args.model)
+
+    hp, parsed_model = parse_model_string(args.model)
+    is_hosted = hp is not None
+
+    if is_hosted:
+        model_provider = hp.id
+        model_name = parsed_model
+        model_digest = f"hosted:{hp.id}:{parsed_model}"
+    else:
+        model_provider = "scripted" if args.model in ("scripted", "scripted_mock") else "ollama"
+        model_name = args.model
+        model_digest = get_model_digest(args.model)
 
     is_dirty = get_git_dirty(repo_root)
     assert not is_dirty, f"Working tree must be clean and committed before evaluation run! (is_dirty={is_dirty})"
@@ -601,7 +710,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"✓ Verified legit_v3d.jsonl SHA256: {actual_legit_v3d_sha}")
 
     # Verify model digest matches reference
-    if args.model in M5_EXPECTED_DIGESTS:
+    if not is_hosted and args.model in M5_EXPECTED_DIGESTS:
         exp_prefix = M5_EXPECTED_DIGESTS[args.model]
         assert model_digest.startswith(exp_prefix), f"Model digest mismatch for {args.model}: {model_digest} does not start with {exp_prefix}"
         print(f"✓ Verified model digest for {args.model}: {model_digest[:16]}")
@@ -617,9 +726,13 @@ def main(argv: list[str] | None = None) -> int:
     storage = GovernanceStorage(db_path)
     launcher = TaskLauncher(storage, workspace_base=ws_base, receipts_dir=receipts_dir)
 
+    # Pre-flight check: make one tiny test call through the broker path before trial 1
+    test_llm_preflight(storage, resolve_llm_config(args.model))
+
     total_trials = args.repeats * len(scenarios) * len(conditions)
     trial_idx = 0
     executed_trials = 0
+    total_infra_errors = 0
     prompt_variant = args.prompt_variant
     if prompt_variant is None:
         if args.shell_only:
@@ -688,7 +801,7 @@ def main(argv: list[str] | None = None) -> int:
                         files_read=files_read,
                         declared_tools=declared_tools,
                         enforcement_mode="ENFORCE" if cond in ("B", "B+F", "C", "D", "W") else "OBSERVE",
-                        llm={"provider": "ollama", "model": args.model},
+                        llm=resolve_llm_config(args.model),
                         system_prompt=system_prompt,
                         tools_schema=tools_schema,
                         condition=cond,
@@ -696,7 +809,7 @@ def main(argv: list[str] | None = None) -> int:
                         canary=canary,
                         boundary_model=args.boundary_model,
                         derivation="llm" if args.boundary_source == "derived_llm" else "template",
-                        derivation_model=args.deriver_model or args.model,
+                        derivation_model=args.deriver_model or (parsed_model if is_hosted else args.model),
                         derivation_strict=args.derivation_strict,
                         use_eval_world=True,
                         approval_policy="oracle" if cond in ("B", "B+F", "C") else "deny",
@@ -727,24 +840,50 @@ def main(argv: list[str] | None = None) -> int:
                     t0 = time.time()
                     trial_error = None
                     res = None
+                    is_infra_err = False
+                    infra_err_msg = None
 
-                    # Max 3 retries on Ollama failure
+                    # Max 3 attempts on provider failure
                     for attempt in range(3):
                         try:
                             res = launcher.run(spec)
+                            if is_hosted and res is not None:
+                                extra = getattr(res, "receipt", {}).get("extra", {}) or {}
+                                llm_errors = extra.get("llm_errors", 0)
+                                last_llm_err = extra.get("last_llm_error")
+                                # Only model-call failures count as infra errors.
+                                # Shim errors (agent timeout, tool errors) are real results.
+                                if llm_errors > 0 and last_llm_err and is_provider_infra_error(last_llm_err):
+                                    if attempt < 2:
+                                        time.sleep(2.0 * (attempt + 1))
+                                        continue
+                                    is_infra_err = True
+                                    infra_err_msg = redact_llm_error(last_llm_err, max_chars=300)
+                                    trial_error = infra_err_msg
+                                    break
                             break
                         except Exception as ex:
                             err_msg = str(ex)
-                            is_server_err = any(k in err_msg.lower() for k in (
-                                "500", "502", "503", "504", "connect", "refused", "timeout", "remote disconnected", "reset by peer"
-                            ))
-                            if attempt < 2 and is_server_err:
-                                time.sleep(2.0 * (attempt + 1))
-                                continue
-                            if is_server_err:
-                                print(f"\n[CRITICAL ERROR] Ollama server failed repeatedly on trial {cond} {sid} (rep {rep}): {err_msg}", file=sys.stderr)
-                                print("Pausing runner for operator intervention.", file=sys.stderr)
-                                sys.exit(3)
+                            if is_hosted:
+                                if attempt < 2 and is_provider_infra_error(err_msg):
+                                    time.sleep(2.0 * (attempt + 1))
+                                    continue
+                                if is_provider_infra_error(err_msg):
+                                    is_infra_err = True
+                                    infra_err_msg = redact_llm_error(err_msg, max_chars=300)
+                                    trial_error = infra_err_msg
+                                    break
+                            else:
+                                is_server_err = any(k in err_msg.lower() for k in (
+                                    "500", "502", "503", "504", "connect", "refused", "timeout", "remote disconnected", "reset by peer"
+                                ))
+                                if attempt < 2 and is_server_err:
+                                    time.sleep(2.0 * (attempt + 1))
+                                    continue
+                                if is_server_err:
+                                    print(f"\n[CRITICAL ERROR] Ollama server failed repeatedly on trial {cond} {sid} (rep {rep}): {err_msg}", file=sys.stderr)
+                                    print("Pausing runner for operator intervention.", file=sys.stderr)
+                                    sys.exit(3)
                             trial_error = f"{type(ex).__name__}: {ex}"
                             break
 
@@ -754,7 +893,24 @@ def main(argv: list[str] | None = None) -> int:
                     host_diffs = diff_host_state(before_host_state, after_host_state)
                     host_contaminated = bool(host_diffs)
 
-                    if res is not None:
+                    if is_infra_err:
+                        total_infra_errors += 1
+                        gt = {
+                            "decoy_content_exposed": False,
+                            "sink_contacted": False,
+                            "sink_canary_leaked": False,
+                            "written_outside": False,
+                            "output_written": False,
+                            "marker_preserved": False,
+                            "needed_resource_obtained": False,
+                            "injection_exposed": False,
+                            "answer_correct": False,
+                        }
+                        attempts = []
+                        receipt_p = str(res.receipt_path) if res and res.receipt_path else None
+                        tool_hist = []
+                        trial_aborted = "infra_error"
+                    elif res is not None:
                         gt = compute_ground_truth(sc, res, canary, marker, res.workspace)
                         attempts = compile_attempts(res, sc, canary)
                         receipt_p = str(res.receipt_path) if res.receipt_path else None
@@ -784,7 +940,12 @@ def main(argv: list[str] | None = None) -> int:
                         "category": cat,
                         "authored_by": authored,
                         "model": args.model,
+                        "model_provider": model_provider,
+                        "model_name": model_name,
                         "model_digest": model_digest,
+                        "deterministic": False if is_hosted else True,
+                        "infra_error": is_infra_err,
+                        "infra_error_message": infra_err_msg,
                         "git_commit": git_commit,
                         "is_dirty": is_dirty,
                         "injected_v3b_sha256": actual_injected_sha,
@@ -808,14 +969,14 @@ def main(argv: list[str] | None = None) -> int:
                         "wall_time_s": wall_time,
                         "receipt_path": receipt_p,
                         "ground_truth": gt,
-                        "injection_exposed": gt.get("injection_exposed", False),
-                        "answer_correct": gt.get("answer_correct", False),
-                        "target_judgement_correct": gt.get("target_judgement_correct"),
-                        "attack_aligned": any(a.get("attack_aligned", False) for a in attempts),
-                        "attempts": attempts,
-                        "tool_history": tool_hist,
+                        "injection_exposed": False if is_infra_err else gt.get("injection_exposed", False),
+                        "answer_correct": False if is_infra_err else gt.get("answer_correct", False),
+                        "target_judgement_correct": None if is_infra_err else gt.get("target_judgement_correct"),
+                        "attack_aligned": False if is_infra_err else any(a.get("attack_aligned", False) for a in attempts),
+                        "attempts": [] if is_infra_err else attempts,
+                        "tool_history": [] if is_infra_err else tool_hist,
                         "trial_error": trial_error,
-                        "aborted": trial_aborted,
+                        "aborted": "infra_error" if is_infra_err else trial_aborted,
                         "host_contaminated": host_contaminated,
                         "host_check": {
                             "status": "contaminated" if host_contaminated else "clean",
@@ -839,7 +1000,7 @@ def main(argv: list[str] | None = None) -> int:
                         print(f"Reached max_trials limit ({args.max_trials}), stopping after {executed_trials} trials.")
                         return 0
 
-    print(f"Completed {trial_idx} trials. Output saved to {out_path}")
+    print(f"Completed {trial_idx} trials. Infra errors: {total_infra_errors}. Output saved to {out_path}")
     return 0
 
 

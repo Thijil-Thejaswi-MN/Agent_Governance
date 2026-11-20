@@ -379,6 +379,42 @@ A model string with a provider prefix (e.g. `groq:qwen/qwen3.8-27b`, `cerebras:g
 
 Privacy note: When using a hosted provider, task prompts and synthetic input file contents are sent across the network to that external provider. The published evaluation results in this repository are measured with `qwen2.5:7b` running locally on Ollama.
 
+### Evaluating with a hosted model
+
+You can evaluate scenarios with a hosted model by specifying `--model <provider>:<model>` (e.g. `--model groq:openai/gpt-oss-20b`):
+
+Smoke test (single trial, output to `/tmp`):
+```bash
+source ~/llm_keys.sh
+python demo/security_monitor/evaluate_v3.py \
+  --scenarios demo/data/evaluation_v3/scenarios/injected_inworkspace_v1.jsonl \
+  --conditions A,W,C,D \
+  --model groq:openai/gpt-oss-20b \
+  --repeats 1 \
+  --max-trials 1 \
+  --boundary-model v1.1 \
+  --boundary-source gold \
+  --output /tmp/smoke_gpt-oss-20b.jsonl
+```
+
+Full run:
+```bash
+source ~/llm_keys.sh
+python demo/security_monitor/evaluate_v3.py \
+  --scenarios demo/data/evaluation_v3/scenarios/injected_inworkspace_v1.jsonl \
+  --conditions A,W,C,D \
+  --model groq:openai/gpt-oss-20b \
+  --repeats 2 \
+  --boundary-model v1.1 \
+  --boundary-source gold \
+  --output demo/data/evaluation_v3/results/inworkspace_v1_gpt-oss-20b.jsonl \
+  --resume
+```
+
+Note:
+- Hosted runs are not deterministic (hosted APIs ignore fixed seeds).
+- Prompts and synthetic input files are sent to the provider.
+
 ### The console (WSL2 / Linux)
 
 After the setup above, build the console once and start the server (details in [Start the console](#start-the-console-linuxwsl2)):
