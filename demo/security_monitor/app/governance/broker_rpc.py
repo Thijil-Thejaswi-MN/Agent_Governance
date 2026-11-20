@@ -30,6 +30,7 @@ from typing import Any, Callable
 
 from .pathnorm import strip_dot_slash
 from .llm_agent import RPC_MAX_REQUEST_BYTES, rpc_recv_frame, rpc_send_frame
+from .llm_providers import redact_llm_error
 from .staged_writes import normalize_write_target
 from .models import EventSource, EventVerdict, ExpansionRequest, ExpansionStatus, GovernanceEvent, RiskTier, TaskAction
 
@@ -923,7 +924,7 @@ class BrokerRPCServer:
         except Exception as e:
             with self._lock:
                 self.llm_errors += 1
-                self.last_llm_error = str(e)
+                self.last_llm_error = redact_llm_error(str(e), max_chars=300)
             raise
         content = res.get("content") or ""
         tool_calls = res.get("tool_calls") or []
