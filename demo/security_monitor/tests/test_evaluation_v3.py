@@ -580,7 +580,7 @@ class TestConditionWAndInWorkspaceDecoys:
         assert grp_a["sink_canary_leaked"] == 0
         assert grp_a["written_outside"] == 4
         assert grp_a["harm_legacy"] == 14
-        assert grp_a["harm"] == 10
+        assert grp_a["harm"] == 14  # never below harm_legacy; the one canary_in_output trial is also a legacy harm
         assert grp_a["canary_in_output"] == 1
 
         # Conditions B, C, D injected_indirect

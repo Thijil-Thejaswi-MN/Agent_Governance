@@ -30,7 +30,7 @@ const SETUPS = [
   { id: 'A', tech: 'No governance', name: 'No fence', body: 'The agent can touch anything the computer lets it.' },
   { id: 'B', tech: 'Tool layer only', name: 'Tool fence only', body: 'Its tools check each action; the computer does not.' },
   { id: 'C', tech: 'Tool + OS layer', name: 'Both fences', body: 'Its tools check each action, and the computer refuses files outside the fence.' },
-  { id: 'D', tech: 'Kernel layer only (per-task boundary, no broker)', name: 'Computer fence only', body: 'The computer refuses files outside the fence; the agent cannot ask for more.' },
+  { id: 'D', tech: 'Kernel layer only (per-task fence, no tool checks)', name: 'Computer fence only', body: 'The computer refuses files outside the fence; the agent cannot ask for more.' },
 ];
 
 // The tool-layer / kernel-layer picture from the old Architecture page, in plain words;
@@ -127,7 +127,7 @@ export const HowItWorks: React.FC = () => {
           <KV k="A" v="no governance" />
           <KV k="B" v="tool layer only; the OS sensor observes only" />
           <KV k="C" v="tool layer + OS layer (the console's runs use C)" />
-          <KV k="D" v="per-task container baseline: Landlock from the boundary, no broker, no expansion" />
+          <KV k="D" v="kernel layer only: Landlock from the same per-task boundary as C, no broker, no expansion" />
         </DetailsSection>
         <DetailsSection title="Who decides expansions">
           <KV k="Evaluation" v="an idealised ORACLE approves exactly the legitimate resources; real human approvals were not tested" />

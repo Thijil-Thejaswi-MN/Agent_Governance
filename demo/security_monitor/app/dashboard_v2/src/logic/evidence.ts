@@ -82,7 +82,7 @@ export const SETUP_ABOUT: Record<string, string> = {
   A: 'No checks at all. The agent can do anything the user account can.',
   B: 'The tool broker checks every tool call against the task boundary. It sees the command text, not what a command opens.',
   C: 'The tool broker plus the kernel lock (Landlock, seccomp, namespaces) on the agent process. Our design.',
-  D: 'A fresh per-task container with the kernel lock: the heavier isolation, for comparison.',
+  D: 'The kernel lock with the same per-task fence, but no tool checks and no way to ask for more: for comparison.',
 };
 
 export type Tone = 'bad' | 'good' | 'neutral';
