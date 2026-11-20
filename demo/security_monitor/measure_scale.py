@@ -129,6 +129,28 @@ def get_host_info() -> dict[str, Any]:
     }
 
 
+def get_git_dirty(repo_root: Path | str) -> bool:
+    """Check if repository working tree has uncommitted modifications, ignoring demo/data/scale/."""
+    try:
+        res = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        lines = [
+            l for l in res.stdout.splitlines()
+            if l.strip() and not any(
+                l[3:].strip().strip('"').startswith(prefix)
+                for prefix in ("demo/data/scale/", "demo/data/scale")
+            )
+        ]
+        return bool(lines)
+    except Exception:
+        return True
+
+
 def percentile(values: list[float], p: float) -> float:
     """Computes percentile value from a list of floats."""
     if not values:
@@ -782,6 +804,7 @@ def generate_markdown_summary(data: dict[str, Any]) -> str:
         f"- **Platform**: {data['host']['wsl_version']}",
         f"- **Timestamp**: {data['meta']['generated_at']}",
         f"- **Git Commit**: {data['meta']['git_commit']}",
+        f"- **Git Dirty**: {str(data['meta'].get('git_dirty', False)).lower()}",
         "",
         "## Baseline Measurements (Sequential Execution)",
         f"- **Scripted p50**: {data['baseline']['scripted_p50']} s (n={data['baseline']['n']})",
@@ -948,6 +971,7 @@ def main(argv: list[str] | None = None) -> int:
         commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo_root).decode().strip()
     except Exception:
         commit = "unknown"
+    git_dirty = get_git_dirty(repo_root)
 
     with TestClient(create_app(), headers={"Authorization": f"Bearer {operator_token}"}) as client:
         decider = AutoApprovalDecider(storage, client)
@@ -1167,6 +1191,7 @@ def main(argv: list[str] | None = None) -> int:
         "meta": {
             "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "git_commit": commit,
+            "git_dirty": git_dirty,
             "rounds": round_sizes,
             "repeats": repeats,
             "real_n": real_n,

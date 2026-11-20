@@ -23,6 +23,7 @@ from demo.security_monitor.measure_scale import (
     check_boundary_violations,
     classify_stopping_layer,
     extract_task_metrics,
+    get_git_dirty,
 )
 
 
@@ -159,6 +160,17 @@ def test_attribution_without_markers_returns_none(tmp_path: Path) -> None:
     assert attr["cross_attributions"] == 0
 
 
+def test_get_git_dirty_ignores_scale_data(monkeypatch):
+    """get_git_dirty returns False when changes are restricted to demo/data/scale/, True otherwise."""
+    mock_run = MagicMock()
+    mock_run.return_value.stdout = "?? demo/data/scale/scale_v1.json\n M demo/data/scale/scale_v1.md\n"
+    monkeypatch.setattr("subprocess.run", mock_run)
+    assert get_git_dirty("/tmp") is False
+
+    mock_run.return_value.stdout = "?? demo/data/scale/scale_v1.json\n M app/governance/broker.py\n"
+    assert get_git_dirty("/tmp") is True
+
+
 @pytest.mark.os_layer
 def test_measure_scale_smoke(tmp_path: Path):
     script_path = repo_root / "demo" / "security_monitor" / "measure_scale.py"
@@ -193,6 +205,8 @@ def test_measure_scale_smoke(tmp_path: Path):
     assert data["meta"]["rounds"] == [2]
     assert data["meta"]["repeats"] == 1
     assert data["meta"]["real_n"] == 0
+    assert "git_dirty" in data["meta"]
+    assert isinstance(data["meta"]["git_dirty"], bool)
 
     # Validate baseline section
     assert "baseline" in data
@@ -233,5 +247,6 @@ def test_measure_scale_smoke(tmp_path: Path):
     # Validate Markdown summary content
     md_content = out_md.read_text(encoding="utf-8")
     assert "# Scale Governance Evaluation Summary" in md_content
+    assert "- **Git Dirty**:" in md_content
     assert "Overall Verdict: **PASS**" in md_content
     assert "Forbidden Attack Actions Stopped" in md_content
