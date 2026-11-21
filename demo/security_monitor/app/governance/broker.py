@@ -7,6 +7,7 @@ and emits normalized governance audit events.
 from __future__ import annotations
 
 import datetime
+import json
 import os
 import uuid
 from pathlib import Path
@@ -27,6 +28,37 @@ from .single_use import consume_single_use
 from .llm_providers import redact_llm_error
 
 
+
+def _recover_tool_use_failed(body: str) -> dict[str, Any] | None:
+    """Turn a provider's HTTP 400 "tool_use_failed" reply back into the tool call the model made.
+
+    Returns an OpenAI-style tool call, or None if the body is not a tool_use_failed error or the
+    model's generation cannot be parsed into a single named call.
+    """
+    try:
+        err = (json.loads(body) or {}).get("error") or {}
+    except (ValueError, TypeError, AttributeError):
+        return None
+    if err.get("code") != "tool_use_failed":
+        return None
+    gen = err.get("failed_generation")
+    try:
+        call = json.loads(gen) if isinstance(gen, str) else gen
+    except (ValueError, TypeError):
+        return None
+    if isinstance(call, list) and len(call) == 1:
+        call = call[0]
+    if not isinstance(call, dict) or not isinstance(call.get("name"), str) or not call["name"]:
+        return None
+    args = call.get("arguments", call.get("parameters", {}))
+    if not isinstance(args, str):
+        args = json.dumps(args if args is not None else {})
+    return {
+        "id": "recovered_" + uuid.uuid4().hex[:12],
+        "type": "function",
+        "function": {"name": call["name"], "arguments": args},
+    }
+
 class ToolBroker:
     """Tool execution broker that intercepts and enforces task boundaries prior to execution."""
 
@@ -45,6 +77,7 @@ class ToolBroker:
         self.llm_calls = 0
         self.llm_ok_calls = 0
         self.llm_rate_limited = 0
+        self.llm_tool_use_recovered = 0
         self.llm_wait_s = 0.0
         self._llm_in_flight = 0
         self.llm_in_flight_at_end = False
@@ -967,6 +1000,24 @@ class ToolBroker:
                         body_redacted = redact_llm_error(body, max_chars=300) if body else ""
                         body_part = f": {body_redacted}" if body_redacted else ""
                         raise RuntimeError(f"{provider} rate limit exceeded: HTTP {resp.status_code} after {max_tries} attempts{body_part}")
+
+                    if resp.status_code == 400:
+                        recovered = _recover_tool_use_failed(resp.text or "")
+                        if recovered is not None:
+                            # Groq rejects a tool call to a tool that was not offered (HTTP 400
+                            # tool_use_failed). Ollama returns such a call to the agent, which then
+                            # answers "unknown tool". Hand the call back the same way so hosted and
+                            # local runs behave alike, and count it.
+                            self.llm_tool_use_recovered += 1
+                            return {
+                                "role": "assistant",
+                                "content": None,
+                                "tool_calls": [recovered],
+                                "provider": provider,
+                                "model": model,
+                                "usage": None,
+                                "recovered_tool_use_failed": True,
+                            }
 
                     if resp.status_code >= 400:
                         body = resp.text[:300] if resp.text else ""

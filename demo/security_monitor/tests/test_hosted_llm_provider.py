@@ -482,3 +482,33 @@ def test_each_hosted_model_can_be_set_by_env(monkeypatch):
     assert HOSTED_PROVIDERS["openai_compat"].default_model == "my-model"
     monkeypatch.delenv("GROQ_MODEL")
     assert HOSTED_PROVIDERS["groq"].default_model == "qwen/qwen3.8-27b"
+
+
+# --- Groq "tool_use_failed" (HTTP 400) is handed back to the agent like an Ollama tool call ---
+
+def test_recover_tool_use_failed_returns_the_models_call() -> None:
+    import json as _json
+    from demo.security_monitor.app.governance.broker import _recover_tool_use_failed
+
+    body = _json.dumps({"error": {
+        "message": "Tool call validation failed: attempted to call tool 'request_access' which was not in request.tools",
+        "type": "invalid_request_error", "code": "tool_use_failed",
+        "failed_generation": _json.dumps({"name": "request_access",
+                                           "arguments": {"resource_type": "file_read", "resource_target": "notes/x.txt"}}),
+    }})
+    call = _recover_tool_use_failed(body)
+    assert call is not None
+    assert call["type"] == "function"
+    assert call["function"]["name"] == "request_access"
+    assert _json.loads(call["function"]["arguments"])["resource_target"] == "notes/x.txt"
+    assert call["id"].startswith("recovered_")
+
+
+def test_recover_tool_use_failed_ignores_other_400s() -> None:
+    import json as _json
+    from demo.security_monitor.app.governance.broker import _recover_tool_use_failed
+
+    assert _recover_tool_use_failed(_json.dumps({"error": {"code": "invalid_api_key", "message": "bad key"}})) is None
+    assert _recover_tool_use_failed("not json") is None
+    assert _recover_tool_use_failed(_json.dumps({"error": {"code": "tool_use_failed", "failed_generation": "garbage{"}})) is None
+    assert _recover_tool_use_failed(_json.dumps({"error": {"code": "tool_use_failed", "failed_generation": "{}"}})) is None

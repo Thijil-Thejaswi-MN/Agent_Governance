@@ -1469,6 +1469,7 @@ class TaskLauncher:
                 "llm_rate_limited": getattr(rpc, "llm_rate_limited", getattr(broker, "llm_rate_limited", 0)),
                 "llm_wait_s": round(float(getattr(rpc, "llm_wait_s", getattr(broker, "llm_wait_s", 0.0))), 3),
                 "llm_in_flight_at_end": bool(getattr(rpc, "llm_in_flight_at_end", False) or getattr(broker, "llm_in_flight_at_end", False)),
+                "llm_tool_use_recovered": int(getattr(broker, "llm_tool_use_recovered", 0)),
                 "rpc_rejections": rpc.rejections,
                 "rpc_rejections_dropped": rpc.rejections_dropped,
                 "rpc_connections_refused": rpc.connections_refused,
