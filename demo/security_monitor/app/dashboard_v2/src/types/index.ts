@@ -28,6 +28,9 @@ export interface TaskRecord {
   comparison_mode?: boolean;
   model?: string | null;
   hosted_model_note?: string | null;
+  bench_mode?: boolean;
+  sensor_disabled?: boolean;
+  benchmark_label?: string | null;
 }
 
 export interface TaskBoundary {

@@ -101,6 +101,14 @@ export const HistoryPage: React.FC = () => {
                           Comparison
                         </span>
                       )}
+                      {(t.benchmark_label || (t.bench_mode && t.sensor_disabled) || t.condition === 'C-nosensor' || t.condition === 'C-ebpf') && (
+                        <span
+                          data-badge="bench-sensor-off"
+                          className="text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap bg-wait/15 text-wait-kpi border border-wait/30 shrink-0"
+                        >
+                          benchmark: sensor off
+                        </span>
+                      )}
                     </div>
                     <div>
                       <StatusPill tone={tone} label={o.text} />
