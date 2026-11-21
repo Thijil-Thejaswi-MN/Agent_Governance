@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { DiscoveredAgentCard, InventoryCard } from './InventoryPage';
+import { DiscoveredAgentCard, InventoryCard, getSeenBy } from './InventoryPage';
 
 const NOW = Date.parse('2026-11-12T12:00:00Z');
 
@@ -102,5 +102,48 @@ describe('discovered agent card', () => {
     expect(html).toContain('Discovered (A2A card)');
     expect(html).toContain('Governed');
     expect(html).toContain('data-governance-state="Governed"');
+  });
+
+  describe('getSeenBy', () => {
+    it('returns correct detection origin based on evidence signals', () => {
+      const baseAgent = {
+        org_id: 'default',
+        status: 'shadow' as const,
+        discovery_id: 'd1',
+        host: 'localhost',
+        kind: 'process' as const,
+        name: 'test',
+        frameworks: [],
+        llm_endpoints: [],
+        key_names: [],
+      };
+
+      // Only /proc signals
+      expect(getSeenBy({
+        ...baseAgent,
+        evidence: [{ signal: 'process_cmdline', detail: 'python agent.py' }],
+      })).toBe('/proc scan');
+
+      // Only eBPF signals
+      expect(getSeenBy({
+        ...baseAgent,
+        evidence: [{ signal: 'ebpf_exec_agent', detail: 'exec claude' }],
+      })).toBe('eBPF');
+
+      // Both /proc and eBPF signals
+      expect(getSeenBy({
+        ...baseAgent,
+        evidence: [
+          { signal: 'process_cmdline', detail: 'python agent.py' },
+          { signal: 'ebpf_llm_connect', detail: '1.2.3.4:443' },
+        ],
+      })).toBe('/proc scan, eBPF');
+
+      // No evidence
+      expect(getSeenBy({
+        ...baseAgent,
+        evidence: [],
+      })).toBe('—');
+    });
   });
 });
