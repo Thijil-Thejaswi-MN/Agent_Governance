@@ -166,7 +166,7 @@ class BrokerRPCServer:
         s.bind(str(self.socket_path))
         os.chmod(self.socket_path, 0o600)
         s.listen(16)
-        s.settimeout(0.5)
+        s.settimeout(0.1)  # accept() wakes this often to see _stopping; bounds stop() to ~0.1 s
         self._sock = s
         self._thread = threading.Thread(target=self._accept_loop, name=f"broker-rpc-{self.task_id}", daemon=True)
         self._thread.start()

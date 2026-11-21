@@ -435,12 +435,14 @@ class _AsyncLoopThread:
                 t.cancel()
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
-            self.loop.stop()
+            # Do not stop the loop here: stopping it before this coroutine returns leaves the
+            # caller's future unresolved, so .result() always waited out its full 2 s timeout.
 
         try:
             asyncio.run_coroutine_threadsafe(_shutdown(), self.loop).result(timeout=2.0)
         except Exception:
-            self.loop.call_soon_threadsafe(self.loop.stop)
+            pass
+        self.loop.call_soon_threadsafe(self.loop.stop)
         self.thread.join(timeout=2.0)
         try:
             self.loop.close()
@@ -482,6 +484,8 @@ class LaunchResult:
     aborted: str | None = None
     fs_diff: dict[str, Any] | None = None
     audit_sink_requests: list[dict[str, Any]] = field(default_factory=list)
+    phase_timings: dict[str, float] = field(default_factory=dict)
+    cgroup_resources: dict[str, Any] = field(default_factory=dict)
 
 
 
@@ -978,6 +982,7 @@ class TaskLauncher:
         initial_boundary = boundary.model_copy(deep=True)
         task_id = task.task_id
         self.live["task_id"] = task_id
+        self.live["workspace"] = ws
         self.storage.record_task_step(
             task_id,
             kind="phase",
@@ -992,6 +997,8 @@ class TaskLauncher:
         if self.cancel_event.is_set():
             return self._finish_cancelled(spec, t0, stage="before_workspace", task=task,
                                           initial_boundary=initial_boundary, ws=ws)
+
+        t_intake_end = time.monotonic()
 
         # 2. Workspace (+ control dir the sandbox cannot see)
         for d in ("input", "output", "scratch", "granted", "tmp", "runtime"):
@@ -1023,10 +1030,21 @@ class TaskLauncher:
         token = f"gov_tok_{uuid.uuid4().hex}"
         self.storage.save_token(token, task_id, task.agent_id)
 
+        # Benchmark-only switch: disable ptrace sensor
+        bench_mode = os.environ.get("GOVERNANCE_BENCH_MODE") == "1"
+        disable_ptrace_sensor = bench_mode and (os.environ.get("GOVERNANCE_BENCH_DISABLE_PTRACE_SENSOR") == "1")
+
+        hook_fn = self.test_hooks.get("after_workspace_created")
+        if hook_fn:
+            hook_fn(self)
+
+        t_ws_end = time.monotonic()
+
         # 4. Per-task egress proxy and broker socket
         aloop = _AsyncLoopThread()
         proxy = EgressProxyServer(self.storage, host="127.0.0.1", port=0)
         proxy_port = aloop.run(proxy.start())
+        t_proxy_end = time.monotonic()
 
         if spec.approval_policy == "operator":
             hook = None
@@ -1065,6 +1083,7 @@ class TaskLauncher:
                               call_timeout=max(float(spec.approval_timeout_s) + 30.0, 120.0))
         rpc.start()
         self.live["rpc"] = rpc
+        t_broker_end = time.monotonic()
         # "Allow for N minutes": a grant past its end time is taken back like a cancel.
         expiry_stop = threading.Event()
         expiry_thread = threading.Thread(target=self._expire_grants_loop, args=(task_id, expiry_stop),
@@ -1103,6 +1122,7 @@ class TaskLauncher:
             spec_rules["rules"].append({"path": str(ws.resolve()), "access": ["read_file", "read_dir"]})
         rules_path = write_rules_file(spec_rules, control / "rules.json")
         (control / "rules_compile_report.json").write_text(json.dumps(spec_rules["_compile_report"], indent=1))
+        t_rules_end = time.monotonic()
 
         # Cancellation checkpoint 3: right before the agent process chain is started.
         hook_fn = self.test_hooks.get("before_agent_start")
@@ -1197,7 +1217,7 @@ class TaskLauncher:
                 "--",
             ]
 
-        sensor_chain = [str(SENSOR_BIN), "--events-fd", str(events_w), "--gate-fd", str(gate_r), "--"]
+        sensor_chain = [str(SENSOR_BIN), *(["--no-ptrace"] if disable_ptrace_sensor else []), "--events-fd", str(events_w), "--gate-fd", str(gate_r), "--"]
         sandbox_chain = []
         if needs_enforcer:
             sandbox_chain = [str(SECCOMP_BIN), *enforcer_args, "--status-fd", str(status_w), "--"]
@@ -1221,6 +1241,7 @@ class TaskLauncher:
             os.close(status_w)
         self.live["scope_pid"] = proc.pid
         self.live["proc"] = proc
+        t_launch_end = time.monotonic()
 
         # Correlator + readers
         current_boundary = {"b": boundary}
@@ -1268,8 +1289,10 @@ class TaskLauncher:
 
         aborted: str | None = None
         isolation: dict[str, Any] = {"isolation_level": None}
+        cgroup_resources: dict[str, Any] = {}
         try:
             # 3. Task cgroup read back from /proc/<pid>/cgroup
+            t_cg_start = time.monotonic()
             try:
                 cg = cgroup_ctl.wait_for_scope(proc.pid, unit, launcher_cg)
             except RuntimeError as e:
@@ -1287,6 +1310,7 @@ class TaskLauncher:
                 raise RuntimeError(aborted)
             self.storage.save_task_cgroup(task_id, cg, unit, proc.pid)
             self.live.update({"cgroup": cg, "sensor_pid": correlator.sensor_pid, "root_pid": correlator.root_pid})
+            t_cg_end = time.monotonic()
             rpc.expected_cgroup = cg
             if is_ebpf_shadow_enabled():
                 ebpf_out = self.receipts_dir / f"{task_id}.ebpf.jsonl"
@@ -1316,6 +1340,7 @@ class TaskLauncher:
                 os.close(gate_w)
                 gate_w = -1
                 self.live["agent_started"] = True
+                t_agent_start = time.monotonic()
 
             # Enforcer status (kernel-sourced) -> arm or freeze
             poller = select.poll()
@@ -1328,7 +1353,7 @@ class TaskLauncher:
                 isolation = json.loads(raw.decode() or "{}")
             except json.JSONDecodeError:
                 isolation = {}
-            need = seccomp_baseline + 2  # sensor's trace filter + seccomp_filter
+            need = seccomp_baseline + (1 if disable_ptrace_sensor else 2)  # sensor's trace filter + seccomp_filter
             problems = []
             if not isolation:
                 problems.append("no enforcer status (sandbox setup failed or was skipped)")
@@ -1358,11 +1383,48 @@ class TaskLauncher:
                 self._freeze("isolation_below_enforce_requirement", problems)
             else:
                 rpc.armed.set()
+                t_arm_end = time.monotonic()
 
             # Watchdog
             hard_deadline = time.monotonic() + spec.timeout_s
             frozen_at: float | None = None
+            cgroup_resources: dict[str, Any] = {}
+            cg_dir_saved = None
+            if self.live.get("cgroup"):
+                try:
+                    cg_dir_saved = cgroup_ctl.cgroup_dir(self.live["cgroup"])
+                except Exception:
+                    cg_dir_saved = None
+
+            def _sample_cg_resources() -> None:
+                nonlocal cg_dir_saved
+                if not cg_dir_saved and self.live.get("cgroup"):
+                    try:
+                        cg_dir_saved = cgroup_ctl.cgroup_dir(self.live["cgroup"])
+                    except Exception:
+                        pass
+                if not cg_dir_saved or not cg_dir_saved.is_dir():
+                    return
+                try:
+                    cpu_stat_f = cg_dir_saved / "cpu.stat"
+                    if cpu_stat_f.is_file():
+                        for line in cpu_stat_f.read_text(encoding="utf-8").splitlines():
+                            parts = line.strip().split()
+                            if len(parts) == 2:
+                                if parts[0] == "user_usec":
+                                    cgroup_resources["cpu_user_usec"] = max(cgroup_resources.get("cpu_user_usec", 0), int(parts[1]))
+                                elif parts[0] == "system_usec":
+                                    cgroup_resources["cpu_system_usec"] = max(cgroup_resources.get("cpu_system_usec", 0), int(parts[1]))
+                                elif parts[0] == "usage_usec":
+                                    cgroup_resources["cpu_usage_usec"] = max(cgroup_resources.get("cpu_usage_usec", 0), int(parts[1]))
+                    mem_peak_f = cg_dir_saved / "memory.peak"
+                    if mem_peak_f.is_file():
+                        cgroup_resources["memory_peak_bytes"] = max(cgroup_resources.get("memory_peak_bytes", 0), int(mem_peak_f.read_text(encoding="utf-8").strip()))
+                except Exception:
+                    pass
+
             while proc.poll() is None:
+                _sample_cg_resources()
                 if self.cancel_event.is_set() and not self.termination:
                     self._kill("operator_stop")
                 elif self._frozen.is_set():
@@ -1379,7 +1441,13 @@ class TaskLauncher:
                 time.sleep(0.05)
 
             # The scope's main process (the sensor) has exited.
+            t_teardown_start = time.monotonic()
+            _sample_cg_resources()
+            t_trailer_start = time.monotonic()
             events_done.wait(timeout=10.0)
+            trailer_wait_s = time.monotonic() - t_trailer_start
+
+            t_proc_cleanup_start = time.monotonic()
             if correlator.exit_trailer is None:
                 self._freeze("sensor_exited_early", {"sensor_exit_code": proc.returncode})
             if cgroup_ctl.cgroup_pids(cg):
@@ -1387,6 +1455,7 @@ class TaskLauncher:
                     self._freeze("processes_left_after_sensor_exit")
                 time.sleep(spec.freeze_timeout_s)
                 self._kill("frozen_then_killed_after_timeout")
+            process_cleanup_s = time.monotonic() - t_proc_cleanup_start
         except RuntimeError as e:
             aborted = aborted or str(e)
             if self.live.get("cgroup"):
@@ -1408,19 +1477,33 @@ class TaskLauncher:
                 proc.wait(timeout=10.0)
             except subprocess.TimeoutExpired:
                 proc.kill()
+            t_flush_start = time.monotonic()
             events_done.wait(timeout=5.0)
             correlator.flush()
             raw_events.close()
             stdout_f.close()
             stderr_f.close()
+            correlator_flush_s = time.monotonic() - t_flush_start
+
+            t_rpc_start = time.monotonic()
             rpc.stop()
+            rpc_stop_s = time.monotonic() - t_rpc_start
+
+            t_cg_clean_start = time.monotonic()
+            if "_sample_cg_resources" in locals():
+                _sample_cg_resources()
             if self.live.get("cgroup"):
                 cgroup_ctl.remove_children(self.live["cgroup"])
+            cgroup_cleanup_s = time.monotonic() - t_cg_clean_start
+
+            t_proxy_stop_start = time.monotonic()
             try:
                 aloop.run(proxy.stop())
             except Exception:
                 pass
             aloop.stop()
+            proxy_stop_s = time.monotonic() - t_proxy_stop_start
+
             expiry_stop.set()
             self.live.pop("expansion", None)  # grants end with the run: nothing left to cancel
             delivery.cleanup()
@@ -1453,16 +1536,41 @@ class TaskLauncher:
         self._set_task_status(task_id, final_status, completed=True)
         t = self.storage.get_task(task_id)
 
+        t_startup_end = t_arm_end if 't_arm_end' in locals() else (t_agent_start if 't_agent_start' in locals() else time.monotonic())
+        teardown_breakdown = {
+            "sensor_trailer_wait_s": round(trailer_wait_s, 6) if 'trailer_wait_s' in locals() else 0.0,
+            "process_cleanup_s": round(process_cleanup_s, 6) if 'process_cleanup_s' in locals() else 0.0,
+            "correlator_flush_s": round(correlator_flush_s, 6) if 'correlator_flush_s' in locals() else 0.0,
+            "rpc_stop_s": round(rpc_stop_s, 6) if 'rpc_stop_s' in locals() else 0.0,
+            "cgroup_cleanup_s": round(cgroup_cleanup_s, 6) if 'cgroup_cleanup_s' in locals() else 0.0,
+            "proxy_stop_s": round(proxy_stop_s, 6) if 'proxy_stop_s' in locals() else 0.0,
+            "total_teardown_s": round(time.monotonic() - t_teardown_start, 6) if 't_teardown_start' in locals() else 0.0,
+        }
+        phase_timings = {
+            "intake_s": round(t_intake_end - t0, 6) if 't_intake_end' in locals() else 0.0,
+            "workspace_setup_s": round(t_ws_end - t_intake_end, 6) if ('t_ws_end' in locals() and 't_intake_end' in locals()) else 0.0,
+            "net_ns_proxy_s": round(t_proxy_end - t_ws_end, 6) if ('t_proxy_end' in locals() and 't_ws_end' in locals()) else 0.0,
+            "broker_connect_s": round(t_broker_end - t_proxy_end, 6) if ('t_broker_end' in locals() and 't_proxy_end' in locals()) else 0.0,
+            "landlock_seccomp_s": round(t_rules_end - t_broker_end, 6) if ('t_rules_end' in locals() and 't_broker_end' in locals()) else 0.0,
+            "sensor_attach_s": round(t_launch_end - t_rules_end, 6) if ('t_launch_end' in locals() and 't_rules_end' in locals()) else 0.0,
+            "cgroup_scope_s": round(t_cg_end - t_launch_end, 6) if ('t_cg_end' in locals() and 't_launch_end' in locals()) else 0.0,
+            "enforcer_arm_s": round(t_startup_end - t_cg_end, 6) if 't_cg_end' in locals() else 0.0,
+            "startup_total_s": round(t_startup_end - t0, 6),
+            "teardown_s": teardown_breakdown["total_teardown_s"],
+            "teardown_breakdown": teardown_breakdown,
+        }
+
         sensor_status = {
             "binary": str(SENSOR_BIN.name),
-            "mode": "observation_only",
-            "ran": correlator.sensor_pid is not None,
+            "mode": "disabled" if disable_ptrace_sensor else "observation_only",
+            "ran": (correlator.sensor_pid is not None) and not disable_ptrace_sensor,
             "exit_trailer_seen": correlator.exit_trailer is not None,
-            "exited_early": correlator.exit_trailer is None,
+            "exited_early": False if disable_ptrace_sensor else (correlator.exit_trailer is None),
             "events_observed": len(correlator.records),
             "cross_attributions": correlator.cross_attributions,
             "unattributed_reasons": correlator.unattributed_reasons,
-            "syscalls_observed": ["open", "openat", "openat2", "execve", "execveat", "connect"],
+            "syscalls_observed": [] if disable_ptrace_sensor else ["open", "openat", "openat2", "execve", "execveat", "connect"],
+            **({"disabled": True} if disable_ptrace_sensor else {}),
         }
         identity = self.storage.get_task_cgroup(task_id)
         receipt = build_receipt(
@@ -1480,6 +1588,10 @@ class TaskLauncher:
             os_identity={k: identity[k] for k in ("cgroup_path", "unit_name", "scope_pid", "source")} if identity else None,
             condition=spec.condition,
             extra={
+                **({"bench_mode": True} if bench_mode else {}),
+                **({"sensor_disabled": True, "ptrace_sensor_disabled": True} if disable_ptrace_sensor else {}),
+                "phase_timings": phase_timings,
+                "cgroup_resources": cgroup_resources,
                 "policy": receipt_policy_section(initial_boundary, self.storage.get_boundary(task_id)),
                 "llm_provider": provider_label,
                 "llm_model": llm_model,
@@ -1617,6 +1729,8 @@ class TaskLauncher:
             aborted=aborted,
             fs_diff=fs_diff,
             audit_sink_requests=sink_requests,
+            phase_timings=phase_timings,
+            cgroup_resources=cgroup_resources,
         )
 
 
