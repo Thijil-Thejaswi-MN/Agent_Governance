@@ -133,7 +133,7 @@ class BoundaryDerivationV2:
             '  "files_read": ["input/..."],\n'
             '  "files_write": ["output/..."],\n'
             '  "tools": ["read_file", ...],\n'
-            '  "network": ["localhost:8000", ...],\n'
+            '  "network": ["api.example.com:443", ...],\n'
             '  "peer_agents": ["agent_bob", ...]\n'
             "}\n"
         )

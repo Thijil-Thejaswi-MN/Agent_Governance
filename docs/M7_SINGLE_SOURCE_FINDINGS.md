@@ -41,15 +41,17 @@ Landlock compiler (`compile_landlock_rules_resolved`) both read only that list.
 
 ## Differential test (`tests/test_m7_differential.py`)
 
-Every v3 scenario boundary (derived and gold, 352) plus 200 random boundaries (seed
+Every v3 scenario boundary (derived and gold, 384) plus 200 random boundaries (seed
 20261103), about 100 probe paths each (aliases, case variants, `..`, `./`, symlinks,
 grants, nested paths, outside paths). Each probe is decided by the broker and performed
 for real under `landlock_enforcer --mode enforce`.
 
 | path | boundaries | probes | compared | mismatches |
 |---|---|---|---|---|
-| v1.1 (resolved) | 552 | 60,624 | 43,352 | **0** (60 declared residuals: `src/.env` under `src/**`) |
-| v1 (frozen M6, `M7_DIFF_PATH=old`) | 552 | 61,680 | 48,662 | **9,091** |
+| v1.1 (resolved) | 584 | 64,864 | 46,792 | **0** (60 declared residuals: `src/.env` under `src/**`) |
+| v1 (frozen M6, `M7_DIFF_PATH=old`) | 584 | 66,016 | 51,758 | **9,527** |
+
+About 28% of probes are not compared (indeterminate, runtime-support or residual); the harness is static and cannot observe races.
 
 No weakening: over all probes, the v1.1 broker never allows what the v1 broker or v1
 kernel denied, and the v1.1 kernel never allows what the v1 kernel denied. The 2,236

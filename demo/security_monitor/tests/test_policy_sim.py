@@ -152,9 +152,23 @@ def test_run_command_check_now_applies_the_agents_tool_limit(tmp_path: Path) -> 
 
 def test_an_allowed_call_names_the_kernel_as_the_next_layer(tmp_path: Path) -> None:
     _, _, boundary, ev = _task(tmp_path, "k", _variants()["plain"], True)
-    d = PolicySimulator(ev).tool_call(boundary, "run_command", "wc -l input/notes.txt")
+    sim = PolicySimulator(ev)
+    d = sim.tool_call(boundary, "run_command", "wc -l input/notes.txt")
     assert d["outcome"] == "allow" and d["trace"][-1]["layer"] == "kernel"
+    assert d["trace"][-1]["reason"] == "kernel: Landlock enforces the same resolved boundary"
     assert {s["layer"] for s in d["trace"]} <= {i for i, _ in TOOL_LAYERS}
+
+    d_read = sim.tool_call(boundary, "read_file", "input/notes.txt")
+    assert d_read["outcome"] == "allow" and d_read["trace"][-1]["layer"] == "kernel"
+    assert d_read["trace"][-1]["reason"] == "kernel: Landlock enforces the same resolved boundary"
+
+    d_net = sim.tool_call(boundary, "http_get", "http://127.0.0.1:9/x")
+    assert d_net["outcome"] == "allow" and d_net["trace"][-1]["layer"] == "network"
+    assert d_net["trace"][-1]["reason"] == "network: the egress proxy enforces the same boundary (Landlock does not cover host names)"
+
+    d_peer = sim.tool_call(boundary, "call_agent", "agent_bob")
+    assert d_peer["outcome"] == "allow" and d_peer["trace"][-1]["layer"] == "peer call"
+    assert d_peer["trace"][-1]["reason"] == "peer call: decision only"
 
 
 # --- access requests ------------------------------------------------------------------------
