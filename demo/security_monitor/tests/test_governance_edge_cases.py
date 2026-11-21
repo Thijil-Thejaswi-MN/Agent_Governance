@@ -174,7 +174,7 @@ def test_url_userinfo_evasion(edge_storage: GovernanceStorage, edge_workspace: P
 def test_raw_ip_literals_and_ipv6(edge_storage: GovernanceStorage, edge_workspace: Path) -> None:
     intake = TaskIntakeService(edge_storage)
     task, boundary = intake.submit_task("Analyse report.pdf", "agent_alice", str(edge_workspace))
-    boundary.network = ["127.0.0.1:8000"]
+    boundary.network = ["127.0.0.1:8080"]
     edge_storage.save_boundary(boundary)
 
     token = "tok_edge_007"
@@ -182,12 +182,12 @@ def test_raw_ip_literals_and_ipv6(edge_storage: GovernanceStorage, edge_workspac
     broker = ToolBroker(edge_storage)
 
     # Allowed IPv4 host:port
-    res = broker.http_get(token, "http://127.0.0.1:8000/status")
+    res = broker.http_get(token, "http://127.0.0.1:8080/status")
     assert res["status"] == 200
 
     # Disallowed IPv4 literal
     with pytest.raises(PermissionError, match="denied by boundary"):
-        broker.http_get(token, "http://192.168.1.1:8000/status")
+        broker.http_get(token, "http://192.168.1.1:8080/status")
 
     # Disallowed IPv6 literal
     with pytest.raises(PermissionError, match="denied by boundary"):

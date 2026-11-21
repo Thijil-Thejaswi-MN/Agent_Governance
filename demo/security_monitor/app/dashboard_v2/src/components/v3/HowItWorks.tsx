@@ -102,13 +102,13 @@ export const HowItWorks: React.FC = () => {
 
       <DetailsDrawer open={open} title="How it works: technical details" onClose={() => setOpen(false)} id="how-it-works-drawer">
         <DetailsSection title="Request to boundary">
-          <KV k="Intake" v="intake.py derives a per-task boundary: files read and write, tools, network hosts, peer agents" />
+          <KV k="Intake" v="intake.py derives a per-task boundary: files read and write, tools, network allowances (network allowances are IP:port entries; host names are refused at the proxy), peer agents" />
           <KV k="Derivation" v="templates (catalog.BoundaryDerivationV1_1) by default; optionally a model proposes the files to read (derivation_grounded.py), limited to files that exist, and the requester reviews them before the run" />
           <KV k="Identity" v="one cgroup v2 scope per task (systemd-run --user --scope), created before the agent acts" />
         </DetailsSection>
         <DetailsSection title="Layer 1: tool layer">
-          <KV k="Broker" v="Unix-socket RPC with 8 agent-facing endpoints: read_file, write_file, http_get, call_agent, request_access, run_command_check, run_command_begin, llm_complete; no approve, deny or grant endpoint" />
-          <KV k="Egress proxy" v="the only TCP port the sandbox may connect to" />
+          <KV k="Broker" v="Unix-socket RPC with 8 agent-facing endpoints: read_file, write_file, http_get, call_agent (checks the decision but delivers a stub reply), request_access, run_command_check, run_command_begin, llm_complete; no approve, deny or grant endpoint" />
+          <KV k="Egress proxy" v="the only TCP port the sandbox may connect to; network allowances are IP:port entries; host names are refused at the proxy" />
           <KV k="Expansion" v="request_access gets a risk tier, raised when the agent read untrusted input before asking (provenance); grants are exact resources, wildcards are rejected; an approved file is copied into the read-only granted/ directory; a new output file is written to staged/ and a person reviews that exact content before it is saved" />
           <KV k="Fail closed" v="a request nobody decides before its timeout is denied" />
         </DetailsSection>

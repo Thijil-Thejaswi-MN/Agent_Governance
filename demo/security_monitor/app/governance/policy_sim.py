@@ -59,6 +59,9 @@ TOOL_LAYERS: tuple[tuple[str, str], ...] = (
     ("graduated_response", "Repeated violations pause or stop the task"),
     ("workspace", "Path inside the task folder"),
     ("kernel", "Landlock and seccomp (same resolved boundary)"),
+    ("network", "Egress proxy boundary"),
+    ("peer call", "Peer call decision only"),
+    ("peer_call", "Peer call decision only"),
 )
 REQUEST_LAYERS: tuple[tuple[str, str], ...] = (
     ("request_shape", "Exact target, no wildcards"),
@@ -152,10 +155,14 @@ class PolicySimulator:
         def done(outcome: str, layer: str, reason: str, action: TaskAction, risk: RiskTier | None,
                  resolved: str | None = None, rule: str | None = None) -> dict[str, Any]:
             if outcome == "allow":
-                trace.append(_step("kernel", "applies",
-                                   "Landlock and seccomp enforce the same resolved boundary on what the agent "
-                                   "process and its commands do" if tool == "run_command" else
-                                   "Landlock enforces the same resolved boundary on the agent process"))
+                if tool in ("read_file", "write_file", "run_command"):
+                    trace.append(_step("kernel", "applies", "kernel: Landlock enforces the same resolved boundary"))
+                elif tool == "http_get":
+                    trace.append(_step("network", "applies", "network: the egress proxy enforces the same boundary (Landlock does not cover host names)"))
+                elif tool == "call_agent":
+                    trace.append(_step("peer call", "applies", "peer call: decision only"))
+                else:
+                    trace.append(_step("kernel", "applies", "kernel: Landlock enforces the same resolved boundary"))
             return {
                 "kind": "tool_call", "tool": tool, "target": target, "outcome": outcome,
                 "decided_by": layer, "reason": reason, "rule_matched": rule or reason, "action": action.value,

@@ -44,6 +44,9 @@ RISK = [
     ("file_read", "input\\secret.txt", H),
     # writes
     ("file_write", "output/summary.txt", M),
+    ("file_write", "output/x", M),
+    ("file_write", "OUTPUT/x", H),
+    ("file_write", "Output/x", H),
     ("file_write", "input/data.csv", H),
     ("file_write", "docs/notes.txt", H),
     ("file_write", "output/credentials.txt", H),

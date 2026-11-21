@@ -3,7 +3,7 @@
 ## What this is
 
 This repository is a research prototype for task-scoped runtime governance of AI agents.
-A user's request goes through an intake layer that derives a per-task boundary: the files the agent may read and write, and the tools, network hosts and peer agents it may use.
+A user's request goes through an intake layer that derives a per-task boundary: the files the agent may read and write, and the tools, network allowances (network allowances are IP:port entries; host names are refused at the proxy) and peer agents it may use.
 On Linux (WSL2), the agent runs inside an OS identity (a cgroup scope) and a sandbox that are created before it takes any action.
 Every action is checked against the boundary. The boundary can grow during a task only through an expansion request that is approved and whose provenance has been checked.
 
@@ -33,9 +33,9 @@ The M6 launcher flow (Linux/WSL2). Code paths are relative to `demo/security_mon
  agent shim (agent_shim.py) ── runs the LLM agent inside the sandbox
      │
      ├──► broker Unix socket (broker_rpc.py) ── 7 agent-facing endpoints only:
-     │       read_file, write_file, http_get, call_agent, request_access,
+     │       read_file, write_file, http_get, call_agent (checks the decision but delivers a stub reply), request_access,
      │       run_command_check, llm_complete   (no approve / deny / grant endpoint)
-     └──► egress proxy (proxy.py) ── the only TCP port the sandbox may connect to
+     └──► egress proxy (proxy.py) ── the only TCP port the sandbox may connect to; network allowances are IP:port entries; host names are refused at the proxy
      │
      ▼
  ptrace sensor (os_layer/sensor.c) ── observation only; it does not block

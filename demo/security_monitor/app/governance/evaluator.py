@@ -5,6 +5,7 @@ Performs strict, zero-LLM compliance evaluation of runtime actions against the T
 from __future__ import annotations
 
 import fnmatch
+import ipaddress
 import os
 from pathlib import Path
 from urllib.parse import urlparse
@@ -33,6 +34,34 @@ SENSITIVE_FILE_PATTERNS = [
     "shadow",
     "passwd",
 ]
+
+
+def _is_loopback(host: str) -> bool:
+    if host.lower() == "localhost":
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+        return ip.is_loopback
+    except ValueError:
+        return False
+
+
+def _parse_allowed_entry(entry: str) -> tuple[str, str | None]:
+    """Parses an allowed network entry into (host, port_or_pattern).
+    Returns (host, None) for bare host entries.
+    """
+    clean = entry.lower().strip()
+    if clean.startswith("["):
+        if "]:" in clean:
+            h, p = clean.split("]:", 1)
+            return h.lstrip("["), p
+        return clean.strip("[]"), None
+    if ":" in clean:
+        if clean.count(":") > 1:
+            return clean, None
+        h, p = clean.split(":", 1)
+        return h, p
+    return clean, None
 
 
 class BoundaryEvaluator:
@@ -193,31 +222,45 @@ class BoundaryEvaluator:
         else:
             port = 443 if parsed.scheme == "https" else 80
 
-        target_hostport = f"{host}:{port}"
+        target_hostport = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+
+        # Refuse the control-plane port on loopback even if listed or granted
+        control_port = int(os.environ.get("GOVERNANCE_CONTROL_PORT", 8000))
+        if _is_loopback(host) and port == control_port:
+            return EvaluationResult(
+                verdict=EventVerdict.OUTSIDE,
+                risk_tier=RiskTier.HIGH,
+                rule_matched="control-plane port is never reachable from a task",
+                resolved_path=target_hostport,
+            )
 
         for allowed in boundary.network:
-            allowed_clean = allowed.lower().strip()
-            # Allow wildcard port or explicit host:port or bare host matching default port
-            if ":" in allowed_clean:
-                if fnmatch.fnmatch(target_hostport, allowed_clean):
-                    return EvaluationResult(
-                        verdict=EventVerdict.INSIDE,
-                        risk_tier=RiskTier.LOW,
-                        rule_matched=f"matched allowed network endpoint: {allowed}",
-                    )
-            else:
-                # Bare host in boundary matches on host regardless of port or on default ports
-                if fnmatch.fnmatch(host, allowed_clean):
+            allowed_host, allowed_port = _parse_allowed_entry(allowed)
+            if allowed_port is None:
+                # Bare host entry matches only ports 80 and 443
+                if port in (80, 443) and fnmatch.fnmatch(host, allowed_host):
                     return EvaluationResult(
                         verdict=EventVerdict.INSIDE,
                         risk_tier=RiskTier.LOW,
                         rule_matched=f"matched allowed network host: {allowed}",
+                        resolved_path=target_hostport,
                     )
+            else:
+                # Explicit port or wildcard port
+                if fnmatch.fnmatch(host, allowed_host):
+                    if allowed_port == "*" or str(port) == allowed_port:
+                        return EvaluationResult(
+                            verdict=EventVerdict.INSIDE,
+                            risk_tier=RiskTier.LOW,
+                            rule_matched=f"matched allowed network endpoint: {allowed}",
+                            resolved_path=target_hostport,
+                        )
 
         return EvaluationResult(
             verdict=EventVerdict.OUTSIDE,
             risk_tier=RiskTier.HIGH,
             rule_matched=f"unlisted outbound network destination: {target_hostport}",
+            resolved_path=target_hostport,
         )
 
     def evaluate_peer_agent(self, boundary: TaskBoundary, target_agent_id: str) -> EvaluationResult:

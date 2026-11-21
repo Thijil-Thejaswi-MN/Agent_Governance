@@ -245,7 +245,8 @@ class ExpansionService:
         if not resource_type or not str(resource_type).strip():
             raise ValueError("resource_type cannot be empty in expansion request")
 
-        target_norm = resource_target.strip().replace("\\", "/").lower()
+        target_raw = resource_target.strip().replace("\\", "/")
+        target_norm = target_raw.lower()
         parts = [p for p in target_norm.split("/") if p]
 
         # 1. Structural Rule: Outside workspace is HIGH
@@ -276,8 +277,8 @@ class ExpansionService:
             if any(p in sensitive_prefixes for p in parts) or any(target_norm.startswith(pre + "/") for pre in sensitive_prefixes):
                 return RiskTier.HIGH
 
-            # 3. Structural Rule: Writes outside output/ are HIGH
-            if resource_type == "file_write" and not target_norm.startswith("output/"):
+            # 3. Structural Rule: Writes outside output/ are HIGH (case-sensitive)
+            if resource_type == "file_write" and not target_raw.startswith("output/"):
                 return RiskTier.HIGH
 
             # 4. Structural Rule: Files outside input/ are at least MEDIUM

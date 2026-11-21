@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -174,6 +175,27 @@ def test_watcher_thread_decides_while_broker_waits(world):
         watcher.stop()
     assert approved is True
     assert message == "Approved by standing_rule:rule_t1"
+
+
+def test_watcher_thread_never_decides_high_risk_or_escalated(world):
+    storage, service = world
+    _save_pending(storage, "exp_high", RiskTier.HIGH, RiskTier.HIGH, False)
+    _save_pending(storage, "exp_escalated", RiskTier.LOW, RiskTier.MEDIUM, True)
+
+    watcher = StandingRuleWatcher(lambda: storage, lambda: service, lambda: [_rule("allow", target="*")], interval=0.05)
+    watcher.start()
+    try:
+        time.sleep(0.2)
+    finally:
+        watcher.stop()
+
+    high_req = storage.get_expansion_request("exp_high")
+    assert high_req.status == ExpansionStatus.PENDING
+    assert high_req.resolved_by is None
+
+    esc_req = storage.get_expansion_request("exp_escalated")
+    assert esc_req.status == ExpansionStatus.PENDING
+    assert esc_req.resolved_by is None
 
 
 # --- API: create, save, reload, expire -------------------------------------------------
