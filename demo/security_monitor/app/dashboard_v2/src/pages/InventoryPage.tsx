@@ -16,11 +16,22 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { StatusPill } from '../components/ui/StatusPill';
 import { Button } from '../components/ui/Button';
 
-const RISK: Record<Risk, { label: string }> = {
+export const RISK_LABELS: Record<Risk, { label: string }> = {
   high: { label: 'High risk' },
   medium: { label: 'Medium risk' },
   low: { label: 'Low risk' },
 };
+const RISK = RISK_LABELS;
+
+export function getSeenBy(agent: DiscoveredAgent): string {
+  const ev = agent.evidence ?? [];
+  const hasEbpf = ev.some(e => e.signal?.startsWith('ebpf_'));
+  const hasProc = ev.some(e => !e.signal?.startsWith('ebpf_'));
+  if (hasProc && hasEbpf) return '/proc scan, eBPF';
+  if (hasEbpf) return 'eBPF';
+  if (hasProc) return '/proc scan';
+  return '—';
+}
 
 /** One agent. No effects, so tests can render it. */
 export const InventoryCard: React.FC<{ c: AgentCard; now: number }> = ({ c, now }) => {
@@ -544,6 +555,7 @@ export const InventoryPage: React.FC = () => {
                     <th className="py-3 px-4">Name</th>
                     <th className="py-3 px-3">Kind</th>
                     <th className="py-3 px-3">Host</th>
+                    <th className="py-3 px-3">Seen by</th>
                     <th className="py-3 px-3">Frameworks</th>
                     <th className="py-3 px-3">LLM Endpoints</th>
                     <th className="py-3 px-3">Key Names</th>
@@ -589,6 +601,9 @@ export const InventoryPage: React.FC = () => {
                           </span>
                         </td>
                         <td className="py-3 px-3 font-mono text-[12px] text-fg-2">{agent.host}</td>
+                        <td className="py-3 px-3 font-mono text-[12px] text-fg-2" data-seen-by={getSeenBy(agent)}>
+                          {getSeenBy(agent)}
+                        </td>
                         <td className="py-3 px-3">
                           {agent.frameworks.length > 0 ? (
                             <div className="flex flex-wrap gap-1 max-w-[180px]">
@@ -711,21 +726,31 @@ export const InventoryPage: React.FC = () => {
                 <span className="text-[13px] text-fg-3">No direct evidence items stored.</span>
               ) : (
                 <ul className="list-none m-0 p-0 flex flex-col gap-2" id="drawer-evidence-list">
-                  {selectedAgent.evidence.map((ev, i) => (
-                    <li key={i} className="p-3 rounded-lg border border-line bg-surface-2 flex flex-col gap-1 text-[12px]">
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-fg uppercase tracking-wide text-[10px]">
-                          {ev.signal}
-                        </span>
-                        {ev.last_seen && (
-                          <span className="text-fg-3 text-[11px]">
-                            {relativeTime(ev.last_seen, now)}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-fg-2 [overflow-wrap:anywhere]">{ev.detail}</div>
-                    </li>
-                  ))}
+                  {selectedAgent.evidence.map((ev, i) => {
+                    const isEbpf = ev.signal?.startsWith('ebpf_');
+                    return (
+                      <li key={i} className="p-3 rounded-lg border border-line bg-surface-2 flex flex-col gap-1 text-[12px]" data-evidence-signal={ev.signal}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-fg uppercase tracking-wide text-[10px]">
+                              {ev.signal}
+                            </span>
+                            {isEbpf && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-surface-3 text-fg-2 border border-line">
+                                eBPF
+                              </span>
+                            )}
+                          </div>
+                          {ev.last_seen && (
+                            <span className="text-fg-3 text-[11px]">
+                              {relativeTime(ev.last_seen, now)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-fg-2 [overflow-wrap:anywhere]">{ev.detail}</div>
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>

@@ -183,6 +183,25 @@ class HostScanner:
         a2a_agents = self._scan_a2a_cards(org_id, now)
         discovered.extend(a2a_agents)
 
+        # 7. Merge eBPF discovery signals if enabled
+        if os.environ.get("GOVERNANCE_DISCOVERY_EBPF", "").strip() == "1" and self.storage:
+            try:
+                ebpf_agents = [
+                    a for a in self.storage.list_discovered_agents(org_id=org_id)
+                    if any(ev.signal.startswith("ebpf_") for ev in a.evidence)
+                ]
+                existing_ids = {a.discovery_id: a for a in discovered}
+                for ea in ebpf_agents:
+                    if ea.discovery_id in existing_ids:
+                        merged_ev = {(e.signal, e.detail): e for e in existing_ids[ea.discovery_id].evidence}
+                        for e in ea.evidence:
+                            merged_ev[(e.signal, e.detail)] = e
+                        existing_ids[ea.discovery_id].evidence = list(merged_ev.values())
+                    else:
+                        discovered.append(ea)
+            except Exception as ex:
+                logger.warning(f"Failed to query eBPF discovered agents: {ex}")
+
         self.unreadable_count = unreadable_count
         partial_note = f"partial scan: {unreadable_count} processes not readable"
         return discovered, unreadable_count, partial_note

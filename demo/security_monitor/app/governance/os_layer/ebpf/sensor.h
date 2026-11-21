@@ -3,6 +3,9 @@
 
 #define TARGET_PATH_MAX 256
 #define SOCK_ADDR_MAX 128
+#define ARGV_MAX_COUNT 4
+#define ARGV_ITEM_MAX 128
+#define DNS_PAYLOAD_MAX 256
 
 enum {
     TARGET_STATUS_OK = 0,
@@ -49,6 +52,14 @@ struct ebpf_event {
     char target[TARGET_PATH_MAX];
     char target2[TARGET_PATH_MAX];
     char sock_addr[SOCK_ADDR_MAX];
+
+    /* Discovery Mode additions */
+    __u8 is_discovery;
+    __u8 argv_count;
+    char argv[ARGV_MAX_COUNT][ARGV_ITEM_MAX];
+    __u16 dns_payload_len;
+    char dns_payload[DNS_PAYLOAD_MAX];
+    __u16 _pad;
 };
 
 #endif /* __SENSOR_H__ */

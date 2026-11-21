@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <arpa/inet.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -75,6 +76,40 @@ static uint64_t get_total_dropped(void) {
         total += vals[i];
     }
     return total;
+}
+
+static uint32_t g_discovery_enabled = 0;
+static uint32_t g_rate_limit = 200;
+static uint32_t g_dns_port = 53;
+
+static uint64_t get_total_rate_limited(void) {
+    if (!g_skel) return 0;
+    int fd = bpf_map__fd(g_skel->maps.rate_limited_events);
+    if (fd < 0) return 0;
+    uint64_t vals[g_num_cpus];
+    memset(vals, 0, sizeof(vals));
+    uint32_t key = 0;
+    if (bpf_map_lookup_elem(fd, &key, vals) != 0) {
+        return 0;
+    }
+    uint64_t total = 0;
+    for (int i = 0; i < g_num_cpus; i++) {
+        total += vals[i];
+    }
+    return total;
+}
+
+static int set_discovery_config(uint32_t enabled, uint32_t rate_limit, uint32_t dns_port) {
+    if (!g_skel) return -1;
+    int fd = bpf_map__fd(g_skel->maps.discovery_cfg);
+    if (fd < 0) return -1;
+    uint32_t k0 = 0, v0 = enabled;
+    uint32_t k1 = 1, v1 = rate_limit;
+    uint32_t k2 = 2, v2 = dns_port;
+    bpf_map_update_elem(fd, &k0, &v0, BPF_ANY);
+    bpf_map_update_elem(fd, &k1, &v1, BPF_ANY);
+    bpf_map_update_elem(fd, &k2, &v2, BPF_ANY);
+    return 0;
 }
 
 static int register_cgroup(uint64_t cgid) {
@@ -234,6 +269,231 @@ static void resolve_abs_path(uint32_t pid, const char *rel, char *out_buf, size_
     }
 }
 
+static int parse_dns_qname(const char *payload, uint16_t len, char *out_domain, size_t out_sz) {
+    if (!payload || len < 13 || out_sz < 2) return -1;
+    out_domain[0] = '\0';
+
+    uint16_t qdcount = ((uint8_t)payload[4] << 8) | (uint8_t)payload[5];
+    if (qdcount == 0) return -1;
+
+    size_t pos = 12;
+    size_t out_pos = 0;
+
+    while (pos < len) {
+        uint8_t label_len = (uint8_t)payload[pos++];
+        if (label_len == 0) {
+            out_domain[out_pos] = '\0';
+            return out_pos > 0 ? 0 : -1;
+        }
+        if (label_len > 63 || pos + label_len > len) {
+            return -1;
+        }
+        if (out_pos > 0) {
+            if (out_pos + 1 >= out_sz) return -1;
+            out_domain[out_pos++] = '.';
+        }
+        for (uint8_t i = 0; i < label_len; i++) {
+            unsigned char c = (unsigned char)payload[pos++];
+            if (c >= 'A' && c <= 'Z') {
+                c += ('a' - 'A');
+            } else if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_')) {
+                return -1;
+            }
+            if (out_pos + 1 >= out_sz) return -1;
+            out_domain[out_pos++] = (char)c;
+        }
+    }
+    return -1;
+}
+
+struct cgroup_cache_entry {
+    uint64_t cgid;
+    char path[256];
+    char unit[128];
+    char container_id[128];
+};
+
+#define CGROUP_CACHE_SIZE 1024
+static struct cgroup_cache_entry g_cgroup_cache[CGROUP_CACHE_SIZE];
+static int g_cgroup_cache_count = 0;
+
+static void extract_unit_and_container(const char *cg_path, char *unit, size_t unit_sz, char *cont_id, size_t cont_sz) {
+    unit[0] = '\0';
+    cont_id[0] = '\0';
+    if (!cg_path || !cg_path[0]) return;
+
+    char copy[256];
+    strncpy(copy, cg_path, sizeof(copy) - 1);
+    copy[sizeof(copy) - 1] = '\0';
+
+    char *saveptr = NULL;
+    char *token = strtok_r(copy, "/", &saveptr);
+    while (token) {
+        size_t tlen = strlen(token);
+        if (tlen > 8 && strcmp(token + tlen - 8, ".service") == 0) {
+            strncpy(unit, token, unit_sz - 1);
+            unit[unit_sz - 1] = '\0';
+        } else if (tlen > 6 && strcmp(token + tlen - 6, ".scope") == 0) {
+            strncpy(unit, token, unit_sz - 1);
+            unit[unit_sz - 1] = '\0';
+        } else if (!unit[0] && tlen > 6 && strcmp(token + tlen - 6, ".slice") == 0) {
+            strncpy(unit, token, unit_sz - 1);
+            unit[unit_sz - 1] = '\0';
+        }
+
+        if (tlen == 64) {
+            int is_hex = 1;
+            for (size_t i = 0; i < 64; i++) {
+                char c = token[i];
+                if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
+                    is_hex = 0;
+                    break;
+                }
+            }
+            if (is_hex) {
+                strncpy(cont_id, token, cont_sz - 1);
+                cont_id[cont_sz - 1] = '\0';
+            }
+        } else if (tlen > 7 && strncmp(token, "docker-", 7) == 0 && tlen >= 71) {
+            char hex_cand[65];
+            strncpy(hex_cand, token + 7, 64);
+            hex_cand[64] = '\0';
+            int is_hex = 1;
+            for (size_t i = 0; i < 64; i++) {
+                char c = hex_cand[i];
+                if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
+                    is_hex = 0;
+                    break;
+                }
+            }
+            if (is_hex) {
+                strncpy(cont_id, hex_cand, cont_sz - 1);
+                cont_id[cont_sz - 1] = '\0';
+            }
+        }
+
+        token = strtok_r(NULL, "/", &saveptr);
+    }
+}
+
+static void add_cgroup_cache(uint64_t cgid, const char *path) {
+    if (cgid == 0 || !path) return;
+    for (int i = 0; i < g_cgroup_cache_count; i++) {
+        if (g_cgroup_cache[i].cgid == cgid) {
+            strncpy(g_cgroup_cache[i].path, path, sizeof(g_cgroup_cache[i].path) - 1);
+            g_cgroup_cache[i].path[sizeof(g_cgroup_cache[i].path) - 1] = '\0';
+            extract_unit_and_container(path, g_cgroup_cache[i].unit, sizeof(g_cgroup_cache[i].unit),
+                                       g_cgroup_cache[i].container_id, sizeof(g_cgroup_cache[i].container_id));
+            return;
+        }
+    }
+    int idx;
+    if (g_cgroup_cache_count < CGROUP_CACHE_SIZE) {
+        idx = g_cgroup_cache_count++;
+    } else {
+        idx = (int)(cgid % CGROUP_CACHE_SIZE);
+    }
+    g_cgroup_cache[idx].cgid = cgid;
+    strncpy(g_cgroup_cache[idx].path, path, sizeof(g_cgroup_cache[idx].path) - 1);
+    g_cgroup_cache[idx].path[sizeof(g_cgroup_cache[idx].path) - 1] = '\0';
+    extract_unit_and_container(path, g_cgroup_cache[idx].unit, sizeof(g_cgroup_cache[idx].unit),
+                               g_cgroup_cache[idx].container_id, sizeof(g_cgroup_cache[idx].container_id));
+}
+
+static int lookup_cgroup_cache(uint64_t cgid, char *path, size_t path_sz, char *unit, size_t unit_sz, char *cont_id, size_t cont_sz) {
+    if (cgid == 0) return 0;
+    for (int i = 0; i < g_cgroup_cache_count; i++) {
+        if (g_cgroup_cache[i].cgid == cgid) {
+            if (path) {
+                strncpy(path, g_cgroup_cache[i].path, path_sz - 1);
+                path[path_sz - 1] = '\0';
+            }
+            if (unit) {
+                strncpy(unit, g_cgroup_cache[i].unit, unit_sz - 1);
+                unit[unit_sz - 1] = '\0';
+            }
+            if (cont_id) {
+                strncpy(cont_id, g_cgroup_cache[i].container_id, cont_sz - 1);
+                cont_id[cont_sz - 1] = '\0';
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void walk_cgroup_tree(const char *rel_base, int depth) {
+    if (depth > 6) return;
+    char full[1024];
+    snprintf(full, sizeof(full), "/sys/fs/cgroup%s", rel_base);
+
+    DIR *d = opendir(full);
+    if (!d) return;
+
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
+        if (ent->d_type == DT_DIR) {
+            char sub_rel[512];
+            if (strcmp(rel_base, "/") == 0 || rel_base[0] == '\0') {
+                snprintf(sub_rel, sizeof(sub_rel), "/%s", ent->d_name);
+            } else {
+                snprintf(sub_rel, sizeof(sub_rel), "%s/%s", rel_base, ent->d_name);
+            }
+            char sub_full[1024];
+            snprintf(sub_full, sizeof(sub_full), "/sys/fs/cgroup%s", sub_rel);
+            struct stat st;
+            if (stat(sub_full, &st) == 0) {
+                add_cgroup_cache(st.st_ino, sub_rel);
+            }
+            walk_cgroup_tree(sub_rel, depth + 1);
+        }
+    }
+    closedir(d);
+}
+
+static void resolve_cgroup_info(uint64_t cgid, pid_t pid, char *path, size_t path_sz, char *unit, size_t unit_sz, char *cont_id, size_t cont_sz) {
+    path[0] = '\0';
+    unit[0] = '\0';
+    cont_id[0] = '\0';
+
+    if (lookup_cgroup_cache(cgid, path, path_sz, unit, unit_sz, cont_id, cont_sz)) {
+        return;
+    }
+
+    if (pid > 0) {
+        char proc_path[64];
+        snprintf(proc_path, sizeof(proc_path), "/proc/%d/cgroup", (int)pid);
+        FILE *f = fopen(proc_path, "r");
+        if (f) {
+            char line[512];
+            while (fgets(line, sizeof(line), f)) {
+                char *nl = strchr(line, '\n');
+                if (nl) *nl = '\0';
+                char *cr = strchr(line, '\r');
+                if (cr) *cr = '\0';
+                if (strncmp(line, "0::", 3) == 0) {
+                    snprintf(path, path_sz, "%.*s", (int)(path_sz - 1), line + 3);
+                    break;
+                }
+            }
+            fclose(f);
+            if (path[0] != '\0') {
+                add_cgroup_cache(cgid, path);
+                lookup_cgroup_cache(cgid, path, path_sz, unit, unit_sz, cont_id, cont_sz);
+                return;
+            }
+        }
+    }
+
+    walk_cgroup_tree("", 0);
+    if (lookup_cgroup_cache(cgid, path, path_sz, unit, unit_sz, cont_id, cont_sz)) {
+        return;
+    }
+
+    snprintf(path, path_sz, "cgroup:%llu", (unsigned long long)cgid);
+}
+
 static void broadcast_line(const char *line, uint64_t cgid) {
     fputs(line, stdout);
     fputc('\n', stdout);
@@ -302,15 +562,48 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
     }
 
     uint64_t dropped = get_total_dropped();
+    uint64_t rate_limited = get_total_rate_limited();
+
+    char cgroup_path[256] = "";
+    char unit[128] = "";
+    char container_id[128] = "";
+    char dns_question[256] = "";
+
+    if (e->is_discovery) {
+        resolve_cgroup_info(e->cgroup_id, (pid_t)e->pid, cgroup_path, sizeof(cgroup_path),
+                            unit, sizeof(unit), container_id, sizeof(container_id));
+        if (e->dns_payload_len > 0) {
+            parse_dns_qname(e->dns_payload, e->dns_payload_len, dns_question, sizeof(dns_question));
+        }
+    }
 
     char *line = NULL;
     size_t line_sz = 0;
     FILE *mem = open_memstream(&line, &line_sz);
     if (!mem) return 0;
 
-    fprintf(mem, "{\"source\":\"ebpf_sensor\",\"type\":\"syscall\",\"seq\":%llu,\"timestamp\":\"%s\",\"ts_ms\":%lld,"
-                 "\"pid\":%u,\"ppid\":%u,\"cgroup_id\":\"%llu\",\"syscall\":\"%s\",\"op\":\"%s\",\"target\":",
-            g_seq, ts, ms, e->pid, e->ppid, (unsigned long long)e->cgroup_id,
+    fprintf(mem, "{\"source\":\"ebpf_sensor\",\"type\":\"syscall\"");
+    if (e->is_discovery) {
+        fputs(",\"mode\":\"discovery\"", mem);
+    }
+    fprintf(mem, ",\"seq\":%llu,\"timestamp\":\"%s\",\"ts_ms\":%lld,"
+                 "\"pid\":%u,\"ppid\":%u,\"cgroup_id\":\"%llu\"",
+            g_seq, ts, ms, e->pid, e->ppid, (unsigned long long)e->cgroup_id);
+
+    if (e->is_discovery) {
+        fputs(",\"cgroup_path\":", mem);
+        json_escape(mem, cgroup_path);
+        if (unit[0]) {
+            fputs(",\"unit\":", mem);
+            json_escape(mem, unit);
+        }
+        if (container_id[0]) {
+            fputs(",\"container_id\":", mem);
+            json_escape(mem, container_id);
+        }
+    }
+
+    fprintf(mem, ",\"syscall\":\"%s\",\"op\":\"%s\",\"target\":",
             syscall_nr_to_name(e->syscall_nr), op_to_name(e->op));
     json_escape(mem, target);
     fputs(",\"abs_target\":", mem);
@@ -324,6 +617,20 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
         json_escape(mem, abs_target2);
     }
 
+    if (e->is_discovery && e->argv_count > 0) {
+        fputs(",\"argv\":[", mem);
+        for (int i = 0; i < e->argv_count && i < ARGV_MAX_COUNT; i++) {
+            if (i > 0) fputc(',', mem);
+            json_escape(mem, e->argv[i]);
+        }
+        fputc(']', mem);
+    }
+
+    if (e->is_discovery && dns_question[0]) {
+        fputs(",\"dns_question\":", mem);
+        json_escape(mem, dns_question);
+    }
+
     if (e->flags) {
         fprintf(mem, ",\"flags\":%llu", (unsigned long long)e->flags);
     }
@@ -331,8 +638,8 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
         fprintf(mem, ",\"aux\":%llu", (unsigned long long)e->aux);
     }
 
-    fprintf(mem, ",\"ret\":%lld,\"result\":\"%s\",\"dropped\":%llu}",
-            (long long)e->ret, result_str, (unsigned long long)dropped);
+    fprintf(mem, ",\"ret\":%lld,\"result\":\"%s\",\"dropped\":%llu,\"rate_limited\":%llu}",
+            (long long)e->ret, result_str, (unsigned long long)dropped, (unsigned long long)rate_limited);
 
     fclose(mem);
     if (line) {
@@ -348,12 +655,13 @@ static void emit_heartbeat(void) {
     long long ms = 0;
     now_iso(ts, sizeof(ts), &ms);
     uint64_t dropped = get_total_dropped();
+    uint64_t rate_limited = get_total_rate_limited();
 
     char line[512];
     snprintf(line, sizeof(line),
              "{\"source\":\"ebpf_sensor\",\"type\":\"heartbeat\",\"seq\":%llu,\"timestamp\":\"%s\",\"ts_ms\":%lld,"
-             "\"events_total\":%llu,\"dropped_total\":%llu,\"version\":\"%s\"}",
-             g_seq, ts, ms, (unsigned long long)g_events_total, (unsigned long long)dropped, VERSION);
+             "\"events_total\":%llu,\"dropped_total\":%llu,\"rate_limited_total\":%llu,\"version\":\"%s\"}",
+             g_seq, ts, ms, (unsigned long long)g_events_total, (unsigned long long)dropped, (unsigned long long)rate_limited, VERSION);
     broadcast_line(line, 0);
 }
 
@@ -486,6 +794,36 @@ static void process_cmd(char *cmd, int client_idx) {
                 broadcast_line(ack, cgid);
             }
         }
+    } else if (strncmp(cmd, "DISCOVERY ON", 12) == 0) {
+        uint32_t limit = g_rate_limit;
+        char *arg = strchr(cmd + 12, ' ');
+        if (arg) {
+            uint32_t parsed = (uint32_t)strtoul(arg + 1, NULL, 0);
+            if (parsed > 0) limit = parsed;
+        }
+        g_discovery_enabled = 1;
+        g_rate_limit = limit;
+        set_discovery_config(1, limit, g_dns_port);
+        char ack[128];
+        snprintf(ack, sizeof(ack), "{\"source\":\"ebpf_sensor\",\"type\":\"ack\",\"action\":\"discovery_on\",\"rate_limit\":%u}", limit);
+        broadcast_line(ack, 0);
+    } else if (strcmp(cmd, "DISCOVERY OFF") == 0) {
+        g_discovery_enabled = 0;
+        set_discovery_config(0, g_rate_limit, g_dns_port);
+        char ack[] = "{\"source\":\"ebpf_sensor\",\"type\":\"ack\",\"action\":\"discovery_off\"}";
+        broadcast_line(ack, 0);
+    } else if (strncmp(cmd, "RATE_LIMIT ", 11) == 0) {
+        char *arg = strchr(cmd, ' ');
+        if (arg) {
+            uint32_t limit = (uint32_t)strtoul(arg + 1, NULL, 0);
+            if (limit > 0) {
+                g_rate_limit = limit;
+                set_discovery_config(g_discovery_enabled, limit, g_dns_port);
+                char ack[128];
+                snprintf(ack, sizeof(ack), "{\"source\":\"ebpf_sensor\",\"type\":\"ack\",\"action\":\"rate_limit_set\",\"rate_limit\":%u}", limit);
+                broadcast_line(ack, 0);
+            }
+        }
     } else if (strcmp(cmd, "PING") == 0) {
         char ack[] = "{\"source\":\"ebpf_sensor\",\"type\":\"pong\"}";
         broadcast_line(ack, 0);
@@ -504,10 +842,16 @@ int main(int argc, char **argv) {
             sock_path = argv[++i];
         } else if (strcmp(argv[i], "--cgroup") == 0 && i + 1 < argc) {
             initial_cgid = strtoull(argv[++i], NULL, 0);
+        } else if (strcmp(argv[i], "--discovery") == 0) {
+            g_discovery_enabled = 1;
+        } else if (strcmp(argv[i], "--rate-limit") == 0 && i + 1 < argc) {
+            g_rate_limit = (uint32_t)strtoul(argv[++i], NULL, 0);
+        } else if (strcmp(argv[i], "--dns-port") == 0 && i + 1 < argc) {
+            g_dns_port = (uint32_t)strtoul(argv[++i], NULL, 0);
         } else if (strcmp(argv[i], "--stdin") == 0) {
             stdin_mode = 1;
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
-            fprintf(stderr, "Usage: %s [--socket <path>] [--cgroup <cgroup_id>] [--stdin]\n", argv[0]);
+            fprintf(stderr, "Usage: %s [--socket <path>] [--cgroup <cgroup_id>] [--discovery] [--rate-limit <n>] [--dns-port <p>] [--stdin]\n", argv[0]);
             return 0;
         }
     }
@@ -544,6 +888,8 @@ int main(int argc, char **argv) {
         sensor_bpf__destroy(g_skel);
         return 1;
     }
+
+    set_discovery_config(g_discovery_enabled, g_rate_limit, g_dns_port);
 
     g_rb = ring_buffer__new(bpf_map__fd(g_skel->maps.events_rb), handle_event, NULL, NULL);
     if (!g_rb) {
