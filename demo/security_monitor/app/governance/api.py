@@ -19,11 +19,16 @@ import time
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from typing import Any
+import logging
 
 import asyncio
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+
+from .discovery.models import DiscoveryScanRecord, DiscoveredAgent
+
+logger = logging.getLogger(__name__)
 
 from .run_manager import (
     HOST_REQUIREMENT,
@@ -1059,6 +1064,177 @@ def _scoped_inventory(visible_ids: set[str]) -> list[dict[str, Any]]:
 @governance_router.get("/inventory")
 async def get_agent_inventory(request: Request = None) -> list[dict[str, Any]]:
     return _scoped_inventory({t.task_id for t in _visible_tasks(request, get_storage())})
+
+
+class StartDiscoveryScanRequest(BaseModel):
+    repo_paths: list[str] | None = None
+    org_id: str | None = None
+
+
+class PatchDiscoveredAgentRequest(BaseModel):
+    owner: str | None = None
+    purpose: str | None = None
+    status: str | None = None
+    linked_agent_id: str | None = None
+    org_id: str | None = None
+
+
+class RetireDiscoveredAgentRequest(BaseModel):
+    org_id: str | None = None
+    reason: str | None = None
+
+
+def _extract_org_id(request: Request | None, org_param: str | None = None) -> str:
+    if org_param and org_param.strip():
+        return org_param.strip()
+    if request:
+        hdr = request.headers.get("X-Org-ID")
+        if hdr and hdr.strip():
+            return hdr.strip()
+    return "default"
+
+
+@governance_router.get("/discovery/agents")
+async def list_discovered_agents(
+    request: Request,
+    status: str | None = Query(None),
+    kind: str | None = Query(None),
+    host: str | None = Query(None),
+    include_retired: bool = Query(False),
+    org_id: str | None = Query(None),
+) -> list[dict[str, Any]]:
+    get_current_user_session(request)
+    eff_org = _extract_org_id(request, org_id)
+    agents = get_inventory_service().get_discovered_agents(
+        org_id=eff_org,
+        status=status,
+        kind=kind,
+        host=host,
+        include_retired=include_retired,
+    )
+    return [a.model_dump() for a in agents]
+
+
+@governance_router.post("/discovery/scan")
+async def trigger_discovery_scan(
+    request: Request,
+    payload: StartDiscoveryScanRequest | None = None,
+) -> dict[str, Any]:
+    user = get_current_user_session(request)
+    if user.role not in (Role.ADMIN, Role.SECURITY_REVIEWER):
+        raise HTTPException(status_code=403, detail="Forbidden: Role not authorized to run discovery scan.")
+
+    eff_org = _extract_org_id(request, payload.org_id if payload else None)
+    scan_id = f"scan_{uuid.uuid4().hex[:12]}"
+    now = datetime.now(timezone.utc).isoformat()
+    repo_paths = payload.repo_paths if payload else None
+
+    logger.info("AUDIT: user %s initiated discovery scan %s for org %s", user.name, scan_id, eff_org)
+
+    scan_rec = DiscoveryScanRecord(
+        scan_id=scan_id,
+        org_id=eff_org,
+        started_at=now,
+        status="RUNNING",
+    )
+    get_storage().save_discovery_scan(scan_rec)
+
+    inv_svc = get_inventory_service()
+
+    def _run() -> None:
+        try:
+            inv_svc.run_discovery_scan(
+                org_id=eff_org,
+                repo_paths=repo_paths,
+                scan_id=scan_id,
+            )
+        except Exception:
+            logger.exception("Discovery scan failed in background")
+
+    threading.Thread(target=_run, name=f"scan-{scan_id}", daemon=True).start()
+
+    return {
+        "scan_id": scan_id,
+        "org_id": eff_org,
+        "started_at": now,
+        "status": "RUNNING",
+        "findings_count": 0,
+        "unreadable_count": 0,
+        "details": {},
+    }
+
+
+@governance_router.get("/discovery/scans/{id}")
+async def get_discovery_scan_status(
+    id: str,
+    request: Request,
+    org_id: str | None = Query(None),
+) -> dict[str, Any]:
+    get_current_user_session(request)
+    eff_org = _extract_org_id(request, org_id)
+    scan = get_inventory_service().get_discovery_scan(id, org_id=eff_org)
+    if not scan:
+        raise HTTPException(status_code=404, detail=f"Discovery scan '{id}' not found.")
+    return scan.model_dump()
+
+
+@governance_router.patch("/discovery/agents/{id}")
+async def patch_discovered_agent(
+    id: str,
+    payload: PatchDiscoveredAgentRequest,
+    request: Request,
+) -> dict[str, Any]:
+    user = get_current_user_session(request)
+    if user.role not in (Role.ADMIN, Role.SECURITY_REVIEWER):
+        raise HTTPException(status_code=403, detail="Forbidden: Role not authorized to update discovered agents.")
+
+    eff_org = _extract_org_id(request, payload.org_id)
+    logger.info(
+        "AUDIT: user %s patched discovered agent %s in org %s: owner=%s, purpose=%s, status=%s, linked=%s",
+        user.name,
+        id,
+        eff_org,
+        payload.owner,
+        payload.purpose,
+        payload.status,
+        payload.linked_agent_id,
+    )
+
+    updated = get_inventory_service().patch_discovered_agent(
+        org_id=eff_org,
+        discovery_id=id,
+        owner=payload.owner,
+        purpose=payload.purpose,
+        status=payload.status,
+        linked_agent_id=payload.linked_agent_id,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail=f"Discovered agent '{id}' not found.")
+    return updated.model_dump()
+
+
+@governance_router.post("/discovery/agents/{id}/retire")
+async def retire_discovered_agent(
+    id: str,
+    request: Request,
+    payload: RetireDiscoveredAgentRequest | None = None,
+) -> dict[str, Any]:
+    user = get_current_user_session(request)
+    if user.role not in (Role.ADMIN, Role.SECURITY_REVIEWER):
+        raise HTTPException(status_code=403, detail="Forbidden: Role not authorized to retire discovered agents.")
+
+    eff_org = _extract_org_id(request, payload.org_id if payload else None)
+    reason = payload.reason if payload else None
+    logger.info("AUDIT: user %s retired discovered agent %s in org %s (reason: %s)", user.name, id, eff_org, reason)
+
+    retired = get_inventory_service().retire_discovered_agent(
+        org_id=eff_org,
+        discovery_id=id,
+        retired_by=user.name,
+    )
+    if not retired:
+        raise HTTPException(status_code=404, detail=f"Discovered agent '{id}' not found.")
+    return retired.model_dump()
 
 
 @governance_router.get("/alerts")

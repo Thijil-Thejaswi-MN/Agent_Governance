@@ -27,6 +27,8 @@ import {
   PendingGroup,
   StandingRule,
   RecordsSummary,
+  DiscoveredAgent,
+  DiscoveryScan,
 } from '../types';
 import type { RuleDraft } from '../logic/rules';
 import type { ApprovalScope, ExpansionPreview } from '../logic/approval';
@@ -301,6 +303,35 @@ export const api = {
     request<SimResult>(`${API_BASE}/policy/simulate`, {
       method: 'POST',
       body: JSON.stringify(payload),
+    }),
+
+  // Agent Discovery
+  getDiscoveredAgents: (params?: { status?: string; kind?: string; host?: string; include_retired?: boolean; org_id?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.status) q.append('status', params.status);
+    if (params?.kind) q.append('kind', params.kind);
+    if (params?.host) q.append('host', params.host);
+    if (params?.include_retired) q.append('include_retired', 'true');
+    if (params?.org_id) q.append('org_id', params.org_id);
+    const query = q.toString();
+    return request<DiscoveredAgent[]>(`${API_BASE}/discovery/agents${query ? `?${query}` : ''}`);
+  },
+  triggerDiscoveryScan: (payload?: { repo_paths?: string[]; org_id?: string }) =>
+    request<DiscoveryScan>(`${API_BASE}/discovery/scan`, {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
+    }),
+  getDiscoveryScan: (scanId: string, org_id: string = 'default') =>
+    request<DiscoveryScan>(`${API_BASE}/discovery/scans/${encodeURIComponent(scanId)}?org_id=${encodeURIComponent(org_id)}`),
+  patchDiscoveredAgent: (id: string, payload: { owner?: string | null; purpose?: string | null; status?: string | null; linked_agent_id?: string | null; org_id?: string }) =>
+    request<DiscoveredAgent>(`${API_BASE}/discovery/agents/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  retireDiscoveredAgent: (id: string, payload?: { org_id?: string; reason?: string }) =>
+    request<DiscoveredAgent>(`${API_BASE}/discovery/agents/${encodeURIComponent(id)}/retire`, {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
     }),
 
 };

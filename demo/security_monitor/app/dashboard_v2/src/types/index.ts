@@ -491,3 +491,44 @@ export interface AttackDetail {
   };
   conditions: { condition: string; name: string; trials: number; harm: number; acted: number; stories: AttackStory[] }[];
 }
+
+export interface DiscoveredEvidenceItem {
+  signal: string;
+  detail: string;
+  first_seen?: string;
+  last_seen?: string;
+}
+
+export interface DiscoveredAgent {
+  org_id: string;
+  discovery_id: string;
+  host: string;
+  kind: 'process' | 'repo' | 'mcp_server' | 'local_model_server' | 'coding_agent' | 'a2a_agent';
+  name: string;
+  frameworks: string[];
+  llm_endpoints: string[];
+  key_names: string[];
+  evidence: DiscoveredEvidenceItem[];
+  status: 'governed' | 'known' | 'shadow';
+  owner?: string | null;
+  purpose?: string | null;
+  linked_agent_id?: string | null;
+  retired_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface DiscoveryScan {
+  scan_id: string;
+  org_id: string;
+  started_at: string;
+  completed_at?: string | null;
+  status: 'RUNNING' | 'DONE' | 'FAILED';
+  findings_count: number;
+  unreadable_count: number;
+  details?: {
+    unreadable_processes?: number;
+    warning?: string | null;
+    [key: string]: any;
+  };
+}

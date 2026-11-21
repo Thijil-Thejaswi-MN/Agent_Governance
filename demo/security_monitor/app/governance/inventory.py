@@ -8,14 +8,29 @@ from __future__ import annotations
 
 import datetime
 import json
+import logging
 import os
+import socket
+import threading
+import time
 import urllib.error
 import urllib.parse
-import socket
-import time
 import urllib.request
+import uuid
+from pathlib import Path
 from typing import Any
 from pydantic import BaseModel, Field
+
+from .discovery.host_scan import HostScanner
+from .discovery.repo_scan import RepoScanner
+from .discovery.models import (
+    DiscoveredAgent,
+    DiscoveryScanRecord,
+    EvidenceItem,
+    compute_discovery_id,
+)
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_A2A_CARD_URLS = [
     "http://127.0.0.1:9999/.well-known/agent-card.json",
@@ -171,6 +186,214 @@ class AgentInventoryService:
 
     def __init__(self, storage: GovernanceStorage) -> None:
         self.storage = storage
+        self._stop_discovery: threading.Event | None = None
+        self._discovery_thread: threading.Thread | None = None
+        self._init_periodic_discovery()
+
+    def _init_periodic_discovery(self) -> None:
+        interval_str = os.getenv("GOVERNANCE_DISCOVERY_INTERVAL_S")
+        if not interval_str:
+            return
+        try:
+            interval = float(interval_str)
+            if interval <= 0:
+                return
+        except ValueError:
+            return
+
+        self._stop_discovery = threading.Event()
+
+        def _loop() -> None:
+            while not self._stop_discovery.wait(interval):
+                try:
+                    self.run_discovery_scan()
+                except Exception:
+                    logger.exception("Periodic discovery scan failed")
+
+        self._discovery_thread = threading.Thread(target=_loop, name="discovery-scanner", daemon=True)
+        self._discovery_thread.start()
+
+    def stop_periodic_discovery(self) -> None:
+        if self._stop_discovery:
+            self._stop_discovery.set()
+        if self._discovery_thread:
+            self._discovery_thread.join(timeout=2.0)
+            self._discovery_thread = None
+
+    def run_discovery_scan(
+        self,
+        org_id: str = "default",
+        proc_root: str = "/proc",
+        home_dir: str | Path | None = None,
+        repo_paths: list[str | Path] | None = None,
+        extra_path_dirs: list[str | Path] | None = None,
+        known_llm_ips: set[str] | None = None,
+        scan_id: str | None = None,
+    ) -> DiscoveryScanRecord:
+        scan_id = scan_id or f"scan_{uuid.uuid4().hex[:12]}"
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        scan_rec = DiscoveryScanRecord(
+            scan_id=scan_id,
+            org_id=org_id,
+            started_at=now,
+            status="RUNNING",
+        )
+        self.storage.save_discovery_scan(scan_rec)
+
+        unreadable_count = 0
+        discovered: list[DiscoveredAgent] = []
+
+        try:
+            # 1. Host scan
+            host_scanner = HostScanner(
+                proc_root=proc_root,
+                home_dir=home_dir,
+                extra_path_dirs=extra_path_dirs,
+                known_llm_ips=known_llm_ips,
+            )
+            host_res = host_scanner.scan(org_id=org_id)
+            if isinstance(host_res, tuple):
+                host_agents = host_res[0]
+            else:
+                host_agents = host_res
+            discovered.extend(host_agents)
+            unreadable_count += host_scanner.unreadable_count
+
+            # 2. Local A2A cards
+            a2a_cards = discover_local_a2a_cards(storage=self.storage)
+            for card in a2a_cards:
+                cid = card["agent_id"]
+                cname = card["name"]
+                skills = card.get("skills", [])
+                card_url = card.get("url", "")
+                card_agent = DiscoveredAgent(
+                    org_id=org_id,
+                    discovery_id=compute_discovery_id(host_scanner.host_name, "a2a_agent", card_url or cid),
+                    host=host_scanner.host_name,
+                    kind="a2a_agent",
+                    name=cname,
+                    frameworks=["a2a_agent"],
+                    evidence=[
+                        EvidenceItem(
+                            signal="a2a_card",
+                            detail=f"Local A2A card at {card_url} with skills: {', '.join(skills)}",
+                        )
+                    ],
+                    status="shadow",
+                )
+                discovered.append(card_agent)
+
+            # 3. Repository scan
+            repo_scanner = RepoScanner(host_name=host_scanner.host_name)
+            targets = repo_paths
+            if targets is None:
+                cwd = Path.cwd()
+                targets = [cwd]
+                demo_ws = cwd / "demo" / "data" / "demo_workspace"
+                if demo_ws.exists():
+                    targets.append(demo_ws)
+            for target in targets:
+                repo_agents = repo_scanner.scan_path(target, org_id=org_id)
+                discovered.extend(repo_agents)
+
+            # Determine status & persist
+            governed_ids = {
+                t.agent_id.lower()
+                for t in self.storage.list_tasks()
+                if getattr(t, "condition", None) != "B"
+            }
+            for agent in discovered:
+                if agent.linked_agent_id and agent.linked_agent_id.lower() in governed_ids:
+                    agent.status = "governed"
+                elif agent.name.lower() in governed_ids or agent.discovery_id.lower() in governed_ids:
+                    agent.status = "governed"
+                else:
+                    existing = self.storage.get_discovered_agent(org_id, agent.discovery_id)
+                    if existing:
+                        if existing.status == "known" or (existing.owner and existing.purpose):
+                            agent.status = "known"
+                            agent.owner = existing.owner
+                            agent.purpose = existing.purpose
+                        elif existing.status == "governed":
+                            agent.status = "governed"
+                        if existing.linked_agent_id:
+                            agent.linked_agent_id = existing.linked_agent_id
+                        if existing.retired_at:
+                            agent.retired_at = existing.retired_at
+
+                self.storage.upsert_discovered_agent(agent)
+
+            completed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            details: dict[str, Any] = {
+                "unreadable_processes": unreadable_count,
+            }
+            if unreadable_count > 0:
+                details["warning"] = f"partial scan: {unreadable_count} processes not readable"
+
+            scan_rec.completed_at = completed_at
+            scan_rec.status = "DONE"
+            scan_rec.findings_count = len(discovered)
+            scan_rec.unreadable_count = unreadable_count
+            scan_rec.details = details
+            self.storage.save_discovery_scan(scan_rec)
+
+        except Exception as e:
+            logger.exception("Discovery scan %s failed: %s", scan_id, e)
+            scan_rec.completed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            scan_rec.status = "FAILED"
+            scan_rec.details = {"error": str(e)}
+            self.storage.save_discovery_scan(scan_rec)
+
+        return scan_rec
+
+    def get_discovered_agents(
+        self,
+        org_id: str = "default",
+        status: str | None = None,
+        kind: str | None = None,
+        host: str | None = None,
+        include_retired: bool = False,
+    ) -> list[DiscoveredAgent]:
+        return self.storage.list_discovered_agents(
+            org_id=org_id,
+            status=status,
+            kind=kind,
+            host=host,
+            include_retired=include_retired,
+        )
+
+    def patch_discovered_agent(
+        self,
+        org_id: str,
+        discovery_id: str,
+        owner: str | None = None,
+        purpose: str | None = None,
+        status: str | None = None,
+        linked_agent_id: str | None = None,
+    ) -> DiscoveredAgent | None:
+        return self.storage.patch_discovered_agent(
+            org_id=org_id,
+            discovery_id=discovery_id,
+            owner=owner,
+            purpose=purpose,
+            status=status,
+            linked_agent_id=linked_agent_id,
+        )
+
+    def retire_discovered_agent(
+        self,
+        org_id: str,
+        discovery_id: str,
+        retired_by: str = "operator",
+    ) -> DiscoveredAgent | None:
+        return self.storage.retire_discovered_agent(
+            org_id=org_id,
+            discovery_id=discovery_id,
+            retired_by=retired_by,
+        )
+
+    def get_discovery_scan(self, scan_id: str, org_id: str = "default") -> DiscoveryScanRecord | None:
+        return self.storage.get_discovery_scan(scan_id=scan_id, org_id=org_id)
 
     def get_inventory(self) -> list[AgentInventoryItem]:
         """

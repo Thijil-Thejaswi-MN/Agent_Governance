@@ -29,6 +29,11 @@ from .models import (
     RiskTier,
     TaskAction,
 )
+from .discovery.models import (
+    DiscoveredAgent,
+    DiscoveryScanRecord,
+    EvidenceItem,
+)
 
 
 def get_default_governance_db_path() -> Path:
@@ -244,6 +249,46 @@ class GovernanceStorage:
                     rule_json TEXT NOT NULL
                 )
             """)
+
+            # 10. Discovered Agents (Tenant-aware agent inventory)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS discovered_agents (
+                    org_id TEXT NOT NULL DEFAULT 'default',
+                    discovery_id TEXT NOT NULL,
+                    host TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    frameworks_json TEXT NOT NULL DEFAULT '[]',
+                    llm_endpoints_json TEXT NOT NULL DEFAULT '[]',
+                    key_names_json TEXT NOT NULL DEFAULT '[]',
+                    evidence_json TEXT NOT NULL DEFAULT '[]',
+                    status TEXT NOT NULL DEFAULT 'shadow',
+                    owner TEXT,
+                    purpose TEXT,
+                    linked_agent_id TEXT,
+                    retired_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (org_id, discovery_id)
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_discovered_agents_org_status ON discovered_agents (org_id, status)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_discovered_agents_org_kind ON discovered_agents (org_id, kind)")
+
+            # 11. Discovery Scans
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS discovery_scans (
+                    scan_id TEXT PRIMARY KEY,
+                    org_id TEXT NOT NULL DEFAULT 'default',
+                    started_at TEXT NOT NULL,
+                    completed_at TEXT,
+                    status TEXT NOT NULL,
+                    findings_count INTEGER DEFAULT 0,
+                    unreadable_count INTEGER DEFAULT 0,
+                    details_json TEXT NOT NULL DEFAULT '{}'
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_discovery_scans_org ON discovery_scans (org_id, started_at)")
             try:
                 cursor.execute("ALTER TABLE governance_tasks ADD COLUMN owner TEXT")
             except Exception:
@@ -866,3 +911,285 @@ class GovernanceStorage:
                 (request_id,),
             )
             conn.commit()
+
+    # --- Discovered Agents and Scans ---
+    def _row_to_discovered_agent(self, r: sqlite3.Row | dict[str, Any]) -> DiscoveredAgent:
+        frameworks = json.loads(r["frameworks_json"]) if r["frameworks_json"] else []
+        llm_endpoints = json.loads(r["llm_endpoints_json"]) if r["llm_endpoints_json"] else []
+        key_names = json.loads(r["key_names_json"]) if r["key_names_json"] else []
+        raw_evidence = json.loads(r["evidence_json"]) if r["evidence_json"] else []
+        evidence = [EvidenceItem(**ev) if isinstance(ev, dict) else ev for ev in raw_evidence]
+        return DiscoveredAgent(
+            org_id=r["org_id"],
+            discovery_id=r["discovery_id"],
+            host=r["host"],
+            kind=r["kind"],
+            name=r["name"],
+            frameworks=frameworks,
+            llm_endpoints=llm_endpoints,
+            key_names=key_names,
+            evidence=evidence,
+            status=r["status"],
+            owner=r["owner"],
+            purpose=r["purpose"],
+            linked_agent_id=r["linked_agent_id"],
+            retired_at=r["retired_at"],
+            created_at=r["created_at"],
+            updated_at=r["updated_at"],
+        )
+
+    def save_discovered_agent(self, agent: DiscoveredAgent) -> None:
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        created_at = agent.created_at or now
+        updated_at = agent.updated_at or now
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO discovered_agents (
+                    org_id, discovery_id, host, kind, name,
+                    frameworks_json, llm_endpoints_json, key_names_json, evidence_json,
+                    status, owner, purpose, linked_agent_id, retired_at, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    agent.org_id,
+                    agent.discovery_id,
+                    agent.host,
+                    agent.kind,
+                    agent.name,
+                    json.dumps(agent.frameworks),
+                    json.dumps(agent.llm_endpoints),
+                    json.dumps(agent.key_names),
+                    json.dumps([e.model_dump() for e in agent.evidence]),
+                    agent.status,
+                    agent.owner,
+                    agent.purpose,
+                    agent.linked_agent_id,
+                    agent.retired_at,
+                    created_at,
+                    updated_at,
+                ),
+            )
+            conn.commit()
+
+    def upsert_discovered_agent(self, agent: DiscoveredAgent) -> DiscoveredAgent:
+        existing = self.get_discovered_agent(agent.org_id, agent.discovery_id)
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        if existing:
+            merged_frameworks = sorted(list(set(existing.frameworks) | set(agent.frameworks)))
+            merged_endpoints = sorted(list(set(existing.llm_endpoints) | set(agent.llm_endpoints)))
+            merged_keys = sorted(list(set(existing.key_names) | set(agent.key_names)))
+
+            ev_map: dict[tuple[str, str], EvidenceItem] = {}
+            for e in existing.evidence:
+                ev_map[(e.signal, e.detail)] = e
+            for e in agent.evidence:
+                k = (e.signal, e.detail)
+                if k in ev_map:
+                    ev_map[k].last_seen = e.last_seen
+                else:
+                    ev_map[k] = e
+            merged_evidence = list(ev_map.values())
+
+            # Status precedence: known > governed > shadow
+            status = existing.status
+            if status == "shadow" and agent.status != "shadow":
+                status = agent.status
+
+            owner = existing.owner or agent.owner
+            purpose = existing.purpose or agent.purpose
+            linked = existing.linked_agent_id or agent.linked_agent_id
+            retired = existing.retired_at or agent.retired_at
+
+            updated = DiscoveredAgent(
+                org_id=agent.org_id,
+                discovery_id=agent.discovery_id,
+                host=agent.host,
+                kind=agent.kind,
+                name=agent.name or existing.name,
+                frameworks=merged_frameworks,
+                llm_endpoints=merged_endpoints,
+                key_names=merged_keys,
+                evidence=merged_evidence,
+                status=status,
+                owner=owner,
+                purpose=purpose,
+                linked_agent_id=linked,
+                retired_at=retired,
+                created_at=existing.created_at,
+                updated_at=now,
+            )
+            self.save_discovered_agent(updated)
+            return updated
+        else:
+            self.save_discovered_agent(agent)
+            return agent
+
+    def get_discovered_agent(self, org_id: str, discovery_id: str) -> DiscoveredAgent | None:
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM discovered_agents WHERE org_id = ? AND discovery_id = ?",
+                (org_id, discovery_id),
+            ).fetchone()
+        return self._row_to_discovered_agent(row) if row else None
+
+    def list_discovered_agents(
+        self,
+        org_id: str = "default",
+        status: str | None = None,
+        kind: str | None = None,
+        host: str | None = None,
+        include_retired: bool = False,
+    ) -> list[DiscoveredAgent]:
+        query = "SELECT * FROM discovered_agents WHERE org_id = ?"
+        params: list[Any] = [org_id]
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        if kind:
+            query += " AND kind = ?"
+            params.append(kind)
+        if host:
+            query += " AND host = ?"
+            params.append(host)
+        if not include_retired:
+            query += " AND retired_at IS NULL"
+        query += " ORDER BY updated_at DESC"
+        with self.get_connection() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [self._row_to_discovered_agent(r) for r in rows]
+
+    def patch_discovered_agent(
+        self,
+        org_id: str,
+        discovery_id: str,
+        owner: str | None = None,
+        purpose: str | None = None,
+        status: str | None = None,
+        linked_agent_id: str | None = None,
+    ) -> DiscoveredAgent | None:
+        existing = self.get_discovered_agent(org_id, discovery_id)
+        if not existing:
+            return None
+        new_owner = owner if owner is not None else existing.owner
+        new_purpose = purpose if purpose is not None else existing.purpose
+        new_linked = linked_agent_id if linked_agent_id is not None else existing.linked_agent_id
+        new_status = status if status is not None else existing.status
+        if (new_owner and new_purpose) and new_status == "shadow":
+            new_status = "known"
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE discovered_agents
+                SET owner = ?, purpose = ?, status = ?, linked_agent_id = ?, updated_at = ?
+                WHERE org_id = ? AND discovery_id = ?
+                """,
+                (new_owner, new_purpose, new_status, new_linked, now, org_id, discovery_id),
+            )
+            conn.commit()
+        return self.get_discovered_agent(org_id, discovery_id)
+
+    def retire_discovered_agent(
+        self,
+        org_id: str,
+        discovery_id: str,
+        retired_at: str | None = None,
+        retired_by: str = "operator",
+    ) -> DiscoveredAgent | None:
+        existing = self.get_discovered_agent(org_id, discovery_id)
+        if not existing:
+            return None
+        now = retired_at or datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            conn.execute(
+                "UPDATE discovered_agents SET retired_at = ?, updated_at = ? WHERE org_id = ? AND discovery_id = ?",
+                (now, now, org_id, discovery_id),
+            )
+            # If linked to a configured agent, mark inactive and revoke active grants
+            if existing.linked_agent_id:
+                target_agent = existing.linked_agent_id
+                # 1. Deactivate tokens
+                conn.execute(
+                    "UPDATE governance_tokens SET is_active = 0, revoked_at = ? WHERE agent_id = ?",
+                    (now, target_agent),
+                )
+                # 2. Revoke active/pending grants for this agent's tasks
+                task_rows = conn.execute(
+                    "SELECT task_id FROM governance_tasks WHERE agent_id = ?",
+                    (target_agent,),
+                ).fetchall()
+                task_ids = [r["task_id"] for r in task_rows]
+                for tid in task_ids:
+                    conn.execute(
+                        """
+                        UPDATE governance_expansions
+                        SET status = 'REVOKED', resolved_at = ?, resolved_by = ?, reason = 'Agent retired'
+                        WHERE task_id = ? AND status IN ('PENDING', 'APPROVED')
+                        """,
+                        (now, retired_by, tid),
+                    )
+            conn.commit()
+        return self.get_discovered_agent(org_id, discovery_id)
+
+    def save_discovery_scan(self, scan: DiscoveryScanRecord) -> None:
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO discovery_scans (
+                    scan_id, org_id, started_at, completed_at, status, findings_count, unreadable_count, details_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    scan.scan_id,
+                    scan.org_id,
+                    scan.started_at,
+                    scan.completed_at,
+                    scan.status,
+                    scan.findings_count,
+                    scan.unreadable_count,
+                    json.dumps(scan.details),
+                ),
+            )
+            conn.commit()
+
+    def get_discovery_scan(self, scan_id: str, org_id: str = "default") -> DiscoveryScanRecord | None:
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM discovery_scans WHERE scan_id = ? AND org_id = ?",
+                (scan_id, org_id),
+            ).fetchone()
+        if not row:
+            return None
+        details = json.loads(row["details_json"]) if row["details_json"] else {}
+        return DiscoveryScanRecord(
+            scan_id=row["scan_id"],
+            org_id=row["org_id"],
+            started_at=row["started_at"],
+            completed_at=row["completed_at"],
+            status=row["status"],
+            findings_count=row["findings_count"],
+            unreadable_count=row["unreadable_count"],
+            details=details,
+        )
+
+    def list_discovery_scans(self, org_id: str = "default", limit: int = 20) -> list[DiscoveryScanRecord]:
+        with self.get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM discovery_scans WHERE org_id = ? ORDER BY started_at DESC LIMIT ?",
+                (org_id, limit),
+            ).fetchall()
+        scans = []
+        for row in rows:
+            details = json.loads(row["details_json"]) if row["details_json"] else {}
+            scans.append(DiscoveryScanRecord(
+                scan_id=row["scan_id"],
+                org_id=row["org_id"],
+                started_at=row["started_at"],
+                completed_at=row["completed_at"],
+                status=row["status"],
+                findings_count=row["findings_count"],
+                unreadable_count=row["unreadable_count"],
+                details=details,
+            ))
+        return scans
