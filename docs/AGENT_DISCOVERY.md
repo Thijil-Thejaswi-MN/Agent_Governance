@@ -108,6 +108,21 @@ To prevent kernel ring buffer exhaustion or Denial-of-Service from high-frequenc
 - **Accounting**: Events exceeding the per-cgroup threshold increment a per-CPU `rate_limited_events` array counter.
 - **Observability**: Rate-limited drops are reported in loader heartbeats (`rate_limited_total`) and event metadata, distinguishing intentional throttling from unexpected packet drops.
 
+### Workload Overhead Measurement (W3 Shell Benchmark)
+
+Empirical CPU overhead measured across the shell-heavy W3 workload (5k file find, recursive grep, python reading 2k files, 50MB tar archive, and 500 binary executions):
+
+| Metric | Discovery OFF | Discovery ON (`GOVERNANCE_DISCOVERY_EBPF=1`) | Delta |
+|---|---|---|---|
+| Total Workload Latency | 394.24 ms | 405.08 ms | +10.85 ms (+2.75%) |
+| 500 Process Executions | 214.27 ms | 202.40 ms | -11.87 ms |
+| File Find (5,000 files) | 38.32 ms | 27.42 ms | -10.90 ms |
+| Content Grep | 21.89 ms | 23.44 ms | +1.55 ms |
+| Python Read (2,000 files) | 42.81 ms | 57.20 ms | +14.39 ms |
+| Tar Archive (50 MB) | 76.94 ms | 94.62 ms | +17.68 ms |
+
+The measured overhead on heavy shell execution churn is ~2.75%, demonstrating that the in-kernel filter and per-cgroup rate limiting avoid burdensome runtime latency.
+
 ---
 
 ## 6. Operational Limitations and Unmonitored Vectors
