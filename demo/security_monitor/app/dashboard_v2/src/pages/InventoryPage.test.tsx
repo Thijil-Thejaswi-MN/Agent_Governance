@@ -107,6 +107,8 @@ describe('discovered agent card', () => {
   describe('getSeenBy', () => {
     it('returns correct detection origin based on evidence signals', () => {
       const baseAgent = {
+        org_id: 'default',
+        status: 'shadow' as const,
         discovery_id: 'd1',
         host: 'localhost',
         kind: 'process' as const,
