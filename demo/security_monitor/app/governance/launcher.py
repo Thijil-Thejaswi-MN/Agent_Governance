@@ -435,12 +435,14 @@ class _AsyncLoopThread:
                 t.cancel()
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
-            self.loop.stop()
+            # Do not stop the loop here: stopping it before this coroutine returns leaves the
+            # caller's future unresolved, so .result() always waited out its full 2 s timeout.
 
         try:
             asyncio.run_coroutine_threadsafe(_shutdown(), self.loop).result(timeout=2.0)
         except Exception:
-            self.loop.call_soon_threadsafe(self.loop.stop)
+            pass
+        self.loop.call_soon_threadsafe(self.loop.stop)
         self.thread.join(timeout=2.0)
         try:
             self.loop.close()

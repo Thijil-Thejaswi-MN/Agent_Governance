@@ -177,6 +177,12 @@ class BrokerRPCServer:
             if self._llm_in_flight > 0 or getattr(self.broker, "_llm_in_flight", 0) > 0:
                 self.llm_in_flight_at_end = True
         if self._sock:
+            # shutdown() wakes a thread blocked in accept() at once; close() alone does not on
+            # Linux, so stop() used to wait for the accept timeout to expire (about 0.45 s a task).
+            try:
+                self._sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
             try:
                 self._sock.close()
             except OSError:
