@@ -1,18 +1,18 @@
-"""Task Receipt v1 (M6.1; v1 since 17 Nov 2026).
+"""Task Receipt v2 (M6.1; v2 with Ed25519 signing).
 
 A per-task JSON record of what the task was allowed, what it asked for, what it
-did and what was prevented. Two integrity layers:
+did and what was prevented. Three integrity layers:
 
 - the event list is *hash-chained*: every event entry includes the hash of the
   previous entry, and the receipt carries the final hash;
 - since v1, `hash_chain.document_sha256` is a SHA-256 over the whole record
-  (everything except that one field), so approvals, approvers, deliveries, the
+  (everything except that one field and signature), so approvals, approvers, deliveries, the
   initial boundary, termination and isolation level are covered too. In v0 only the
   event list was covered (independent audit, finding A3).
+- since v2, an Ed25519 signature over document_sha256 binds the record to an organisation key.
 
-`verify_receipt` (used by scripts/verify_receipt.py and the API) recomputes both and
-rejects records that lack the required fields. It is not signed and is not a guarantee
-against a party who can rewrite the whole file and recompute the hashes.
+`verify_receipt` (used by scripts/verify_receipt.py and the API) recomputes all checks and
+rejects records that lack the required fields.
 
 Data minimisation: paths, operations and results only. No file contents, no
 prompt text (only its SHA-256), secret-looking strings in commands redacted, no
@@ -23,13 +23,16 @@ from __future__ import annotations
 import datetime
 import hashlib
 import json
+import logging
 from typing import Any
 
 from .models import EventSource, EventVerdict, TaskBoundary, TaskRecord
 from .redaction import redact_command
 from .storage import GovernanceStorage
 
-RECEIPT_VERSION = "v1"
+logger = logging.getLogger(__name__)
+
+RECEIPT_VERSION = "v2"
 GENESIS_HASH = "0" * 64
 _SAFE_BROKER_DETAIL_KEYS = ("execution", "check_only", "reason", "channel", "method", "dst_host", "dst_port")
 
@@ -118,6 +121,7 @@ def build_receipt(
     os_identity: dict[str, Any] | None,
     condition: str | None = None,
     extra: dict[str, Any] | None = None,
+    org_id: str = "default",
 ) -> dict[str, Any]:
     tool_events = [e for e in storage.get_events_for_task(task.task_id) if e.source != EventSource.OS_SENSOR]
     entries = [_broker_entry(e) for e in tool_events] + [_os_entry(r) for r in os_records]
@@ -166,7 +170,7 @@ def build_receipt(
     b = initial_boundary
     receipt = {
         "receipt_version": RECEIPT_VERSION,
-        "integrity": "hash-chained events and a SHA-256 over the whole record (not signed)",
+        "integrity": "hash-chained events, whole-record SHA-256, and Ed25519 signature",
         "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "task_id": task.task_id,
         "condition": condition,
@@ -215,42 +219,85 @@ def build_receipt(
             receipt["llm_model"] = extra["llm_model"]
         if extra.get("boundary_source"):
             receipt["boundary_source"] = extra["boundary_source"]
-    return seal(receipt)
+        if extra.get("org_id"):
+            org_id = extra["org_id"]
+    return seal(receipt, org_id=org_id)
 
 
 REQUIRED_V0 = ("task_id", "events", "hash_chain")
 REQUIRED_V1 = REQUIRED_V0 + ("receipt_version", "event_counts", "initial_boundary", "expansions", "deliveries",
                              "termination", "isolation_level")
+REQUIRED_V2 = REQUIRED_V1 + ("signature",)
 
 
 def document_hash(receipt: dict[str, Any]) -> str:
-    """SHA-256 over the canonical JSON of the whole record except hash_chain.document_sha256."""
+    """SHA-256 over the canonical JSON of the whole record except hash_chain.document_sha256 and signature."""
     body = json.loads(json.dumps(receipt, default=str))
     (body.get("hash_chain") or {}).pop("document_sha256", None)
+    body.pop("signature", None)
     return hashlib.sha256(canonical(body)).hexdigest()
 
 
-def seal(receipt: dict[str, Any]) -> dict[str, Any]:
-    """Adds the whole-record hash. Returns the record as it will be stored (a JSON round trip,
+def seal(receipt: dict[str, Any], org_id: str = "default", sign: bool | None = None) -> dict[str, Any]:
+    """Adds the whole-record hash and Ed25519 signature. Returns the record as it will be stored (a JSON round trip,
     so the hash is computed over exactly what is written)."""
     out = json.loads(json.dumps(receipt, default=str))
-    out["hash_chain"]["document_sha256"] = document_hash(out)
+    eff_org = (
+        (out.get("signature") or {}).get("org_id")
+        or (out.get("extra") or {}).get("org_id")
+        or org_id
+        or "default"
+    )
+
+    should_sign = (
+        sign if sign is not None
+        else (out.get("receipt_version") != "v1" and out.get("receipt_version") != "v0")
+    )
+
+    if should_sign:
+        out["receipt_version"] = "v2"
+        out["integrity"] = "hash-chained events, whole-record SHA-256, and Ed25519 signature"
+        doc_hash = document_hash(out)
+        out.setdefault("hash_chain", {})["document_sha256"] = doc_hash
+        try:
+            from .signing import sign_document_sha256
+            sig = sign_document_sha256(doc_hash, org_id=eff_org)
+            out["signature"] = sig
+        except Exception as e:
+            out["receipt_version"] = "v1"
+            out["integrity"] = "hash-chained events and a SHA-256 over the whole record (not signed)"
+            out.pop("signature", None)
+            if "extra" not in out:
+                out["extra"] = {}
+            out["extra"]["signing"] = f"unavailable: {e}"
+            out["hash_chain"]["document_sha256"] = document_hash(out)
+    else:
+        doc_hash = document_hash(out)
+        out.setdefault("hash_chain", {})["document_sha256"] = doc_hash
+
     return out
 
 
-def verify_receipt(r: Any) -> dict[str, Any]:
+def verify_receipt(r: Any, pubkey: Any = None) -> dict[str, Any]:
     """Checks a stored record. Returns {ok, scope, message, final_hash}.
 
+    scope "signed": chain OK, whole-record hash OK, AND signature valid for known public key (v2).
     scope "whole_record": events chained and the whole-record hash matches (v1).
     scope "events_only": an older v0 record; only the event list could be checked.
+    scope "unknown_key": signature present and validly structured, but key is unknown.
     """
-    def fail(msg: str, final: str | None = None) -> dict[str, Any]:
-        return {"ok": False, "scope": None, "message": msg, "final_hash": final}
+    def fail(msg: str, final: str | None = None, scope: str | None = None) -> dict[str, Any]:
+        return {"ok": False, "scope": scope, "message": msg, "final_hash": final}
 
     if not isinstance(r, dict):
         return fail("not a record")
     version = r.get("receipt_version", "v0")
-    required = REQUIRED_V0 if version == "v0" else REQUIRED_V1
+    if version == "v0":
+        required = REQUIRED_V0
+    elif version == "v1":
+        required = REQUIRED_V1
+    else:
+        required = REQUIRED_V2
     missing = [k for k in required if k not in r]
     if missing:
         return fail(f"missing fields: {', '.join(missing)}")
@@ -273,13 +320,65 @@ def verify_receipt(r: Any) -> dict[str, Any]:
         if declared != counts:
             return fail(f"verdict counts mismatch: declared {declared}, recomputed {counts}", final)
     doc = hc.get("document_sha256")
+    if not doc and version != "v0":
+        return fail("whole-record hash missing", final)
     if doc:
         if doc != document_hash(r):
             return fail("the record was changed after it was written (whole-record hash does not match)", final)
-        return {"ok": True, "scope": "whole_record", "message": f"ok ({len(events)} entries; whole record checked)",
-                "final_hash": final}
-    if version != "v0":
-        return fail("whole-record hash missing", final)
-    return {"ok": True, "scope": "events_only",
-            "message": f"ok ({len(events)} entries; older v0 record: only the event list is chained)",
-            "final_hash": final}
+
+    # Check signature if present
+    if "signature" in r:
+        sig = r.get("signature")
+        if not isinstance(sig, dict) or not sig.get("value") or not sig.get("key_id"):
+            return fail("signature has the wrong shape", final)
+
+        key_id = sig.get("key_id")
+        org_id = sig.get("org_id", "default")
+
+        target_key = None
+        if pubkey is not None:
+            try:
+                from .signing import load_public_key_from_source
+                candidate_keys = load_public_key_from_source(pubkey)
+                target_key = candidate_keys.get(key_id)
+            except Exception:
+                pass
+
+        if target_key is None and pubkey is None:
+            try:
+                from .signing import load_public_keys, parse_public_key
+                registered = load_public_keys(org_id)
+                for reg in registered:
+                    if reg.get("key_id") == key_id:
+                        target_key = parse_public_key(reg.get("public_key"))
+                        break
+            except Exception:
+                pass
+
+        if target_key is None:
+            return fail(f"unknown key: {key_id}", final, scope="unknown_key")
+
+        from .signing import verify_signature
+        if not verify_signature(target_key, sig.get("value", ""), doc):
+            return fail("signature does not match", final)
+
+        return {
+            "ok": True,
+            "scope": "signed",
+            "message": f"ok ({len(events)} entries; whole record checked; signature verified key {key_id})",
+            "final_hash": final,
+        }
+
+    if doc:
+        return {
+            "ok": True,
+            "scope": "whole_record",
+            "message": f"ok ({len(events)} entries; whole record checked)",
+            "final_hash": final,
+        }
+    return {
+        "ok": True,
+        "scope": "events_only",
+        "message": f"ok ({len(events)} entries; older v0 record: only the event list is chained)",
+        "final_hash": final,
+    }

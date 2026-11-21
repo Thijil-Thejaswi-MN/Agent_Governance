@@ -123,12 +123,20 @@ export interface ReceiptResponse {
   available?: boolean;
   receipt: TaskReceipt | null;
   verified: boolean;
-  /** whole_record (v1: events chained and the whole record hashed) or events_only (older v0 record). */
-  verified_scope?: 'whole_record' | 'events_only' | null;
+  /** signed (v2), whole_record (v1), or events_only (older v0 record). */
+  verified_scope?: 'signed' | 'whole_record' | 'events_only' | null;
   verification_message: string;
   receipt_file?: string | null;
   file_sha256?: string | null;
   final_hash?: string | null;
+  signature?: {
+    alg: string;
+    key_id: string;
+    org_id: string;
+    signed_at: string;
+    value: string;
+  } | null;
+  key_id?: string | null;
 }
 
 export interface ResultsSummary {
@@ -367,6 +375,10 @@ export interface RecordsSummary {
   verified_ids?: string[];
   /** Older v0 records: only the event list could be checked. */
   events_only_ids?: string[];
+  /** Signed v2 records: signature verified against known public key. */
+  signed_ids?: string[];
+  /** Key IDs associated with signed records. */
+  key_ids?: Record<string, string>;
 }
 
 // Evidence browser: recorded evaluation trials, read from the committed raw files.

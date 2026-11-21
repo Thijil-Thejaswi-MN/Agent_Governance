@@ -216,3 +216,8 @@ class PermissionMatrix:
         if user.role == Role.DEVELOPER:
             return bool(task_owner and user.name == task_owner)
         return False
+
+    @staticmethod
+    def can_view_inventory(user: UserSession) -> bool:
+        """View agent inventory and public verification keys."""
+        return user.role in (Role.DEVELOPER, Role.TEAM_LEAD, Role.SECURITY_REVIEWER, Role.ADMIN, Role.AUDITOR)

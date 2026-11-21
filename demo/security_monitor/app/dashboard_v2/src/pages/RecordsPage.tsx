@@ -73,17 +73,25 @@ export const RecordsPage: React.FC = () => {
   };
 
   const handleExportCSV = () => {
-    const headers = ['task_id', 'agent_id', 'owner', 'team', 'status', 'total_actions', 'stops', 'created_at'];
-    const rows = tasks.map(t => [
-      t.task_id,
-      t.agent_id,
-      (t as any).owner || 'N/A',
-      (t as any).team || 'N/A',
-      t.status,
-      t.total_actions,
-      t.prevented_count || t.os_denials_count || 0,
-      t.created_at,
-    ]);
+    const headers = ['task_id', 'agent_id', 'owner', 'team', 'status', 'total_actions', 'stops', 'created_at', 'key_id', 'signature_status'];
+    const rows = tasks.map(t => {
+      const isSigned = recordsSummary?.signed_ids?.includes(t.task_id);
+      const isFailed = recordsSummary?.failed_ids?.includes(t.task_id);
+      const keyId = recordsSummary?.key_ids?.[t.task_id] || (isSigned ? 'active' : 'N/A');
+      const sigStatus = isSigned ? 'signature_verified' : isFailed ? 'failed' : recordsSummary?.verified_ids?.includes(t.task_id) ? 'unsigned' : 'unknown';
+      return [
+        t.task_id,
+        t.agent_id,
+        (t as any).owner || 'N/A',
+        (t as any).team || 'N/A',
+        t.status,
+        t.total_actions,
+        t.prevented_count || t.os_denials_count || 0,
+        t.created_at,
+        keyId,
+        sigStatus,
+      ];
+    });
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
@@ -92,6 +100,36 @@ export const RecordsPage: React.FC = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleExportJSON = () => {
+    const data = tasks.map(t => {
+      const isSigned = recordsSummary?.signed_ids?.includes(t.task_id);
+      const isFailed = recordsSummary?.failed_ids?.includes(t.task_id);
+      const keyId = recordsSummary?.key_ids?.[t.task_id] || (isSigned ? 'active' : null);
+      const sigStatus = isSigned ? 'signature_verified' : isFailed ? 'failed' : recordsSummary?.verified_ids?.includes(t.task_id) ? 'unsigned' : 'unknown';
+      return {
+        task_id: t.task_id,
+        agent_id: t.agent_id,
+        owner: (t as any).owner || null,
+        team: (t as any).team || null,
+        status: t.status,
+        total_actions: t.total_actions,
+        stops: t.prevented_count || t.os_denials_count || 0,
+        created_at: t.created_at,
+        key_id: keyId,
+        signature_status: sigStatus,
+      };
+    });
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `records_export_${Date.now()}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const filteredTasks = filterStop
@@ -218,6 +256,14 @@ export const RecordsPage: React.FC = () => {
                 <Download className="w-3.5 h-3.5" />
                 Export CSV
               </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleExportJSON}
+              >
+                <Download className="w-3.5 h-3.5" />
+                Export JSON
+              </Button>
             </div>
           </div>
 
@@ -272,6 +318,8 @@ export const RecordsPage: React.FC = () => {
                         <td className="py-2 px-3">
                           {badge === 'failed' ? (
                             <StatusPill tone="bad" label="Verification failed" />
+                          ) : badge === 'signature_verified' ? (
+                            <StatusPill tone="ok" label={`Record checked: signature verified (key ${recordsSummary?.key_ids?.[t.task_id] || 'active'})`} />
                           ) : badge === 'events_only' ? (
                             <StatusPill tone="info" label="events only" />
                           ) : badge === 'checked' ? (
@@ -343,6 +391,8 @@ export const RecordsPage: React.FC = () => {
                 <StatusPill tone="neutral" label="No stored record" />
               ) : selectedReceipt?.verified === false ? (
                 <StatusPill tone="bad" label="Verification failed: entry changed or hash mismatch" />
+              ) : selectedReceipt?.verified_scope === 'signed' ? (
+                <StatusPill tone="ok" label={`Record checked: signature verified (key ${selectedReceipt?.key_id || selectedReceipt?.receipt?.signature?.key_id || 'active'})`} />
               ) : selectedReceipt?.verified_scope === 'events_only' ? (
                 <StatusPill tone="info" label="events only" />
               ) : (

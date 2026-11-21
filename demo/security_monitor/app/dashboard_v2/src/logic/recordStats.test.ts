@@ -39,9 +39,10 @@ describe('what the records show', () => {
 });
 
 describe('recordBadge', () => {
-  const summary = { failed_ids: ['t_bad'], verified_ids: ['t_v1', 't_v0'], events_only_ids: ['t_v0'] };
+  const summary = { failed_ids: ['t_bad'], verified_ids: ['t_v2', 't_v1', 't_v0'], events_only_ids: ['t_v0'], signed_ids: ['t_v2'] };
   it('labels each run only from what the server checked', () => {
     expect(recordBadge('t_bad', summary)).toBe('failed');
+    expect(recordBadge('t_v2', summary)).toBe('signature_verified');
     expect(recordBadge('t_v1', summary)).toBe('checked');
     expect(recordBadge('t_v0', summary)).toBe('events_only');
     expect(recordBadge('t_running', summary)).toBe('none');

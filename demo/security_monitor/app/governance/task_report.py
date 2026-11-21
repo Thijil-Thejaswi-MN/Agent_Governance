@@ -181,7 +181,15 @@ def report_to_csv(report: dict[str, Any]) -> str:
         outcome = "Comparison run: decoy was read (would be blocked by the kernel lock)" if b.get("layer") == "comparison_unlocked" else "attempted, not successful"
         row("blocked", b["timestamp"], b["layer"], b["kind"], b["target"], outcome, b["rule"] or "")
     rec = report["record"]
+    outcome_str = (
+        "signature verified"
+        if rec.get("verified_scope") == "signed"
+        else ("verified" if rec.get("verified") else ("no record" if not rec.get("available") else "does not verify"))
+    )
+    detail_str = rec.get("message") or ""
+    if rec.get("key_id"):
+        detail_str = f"key_id: {rec.get('key_id')}; {detail_str}"
     row("record", report["generated_at"], "hash-chain check", "", rec.get("final_hash") or "",
-        "verified" if rec.get("verified") else ("no record" if not rec.get("available") else "does not verify"),
-        rec.get("message") or "")
+        outcome_str,
+        detail_str)
     return buf.getvalue()

@@ -362,6 +362,17 @@ python scripts/verify_receipt.py ~/agent_workspaces/receipts/<task_id>.json
 
 The launcher prints a JSON summary that includes `task_id` and the receipt path. By default, workspaces and receipts go under `~/agent_workspaces`; to change that, use `--workspace-base` and `--receipts-dir`.
 
+### Signed records
+
+Every new task record carries an Ed25519 signature over its whole-record hash (`document_sha256`), produced with an organisation key that agents cannot read.
+
+- Keys are stored at `$GOVERNANCE_KEYS_DIR/<org_id>/signing_key.pem` (mode 0600, folder 0700).
+- Key rotation preserves historical public keys in `public_keys.json` so existing records continue to verify.
+- Verification works online or offline with `scripts/verify_receipt.py [--pubkey <file>]`.
+- If signing is unavailable, records are preserved unsigned as v1 with the reason recorded; tasks never fail over signing.
+
+See [`docs/RECORDS.md`](docs/RECORDS.md) for details on integrity layers and key management.
+
 ### Using a hosted model
 
 In addition to local Ollama, governed agents can call hosted OpenAI-compatible APIs when the corresponding environment variable is set:
