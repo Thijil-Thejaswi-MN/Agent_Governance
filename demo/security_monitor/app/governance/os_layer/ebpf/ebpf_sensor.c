@@ -38,6 +38,8 @@ struct client_conn {
     int fd;
     uint64_t watched_cgroup;
     int is_active;
+    uid_t uid;
+    pid_t pid;
 };
 
 static struct client_conn g_clients[MAX_CLIENTS];
@@ -355,6 +357,65 @@ static void emit_heartbeat(void) {
     broadcast_line(line, 0);
 }
 
+static int is_peer_in_registered_cgroup(pid_t pid) {
+    if (!g_skel || pid <= 0) return 0;
+    int map_fd = bpf_map__fd(g_skel->maps.task_cgroups);
+    if (map_fd < 0) return 0;
+
+    char proc_path[64];
+    snprintf(proc_path, sizeof(proc_path), "/proc/%d/cgroup", (int)pid);
+    FILE *f = fopen(proc_path, "r");
+    if (!f) return 0;
+
+    char line[512];
+    char cg_rel[512] = {0};
+    while (fgets(line, sizeof(line), f)) {
+        char *nl = strchr(line, '\n');
+        if (nl) *nl = '\0';
+        char *cr = strchr(line, '\r');
+        if (cr) *cr = '\0';
+        if (strncmp(line, "0::", 3) == 0) {
+            strncpy(cg_rel, line + 3, sizeof(cg_rel) - 1);
+            break;
+        }
+    }
+    fclose(f);
+
+    if (cg_rel[0] == '\0') {
+        return 0;
+    }
+
+    struct stat root_st;
+    if (stat("/sys/fs/cgroup", &root_st) != 0) {
+        return 0;
+    }
+
+    char cur_path[1024];
+    snprintf(cur_path, sizeof(cur_path), "/sys/fs/cgroup%s", cg_rel);
+
+    while (1) {
+        struct stat st;
+        if (stat(cur_path, &st) == 0) {
+            uint64_t cgid = st.st_ino;
+            if (st.st_ino != root_st.st_ino) {
+                uint32_t val = 0;
+                if (bpf_map_lookup_elem(map_fd, &cgid, &val) == 0) {
+                    return 1;
+                }
+            }
+        }
+        if (strcmp(cur_path, "/sys/fs/cgroup") == 0 || strcmp(cur_path, "/sys/fs/cgroup/") == 0) {
+            break;
+        }
+        char *slash = strrchr(cur_path, '/');
+        if (!slash || slash <= cur_path + strlen("/sys/fs/cgroup")) {
+            break;
+        }
+        *slash = '\0';
+    }
+    return 0;
+}
+
 static void process_cmd(char *cmd, int client_idx) {
     while (*cmd == ' ' || *cmd == '\t') cmd++;
     char *nl = strchr(cmd, '\n');
@@ -362,6 +423,37 @@ static void process_cmd(char *cmd, int client_idx) {
     char *cr = strchr(cmd, '\r');
     if (cr) *cr = '\0';
     if (!*cmd) return;
+
+    if (client_idx >= 0 && client_idx < MAX_CLIENTS) {
+        uid_t my_uid = getuid();
+        uid_t peer_uid = g_clients[client_idx].uid;
+        pid_t peer_pid = g_clients[client_idx].pid;
+
+        int rejected = 0;
+        const char *reason = NULL;
+
+        if (peer_uid != my_uid) {
+            rejected = 1;
+            reason = "peer uid differs from loader uid";
+        } else if (is_peer_in_registered_cgroup(peer_pid)) {
+            rejected = 1;
+            reason = "peer pid is inside or under a registered task cgroup";
+        }
+
+        if (rejected) {
+            fprintf(stderr, "ebpf_sensor: rejecting command '%s' from pid %d (uid %d): %s\n",
+                    cmd, (int)peer_pid, (int)peer_uid, reason);
+            if (g_clients[client_idx].fd >= 0) {
+                char err_buf[256];
+                snprintf(err_buf, sizeof(err_buf),
+                         "{\"source\":\"ebpf_sensor\",\"type\":\"error\",\"error\":\"permission_denied\",\"reason\":\"%s\"}\n",
+                         reason);
+                ssize_t w = write(g_clients[client_idx].fd, err_buf, strlen(err_buf));
+                (void)w;
+            }
+            return;
+        }
+    }
 
     if (strncmp(cmd, "REGISTER ", 9) == 0 || strncmp(cmd, "WATCH ", 6) == 0 || strncmp(cmd, "ADD ", 4) == 0) {
         char *arg = strchr(cmd, ' ');
@@ -468,6 +560,15 @@ int main(int argc, char **argv) {
 
     int server_fd = -1;
     if (sock_path) {
+        char dir_buf[PATH_MAX];
+        strncpy(dir_buf, sock_path, sizeof(dir_buf) - 1);
+        dir_buf[sizeof(dir_buf) - 1] = '\0';
+        char *last_slash = strrchr(dir_buf, '/');
+        if (last_slash && last_slash != dir_buf) {
+            *last_slash = '\0';
+            mkdir(dir_buf, 0700);
+            chmod(dir_buf, 0700);
+        }
         unlink(sock_path);
         server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
         if (server_fd >= 0) {
@@ -476,7 +577,7 @@ int main(int argc, char **argv) {
             sun.sun_family = AF_UNIX;
             strncpy(sun.sun_path, sock_path, sizeof(sun.sun_path) - 1);
             if (bind(server_fd, (struct sockaddr *)&sun, sizeof(sun)) == 0 && listen(server_fd, 16) == 0) {
-                chmod(sock_path, 0666);
+                chmod(sock_path, 0600);
             } else {
                 fprintf(stderr, "Warning: failed to bind socket %s: %s\n", sock_path, strerror(errno));
                 close(server_fd);
@@ -557,6 +658,15 @@ int main(int argc, char **argv) {
                         g_clients[slot].fd = cfd;
                         g_clients[slot].is_active = 1;
                         g_clients[slot].watched_cgroup = 0;
+                        struct ucred cred;
+                        socklen_t cred_len = sizeof(cred);
+                        if (getsockopt(cfd, SOL_SOCKET, SO_PEERCRED, &cred, &cred_len) == 0) {
+                            g_clients[slot].uid = cred.uid;
+                            g_clients[slot].pid = cred.pid;
+                        } else {
+                            g_clients[slot].uid = (uid_t)-1;
+                            g_clients[slot].pid = -1;
+                        }
                     } else {
                         close(cfd);
                     }

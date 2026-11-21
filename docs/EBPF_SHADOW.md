@@ -11,7 +11,7 @@ When shadow mode is enabled (`GOVERNANCE_EBPF_SHADOW=1`), the task launcher comm
 
 ### Watched Syscalls
 
-The eBPF program attaches to `raw_syscalls/sys_enter` and `raw_syscalls/sys_exit` tracepoints and pairs events by thread ID (`bpf_get_current_pid_tgid`) to record both arguments and return codes:
+The eBPF program attaches to `raw_tp/sys_enter` and `raw_tp/sys_exit` raw tracepoints and pairs events by thread ID (`bpf_get_current_pid_tgid`) to record both arguments and return codes:
 - **Process execution**: `execve`, `execveat`
 - **File opens & creation**: `openat`, `openat2`, `open`
 - **File deletion & directory creation**: `unlinkat`, `unlink`, `renameat2`, `renameat`, `rename`, `mkdirat`, `mkdir`
@@ -31,19 +31,19 @@ The eBPF program attaches to `raw_syscalls/sys_enter` and `raw_syscalls/sys_exit
 
 The API server and task launcher run without administrative privileges (as an unprivileged user). The `ebpf_sensor` binary requires targeted Linux capabilities to load BPF programs and attach to raw tracepoints.
 
+By attaching via `SEC("raw_tp/sys_enter")` and `SEC("raw_tp/sys_exit")` and reading syscall arguments directly from `struct pt_regs`, the loader requires no tracefs directory access, eliminating `CAP_DAC_READ_SEARCH`. Modern Linux kernels (>= 5.11) account BPF map memory via cgroups, eliminating `CAP_SYS_RESOURCE`.
+
 ### Required Capabilities
 
 - `CAP_BPF`: load BPF programs and create BPF maps.
-- `CAP_PERFMON`: attach BPF programs to tracepoints and read performance counters.
-- `CAP_SYS_RESOURCE`: configure map memory limits.
-- `CAP_DAC_READ_SEARCH`: read tracepoint format descriptors under `/sys/kernel/tracing/` (which default to mode 0700 root:root).
+- `CAP_PERFMON`: attach BPF programs to raw tracepoints.
 
 ### Setting File Capabilities
 
 Grant file capabilities directly to the compiled loader binary:
 
 ```bash
-sudo setcap cap_bpf,cap_perfmon,cap_sys_resource,cap_dac_read_search+ep demo/security_monitor/app/governance/os_layer/ebpf/ebpf_sensor
+sudo setcap cap_bpf,cap_perfmon+ep demo/security_monitor/app/governance/os_layer/ebpf/ebpf_sensor
 ```
 
 Verify assigned capabilities:
@@ -51,6 +51,16 @@ Verify assigned capabilities:
 ```bash
 getcap demo/security_monitor/app/governance/os_layer/ebpf/ebpf_sensor
 ```
+
+## Control Socket Architecture & Access Controls
+
+The loader exposes a UNIX domain socket for task cgroup registration:
+- **Location**: `~/.ebpf_sensor/ebpf_sensor.sock`, residing in a dedicated directory with mode `0700` owned by the user, outside all task workspaces.
+- **Permissions**: Created with mode `0600`.
+- **Peer Credentials Verification**: On every incoming connection, the loader inspects `SO_PEERCRED`. Commands (`REGISTER`, `UNREGISTER`, `QUIT`) are rejected with `permission_denied` if:
+  1. The peer UID does not match the loader UID; OR
+  2. The peer PID resides in or under an actively registered task cgroup.
+This prevents sandboxed task processes from unregistering monitoring or terminating the sensor daemon.
 
 ## Reference Environment
 

@@ -113,13 +113,15 @@ def normalise_op(syscall: str, op: str | None = None) -> str:
     return sc
 
 
-def normalise_target(target: str | None, abs_target: str | None = None) -> str:
+def normalise_target(target: str | None, abs_target: str | None = None, task_cwd: str | Path | None = None) -> str:
     t = abs_target or target or ""
     t = t.strip()
     if not t:
         return ""
     if t.startswith("unix:") or t.startswith("inet:") or t.startswith("inet6:") or t.startswith("fd:"):
         return t
+    if not t.startswith("/") and task_cwd:
+        t = os.path.join(str(task_cwd), t)
     try:
         norm = os.path.normpath(t)
         return norm
@@ -151,28 +153,76 @@ def ptrace_only_reason(syscall: str, target: str) -> str:
     return f"ptrace_specific_tracepoint ({sc})"
 
 
-def classify_ebpf_only(op: str, target: str, syscall: str) -> str:
-    if op == "send" and ("inet:" in target or "inet6:" in target):
-        return "UDP"
+PREFIX_REASONS: dict[str, str] = {
+    "/proc": "sensor.c:154,192,557-558 reads /proc/<pid>/stat and /proc/<pid>/cgroup for each event; sensor.c does not ptrace-trace itself",
+    "/usr/lib": "glibc dynamic linker and runtime libraries loaded during binary execution (dl-open/elf startup)",
+    "/lib": "glibc dynamic linker and essential shared libraries loaded during execve initialization",
+    "/etc": "system configuration files (ld.so.cache, nsswitch.conf, resolv.conf) opened during glibc startup",
+    "/dev": "system device nodes (/dev/null, /dev/urandom) opened during process runtime",
+    "/sys": "kernel system information (/sys/devices/system/cpu, /sys/kernel) inspected by runtime environment",
+    "/tmp": "temporary files created or inspected by shell commands and tool runners",
+    "workspace": "launcher.py:420,1015 and tool runner access to workspace directory files and Python bytecode cache",
+    "network_udp": "raw_syscall tracepoint captures UDP sendto/sendmsg datagrams bypassing local TCP proxy",
+    "network_server": "raw_syscall tracepoint records socket server lifecycle (bind/listen/accept) not emitted by ptrace",
+    "process_lifecycle": "raw_syscall tracepoint captures clone/fork/exit handled via ptrace event notifications",
+    "other": "launcher.py:1020,1418 task decoy setup/cleanup in user home directory and proxy.py:150 loopback connect",
+}
+
+
+def classify_ebpf_only(
+    op: str,
+    target: str,
+    syscall: str,
+    workspace_path: str | Path | None = None,
+) -> tuple[str, str, str]:
+    if op == "send" and ("inet:" in target or "inet6:" in target or "8999" in target):
+        return ("UDP", "network_udp", PREFIX_REASONS["network_udp"])
     if op in ("bind", "listen", "accept"):
-        return "bind/listen/accept"
+        return ("bind-listen-accept", "network_server", PREFIX_REASONS["network_server"])
     if op in ("clone", "exit"):
-        return "clone/exit"
-    return "other"
+        return ("clone-exit", "process_lifecycle", PREFIX_REASONS["process_lifecycle"])
+
+    ws_str = str(workspace_path) if workspace_path else ""
+    if ws_str and (target.startswith(ws_str) or ws_str.startswith(target)):
+        return ("workspace", "workspace", PREFIX_REASONS["workspace"])
+    if "/ebpf_shadow_workspaces" in target or "/ws_round_" in target or "/ws_" in target or "/workspace" in target:
+        return ("workspace", "workspace", PREFIX_REASONS["workspace"])
+
+    if target.startswith("/proc"):
+        return ("library-and-system", "/proc", PREFIX_REASONS["/proc"])
+    if target.startswith("/usr/lib"):
+        return ("library-and-system", "/usr/lib", PREFIX_REASONS["/usr/lib"])
+    if target.startswith("/lib") or target.startswith("/lib64"):
+        return ("library-and-system", "/lib", PREFIX_REASONS["/lib"])
+    if target.startswith("/etc"):
+        return ("library-and-system", "/etc", PREFIX_REASONS["/etc"])
+    if target.startswith("/dev"):
+        return ("library-and-system", "/dev", PREFIX_REASONS["/dev"])
+    if target.startswith("/sys"):
+        return ("library-and-system", "/sys", PREFIX_REASONS["/sys"])
+    if target.startswith("/tmp"):
+        return ("library-and-system", "/tmp", PREFIX_REASONS["/tmp"])
+
+    return ("unexplained", "other", PREFIX_REASONS["other"])
 
 
 def match_task_events(
     ptrace_events: list[dict[str, Any]],
     ebpf_events: list[dict[str, Any]],
+    task_cwd: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Matches ptrace and eBPF events by (pid, op, normalised target, result class)."""
+    """Matches ptrace and eBPF events by (pid, op, normalised target, result class).
+
+    Only exact matches on all four dimensions count as matched.
+    Loose basename and pid_op matches are collected for diagnostic reporting.
+    """
     ebpf_pool: list[dict[str, Any]] = []
     for ev in ebpf_events:
         if ev.get("type") != "syscall":
             continue
         pid = ev.get("pid")
         op = normalise_op(ev.get("syscall", ""), ev.get("op", ""))
-        tgt = normalise_target(ev.get("target"), ev.get("abs_target"))
+        tgt = normalise_target(ev.get("target"), ev.get("abs_target"), task_cwd=task_cwd)
         res = normalise_result_class(ev.get("result"), ev.get("ret"))
         ebpf_pool.append({
             "pid": pid,
@@ -184,7 +234,9 @@ def match_task_events(
             "used": False,
         })
 
-    matched_count = 0
+    exact_count = 0
+    basename_matches: list[dict[str, Any]] = []
+    pid_op_matches: list[dict[str, Any]] = []
     ptrace_only: list[dict[str, Any]] = []
 
     for pev in ptrace_events:
@@ -192,37 +244,49 @@ def match_task_events(
             continue
         pid = pev.get("pid")
         op = normalise_op(pev.get("syscall", ""), pev.get("op") or pev.get("kind"))
-        tgt = normalise_target(pev.get("target"), pev.get("abs_target"))
+        tgt = normalise_target(pev.get("target"), pev.get("abs_target"), task_cwd=task_cwd)
         tgt_base = os.path.basename(tgt) if "/" in tgt else tgt
         res = normalise_result_class(pev.get("result"), pev.get("ret"))
 
         found_idx = -1
-        # Exact match
+        # Exact match ONLY
         for idx, entry in enumerate(ebpf_pool):
             if not entry["used"] and entry["pid"] == pid and entry["op"] == op:
                 if entry["target"] == tgt and entry["result_class"] == res:
                     found_idx = idx
                     break
 
-        # Fallback: match by basename if path normalization differs
-        if found_idx == -1:
-            for idx, entry in enumerate(ebpf_pool):
-                if not entry["used"] and entry["pid"] == pid and entry["op"] == op:
-                    if entry["target_base"] == tgt_base and entry["result_class"] == res:
-                        found_idx = idx
-                        break
-
-        # Fallback: match by pid and op if target is empty or generic
-        if found_idx == -1 and (not tgt or op in ("clone", "exit")):
-            for idx, entry in enumerate(ebpf_pool):
-                if not entry["used"] and entry["pid"] == pid and entry["op"] == op:
-                    found_idx = idx
-                    break
-
         if found_idx != -1:
             ebpf_pool[found_idx]["used"] = True
-            matched_count += 1
+            exact_count += 1
         else:
+            # Diagnostic loose match tracking: do NOT mark used and do NOT count as matched
+            matched_basename = False
+            for entry in ebpf_pool:
+                if not entry["used"] and entry["pid"] == pid and entry["op"] == op:
+                    if entry["result_class"] == res and entry["target_base"] == tgt_base:
+                        if len(basename_matches) < 20:
+                            basename_matches.append({
+                                "pid": pid,
+                                "op": op,
+                                "result_class": res,
+                                "ptrace_target": tgt,
+                                "ebpf_target": entry["target"],
+                            })
+                        matched_basename = True
+                        break
+            if not matched_basename:
+                for entry in ebpf_pool:
+                    if not entry["used"] and entry["pid"] == pid and entry["op"] == op:
+                        if len(pid_op_matches) < 20:
+                            pid_op_matches.append({
+                                "pid": pid,
+                                "op": op,
+                                "ptrace_target": tgt,
+                                "ebpf_target": entry["target"],
+                            })
+                        break
+
             reason = ptrace_only_reason(pev.get("syscall", ""), tgt)
             ptrace_only.append({
                 "pid": pid,
@@ -236,15 +300,24 @@ def match_task_events(
     ebpf_only: list[dict[str, Any]] = []
     ebpf_by_category: dict[str, int] = {
         "UDP": 0,
-        "bind/listen/accept": 0,
-        "clone/exit": 0,
-        "other": 0,
+        "bind-listen-accept": 0,
+        "clone-exit": 0,
+        "library-and-system": 0,
+        "workspace": 0,
+        "unexplained": 0,
     }
+    ebpf_by_prefix: dict[str, int] = {}
 
     for entry in ebpf_pool:
         if not entry["used"]:
-            cat = classify_ebpf_only(entry["op"], entry["target"], entry["raw"].get("syscall", ""))
+            cat, pfx, reason = classify_ebpf_only(
+                entry["op"],
+                entry["target"],
+                entry["raw"].get("syscall", ""),
+                workspace_path=task_cwd,
+            )
             ebpf_by_category[cat] = ebpf_by_category.get(cat, 0) + 1
+            ebpf_by_prefix[pfx] = ebpf_by_prefix.get(pfx, 0) + 1
             ebpf_only.append({
                 "pid": entry["pid"],
                 "op": entry["op"],
@@ -252,15 +325,21 @@ def match_task_events(
                 "syscall": entry["raw"].get("syscall"),
                 "result_class": entry["result_class"],
                 "category": cat,
+                "prefix": pfx,
+                "reason": reason,
             })
 
     return {
-        "matched": matched_count,
+        "exact": exact_count,
+        "matched": exact_count,
+        "basename_matches": basename_matches,
+        "pid_op_matches": pid_op_matches,
         "ptrace_only": ptrace_only,
         "ptrace_only_count": len(ptrace_only),
         "ebpf_only": ebpf_only,
         "ebpf_only_count": len(ebpf_only),
         "ebpf_by_category": ebpf_by_category,
+        "ebpf_by_prefix": ebpf_by_prefix,
     }
 
 
@@ -416,20 +495,62 @@ def run_single_task(
                     except json.JSONDecodeError:
                         pass
 
-    match_res = match_task_events(ptrace_events, ebpf_events)
+    match_res = match_task_events(ptrace_events, ebpf_events, task_cwd=res.workspace)
     ebpf_meta = (res.receipt or {}).get("extra", {}).get("ebpf_shadow", {})
+
+    udp_probe_info = None
+    if "udp" in spec.task_id:
+        udp_ev = None
+        for ev in ebpf_events:
+            tgt = ev.get("target", "") + " " + ev.get("abs_target", "")
+            if ev.get("syscall") == "sendto" or "8999" in tgt:
+                udp_ev = ev
+                break
+        send_status = "not_observed"
+        if udp_ev:
+            ret = udp_ev.get("ret", 0)
+            if ret >= 0 or udp_ev.get("result") == "ok":
+                send_status = f"succeeded (kernel ret={ret})"
+            else:
+                send_status = f"refused (kernel ret={ret}, result={udp_ev.get('result')})"
+
+        termination = (res.receipt or {}).get("termination", {})
+        stdout_txt = ""
+        stderr_txt = ""
+        if res.control_dir:
+            if (res.control_dir / "stdout.log").exists():
+                stdout_txt = (res.control_dir / "stdout.log").read_text(errors="replace").strip()
+            if (res.control_dir / "stderr.log").exists():
+                stderr_txt = (res.control_dir / "stderr.log").read_text(errors="replace").strip()
+
+        udp_probe_info = {
+            "task_id": task_id,
+            "send_status": send_status,
+            "sensor_exit_code": termination.get("sensor_exit_code"),
+            "termination_reason": termination.get("reason"),
+            "stdout": stdout_txt,
+            "stderr": stderr_txt,
+            "classified_udp": any(e.get("category") == "UDP" for e in match_res["ebpf_only"]) or any(normalise_op(e.get("syscall", "")) == "send" for e in ebpf_events),
+        }
 
     return {
         "task_id": task_id,
         "ptrace_count": len(ptrace_events),
         "ebpf_count": len(ebpf_events),
+        "exact": match_res["exact"],
         "matched": match_res["matched"],
+        "basename_matches": match_res["basename_matches"],
+        "basename_count": len(match_res["basename_matches"]),
+        "pid_op_matches": match_res["pid_op_matches"],
+        "pid_op_count": len(match_res["pid_op_matches"]),
         "ptrace_only": match_res["ptrace_only"],
         "ebpf_only": match_res["ebpf_only"],
         "ebpf_by_category": match_res["ebpf_by_category"],
+        "ebpf_by_prefix": match_res["ebpf_by_prefix"],
         "ebpf_shadow_meta": ebpf_meta,
         "dropped": ebpf_meta.get("dropped", 0),
         "heartbeat_ok": ebpf_meta.get("heartbeat_ok", False),
+        "udp_probe_info": udp_probe_info,
     }
 
 
@@ -458,7 +579,9 @@ def run_concurrency_round(
 
     total_ptrace = sum(r["ptrace_count"] for r in results)
     total_ebpf = sum(r["ebpf_count"] for r in results)
-    total_matched = sum(r["matched"] for r in results)
+    total_exact = sum(r["exact"] for r in results)
+    total_basename = sum(r["basename_count"] for r in results)
+    total_pid_op = sum(r["pid_op_count"] for r in results)
     total_dropped = sum(r["dropped"] for r in results)
     all_heartbeats_ok = all(r["heartbeat_ok"] for r in results)
 
@@ -468,10 +591,22 @@ def run_concurrency_round(
             re_str = po["reason"]
             ptrace_reasons[re_str] = ptrace_reasons.get(re_str, 0) + 1
 
-    ebpf_categories: dict[str, int] = {}
+    ebpf_categories: dict[str, int] = {
+        "UDP": 0,
+        "bind-listen-accept": 0,
+        "clone-exit": 0,
+        "library-and-system": 0,
+        "workspace": 0,
+        "unexplained": 0,
+    }
     for r in results:
         for cat, cnt in r["ebpf_by_category"].items():
             ebpf_categories[cat] = ebpf_categories.get(cat, 0) + cnt
+
+    ebpf_prefixes: dict[str, int] = {}
+    for r in results:
+        for pfx, cnt in r["ebpf_by_prefix"].items():
+            ebpf_prefixes[pfx] = ebpf_prefixes.get(pfx, 0) + cnt
 
     return {
         "concurrency": concurrency,
@@ -479,11 +614,15 @@ def run_concurrency_round(
         "wall_time_s": round(wall_s, 2),
         "total_ptrace_events": total_ptrace,
         "total_ebpf_events": total_ebpf,
-        "total_matched": total_matched,
+        "total_exact": total_exact,
+        "total_matched": total_exact,
+        "total_basename": total_basename,
+        "total_pid_op": total_pid_op,
         "total_dropped": total_dropped,
         "heartbeat_ok": all_heartbeats_ok,
         "ptrace_only_by_reason": ptrace_reasons,
         "ebpf_only_by_category": ebpf_categories,
+        "ebpf_only_by_prefix": ebpf_prefixes,
         "tasks": results,
     }
 
@@ -499,22 +638,47 @@ def generate_markdown_report(report_data: dict[str, Any]) -> str:
         "",
         "## Summary by Concurrency Level",
         "",
-        "| Concurrency | Tasks | Ptrace Events | eBPF Events | Matched | Ptrace-Only | eBPF-Only (UDP / bind / clone / other) | Dropped | Heartbeat |",
+        "| Concurrency | Tasks | Exact | Basename | PID+Op | Ptrace-Only | eBPF-Only (UDP / bind-listen-accept / clone-exit / library-and-system / workspace / unexplained) | Dropped | Heartbeat |",
         "|---|---|---|---|---|---|---|---|---|",
     ]
 
     for round_res in report_data.get("rounds", []):
         c = round_res["concurrency"]
         tasks = round_res["tasks_run"]
-        pe = round_res["total_ptrace_events"]
-        ee = round_res["total_ebpf_events"]
-        m = round_res["total_matched"]
+        exact = round_res["total_exact"]
+        basename = round_res["total_basename"]
+        pid_op = round_res["total_pid_op"]
         po = sum(round_res["ptrace_only_by_reason"].values())
         eb_cats = round_res["ebpf_only_by_category"]
-        eb_str = f"{eb_cats.get('UDP', 0)} / {eb_cats.get('bind/listen/accept', 0)} / {eb_cats.get('clone/exit', 0)} / {eb_cats.get('other', 0)}"
+        eb_str = f"{eb_cats.get('UDP', 0)} / {eb_cats.get('bind-listen-accept', 0)} / {eb_cats.get('clone-exit', 0)} / {eb_cats.get('library-and-system', 0)} / {eb_cats.get('workspace', 0)} / {eb_cats.get('unexplained', 0)}"
         dropped = round_res["total_dropped"]
         hb = "OK" if round_res["heartbeat_ok"] else "FAIL"
-        lines.append(f"| {c} | {tasks} | {pe} | {ee} | {m} | {po} | {eb_str} | {dropped} | {hb} |")
+        lines.append(f"| {c} | {tasks} | {exact} | {basename} | {pid_op} | {po} | {eb_str} | {dropped} | {hb} |")
+
+    lines.extend([
+        "",
+        "## eBPF-Only Event Prefix Breakdown",
+        "",
+        "| Prefix / Category | Operation | Count | Reason & File/Line Reference |",
+        "|---|---|---|---|",
+    ])
+    all_prefixes: dict[str, int] = {}
+    for round_res in report_data.get("rounds", []):
+        for pfx, cnt in round_res.get("ebpf_only_by_prefix", {}).items():
+            all_prefixes[pfx] = all_prefixes.get(pfx, 0) + cnt
+
+    for pfx, reason in PREFIX_REASONS.items():
+        cnt = all_prefixes.get(pfx, 0)
+        op_label = "any"
+        if pfx == "network_udp":
+            op_label = "send"
+        elif pfx == "network_server":
+            op_label = "bind/listen/accept"
+        elif pfx == "process_lifecycle":
+            op_label = "clone/exit"
+        elif pfx in ("/proc", "/usr/lib", "/lib", "/etc", "/dev", "/sys", "/tmp", "workspace"):
+            op_label = "open"
+        lines.append(f"| `{pfx}` | {op_label} | {cnt} | {reason} |")
 
     lines.extend([
         "",
@@ -531,6 +695,64 @@ def generate_markdown_report(report_data: dict[str, Any]) -> str:
             lines.append(f"- **{r}**: {cnt} occurrences")
     else:
         lines.append("None. All observed ptrace events were matched by eBPF.")
+
+    lines.extend([
+        "",
+        "## UDP Probe Analysis",
+        "",
+    ])
+    udp_probes = []
+    for round_res in report_data.get("rounds", []):
+        for t in round_res.get("tasks", []):
+            if t.get("udp_probe_info"):
+                udp_probes.append((round_res["concurrency"], t["udp_probe_info"]))
+
+    if udp_probes:
+        for conc, info in udp_probes:
+            lines.append(f"### Concurrency {conc} (`{info['task_id']}`)")
+            lines.append(f"- Socket Send Result: {info['send_status']}")
+            lines.append(f"- Classified as UDP in eBPF: {'YES' if info['classified_udp'] else 'NO'}")
+            lines.append(f"- Sensor Exit Code: {info['sensor_exit_code']}")
+            lines.append(f"- Scope Termination Reason: {info['termination_reason']}")
+            if info["stdout"]:
+                lines.append(f"- Stdout: `{info['stdout']}`")
+            if info["stderr"]:
+                lines.append(f"- Stderr: `{info['stderr']}`")
+            lines.append("")
+    else:
+        lines.append("No UDP probe tasks found.")
+
+    lines.extend([
+        "",
+        "## Loose Match Diagnostics (Basename & PID+Op Matches)",
+        "",
+    ])
+    sample_basename = []
+    sample_pid_op = []
+    for round_res in report_data.get("rounds", []):
+        for t in round_res.get("tasks", []):
+            for bm in t.get("basename_matches", []):
+                if len(sample_basename) < 20:
+                    sample_basename.append(bm)
+            for po in t.get("pid_op_matches", []):
+                if len(sample_pid_op) < 20:
+                    sample_pid_op.append(po)
+
+    if sample_basename:
+        lines.append(f"### Basename Matches (Loose, not counted as matched; {len(sample_basename)} sample occurrences)")
+        for bm in sample_basename:
+            lines.append(f"- PID {bm['pid']} `{bm['op']}` [{bm['result_class']}]: ptrace=`{bm['ptrace_target']}` vs ebpf=`{bm['ebpf_target']}`")
+    else:
+        lines.append("### Basename Matches: None")
+
+    if sample_pid_op:
+        lines.append("")
+        lines.append(f"### PID+Op Matches (Loose, not counted as matched; {len(sample_pid_op)} sample occurrences)")
+        for po in sample_pid_op:
+            lines.append(f"- PID {po['pid']} `{po['op']}`: ptrace=`{po['ptrace_target']}` vs ebpf=`{po['ebpf_target']}`")
+    else:
+        lines.append("")
+        lines.append("### PID+Op Matches: None")
 
     lines.extend([
         "",

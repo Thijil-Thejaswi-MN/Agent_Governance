@@ -142,7 +142,47 @@ def test_event_matching_and_diff_logic():
 
     assert diff["ebpf_only_count"] == 2
     assert diff["ebpf_by_category"]["UDP"] == 1
-    assert diff["ebpf_by_category"]["bind/listen/accept"] == 1
+    assert diff["ebpf_by_category"]["bind-listen-accept"] == 1
+
+
+def test_basename_match_not_counted_as_matched():
+    ptrace_events = [{
+        "type": "syscall",
+        "pid": 2001,
+        "syscall": "openat",
+        "op": "open",
+        "target": "notes.txt",
+        "abs_target": "/workspace/notes.txt",
+        "result": "ok",
+        "ret": 3,
+    }]
+    ebpf_events = [{
+        "type": "syscall",
+        "pid": 2001,
+        "syscall": "openat",
+        "op": "open",
+        "target": "/etc/notes.txt",
+        "abs_target": "/etc/notes.txt",
+        "result": "ok",
+        "ret": 3,
+        "dropped": 0,
+    }]
+    res = match_task_events(ptrace_events, ebpf_events)
+    # Basename-only match must NOT count as matched
+    assert res["exact"] == 0
+    assert res["matched"] == 0
+    assert len(res["basename_matches"]) == 1
+    assert res["basename_matches"][0]["ptrace_target"] == "/workspace/notes.txt"
+    assert res["basename_matches"][0]["ebpf_target"] == "/etc/notes.txt"
+    assert res["ptrace_only_count"] == 1
+    assert res["ebpf_only_count"] == 1
+
+
+def test_udp_send_classified_as_udp():
+    cat, pfx, reason = classify_ebpf_only("send", "inet:127.0.0.1:8999", "sendto")
+    assert cat == "UDP"
+    assert pfx == "network_udp"
+    assert "UDP" in reason
 
 
 def test_ebpf_shadow_unavailable_path(monkeypatch, tmp_path):
@@ -286,6 +326,126 @@ def test_os_layer_ebpf_sensor_live(tmp_path):
 
         assert cat_seen, f"Expected cat event among: {events_seen}"
         assert udp_seen, f"Expected UDP event among: {events_seen}"
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
+@pytest.mark.skipif(
+    not os.path.exists("/sys/kernel/btf/vmlinux"),
+    reason="Kernel BTF not present on this machine",
+)
+def test_control_socket_rejection_from_registered_cgroup(tmp_path):
+    if not EBPF_SENSOR_BIN.exists():
+        pytest.skip("ebpf_sensor binary not built yet")
+
+    sock_dir = tmp_path / "sock_dir"
+    sock_dir.mkdir(mode=0o700)
+    test_sock = sock_dir / "test_reject.sock"
+
+    cmd = [str(EBPF_SENSOR_BIN), "--socket", str(test_sock)]
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+
+    try:
+        for _ in range(20):
+            if proc.poll() is not None:
+                _, err = proc.communicate()
+                pytest.skip(f"ebpf_sensor lacking privileges: {err.strip()}")
+            if test_sock.exists():
+                break
+            time.sleep(0.05)
+
+        if not test_sock.exists():
+            proc.kill()
+            pytest.skip("ebpf_sensor socket did not appear")
+
+        mode = test_sock.stat().st_mode & 0o777
+        assert mode == 0o600, f"Expected socket mode 0600, got {oct(mode)}"
+
+        cg_path = None
+        try:
+            with open("/proc/self/cgroup") as f:
+                for line in f:
+                    if line.startswith("0::"):
+                        cg_path = line[3:].strip()
+        except OSError:
+            pass
+
+        if not cg_path:
+            pytest.skip("Cannot determine current cgroup")
+
+        cgid = get_cgroup_id(cg_path)
+        if not cgid:
+            pytest.skip("Cannot determine cgroup inode id")
+
+        import socket as py_socket
+        s = py_socket.socket(py_socket.AF_UNIX, py_socket.SOCK_STREAM)
+        s.settimeout(2.0)
+        s.connect(str(test_sock))
+        s.sendall(f"REGISTER {cgid}\n".encode())
+
+        sock_file = s.makefile("r", encoding="utf-8", errors="replace")
+        reg_ack = False
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            line = sock_file.readline()
+            if not line:
+                break
+            try:
+                data = json.loads(line.strip())
+                if data.get("type") == "ack" and data.get("action") == "registered":
+                    reg_ack = True
+                    break
+            except json.JSONDecodeError:
+                pass
+        assert reg_ack, "Expected registration ack"
+
+        # Current process is inside registered cgroup: UNREGISTER must be rejected
+        s.sendall(f"UNREGISTER {cgid}\n".encode())
+        unreg_err = None
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            line = sock_file.readline()
+            if not line:
+                break
+            try:
+                data = json.loads(line.strip())
+                if data.get("type") == "error":
+                    unreg_err = data
+                    break
+            except json.JSONDecodeError:
+                pass
+        assert unreg_err is not None, "Expected error response for UNREGISTER"
+        assert unreg_err.get("error") == "permission_denied"
+
+        # QUIT must also be rejected
+        s.sendall(b"QUIT\n")
+        quit_err = None
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            line = sock_file.readline()
+            if not line:
+                break
+            try:
+                data = json.loads(line.strip())
+                if data.get("type") == "error":
+                    quit_err = data
+                    break
+            except json.JSONDecodeError:
+                pass
+        assert quit_err is not None, "Expected error response for QUIT"
+        assert quit_err.get("error") == "permission_denied"
+
+        # Sensor process must still be running and reporting
+        time.sleep(0.2)
+        assert proc.poll() is None, "ebpf_sensor must remain running after rejected QUIT command"
+
+        sock_file.close()
+        s.close()
     finally:
         if proc.poll() is None:
             proc.terminate()

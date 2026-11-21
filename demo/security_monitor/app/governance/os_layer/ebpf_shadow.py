@@ -19,7 +19,8 @@ from typing import Any
 HERE = Path(__file__).resolve().parent
 EBPF_DIR = HERE / "ebpf"
 EBPF_SENSOR_BIN = EBPF_DIR / "ebpf_sensor"
-DEFAULT_SOCKET_PATH = Path("/tmp/gov_ebpf_sensor.sock")
+DEFAULT_SOCKET_DIR = Path.home() / ".ebpf_sensor"
+DEFAULT_SOCKET_PATH = DEFAULT_SOCKET_DIR / "ebpf_sensor.sock"
 
 
 def is_ebpf_shadow_enabled() -> bool:
@@ -77,6 +78,13 @@ class EBPFShadowManager:
 
             if not os.access(EBPF_SENSOR_BIN, os.X_OK):
                 return False, f"loader binary not executable: {EBPF_SENSOR_BIN}"
+
+            # Ensure socket directory exists with user-only permissions (0700)
+            try:
+                self.socket_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                os.chmod(self.socket_path.parent, 0o700)
+            except OSError:
+                pass
 
             # Remove stale socket file if present
             try:

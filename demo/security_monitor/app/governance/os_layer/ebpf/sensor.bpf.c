@@ -158,14 +158,24 @@ static __always_inline void copy_str(char *dst, const char *src, __u32 max_len, 
     }
 }
 
-SEC("tracepoint/raw_syscalls/sys_enter")
-int tracepoint_raw_syscalls_sys_enter(struct trace_event_raw_sys_enter *ctx) {
+SEC("raw_tp/sys_enter")
+int BPF_PROG(raw_tp_sys_enter, struct pt_regs *regs, long id) {
+    if (!regs) {
+        return 0;
+    }
     __u64 cgid = get_monitored_cgroup_id();
     if (!cgid) {
         return 0;
     }
 
-    long nr = ctx->id;
+    long nr = id;
+    unsigned long args[6];
+    args[0] = (unsigned long)PT_REGS_PARM1_CORE_SYSCALL(regs);
+    args[1] = (unsigned long)PT_REGS_PARM2_CORE_SYSCALL(regs);
+    args[2] = (unsigned long)PT_REGS_PARM3_CORE_SYSCALL(regs);
+    args[3] = (unsigned long)PT_REGS_PARM4_CORE_SYSCALL(regs);
+    args[4] = (unsigned long)PT_REGS_PARM5_CORE_SYSCALL(regs);
+    args[5] = (unsigned long)PT_REGS_PARM6_CORE_SYSCALL(regs);
     __u32 op = EBPF_OP_UNKNOWN;
 
     switch (nr) {
@@ -240,37 +250,37 @@ int tracepoint_raw_syscalls_sys_enter(struct trace_event_raw_sys_enter *ctx) {
     ev->target_status = TARGET_STATUS_NONE;
 
     if (nr == SYS_OPENAT) {
-        ev->dfd = (__s32)ctx->args[0];
-        copy_str(ev->target, (const char *)ctx->args[1], TARGET_PATH_MAX, &ev->target_status);
-        ev->flags = ctx->args[2];
-        ev->aux = ctx->args[3];
+        ev->dfd = (__s32)args[0];
+        copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX, &ev->target_status);
+        ev->flags = args[2];
+        ev->aux = args[3];
         ev->has_target = 1;
     } else if (nr == SYS_OPENAT2) {
-        ev->dfd = (__s32)ctx->args[0];
-        copy_str(ev->target, (const char *)ctx->args[1], TARGET_PATH_MAX, &ev->target_status);
+        ev->dfd = (__s32)args[0];
+        copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX, &ev->target_status);
         __u64 how_flags = 0;
-        bpf_probe_read_user(&how_flags, sizeof(how_flags), (void *)ctx->args[2]);
+        bpf_probe_read_user(&how_flags, sizeof(how_flags), (void *)args[2]);
         ev->flags = how_flags;
         ev->has_target = 1;
     } else if (nr == SYS_OPEN) {
         ev->dfd = AT_FDCWD_VAL;
-        copy_str(ev->target, (const char *)ctx->args[0], TARGET_PATH_MAX, &ev->target_status);
-        ev->flags = ctx->args[1];
-        ev->aux = ctx->args[2];
+        copy_str(ev->target, (const char *)args[0], TARGET_PATH_MAX, &ev->target_status);
+        ev->flags = args[1];
+        ev->aux = args[2];
         ev->has_target = 1;
     } else if (nr == SYS_EXECVE) {
         ev->dfd = AT_FDCWD_VAL;
-        copy_str(ev->target, (const char *)ctx->args[0], TARGET_PATH_MAX, &ev->target_status);
+        copy_str(ev->target, (const char *)args[0], TARGET_PATH_MAX, &ev->target_status);
         ev->has_target = 1;
     } else if (nr == SYS_EXECVEAT) {
-        ev->dfd = (__s32)ctx->args[0];
-        copy_str(ev->target, (const char *)ctx->args[1], TARGET_PATH_MAX, &ev->target_status);
-        ev->flags = ctx->args[4];
+        ev->dfd = (__s32)args[0];
+        copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX, &ev->target_status);
+        ev->flags = args[4];
         ev->has_target = 1;
     } else if (nr == SYS_CONNECT || nr == SYS_BIND) {
-        ev->dfd = (__s32)ctx->args[0];
-        void *sock_ptr = (void *)ctx->args[1];
-        __u32 sock_len = (__u32)ctx->args[2];
+        ev->dfd = (__s32)args[0];
+        void *sock_ptr = (void *)args[1];
+        __u32 sock_len = (__u32)args[2];
         if (sock_len > SOCK_ADDR_MAX) {
             sock_len = SOCK_ADDR_MAX;
         }
@@ -280,17 +290,17 @@ int tracepoint_raw_syscalls_sys_enter(struct trace_event_raw_sys_enter *ctx) {
             ev->has_sock = 1;
         }
     } else if (nr == SYS_LISTEN) {
-        ev->dfd = (__s32)ctx->args[0];
-        ev->flags = ctx->args[1];
+        ev->dfd = (__s32)args[0];
+        ev->flags = args[1];
     } else if (nr == SYS_ACCEPT || nr == SYS_ACCEPT4) {
-        ev->dfd = (__s32)ctx->args[0];
+        ev->dfd = (__s32)args[0];
         if (nr == SYS_ACCEPT4) {
-            ev->flags = ctx->args[3];
+            ev->flags = args[3];
         }
     } else if (nr == SYS_SENDTO) {
-        ev->dfd = (__s32)ctx->args[0];
-        void *dest_ptr = (void *)ctx->args[4];
-        __u32 dest_len = (__u32)ctx->args[5];
+        ev->dfd = (__s32)args[0];
+        void *dest_ptr = (void *)args[4];
+        __u32 dest_len = (__u32)args[5];
         if (!dest_ptr || dest_len == 0) {
             return 0;
         }
@@ -301,8 +311,8 @@ int tracepoint_raw_syscalls_sys_enter(struct trace_event_raw_sys_enter *ctx) {
         ev->sock_len = dest_len;
         ev->has_sock = 1;
     } else if (nr == SYS_SENDMSG) {
-        ev->dfd = (__s32)ctx->args[0];
-        void *msg_ptr = (void *)ctx->args[1];
+        ev->dfd = (__s32)args[0];
+        void *msg_ptr = (void *)args[1];
         if (!msg_ptr) {
             return 0;
         }
@@ -321,47 +331,47 @@ int tracepoint_raw_syscalls_sys_enter(struct trace_event_raw_sys_enter *ctx) {
         ev->sock_len = rlen;
         ev->has_sock = 1;
     } else if (nr == SYS_UNLINKAT) {
-        ev->dfd = (__s32)ctx->args[0];
-        copy_str(ev->target, (const char *)ctx->args[1], TARGET_PATH_MAX, &ev->target_status);
-        ev->flags = ctx->args[2];
+        ev->dfd = (__s32)args[0];
+        copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX, &ev->target_status);
+        ev->flags = args[2];
         ev->has_target = 1;
     } else if (nr == SYS_UNLINK) {
         ev->dfd = AT_FDCWD_VAL;
-        copy_str(ev->target, (const char *)ctx->args[0], TARGET_PATH_MAX, &ev->target_status);
+        copy_str(ev->target, (const char *)args[0], TARGET_PATH_MAX, &ev->target_status);
         ev->has_target = 1;
     } else if (nr == SYS_RENAMEAT2 || nr == SYS_RENAMEAT) {
-        ev->dfd = (__s32)ctx->args[0];
-        copy_str(ev->target, (const char *)ctx->args[1], TARGET_PATH_MAX, &ev->target_status);
-        ev->dfd2 = (__s32)ctx->args[2];
+        ev->dfd = (__s32)args[0];
+        copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX, &ev->target_status);
+        ev->dfd2 = (__s32)args[2];
         __u8 status2 = TARGET_STATUS_NONE;
-        copy_str(ev->target2, (const char *)ctx->args[3], TARGET_PATH_MAX, &status2);
+        copy_str(ev->target2, (const char *)args[3], TARGET_PATH_MAX, &status2);
         if (nr == SYS_RENAMEAT2) {
-            ev->flags = ctx->args[4];
+            ev->flags = args[4];
         }
         ev->has_target = 1;
         ev->has_target2 = 1;
     } else if (nr == SYS_RENAME) {
         ev->dfd = AT_FDCWD_VAL;
-        copy_str(ev->target, (const char *)ctx->args[0], TARGET_PATH_MAX, &ev->target_status);
+        copy_str(ev->target, (const char *)args[0], TARGET_PATH_MAX, &ev->target_status);
         ev->dfd2 = AT_FDCWD_VAL;
         __u8 status2 = TARGET_STATUS_NONE;
-        copy_str(ev->target2, (const char *)ctx->args[1], TARGET_PATH_MAX, &status2);
+        copy_str(ev->target2, (const char *)args[1], TARGET_PATH_MAX, &status2);
         ev->has_target = 1;
         ev->has_target2 = 1;
     } else if (nr == SYS_MKDIRAT) {
-        ev->dfd = (__s32)ctx->args[0];
-        copy_str(ev->target, (const char *)ctx->args[1], TARGET_PATH_MAX, &ev->target_status);
-        ev->flags = ctx->args[2];
+        ev->dfd = (__s32)args[0];
+        copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX, &ev->target_status);
+        ev->flags = args[2];
         ev->has_target = 1;
     } else if (nr == SYS_MKDIR) {
         ev->dfd = AT_FDCWD_VAL;
-        copy_str(ev->target, (const char *)ctx->args[0], TARGET_PATH_MAX, &ev->target_status);
-        ev->flags = ctx->args[1];
+        copy_str(ev->target, (const char *)args[0], TARGET_PATH_MAX, &ev->target_status);
+        ev->flags = args[1];
         ev->has_target = 1;
     } else if (nr == SYS_CLONE || nr == SYS_CLONE3 || nr == SYS_FORK || nr == SYS_VFORK) {
-        ev->flags = ctx->args[0];
+        ev->flags = args[0];
     } else if (nr == SYS_EXIT_GROUP || nr == SYS_EXIT) {
-        ev->ret = ctx->args[0];
+        ev->ret = args[0];
         struct ebpf_event *out = bpf_ringbuf_reserve(&events_rb, sizeof(*out), 0);
         if (!out) {
             record_drop();
@@ -376,8 +386,8 @@ int tracepoint_raw_syscalls_sys_enter(struct trace_event_raw_sys_enter *ctx) {
     return 0;
 }
 
-SEC("tracepoint/raw_syscalls/sys_exit")
-int tracepoint_raw_syscalls_sys_exit(struct trace_event_raw_sys_exit *ctx) {
+SEC("raw_tp/sys_exit")
+int BPF_PROG(raw_tp_sys_exit, struct pt_regs *regs, long ret) {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     struct ebpf_event *pending = bpf_map_lookup_elem(&active_syscalls, &pid_tgid);
     if (!pending) {
@@ -392,7 +402,7 @@ int tracepoint_raw_syscalls_sys_exit(struct trace_event_raw_sys_exit *ctx) {
     }
 
     __builtin_memcpy(out, pending, sizeof(*out));
-    out->ret = ctx->ret;
+    out->ret = ret;
     bpf_ringbuf_submit(out, 0);
 
     bpf_map_delete_elem(&active_syscalls, &pid_tgid);
