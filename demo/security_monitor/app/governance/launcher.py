@@ -482,6 +482,8 @@ class LaunchResult:
     aborted: str | None = None
     fs_diff: dict[str, Any] | None = None
     audit_sink_requests: list[dict[str, Any]] = field(default_factory=list)
+    phase_timings: dict[str, float] = field(default_factory=dict)
+    cgroup_resources: dict[str, Any] = field(default_factory=dict)
 
 
 
@@ -978,6 +980,7 @@ class TaskLauncher:
         initial_boundary = boundary.model_copy(deep=True)
         task_id = task.task_id
         self.live["task_id"] = task_id
+        self.live["workspace"] = ws
         self.storage.record_task_step(
             task_id,
             kind="phase",
@@ -1023,10 +1026,16 @@ class TaskLauncher:
         token = f"gov_tok_{uuid.uuid4().hex}"
         self.storage.save_token(token, task_id, task.agent_id)
 
+        # Benchmark-only switch: disable ptrace sensor
+        bench_mode = os.environ.get("GOVERNANCE_BENCH_MODE") == "1"
+        disable_ptrace_sensor = bench_mode and (os.environ.get("GOVERNANCE_BENCH_DISABLE_PTRACE_SENSOR") == "1")
+
         # 4. Per-task egress proxy and broker socket
         aloop = _AsyncLoopThread()
+        t_proxy_start = time.monotonic()
         proxy = EgressProxyServer(self.storage, host="127.0.0.1", port=0)
         proxy_port = aloop.run(proxy.start())
+        t_proxy_end = time.monotonic()
 
         if spec.approval_policy == "operator":
             hook = None
@@ -1063,6 +1072,7 @@ class TaskLauncher:
                               delivery=delivery, cgroup_reader=cgroup_ctl.read_proc_cgroup,
                               call_placer=self._place_call,
                               call_timeout=max(float(spec.approval_timeout_s) + 30.0, 120.0))
+        t_broker_start = time.monotonic()
         rpc.start()
         self.live["rpc"] = rpc
         # "Allow for N minutes": a grant past its end time is taken back like a cancel.
@@ -1079,6 +1089,7 @@ class TaskLauncher:
         sensor_freeze_on_outside = cond_upper in ("C", "D", "B+F", "B_F", "BF") or (not cond_upper)
 
         # Sandbox spec compiled from the boundary
+        t_rules_start = time.monotonic()
         if cond_upper == "W":
             spec_rules = compile_landlock_rules_workspace_sandbox(ws, proxy_for_landlock, runtime_dir=ws / "runtime")
         elif file_evaluator is not None:
@@ -1103,6 +1114,7 @@ class TaskLauncher:
             spec_rules["rules"].append({"path": str(ws.resolve()), "access": ["read_file", "read_dir"]})
         rules_path = write_rules_file(spec_rules, control / "rules.json")
         (control / "rules_compile_report.json").write_text(json.dumps(spec_rules["_compile_report"], indent=1))
+        t_rules_end = time.monotonic()
 
         # Cancellation checkpoint 3: right before the agent process chain is started.
         hook_fn = self.test_hooks.get("before_agent_start")
@@ -1197,7 +1209,8 @@ class TaskLauncher:
                 "--",
             ]
 
-        sensor_chain = [str(SENSOR_BIN), "--events-fd", str(events_w), "--gate-fd", str(gate_r), "--"]
+        t_sensor_start = time.monotonic()
+        sensor_chain = [str(SENSOR_BIN), *(["--no-ptrace"] if disable_ptrace_sensor else []), "--events-fd", str(events_w), "--gate-fd", str(gate_r), "--"]
         sandbox_chain = []
         if needs_enforcer:
             sandbox_chain = [str(SECCOMP_BIN), *enforcer_args, "--status-fd", str(status_w), "--"]
@@ -1270,6 +1283,7 @@ class TaskLauncher:
         isolation: dict[str, Any] = {"isolation_level": None}
         try:
             # 3. Task cgroup read back from /proc/<pid>/cgroup
+            t_cg_start = time.monotonic()
             try:
                 cg = cgroup_ctl.wait_for_scope(proc.pid, unit, launcher_cg)
             except RuntimeError as e:
@@ -1287,6 +1301,8 @@ class TaskLauncher:
                 raise RuntimeError(aborted)
             self.storage.save_task_cgroup(task_id, cg, unit, proc.pid)
             self.live.update({"cgroup": cg, "sensor_pid": correlator.sensor_pid, "root_pid": correlator.root_pid})
+            t_cg_end = time.monotonic()
+            t_sensor_end = time.monotonic()
             rpc.expected_cgroup = cg
             if is_ebpf_shadow_enabled():
                 ebpf_out = self.receipts_dir / f"{task_id}.ebpf.jsonl"
@@ -1316,6 +1332,7 @@ class TaskLauncher:
                 os.close(gate_w)
                 gate_w = -1
                 self.live["agent_started"] = True
+                t_agent_start = time.monotonic()
 
             # Enforcer status (kernel-sourced) -> arm or freeze
             poller = select.poll()
@@ -1328,7 +1345,7 @@ class TaskLauncher:
                 isolation = json.loads(raw.decode() or "{}")
             except json.JSONDecodeError:
                 isolation = {}
-            need = seccomp_baseline + 2  # sensor's trace filter + seccomp_filter
+            need = seccomp_baseline + (1 if disable_ptrace_sensor else 2)  # sensor's trace filter + seccomp_filter
             problems = []
             if not isolation:
                 problems.append("no enforcer status (sandbox setup failed or was skipped)")
@@ -1358,6 +1375,7 @@ class TaskLauncher:
                 self._freeze("isolation_below_enforce_requirement", problems)
             else:
                 rpc.armed.set()
+                t_broker_end = time.monotonic()
 
             # Watchdog
             hard_deadline = time.monotonic() + spec.timeout_s
@@ -1379,6 +1397,7 @@ class TaskLauncher:
                 time.sleep(0.05)
 
             # The scope's main process (the sensor) has exited.
+            t_teardown_start = time.monotonic()
             events_done.wait(timeout=10.0)
             if correlator.exit_trailer is None:
                 self._freeze("sensor_exited_early", {"sensor_exit_code": proc.returncode})
@@ -1414,6 +1433,26 @@ class TaskLauncher:
             stdout_f.close()
             stderr_f.close()
             rpc.stop()
+            cgroup_resources: dict[str, Any] = {}
+            if self.live.get("cgroup"):
+                try:
+                    cdir = cgroup_ctl.cgroup_dir(self.live["cgroup"])
+                    cpu_stat_f = cdir / "cpu.stat"
+                    if cpu_stat_f.is_file():
+                        for line in cpu_stat_f.read_text(encoding="utf-8").splitlines():
+                            parts = line.strip().split()
+                            if len(parts) == 2:
+                                if parts[0] == "user_usec":
+                                    cgroup_resources["cpu_user_usec"] = int(parts[1])
+                                elif parts[0] == "system_usec":
+                                    cgroup_resources["cpu_system_usec"] = int(parts[1])
+                                elif parts[0] == "usage_usec":
+                                    cgroup_resources["cpu_usage_usec"] = int(parts[1])
+                    mem_peak_f = cdir / "memory.peak"
+                    if mem_peak_f.is_file():
+                        cgroup_resources["memory_peak_bytes"] = int(mem_peak_f.read_text(encoding="utf-8").strip())
+                except Exception:
+                    pass
             if self.live.get("cgroup"):
                 cgroup_ctl.remove_children(self.live["cgroup"])
             try:
@@ -1453,16 +1492,27 @@ class TaskLauncher:
         self._set_task_status(task_id, final_status, completed=True)
         t = self.storage.get_task(task_id)
 
+        phase_timings = {
+            "cgroup_scope_s": round(t_cg_end - t_cg_start, 6) if 't_cg_end' in locals() else 0.0,
+            "net_ns_proxy_s": round(t_proxy_end - t_proxy_start, 6) if 't_proxy_end' in locals() else 0.0,
+            "landlock_seccomp_s": round(t_rules_end - t_rules_start, 6) if 't_rules_end' in locals() else 0.0,
+            "sensor_attach_s": round(t_sensor_end - t_sensor_start, 6) if 't_sensor_end' in locals() else 0.0,
+            "broker_connect_s": round(t_broker_end - t_broker_start, 6) if 't_broker_end' in locals() else 0.0,
+            "startup_total_s": round(t_agent_start - t0, 6) if 't_agent_start' in locals() else 0.0,
+            "teardown_s": round(time.monotonic() - t_teardown_start, 6) if 't_teardown_start' in locals() else 0.0,
+        }
+
         sensor_status = {
             "binary": str(SENSOR_BIN.name),
-            "mode": "observation_only",
-            "ran": correlator.sensor_pid is not None,
+            "mode": "disabled" if disable_ptrace_sensor else "observation_only",
+            "ran": (correlator.sensor_pid is not None) and not disable_ptrace_sensor,
             "exit_trailer_seen": correlator.exit_trailer is not None,
-            "exited_early": correlator.exit_trailer is None,
+            "exited_early": False if disable_ptrace_sensor else (correlator.exit_trailer is None),
             "events_observed": len(correlator.records),
             "cross_attributions": correlator.cross_attributions,
             "unattributed_reasons": correlator.unattributed_reasons,
-            "syscalls_observed": ["open", "openat", "openat2", "execve", "execveat", "connect"],
+            "syscalls_observed": [] if disable_ptrace_sensor else ["open", "openat", "openat2", "execve", "execveat", "connect"],
+            **({"disabled": True} if disable_ptrace_sensor else {}),
         }
         identity = self.storage.get_task_cgroup(task_id)
         receipt = build_receipt(
@@ -1480,6 +1530,10 @@ class TaskLauncher:
             os_identity={k: identity[k] for k in ("cgroup_path", "unit_name", "scope_pid", "source")} if identity else None,
             condition=spec.condition,
             extra={
+                **({"bench_mode": True} if bench_mode else {}),
+                **({"sensor_disabled": True, "ptrace_sensor_disabled": True} if disable_ptrace_sensor else {}),
+                "phase_timings": phase_timings,
+                "cgroup_resources": cgroup_resources,
                 "policy": receipt_policy_section(initial_boundary, self.storage.get_boundary(task_id)),
                 "llm_provider": provider_label,
                 "llm_model": llm_model,
@@ -1617,6 +1671,8 @@ class TaskLauncher:
             aborted=aborted,
             fs_diff=fs_diff,
             audit_sink_requests=sink_requests,
+            phase_timings=phase_timings,
+            cgroup_resources=cgroup_resources,
         )
 
 

@@ -589,6 +589,7 @@ static int observe_child_setup(void) {
 int main(int argc, char **argv) {
     int events_fd = -1;
     int gate_fd = -1;
+    int no_ptrace = 0;
     int cmd_idx = 1;
     while (cmd_idx < argc) {
         if (strcmp(argv[cmd_idx], "--events-fd") == 0 && cmd_idx + 1 < argc) {
@@ -597,6 +598,9 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[cmd_idx], "--gate-fd") == 0 && cmd_idx + 1 < argc) {
             gate_fd = atoi(argv[cmd_idx + 1]);
             cmd_idx += 2;
+        } else if (strcmp(argv[cmd_idx], "--no-ptrace") == 0) {
+            no_ptrace = 1;
+            cmd_idx += 1;
         } else if (strcmp(argv[cmd_idx], "--") == 0) {
             cmd_idx++;
             break;
@@ -620,6 +624,87 @@ int main(int argc, char **argv) {
         out = stdout;
     }
     if (gate_fd >= 0) fcntl(gate_fd, F_SETFD, FD_CLOEXEC);
+
+    if (no_ptrace) {
+        int sync_pipe[2];
+        if (pipe2(sync_pipe, O_CLOEXEC) < 0) {
+            perror("pipe2");
+            return 1;
+        }
+        pid_t child = fork();
+        if (child < 0) {
+            perror("fork");
+            return 1;
+        }
+        if (child == 0) {
+            close(sync_pipe[1]);
+            if (events_fd >= 0) close(events_fd);
+            if (gate_fd >= 0) close(gate_fd);
+
+            char b;
+            ssize_t n;
+            do {
+                n = read(sync_pipe[0], &b, 1);
+            } while (n < 0 && errno == EINTR);
+            close(sync_pipe[0]);
+            if (n != 1) _exit(125);
+
+            execvp(argv[cmd_idx], &argv[cmd_idx]);
+            perror("execvp");
+            _exit(127);
+        }
+
+        /* Parent */
+        close(sync_pipe[0]);
+        {
+            char ts[48];
+            long long ms;
+            now_iso(ts, sizeof(ts), &ms);
+            fprintf(out, "{\"source\":\"os_sensor\",\"type\":\"start\",\"timestamp\":\"%s\",\"ts_ms\":%lld,"
+                         "\"sensor_pid\":%d,\"child_pid\":%d}\n",
+                    ts, ms, getpid(), child);
+            fflush(out);
+        }
+
+        int status = 0;
+        if (gate_fd >= 0) {
+            char b;
+            ssize_t n;
+            do {
+                n = read(gate_fd, &b, 1);
+            } while (n < 0 && errno == EINTR);
+            close(gate_fd);
+            if (n != 1) {
+                kill(child, SIGKILL);
+                close(sync_pipe[1]);
+                waitpid(child, &status, 0);
+                fprintf(stderr, "sensor: gate closed before release; child killed (fail closed)\n");
+                return 125;
+            }
+        }
+
+        if (write(sync_pipe[1], "1", 1) != 1) {
+            perror("write sync_pipe");
+            kill(child, SIGKILL);
+            close(sync_pipe[1]);
+            return 1;
+        }
+        close(sync_pipe[1]);
+
+        waitpid(child, &status, 0);
+        int child_exit = WIFEXITED(status) ? WEXITSTATUS(status) : (WIFSIGNALED(status) ? 128 + WTERMSIG(status) : 1);
+
+        {
+            char ts[48];
+            long long ms;
+            now_iso(ts, sizeof(ts), &ms);
+            fprintf(out, "{\"source\":\"os_sensor\",\"type\":\"exit\",\"timestamp\":\"%s\",\"ts_ms\":%lld,"
+                         "\"exit_code\":%d,\"seq\":%llu,\"observed_processes\":1,\"observed_threads\":1}\n",
+                    ts, ms, child_exit, seq);
+            fflush(out);
+        }
+        return child_exit;
+    }
 
     pid_t child = fork();
     if (child < 0) {

@@ -94,6 +94,9 @@ class TaskRecord(BaseModel):
     requested_by: str | None = None  # the signed-in person who started the run
     model: str | None = None  # the model that drove the agent ("scripted" for a fixed step list)
     org: str | None = "default"
+    bench_mode: bool | None = False
+    sensor_disabled: bool | None = False
+    benchmark_label: str | None = None
 
 
 class GovernanceEvent(BaseModel):

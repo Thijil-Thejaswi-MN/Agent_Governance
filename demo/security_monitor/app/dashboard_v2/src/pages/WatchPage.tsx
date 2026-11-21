@@ -178,6 +178,15 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
                   {live ? 'Live' : run.state === 'stopped' ? 'Stopped' : 'Finished'}
                 </span>
               </div>
+              {(run.task?.benchmark_label || (run.task?.bench_mode && run.task?.sensor_disabled)) && (
+                <div
+                  id="benchmark-sensor-chip"
+                  data-badge="bench-sensor-off"
+                  className="flex h-9 shrink-0 items-center justify-center gap-2 rounded-xl border border-wait/30 bg-wait/15 px-3 text-[13px] font-semibold text-wait-kpi"
+                >
+                  benchmark: sensor off
+                </div>
+              )}
               {run.task && (
                 <div className="flex h-9 items-center rounded-xl border border-line bg-surface-2 px-3 min-w-0" id="run-agent-line">
                   <span className="truncate text-[13px] font-medium text-fg">
@@ -410,6 +419,9 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
         <DetailsSection title="Run">
           <KV k="Task" v={taskId} />
           <KV k="Status" v={STATUS_LABELS[run.state] || run.state} id="run-status-label" />
+          {(run.task?.benchmark_label || (run.task?.bench_mode && run.task?.sensor_disabled)) && (
+            <KV k="Benchmark" v="benchmark: sensor off" id="run-bench-mode" />
+          )}
           {(run.endReason || run.stopNote) && <KV k="End reason" v={run.endReason || run.stopNote} id="run-end-reason" />}
           {run.stopNote && run.endReason && <KV k="Stop" v={run.stopNote} />}
           {run.streamNote && <KV k="Live updates" v={run.streamNote} id="stream-note" />}
