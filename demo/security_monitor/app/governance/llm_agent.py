@@ -21,6 +21,7 @@ import os
 import socket
 import struct
 import sys
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -459,6 +460,7 @@ class LLMAgent:
                     "error": None,
                 }
 
+                t_tool_start = time.perf_counter()
                 try:
                     if fn_name == "read_file":
                         fpath = args.get("file_path") or args.get("path") or args.get("file") or ""
@@ -482,6 +484,7 @@ class LLMAgent:
                                 "tool_call_id": tc_id,
                                 "content": f"Validation Error: {val_err}. Please call request_access with 'resource_target' (e.g. 'input/appendix.pdf') and 'resource_type' ('file_read', 'file_write', 'network', 'peer_agent').",
                             })
+                            tool_record["duration_ms"] = round((time.perf_counter() - t_tool_start) * 1000.0, 3)
                             tool_history.append(tool_record)
                             continue
 
@@ -530,6 +533,7 @@ class LLMAgent:
                         "content": f"Tool Execution Error: {ex}",
                     })
 
+                tool_record["duration_ms"] = round((time.perf_counter() - t_tool_start) * 1000.0, 3)
                 tool_history.append(tool_record)
 
         return {

@@ -509,6 +509,31 @@ def _extract_os_receipt_events(task_id: str) -> list[dict[str, Any]]:
     return os_events
 
 
+def _extract_bench_info(task: Any, task_id: str) -> tuple[bool, bool, str | None]:
+    cond = str(getattr(task, "condition", "") or "")
+    if cond in ("C-nosensor", "C-ebpf"):
+        return True, True, "benchmark: sensor off"
+
+    receipts_dir = get_receipt_dir()
+    r_file = receipts_dir / f"{task_id}.json"
+    if not r_file.exists():
+        alt_file = Path(__file__).resolve().parents[3] / "data" / "evaluation_v3" / "checkpoint1" / "receipts" / f"{task_id}.json"
+        if alt_file.exists():
+            r_file = alt_file
+    if r_file.exists():
+        try:
+            with open(r_file, encoding="utf-8") as f:
+                r_data = json.load(f)
+            extra = r_data.get("extra", {})
+            bench = bool(extra.get("bench_mode"))
+            sensor_off = bool(extra.get("sensor_disabled") or extra.get("ptrace_sensor_disabled") or (r_data.get("sensor") or {}).get("disabled"))
+            if bench and sensor_off:
+                return True, True, "benchmark: sensor off"
+        except Exception:
+            pass
+    return False, False, None
+
+
 def _extract_llm_provider(task: Any, task_id: str) -> str:
     mgr = get_run_manager()
     slot = getattr(mgr, "_runs", {}).get(task_id)
@@ -696,6 +721,7 @@ async def list_tasks(request: Request = None) -> list[dict[str, Any]]:
         summary = _compute_task_summary(evts)
         llm_provider = _extract_llm_provider(t, t.task_id)
 
+        bench_mode, sensor_disabled, bench_label = _extract_bench_info(t, t.task_id)
         output.append({
             "task_id": t.task_id,
             "request_text": t.request_text,
@@ -717,6 +743,9 @@ async def list_tasks(request: Request = None) -> list[dict[str, Any]]:
             "llm_provider": llm_provider,
             "condition": getattr(t, "condition", None),
             "comparison_mode": getattr(t, "condition", None) == "B",
+            "bench_mode": bench_mode,
+            "sensor_disabled": sensor_disabled,
+            "benchmark_label": bench_label,
         })
     return output
 
