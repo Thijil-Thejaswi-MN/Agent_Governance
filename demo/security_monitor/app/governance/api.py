@@ -841,6 +841,9 @@ async def get_records_summary(request: Request = None) -> dict[str, Any]:
     events_only_ids: list[str] = []
     signed_ids: list[str] = []
     key_ids: dict[str, str] = {}
+    signing_unavailable_ids: list[str] = []
+    unsigned_after_signing_enabled_ids: list[str] = []
+    signing_unavailable_reasons: dict[str, str] = {}
 
     for rf in candidate_files:
         try:
@@ -849,18 +852,46 @@ async def get_records_summary(request: Request = None) -> dict[str, Any]:
             key = str(rf.resolve())
             with _records_cache_lock:
                 cached = _records_verification_cache.get(key)
+            task_id = rf.stem
+            storage = get_storage()
+            task = storage.get_task(task_id)
+            trusted_started_at = task.created_at if task else None
+            trusted_org_id = (getattr(task, "org", None) or getattr(task, "team", None) or "default") if task else None
+
             if cached and cached[0] == mtime:
                 is_valid, scope, k_id = cached[1], cached[2], cached[3] if len(cached) > 3 else None
+                sig_reason = cached[4] if len(cached) > 4 else None
             else:
                 data = json.loads(rf.read_text(encoding="utf-8"))
-                res = verify_receipt(data)
+                if not task and isinstance(data, dict) and data.get("task_id"):
+                    task = storage.get_task(data["task_id"])
+                    if task:
+                        trusted_started_at = task.created_at
+                        trusted_org_id = getattr(task, "org", None) or getattr(task, "team", None) or "default"
+
+                res = verify_receipt(
+                    data,
+                    trusted_started_at=trusted_started_at,
+                    trusted_org_id=trusted_org_id,
+                )
                 is_valid, scope = res["ok"], res.get("scope", "")
                 k_id = (data.get("signature") or {}).get("key_id")
+                sig_reason = res.get("signature_reason") or (data.get("extra") or {}).get("signing")
                 with _records_cache_lock:
-                    _records_verification_cache[key] = (mtime, is_valid, scope, k_id)
+                    _records_verification_cache[key] = (mtime, is_valid, scope, k_id, sig_reason)
 
             total += 1
-            if is_valid:
+            if scope == "signing_unavailable":
+                # warning: not verified, not failed
+                signing_unavailable_ids.append(rf.stem)
+                if sig_reason:
+                    clean_reason = sig_reason.split("unavailable:", 1)[-1].strip()
+                    signing_unavailable_reasons[rf.stem] = clean_reason
+            elif scope == "unsigned_after_signing_enabled":
+                failed += 1
+                failed_ids.append(rf.stem)
+                unsigned_after_signing_enabled_ids.append(rf.stem)
+            elif is_valid:
                 verified += 1
                 verified_ids.append(rf.stem)
                 if scope == "events_only":
@@ -886,6 +917,9 @@ async def get_records_summary(request: Request = None) -> dict[str, Any]:
         "events_only_ids": events_only_ids,
         "signed_ids": signed_ids,
         "key_ids": key_ids,
+        "signing_unavailable_ids": signing_unavailable_ids,
+        "unsigned_after_signing_enabled_ids": unsigned_after_signing_enabled_ids,
+        "signing_unavailable_reasons": signing_unavailable_reasons,
     }
 
 
@@ -937,8 +971,17 @@ def _receipt_check(task_id: str) -> dict[str, Any]:
             "receipt_file": None,
         }
 
+    storage = get_storage()
+    task = storage.get_task(task_id)
+    trusted_started_at = task.created_at if task else None
+    trusted_org_id = (getattr(task, "org", None) or getattr(task, "team", None) or "default") if task else None
+
     from .receipt import verify_receipt
-    check = verify_receipt(receipt_data)
+    check = verify_receipt(
+        receipt_data,
+        trusted_started_at=trusted_started_at,
+        trusted_org_id=trusted_org_id,
+    )
     verified = check["ok"]
     verification_msg = check["message"]
     verified_scope = check["scope"]
@@ -950,6 +993,12 @@ def _receipt_check(task_id: str) -> dict[str, Any]:
 
     sig = receipt_data.get("signature") if isinstance(receipt_data, dict) else None
     key_id = sig.get("key_id") if isinstance(sig, dict) else None
+    sig_reason = check.get("signature_reason")
+    if not sig_reason and isinstance(receipt_data, dict):
+        extra_sig = (receipt_data.get("extra") or {}).get("signing")
+        if extra_sig and "unavailable:" in extra_sig:
+            sig_reason = extra_sig.split("unavailable:", 1)[1].strip()
+
     return {
         "task_id": task_id,
         "available": True,
@@ -962,6 +1011,7 @@ def _receipt_check(task_id: str) -> dict[str, Any]:
         "final_hash": final_hash,
         "signature": sig,
         "key_id": key_id,
+        "signature_reason": sig_reason,
     }
 
 
@@ -1004,6 +1054,10 @@ def _task_report(task_id: str, request: Request | None) -> dict[str, Any]:
     if rc.get("key_id"):
         record["key_id"] = rc.get("key_id")
         record["signature_status"] = "signature_verified" if rc.get("verified_scope") == "signed" else ("failed" if not rc.get("verified") else "unsigned")
+    elif rc.get("verified_scope") in ("signing_unavailable", "unsigned_after_signing_enabled"):
+        record["signature_status"] = rc.get("verified_scope")
+    if rc.get("signature_reason"):
+        record["signature_reason"] = rc.get("signature_reason")
     events = _build_unified_task_events(task_id, storage.get_events_for_task(task_id))
     return build_task_report(
         task=task,

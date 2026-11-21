@@ -99,6 +99,18 @@ def load_public_keys(org_id: str = "default") -> list[dict[str, Any]]:
     return []
 
 
+def get_signing_enabled_since(org_id: str = "default") -> str | None:
+    """Returns the ISO timestamp when signing was initial enabled for an organisation.
+    Corresponds to the earliest created_at in public_keys.json.
+    Returns None if no keys exist for the organisation.
+    """
+    keys = load_public_keys(org_id)
+    if not keys:
+        return None
+    created_ats = [k.get("created_at") for k in keys if k.get("created_at")]
+    return min(created_ats) if created_ats else None
+
+
 def get_or_create_signing_key(org_id: str = "default") -> tuple[ed25519.Ed25519PrivateKey, str]:
     """Retrieves or generates the active Ed25519 signing key for an organisation.
 

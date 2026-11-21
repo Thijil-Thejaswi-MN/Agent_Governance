@@ -81,13 +81,30 @@ export function recordsLine(s: RecordStats): string {
  *  'unknown': this user cannot read the records summary (or it failed to load), so no badge
  *  is claimed; 'none': the server checked the stored records and this run has none. An older
  *  server without verified_ids also gives 'unknown' rather than a green badge. */
-export type RecordBadge = 'signature_verified' | 'checked' | 'events_only' | 'failed' | 'none' | 'unknown';
+export type RecordBadge =
+  | 'signature_verified'
+  | 'checked'
+  | 'events_only'
+  | 'signing_unavailable'
+  | 'unsigned_after_signing_enabled'
+  | 'failed'
+  | 'none'
+  | 'unknown';
 
 export function recordBadge(
   taskId: string,
-  summary: { failed_ids?: string[]; verified_ids?: string[]; events_only_ids?: string[]; signed_ids?: string[] } | null,
+  summary: {
+    failed_ids?: string[];
+    verified_ids?: string[];
+    events_only_ids?: string[];
+    signed_ids?: string[];
+    signing_unavailable_ids?: string[];
+    unsigned_after_signing_enabled_ids?: string[];
+  } | null,
 ): RecordBadge {
   if (!summary) return 'unknown';
+  if (summary.signing_unavailable_ids?.includes(taskId)) return 'signing_unavailable';
+  if (summary.unsigned_after_signing_enabled_ids?.includes(taskId)) return 'unsigned_after_signing_enabled';
   if (summary.failed_ids?.includes(taskId)) return 'failed';
   if (!summary.verified_ids) return 'unknown';
   if (summary.signed_ids?.includes(taskId)) return 'signature_verified';

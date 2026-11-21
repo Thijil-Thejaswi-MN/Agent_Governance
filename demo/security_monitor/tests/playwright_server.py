@@ -58,6 +58,8 @@ def start_console_server(workdir: Path, env_overrides: dict[str, str] | None = N
     port = _free_port()
     db_path = workdir / "governance.db"
     receipts_dir = workdir / "receipts"
+    keys_dir = workdir / "keys"
+    keys_dir.mkdir(parents=True, exist_ok=True)
     log_path = workdir / "server.log"
     env = dict(os.environ)
     env.update({
@@ -65,6 +67,7 @@ def start_console_server(workdir: Path, env_overrides: dict[str, str] | None = N
         "GOVERNANCE_OPERATOR_NAME": OPERATOR_NAME,
         "GOVERNANCE_DB_PATH": str(db_path),
         "RECEIPTS_DIR": str(receipts_dir),
+        "GOVERNANCE_KEYS_DIR": str(keys_dir),
         "PYTHONUNBUFFERED": "1",
     })
     env.update(env_overrides or {})

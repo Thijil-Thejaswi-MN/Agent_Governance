@@ -123,9 +123,10 @@ export interface ReceiptResponse {
   available?: boolean;
   receipt: TaskReceipt | null;
   verified: boolean;
-  /** signed (v2), whole_record (v1), or events_only (older v0 record). */
-  verified_scope?: 'signed' | 'whole_record' | 'events_only' | null;
+  /** signed (v2), whole_record (v1), events_only (older v0), signing_unavailable, or unsigned_after_signing_enabled. */
+  verified_scope?: 'signed' | 'whole_record' | 'events_only' | 'signing_unavailable' | 'unsigned_after_signing_enabled' | null;
   verification_message: string;
+  signature_reason?: string;
   receipt_file?: string | null;
   file_sha256?: string | null;
   final_hash?: string | null;
@@ -379,6 +380,12 @@ export interface RecordsSummary {
   signed_ids?: string[];
   /** Key IDs associated with signed records. */
   key_ids?: Record<string, string>;
+  /** Records where signing failed at write time (warning: not verified, not failed). */
+  signing_unavailable_ids?: string[];
+  /** Records missing a signature where keys were active at write time (failed). */
+  unsigned_after_signing_enabled_ids?: string[];
+  /** Reason mapping for signing_unavailable records. */
+  signing_unavailable_reasons?: Record<string, string>;
 }
 
 // Evidence browser: recorded evaluation trials, read from the committed raw files.
