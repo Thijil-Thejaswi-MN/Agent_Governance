@@ -112,6 +112,11 @@ demo/data/evaluation_v3/checkpoint1/concurrency*/receipts/
 demo/security_monitor/app/governance/os_layer/landlock_enforcer
 demo/security_monitor/app/governance/os_layer/seccomp_filter
 demo/security_monitor/app/governance/os_layer/sensor
+demo/security_monitor/app/governance/os_layer/ebpf/ebpf_sensor
+demo/security_monitor/app/governance/os_layer/ebpf/vmlinux.h
+demo/security_monitor/app/governance/os_layer/ebpf/*.skel.h
+demo/security_monitor/app/governance/os_layer/ebpf/*.o
 
 # Scratch workspace
 scratch/
+demo/data/ebpf/

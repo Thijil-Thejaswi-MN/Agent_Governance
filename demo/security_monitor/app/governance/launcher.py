@@ -64,6 +64,7 @@ from .llm_providers import HOSTED_PROVIDERS
 from .policy_sim import receipt_policy_section
 from .staged_writes import land_snapshot, normalize_write_target, snapshot_staged
 from .storage import GovernanceStorage
+from .os_layer.ebpf_shadow import is_ebpf_shadow_enabled, EBPFShadowSession
 
 HERE = Path(__file__).resolve().parent
 OS_LAYER = HERE / "os_layer"
@@ -961,6 +962,8 @@ class TaskLauncher:
         resolved_path = spec.boundary_model == "v1.1"
 
         # Cancellation checkpoint 1: before intake (no task, nothing to receipt).
+        ebpf_session: EBPFShadowSession | None = None
+        ebpf_summary: dict[str, Any] | None = None
         if self.cancel_event.is_set():
             return self._finish_cancelled(spec, t0, stage="before_intake")
 
@@ -1285,6 +1288,10 @@ class TaskLauncher:
             self.storage.save_task_cgroup(task_id, cg, unit, proc.pid)
             self.live.update({"cgroup": cg, "sensor_pid": correlator.sensor_pid, "root_pid": correlator.root_pid})
             rpc.expected_cgroup = cg
+            if is_ebpf_shadow_enabled():
+                ebpf_out = self.receipts_dir / f"{task_id}.ebpf.jsonl"
+                ebpf_session = EBPFShadowSession(task_id, cg, ebpf_out)
+                ebpf_session.start()
             self.storage.record_task_step(
                 task_id,
                 kind="phase",
@@ -1418,6 +1425,11 @@ class TaskLauncher:
             self.live.pop("expansion", None)  # grants end with the run: nothing left to cancel
             delivery.cleanup()
             self.storage.revoke_token(token)
+            if is_ebpf_shadow_enabled():
+                if ebpf_session is not None:
+                    ebpf_summary = ebpf_session.finish()
+                else:
+                    ebpf_summary = {"status": "unavailable", "reason": "task cgroup not established"}
 
         if not self.termination:
             self.termination = {"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -1489,6 +1501,7 @@ class TaskLauncher:
                 "rpc_connections_refused": rpc.connections_refused,
                 "tool_call_attribution": _tool_call_attribution(rpc.tool_calls, correlator.records),
                 "aborted": aborted,
+                **({"ebpf_shadow": ebpf_summary} if is_ebpf_shadow_enabled() else {}),
                 **({"boundary_source": "workspace_sandbox"} if cond_upper == "W" else {}),
                 **({"boundary_model": spec.boundary_model} if resolved_path else {}),
             },
