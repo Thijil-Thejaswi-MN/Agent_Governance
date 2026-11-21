@@ -852,12 +852,28 @@ async def get_records_summary(request: Request = None) -> dict[str, Any]:
             key = str(rf.resolve())
             with _records_cache_lock:
                 cached = _records_verification_cache.get(key)
+            task_id = rf.stem
+            storage = get_storage()
+            task = storage.get_task(task_id)
+            trusted_started_at = task.created_at if task else None
+            trusted_org_id = (getattr(task, "org", None) or getattr(task, "team", None) or "default") if task else None
+
             if cached and cached[0] == mtime:
                 is_valid, scope, k_id = cached[1], cached[2], cached[3] if len(cached) > 3 else None
                 sig_reason = cached[4] if len(cached) > 4 else None
             else:
                 data = json.loads(rf.read_text(encoding="utf-8"))
-                res = verify_receipt(data)
+                if not task and isinstance(data, dict) and data.get("task_id"):
+                    task = storage.get_task(data["task_id"])
+                    if task:
+                        trusted_started_at = task.created_at
+                        trusted_org_id = getattr(task, "org", None) or getattr(task, "team", None) or "default"
+
+                res = verify_receipt(
+                    data,
+                    trusted_started_at=trusted_started_at,
+                    trusted_org_id=trusted_org_id,
+                )
                 is_valid, scope = res["ok"], res.get("scope", "")
                 k_id = (data.get("signature") or {}).get("key_id")
                 sig_reason = res.get("signature_reason") or (data.get("extra") or {}).get("signing")
@@ -955,8 +971,17 @@ def _receipt_check(task_id: str) -> dict[str, Any]:
             "receipt_file": None,
         }
 
+    storage = get_storage()
+    task = storage.get_task(task_id)
+    trusted_started_at = task.created_at if task else None
+    trusted_org_id = (getattr(task, "org", None) or getattr(task, "team", None) or "default") if task else None
+
     from .receipt import verify_receipt
-    check = verify_receipt(receipt_data)
+    check = verify_receipt(
+        receipt_data,
+        trusted_started_at=trusted_started_at,
+        trusted_org_id=trusted_org_id,
+    )
     verified = check["ok"]
     verification_msg = check["message"]
     verified_scope = check["scope"]

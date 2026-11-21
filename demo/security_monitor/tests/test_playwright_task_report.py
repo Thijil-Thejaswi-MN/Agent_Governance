@@ -48,8 +48,9 @@ pytestmark = [
 
 def seed_finished_run(server, suffix: str) -> str:
     s = GovernanceStorage(server.db_path)
-    now = datetime.datetime.now(datetime.timezone.utc)
-    ts = lambda sec: (now - datetime.timedelta(seconds=sec)).isoformat()  # noqa: E731
+    # Use timestamps before any signing keys were activated so older record verifies as whole_record
+    base = datetime.datetime(2025, 1, 1, 12, 0, 0, tzinfo=datetime.timezone.utc)
+    ts = lambda sec: (base + datetime.timedelta(seconds=sec)).isoformat()  # noqa: E731
     tid = f"task_report_{suffix}"
     s.save_task(TaskRecord(task_id=tid, request_text="Summarise the Q3 minutes", request_hash="h",
                            agent_id="minutes_bot", workspace_root="/tmp/ws_report", status=TaskLifecycle.COMPLETED,

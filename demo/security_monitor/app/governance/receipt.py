@@ -316,7 +316,13 @@ def _parse_iso_datetime(ts: str | None) -> datetime.datetime | None:
     return None
 
 
-def verify_receipt(r: Any, pubkey: Any = None, signing_enabled_since: str | None = None) -> dict[str, Any]:
+def verify_receipt(
+    r: Any,
+    pubkey: Any = None,
+    signing_enabled_since: str | None = None,
+    trusted_started_at: str | None = None,
+    trusted_org_id: str | None = None,
+) -> dict[str, Any]:
     """Checks a stored record. Returns {ok, scope, message, final_hash}.
 
     scope "signed": chain OK, whole-record hash OK, AND signature valid for known public key (v2).
@@ -366,14 +372,41 @@ def verify_receipt(r: Any, pubkey: Any = None, signing_enabled_since: str | None
         if doc != document_hash(r):
             return fail("the record was changed after it was written (whole-record hash does not match)", final)
 
-    # Check signature if present and non-empty
+    # Extract record's org
     sig = r.get("signature")
+    extra = r.get("extra") if isinstance(r, dict) else {}
+    rec_org = (
+        (sig if isinstance(sig, dict) else {}).get("org_id")
+        or (extra or {}).get("org_id")
+        or r.get("org_id")
+        or r.get("org")
+        or "default"
+    )
+
+    # Check field mismatch against stored task if trusted values provided
+    if trusted_org_id is not None and rec_org != trusted_org_id:
+        return fail(
+            f"record org ({rec_org}) differs from stored task ({trusted_org_id})",
+            final,
+            scope="record_fields_mismatch",
+        )
+
+    if trusted_started_at is not None:
+        rec_started = r.get("started_at")
+        if rec_started is not None and str(rec_started) != str(trusted_started_at):
+            return fail(
+                f"record started_at ({rec_started}) differs from stored task ({trusted_started_at})",
+                final,
+                scope="record_fields_mismatch",
+            )
+
+    # Check signature if present and non-empty
     if sig is not None and isinstance(sig, dict) and (sig.get("value") or sig.get("key_id")):
         if not sig.get("value") or not sig.get("key_id"):
             return fail("signature has the wrong shape", final)
 
         key_id = sig.get("key_id")
-        org_id = sig.get("org_id", "default")
+        org_id = trusted_org_id or sig.get("org_id", "default")
 
         target_key = None
         if pubkey is not None:
@@ -422,11 +455,7 @@ def verify_receipt(r: Any, pubkey: Any = None, signing_enabled_since: str | None
             "final_hash": final,
         }
 
-    eff_org = (
-        (sig if isinstance(sig, dict) else {}).get("org_id")
-        or (extra or {}).get("org_id")
-        or "default"
-    )
+    eff_org = trusted_org_id or rec_org
     enabled_since_str: str | None = signing_enabled_since
     if enabled_since_str is None and pubkey is None:
         try:
@@ -435,8 +464,16 @@ def verify_receipt(r: Any, pubkey: Any = None, signing_enabled_since: str | None
         except Exception:
             enabled_since_str = None
 
+    # Stored task's time wins over record's own fields
+    start_time_str = trusted_started_at or get_record_start_time(r)
+    rec_time_str = r.get("started_at") or r.get("created_at") or r.get("generated_at")
+    time_from_record = (
+        trusted_started_at is None
+        and rec_time_str is not None
+        and _parse_iso_datetime(str(rec_time_str)) is not None
+    )
+
     if enabled_since_str is not None:
-        start_time_str = get_record_start_time(r)
         if start_time_str:
             start_dt = _parse_iso_datetime(start_time_str)
             enabled_dt = _parse_iso_datetime(enabled_since_str)
@@ -447,16 +484,17 @@ def verify_receipt(r: Any, pubkey: Any = None, signing_enabled_since: str | None
                     scope="unsigned_after_signing_enabled",
                 )
 
+    suffix = "; time taken from the record itself" if time_from_record else ""
     if doc:
         return {
             "ok": True,
             "scope": "whole_record",
-            "message": f"ok ({len(events)} entries; whole record checked)",
+            "message": f"ok ({len(events)} entries; whole record checked{suffix})",
             "final_hash": final,
         }
     return {
         "ok": True,
         "scope": "events_only",
-        "message": f"ok ({len(events)} entries; older v0 record: only the event list is chained)",
+        "message": f"ok ({len(events)} entries; older v0 record: only the event list is chained{suffix})",
         "final_hash": final,
     }
