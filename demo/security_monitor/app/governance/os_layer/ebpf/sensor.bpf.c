@@ -1,0 +1,400 @@
+#include "vmlinux.h"
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_core_read.h>
+#include <bpf/bpf_tracing.h>
+#include "sensor.h"
+
+char LICENSE[] SEC("license") = "Dual BSD/GPL";
+
+/* Syscall numbers on x86_64 */
+#define SYS_OPEN 2
+#define SYS_CONNECT 42
+#define SYS_ACCEPT 43
+#define SYS_SENDTO 44
+#define SYS_SENDMSG 46
+#define SYS_BIND 49
+#define SYS_LISTEN 50
+#define SYS_CLONE 56
+#define SYS_FORK 57
+#define SYS_VFORK 58
+#define SYS_EXECVE 59
+#define SYS_EXIT 60
+#define SYS_RENAME 82
+#define SYS_MKDIR 83
+#define SYS_UNLINK 87
+#define SYS_EXIT_GROUP 231
+#define SYS_OPENAT 257
+#define SYS_MKDIRAT 258
+#define SYS_UNLINKAT 263
+#define SYS_RENAMEAT 264
+#define SYS_ACCEPT4 288
+#define SYS_RENAMEAT2 316
+#define SYS_EXECVEAT 322
+#define SYS_CLONE3 435
+#define SYS_OPENAT2 437
+
+#define AT_FDCWD_VAL -100
+
+/* Monitored task cgroup IDs */
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 1024);
+    __type(key, __u64);
+    __type(value, __u32);
+} task_cgroups SEC(".maps");
+
+/* Active in-flight syscalls awaiting exit paired by thread id */
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 8192);
+    __type(key, __u64);
+    __type(value, struct ebpf_event);
+} active_syscalls SEC(".maps");
+
+/* Per-CPU scratch space to prepare event record within verifier stack budget */
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, struct ebpf_event);
+} scratch_map SEC(".maps");
+
+/* Per-CPU counter tracking ring buffer reserve drops */
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, __u64);
+} dropped_events SEC(".maps");
+
+/* Ring buffer delivering event records to user space */
+struct {
+    __uint(type, BPF_MAP_TYPE_RINGBUF);
+    __uint(max_entries, 16 * 1024 * 1024);
+} events_rb SEC(".maps");
+
+volatile const __u64 pidns_dev = 0;
+volatile const __u64 pidns_ino = 0;
+
+static __always_inline void record_drop(void) {
+    __u32 key = 0;
+    __u64 *cnt = bpf_map_lookup_elem(&dropped_events, &key);
+    if (cnt) {
+        *cnt += 1;
+    }
+}
+
+static __always_inline __u32 get_current_pid(void) {
+    if (pidns_dev && pidns_ino) {
+        struct bpf_pidns_info nsdata = {};
+        if (bpf_get_ns_current_pid_tgid(pidns_dev, pidns_ino, &nsdata, sizeof(nsdata)) == 0) {
+            if (nsdata.tgid != 0) {
+                return nsdata.tgid;
+            }
+        }
+    }
+    struct task_struct *task = (struct task_struct *)bpf_get_current_task_btf();
+    if (task) {
+        struct pid *tpid = BPF_CORE_READ(task, thread_pid);
+        if (tpid) {
+            unsigned int level = BPF_CORE_READ(tpid, level);
+            if (level < 32) {
+                __u32 nr = BPF_CORE_READ(tpid, numbers[level].nr);
+                if (nr != 0) {
+                    return nr;
+                }
+            }
+        }
+    }
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    return pid_tgid >> 32;
+}
+
+static __always_inline __u64 get_monitored_cgroup_id(void) {
+    __u64 cgid = bpf_get_current_cgroup_id();
+    if (bpf_map_lookup_elem(&task_cgroups, &cgid)) {
+        return cgid;
+    }
+    for (int lvl = 10; lvl >= 1; lvl--) {
+        __u64 anc = bpf_get_current_ancestor_cgroup_id(lvl);
+        if (anc && bpf_map_lookup_elem(&task_cgroups, &anc)) {
+            return anc;
+        }
+    }
+    return 0;
+}
+
+static __always_inline __u32 get_parent_pid(void) {
+    struct task_struct *task = (struct task_struct *)bpf_get_current_task_btf();
+    if (!task) return 0;
+    struct task_struct *parent = BPF_CORE_READ(task, real_parent);
+    if (!parent) return 0;
+    struct pid *tpid = BPF_CORE_READ(task, thread_pid);
+    if (tpid) {
+        unsigned int level = BPF_CORE_READ(tpid, level);
+        if (level < 32) {
+            struct pid *ppid_struct = BPF_CORE_READ(parent, thread_pid);
+            if (ppid_struct) {
+                unsigned int plevel = BPF_CORE_READ(ppid_struct, level);
+                if (plevel >= level) {
+                    __u32 pnr = BPF_CORE_READ(ppid_struct, numbers[level].nr);
+                    if (pnr != 0) return pnr;
+                }
+            }
+        }
+    }
+    return BPF_CORE_READ(parent, tgid);
+}
+
+static __always_inline void copy_str(char *dst, const char *src, __u32 max_len, __u8 *status) {
+    long ret = bpf_probe_read_user_str(dst, max_len, src);
+    if (ret < 0) {
+        *status = TARGET_STATUS_UNREADABLE;
+        dst[0] = '\0';
+    } else if (ret >= (long)max_len) {
+        *status = TARGET_STATUS_TRUNCATED;
+    } else {
+        *status = TARGET_STATUS_OK;
+    }
+}
+
+SEC("tracepoint/raw_syscalls/sys_enter")
+int tracepoint_raw_syscalls_sys_enter(struct trace_event_raw_sys_enter *ctx) {
+    __u64 cgid = get_monitored_cgroup_id();
+    if (!cgid) {
+        return 0;
+    }
+
+    long nr = ctx->id;
+    __u32 op = EBPF_OP_UNKNOWN;
+
+    switch (nr) {
+    case SYS_OPENAT:
+    case SYS_OPENAT2:
+    case SYS_OPEN:
+        op = EBPF_OP_OPEN;
+        break;
+    case SYS_EXECVE:
+    case SYS_EXECVEAT:
+        op = EBPF_OP_EXEC;
+        break;
+    case SYS_CONNECT:
+        op = EBPF_OP_CONNECT;
+        break;
+    case SYS_BIND:
+        op = EBPF_OP_BIND;
+        break;
+    case SYS_LISTEN:
+        op = EBPF_OP_LISTEN;
+        break;
+    case SYS_ACCEPT:
+    case SYS_ACCEPT4:
+        op = EBPF_OP_ACCEPT;
+        break;
+    case SYS_SENDTO:
+    case SYS_SENDMSG:
+        op = EBPF_OP_SEND;
+        break;
+    case SYS_UNLINK:
+    case SYS_UNLINKAT:
+        op = EBPF_OP_UNLINK;
+        break;
+    case SYS_RENAME:
+    case SYS_RENAMEAT:
+    case SYS_RENAMEAT2:
+        op = EBPF_OP_RENAME;
+        break;
+    case SYS_MKDIR:
+    case SYS_MKDIRAT:
+        op = EBPF_OP_MKDIR;
+        break;
+    case SYS_CLONE:
+    case SYS_CLONE3:
+    case SYS_FORK:
+    case SYS_VFORK:
+        op = EBPF_OP_CLONE;
+        break;
+    case SYS_EXIT_GROUP:
+    case SYS_EXIT:
+        op = EBPF_OP_EXIT;
+        break;
+    default:
+        return 0;
+    }
+
+    __u32 zero = 0;
+    struct ebpf_event *ev = bpf_map_lookup_elem(&scratch_map, &zero);
+    if (!ev) {
+        return 0;
+    }
+
+    __builtin_memset(ev, 0, sizeof(*ev));
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    ev->cgroup_id = cgid;
+    ev->pid = get_current_pid();
+    ev->tgid = (__u32)pid_tgid;
+    ev->ppid = get_parent_pid();
+    ev->syscall_nr = (__s32)nr;
+    ev->op = op;
+    ev->ts_ns = bpf_ktime_get_ns();
+    ev->target_status = TARGET_STATUS_NONE;
+
+    if (nr == SYS_OPENAT) {
+        ev->dfd = (__s32)ctx->args[0];
+        copy_str(ev->target, (const char *)ctx->args[1], TARGET_PATH_MAX, &ev->target_status);
+        ev->flags = ctx->args[2];
+        ev->aux = ctx->args[3];
+        ev->has_target = 1;
+    } else if (nr == SYS_OPENAT2) {
+        ev->dfd = (__s32)ctx->args[0];
+        copy_str(ev->target, (const char *)ctx->args[1], TARGET_PATH_MAX, &ev->target_status);
+        __u64 how_flags = 0;
+        bpf_probe_read_user(&how_flags, sizeof(how_flags), (void *)ctx->args[2]);
+        ev->flags = how_flags;
+        ev->has_target = 1;
+    } else if (nr == SYS_OPEN) {
+        ev->dfd = AT_FDCWD_VAL;
+        copy_str(ev->target, (const char *)ctx->args[0], TARGET_PATH_MAX, &ev->target_status);
+        ev->flags = ctx->args[1];
+        ev->aux = ctx->args[2];
+        ev->has_target = 1;
+    } else if (nr == SYS_EXECVE) {
+        ev->dfd = AT_FDCWD_VAL;
+        copy_str(ev->target, (const char *)ctx->args[0], TARGET_PATH_MAX, &ev->target_status);
+        ev->has_target = 1;
+    } else if (nr == SYS_EXECVEAT) {
+        ev->dfd = (__s32)ctx->args[0];
+        copy_str(ev->target, (const char *)ctx->args[1], TARGET_PATH_MAX, &ev->target_status);
+        ev->flags = ctx->args[4];
+        ev->has_target = 1;
+    } else if (nr == SYS_CONNECT || nr == SYS_BIND) {
+        ev->dfd = (__s32)ctx->args[0];
+        void *sock_ptr = (void *)ctx->args[1];
+        __u32 sock_len = (__u32)ctx->args[2];
+        if (sock_len > SOCK_ADDR_MAX) {
+            sock_len = SOCK_ADDR_MAX;
+        }
+        if (sock_ptr && sock_len > 0) {
+            bpf_probe_read_user(ev->sock_addr, sock_len, sock_ptr);
+            ev->sock_len = sock_len;
+            ev->has_sock = 1;
+        }
+    } else if (nr == SYS_LISTEN) {
+        ev->dfd = (__s32)ctx->args[0];
+        ev->flags = ctx->args[1];
+    } else if (nr == SYS_ACCEPT || nr == SYS_ACCEPT4) {
+        ev->dfd = (__s32)ctx->args[0];
+        if (nr == SYS_ACCEPT4) {
+            ev->flags = ctx->args[3];
+        }
+    } else if (nr == SYS_SENDTO) {
+        ev->dfd = (__s32)ctx->args[0];
+        void *dest_ptr = (void *)ctx->args[4];
+        __u32 dest_len = (__u32)ctx->args[5];
+        if (!dest_ptr || dest_len == 0) {
+            return 0;
+        }
+        if (dest_len > SOCK_ADDR_MAX) {
+            dest_len = SOCK_ADDR_MAX;
+        }
+        bpf_probe_read_user(ev->sock_addr, dest_len, dest_ptr);
+        ev->sock_len = dest_len;
+        ev->has_sock = 1;
+    } else if (nr == SYS_SENDMSG) {
+        ev->dfd = (__s32)ctx->args[0];
+        void *msg_ptr = (void *)ctx->args[1];
+        if (!msg_ptr) {
+            return 0;
+        }
+        void *name_ptr = NULL;
+        int name_len = 0;
+        bpf_probe_read_user(&name_ptr, sizeof(name_ptr), msg_ptr);
+        bpf_probe_read_user(&name_len, sizeof(name_len), (char *)msg_ptr + sizeof(void *));
+        if (!name_ptr || name_len <= 0) {
+            return 0;
+        }
+        __u32 rlen = (__u32)name_len;
+        if (rlen > SOCK_ADDR_MAX) {
+            rlen = SOCK_ADDR_MAX;
+        }
+        bpf_probe_read_user(ev->sock_addr, rlen, name_ptr);
+        ev->sock_len = rlen;
+        ev->has_sock = 1;
+    } else if (nr == SYS_UNLINKAT) {
+        ev->dfd = (__s32)ctx->args[0];
+        copy_str(ev->target, (const char *)ctx->args[1], TARGET_PATH_MAX, &ev->target_status);
+        ev->flags = ctx->args[2];
+        ev->has_target = 1;
+    } else if (nr == SYS_UNLINK) {
+        ev->dfd = AT_FDCWD_VAL;
+        copy_str(ev->target, (const char *)ctx->args[0], TARGET_PATH_MAX, &ev->target_status);
+        ev->has_target = 1;
+    } else if (nr == SYS_RENAMEAT2 || nr == SYS_RENAMEAT) {
+        ev->dfd = (__s32)ctx->args[0];
+        copy_str(ev->target, (const char *)ctx->args[1], TARGET_PATH_MAX, &ev->target_status);
+        ev->dfd2 = (__s32)ctx->args[2];
+        __u8 status2 = TARGET_STATUS_NONE;
+        copy_str(ev->target2, (const char *)ctx->args[3], TARGET_PATH_MAX, &status2);
+        if (nr == SYS_RENAMEAT2) {
+            ev->flags = ctx->args[4];
+        }
+        ev->has_target = 1;
+        ev->has_target2 = 1;
+    } else if (nr == SYS_RENAME) {
+        ev->dfd = AT_FDCWD_VAL;
+        copy_str(ev->target, (const char *)ctx->args[0], TARGET_PATH_MAX, &ev->target_status);
+        ev->dfd2 = AT_FDCWD_VAL;
+        __u8 status2 = TARGET_STATUS_NONE;
+        copy_str(ev->target2, (const char *)ctx->args[1], TARGET_PATH_MAX, &status2);
+        ev->has_target = 1;
+        ev->has_target2 = 1;
+    } else if (nr == SYS_MKDIRAT) {
+        ev->dfd = (__s32)ctx->args[0];
+        copy_str(ev->target, (const char *)ctx->args[1], TARGET_PATH_MAX, &ev->target_status);
+        ev->flags = ctx->args[2];
+        ev->has_target = 1;
+    } else if (nr == SYS_MKDIR) {
+        ev->dfd = AT_FDCWD_VAL;
+        copy_str(ev->target, (const char *)ctx->args[0], TARGET_PATH_MAX, &ev->target_status);
+        ev->flags = ctx->args[1];
+        ev->has_target = 1;
+    } else if (nr == SYS_CLONE || nr == SYS_CLONE3 || nr == SYS_FORK || nr == SYS_VFORK) {
+        ev->flags = ctx->args[0];
+    } else if (nr == SYS_EXIT_GROUP || nr == SYS_EXIT) {
+        ev->ret = ctx->args[0];
+        struct ebpf_event *out = bpf_ringbuf_reserve(&events_rb, sizeof(*out), 0);
+        if (!out) {
+            record_drop();
+            return 0;
+        }
+        __builtin_memcpy(out, ev, sizeof(*out));
+        bpf_ringbuf_submit(out, 0);
+        return 0;
+    }
+
+    bpf_map_update_elem(&active_syscalls, &pid_tgid, ev, BPF_ANY);
+    return 0;
+}
+
+SEC("tracepoint/raw_syscalls/sys_exit")
+int tracepoint_raw_syscalls_sys_exit(struct trace_event_raw_sys_exit *ctx) {
+    __u64 pid_tgid = bpf_get_current_pid_tgid();
+    struct ebpf_event *pending = bpf_map_lookup_elem(&active_syscalls, &pid_tgid);
+    if (!pending) {
+        return 0;
+    }
+
+    struct ebpf_event *out = bpf_ringbuf_reserve(&events_rb, sizeof(*out), 0);
+    if (!out) {
+        record_drop();
+        bpf_map_delete_elem(&active_syscalls, &pid_tgid);
+        return 0;
+    }
+
+    __builtin_memcpy(out, pending, sizeof(*out));
+    out->ret = ctx->ret;
+    bpf_ringbuf_submit(out, 0);
+
+    bpf_map_delete_elem(&active_syscalls, &pid_tgid);
+    return 0;
+}
