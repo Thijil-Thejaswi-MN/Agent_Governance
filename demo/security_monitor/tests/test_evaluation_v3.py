@@ -730,6 +730,9 @@ class TestHostedModelEvaluation:
             return _real_listdir(path)
 
         monkeypatch.setattr(eval_mod.os, "listdir", _fake_listdir)
+        # These tests drive main() with fakes; the real host-contamination check can see
+        # unrelated files change (e.g. the CI runner's own logs in $HOME) and abort the run.
+        monkeypatch.setattr(eval_mod, "diff_host_state", lambda before, after: {})
 
     def test_model_string_to_llm_config(self) -> None:
         """Verifies model-string to llm config for hosted, local ollama, and scripted."""
