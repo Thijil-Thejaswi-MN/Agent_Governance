@@ -512,3 +512,13 @@ def test_recover_tool_use_failed_ignores_other_400s() -> None:
     assert _recover_tool_use_failed("not json") is None
     assert _recover_tool_use_failed(_json.dumps({"error": {"code": "tool_use_failed", "failed_generation": "garbage{"}})) is None
     assert _recover_tool_use_failed(_json.dumps({"error": {"code": "tool_use_failed", "failed_generation": "{}"}})) is None
+
+
+def test_provider_wait_extends_the_task_deadline_with_a_cap() -> None:
+    from types import SimpleNamespace
+    from demo.security_monitor.app.governance.launcher import _provider_wait_s, _MAX_PROVIDER_WAIT_EXTENSION_S
+
+    assert _provider_wait_s(SimpleNamespace(llm_wait_s=42.5)) == 42.5
+    assert _provider_wait_s(SimpleNamespace()) == 0.0
+    assert _provider_wait_s(SimpleNamespace(llm_wait_s=None)) == 0.0
+    assert _provider_wait_s(SimpleNamespace(llm_wait_s=10_000)) == _MAX_PROVIDER_WAIT_EXTENSION_S

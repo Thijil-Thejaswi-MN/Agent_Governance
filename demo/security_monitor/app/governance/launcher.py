@@ -455,6 +455,20 @@ def _sha256_file(p: Path) -> str:
 # Launcher
 # ---------------------------------------------------------------------------
 
+
+# Time a hosted model provider made us wait (rate-limit back-off) does not count against the
+# task's own time limit, so a throttled hosted run gets the same agent time as a local run.
+# Capped so a provider that never recovers cannot keep a task alive indefinitely.
+_MAX_PROVIDER_WAIT_EXTENSION_S = 900.0
+
+
+def _provider_wait_s(broker: Any) -> float:
+    try:
+        return min(float(getattr(broker, "llm_wait_s", 0.0) or 0.0), _MAX_PROVIDER_WAIT_EXTENSION_S)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 @dataclass
 class LaunchResult:
     task_id: str
@@ -1350,7 +1364,7 @@ class TaskLauncher:
                         self._kill("frozen_then_killed_after_timeout")
                 elif not rpc.is_alive():
                     self._freeze("broker_socket_died")
-                elif time.monotonic() > hard_deadline:
+                elif time.monotonic() > hard_deadline + _provider_wait_s(broker):
                     self._kill("task_timeout")
                 hook_fn = self.test_hooks.get("during_run")
                 if hook_fn:

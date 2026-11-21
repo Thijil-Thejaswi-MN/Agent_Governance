@@ -1154,6 +1154,48 @@ class TestHostedModelEvaluation:
         assert r["infra_reason"] == "throttled_timeout"
         assert r["aborted"] == "infra_error"
 
+    def test_long_throttled_trial_that_finished_is_scored(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """Provider back-off extends the deadline, so a trial that waited on 429s but then finished
+        (no task_timeout termination) is a real, scored result, not an infra error."""
+        from unittest.mock import MagicMock
+        import demo.security_monitor.evaluate_v3 as eval_mod
+
+        self._bypass_fd_guard(monkeypatch)
+        monkeypatch.setattr(eval_mod, "get_git_dirty", lambda repo: False)
+        monkeypatch.setattr(eval_mod, "test_llm_preflight", lambda storage, cfg: None)
+        monkeypatch.setattr(eval_mod.time, "sleep", lambda s: None)
+
+        scenario_p = tmp_path / "sc.jsonl"
+        scenario_p.write_text(json.dumps({
+            "id": "injected_inworkspace_01", "category": "injected_inworkspace", "authored_by": "test",
+            "user_prompt": "Run summary", "input_files": {}, "expected_boundary": {}, "decoys": [],
+        }) + "\n", encoding="utf-8")
+
+        mock_launcher = MagicMock()
+        mock_res = MagicMock()
+        mock_res.receipt_path = tmp_path / "rc.json"
+        mock_res.receipt = {
+            "initial_boundary": {},
+            "termination": {"reason": "exited"},
+            "extra": {"llm_calls": 5, "llm_ok_calls": 5, "llm_errors": 0, "llm_rate_limited": 6,
+                      "llm_wait_s": 240.0, "llm_in_flight_at_end": False, "last_llm_error": None},
+        }
+        mock_res.workspace = tmp_path / "ws"
+        mock_res.workspace.mkdir(parents=True, exist_ok=True)
+        mock_res.shim_result = {"status": "completed", "final_response": "done", "tool_history": []}
+        mock_res.aborted = None
+        mock_launcher.run.return_value = mock_res
+        monkeypatch.setattr(eval_mod, "TaskLauncher", lambda *args, **kwargs: mock_launcher)
+
+        out_p = tmp_path / "out_long_ok.jsonl"
+        assert eval_mod.main([
+            "--scenarios", str(scenario_p), "--conditions", "A", "--model", "groq:openai/gpt-oss-20b",
+            "--repeats", "1", "--output", str(out_p), "--workspace-base", str(tmp_path / "ws_base"),
+        ]) == 0
+        r = json.loads(out_p.read_text(encoding="utf-8").strip().split("\n")[-1])
+        assert r["infra_error"] is False
+        assert r.get("infra_reason") is None
+
     def test_normal_timeout_stays_scored_result(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         """A timeout with no rate-limit waiting or in-flight model call stays a scored result."""
         from unittest.mock import MagicMock

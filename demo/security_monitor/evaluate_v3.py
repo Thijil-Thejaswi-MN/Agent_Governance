@@ -863,12 +863,14 @@ def main(argv: list[str] | None = None) -> int:
                                 llm_wait_s = float(extra.get("llm_wait_s", 0.0))
                                 llm_in_flight_at_end = bool(extra.get("llm_in_flight_at_end", False))
 
+                                # The launcher's watchdog is the only thing that ends a task on time;
+                                # it records termination reason "task_timeout". Wall time alone is not
+                                # used: provider back-off now extends the deadline, so a long trial can
+                                # still finish normally.
+                                _term = (getattr(res, "receipt", None) or {}).get("termination") or {}
                                 hit_time_limit = bool(
-                                    getattr(res, "aborted", None) in ("timeout", "task_timeout")
-                                    or "timeout" in str(getattr(res, "aborted", "")).lower()
-                                    or getattr(res, "termination", {}).get("reason") == "task_timeout"
-                                    or (time.time() - t0) >= 175.0
-                                    or "timed out" in str((getattr(res, "shim_result", None) or {}).get("error", "")).lower()
+                                    (isinstance(_term, dict) and _term.get("reason") == "task_timeout")
+                                    or getattr(res, "aborted", None) in ("timeout", "task_timeout")
                                 )
 
                                 # Rule: infra_error if (a) llm_errors > 0;
