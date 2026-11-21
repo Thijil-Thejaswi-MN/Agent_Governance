@@ -624,6 +624,10 @@ def main(argv: list[str] | None = None) -> int:
                     help="v1 (default): frozen M6 enforcement path, as in the recorded runs. "
                          "v1.1: M7 path (derivation v1.1, broker and Landlock compiled from resolve_boundary)")
     ap.add_argument("--max-trials", type=int, default=None, help="Maximum trials to execute before stopping")
+    ap.add_argument("--stop-after-infra", type=int, default=None,
+                    help="Stop the run after K infra errors in a row")
+    ap.add_argument("--pace-seconds", type=float, default=0.0,
+                    help="Sleep S seconds between trials (default: 0)")
     args = ap.parse_args(argv)
     if args.boundary_source == "derived_llm" and args.boundary_model != "v1.1":
         ap.error("--boundary-source derived_llm needs --boundary-model v1.1")
@@ -733,6 +737,7 @@ def main(argv: list[str] | None = None) -> int:
     trial_idx = 0
     executed_trials = 0
     total_infra_errors = 0
+    consecutive_infra_errors = 0
     prompt_variant = args.prompt_variant
     if prompt_variant is None:
         if args.shell_only:
@@ -841,6 +846,7 @@ def main(argv: list[str] | None = None) -> int:
                     trial_error = None
                     res = None
                     is_infra_err = False
+                    infra_reason = None
                     infra_err_msg = None
 
                     # Max 3 attempts on provider failure
@@ -849,16 +855,44 @@ def main(argv: list[str] | None = None) -> int:
                             res = launcher.run(spec)
                             if is_hosted and res is not None:
                                 extra = getattr(res, "receipt", {}).get("extra", {}) or {}
+                                llm_calls = extra.get("llm_calls", 0)
+                                llm_ok_calls = extra.get("llm_ok_calls", 0)
                                 llm_errors = extra.get("llm_errors", 0)
                                 last_llm_err = extra.get("last_llm_error")
-                                # Only model-call failures count as infra errors.
-                                # Shim errors (agent timeout, tool errors) are real results.
-                                if llm_errors > 0 and last_llm_err and is_provider_infra_error(last_llm_err):
-                                    if attempt < 2:
+                                llm_rate_limited = extra.get("llm_rate_limited", 0)
+                                llm_wait_s = float(extra.get("llm_wait_s", 0.0))
+                                llm_in_flight_at_end = bool(extra.get("llm_in_flight_at_end", False))
+
+                                hit_time_limit = bool(
+                                    getattr(res, "aborted", None) in ("timeout", "task_timeout")
+                                    or "timeout" in str(getattr(res, "aborted", "")).lower()
+                                    or getattr(res, "termination", {}).get("reason") == "task_timeout"
+                                    or (time.time() - t0) >= 175.0
+                                    or "timed out" in str((getattr(res, "shim_result", None) or {}).get("error", "")).lower()
+                                )
+
+                                # Rule: infra_error if (a) llm_errors > 0;
+                                # (b) hit time limit and (llm_wait_s > 0 or llm_in_flight_at_end);
+                                # (c) llm_calls > 0 and llm_ok_calls == 0.
+                                if hit_time_limit and (llm_wait_s > 0 or llm_in_flight_at_end):
+                                    is_infra_err = True
+                                    infra_reason = "throttled_timeout"
+                                    infra_err_msg = f"Trial hit time limit while throttled (wait_s={llm_wait_s}, in_flight={llm_in_flight_at_end}, rate_limited={llm_rate_limited})"
+                                    trial_error = infra_err_msg
+                                    break
+                                elif llm_errors > 0:
+                                    if attempt < 2 and is_provider_infra_error(last_llm_err):
                                         time.sleep(2.0 * (attempt + 1))
                                         continue
                                     is_infra_err = True
-                                    infra_err_msg = redact_llm_error(last_llm_err, max_chars=300)
+                                    infra_reason = "provider_error"
+                                    infra_err_msg = redact_llm_error(last_llm_err, max_chars=300) if last_llm_err else "Provider error recorded in receipt"
+                                    trial_error = infra_err_msg
+                                    break
+                                elif llm_calls > 0 and llm_ok_calls == 0:
+                                    is_infra_err = True
+                                    infra_reason = "no_model_response"
+                                    infra_err_msg = f"Model calls were attempted ({llm_calls}) but 0 succeeded"
                                     trial_error = infra_err_msg
                                     break
                             break
@@ -870,6 +904,7 @@ def main(argv: list[str] | None = None) -> int:
                                     continue
                                 if is_provider_infra_error(err_msg):
                                     is_infra_err = True
+                                    infra_reason = "provider_error"
                                     infra_err_msg = redact_llm_error(err_msg, max_chars=300)
                                     trial_error = infra_err_msg
                                     break
@@ -946,6 +981,7 @@ def main(argv: list[str] | None = None) -> int:
                         "deterministic": False if is_hosted else True,
                         "infra_error": is_infra_err,
                         "infra_error_message": infra_err_msg,
+                        "infra_reason": infra_reason if is_infra_err else None,
                         "git_commit": git_commit,
                         "is_dirty": is_dirty,
                         "injected_v3b_sha256": actual_injected_sha,
@@ -995,6 +1031,17 @@ def main(argv: list[str] | None = None) -> int:
                     executed_trials += 1
                     status_char = "✓" if not trial_aborted else "✗"
                     print(f"[{trial_idx}/{total_trials}] {status_char} rep={rep} cond={cond} id={sid} ({args.model}) in {wall_time}s (aborted={trial_aborted}, inj_exp={gt.get('injection_exposed')}, ans_corr={gt.get('answer_correct')}, tgt_judg={gt.get('target_judgement_correct')})")
+
+                    if is_infra_err:
+                        consecutive_infra_errors += 1
+                        if args.stop_after_infra and consecutive_infra_errors >= args.stop_after_infra:
+                            print("\nprovider limit likely reached; resume later with --resume")
+                            return 0
+                    else:
+                        consecutive_infra_errors = 0
+
+                    if args.pace_seconds and args.pace_seconds > 0:
+                        time.sleep(args.pace_seconds)
 
                     if args.max_trials is not None and executed_trials >= args.max_trials:
                         print(f"Reached max_trials limit ({args.max_trials}), stopping after {executed_trials} trials.")

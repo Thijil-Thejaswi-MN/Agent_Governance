@@ -24,6 +24,7 @@ from .evaluator import BoundaryEvaluator
 from .policy import TaskPolicyEngine
 from .expansion import ExpansionService
 from .single_use import consume_single_use
+from .llm_providers import redact_llm_error
 
 
 class ToolBroker:
@@ -41,6 +42,13 @@ class ToolBroker:
         self.policy_engine = policy_engine or TaskPolicyEngine()
         self.expansion_service = expansion_service or ExpansionService(self.storage)
         self._event_counter = 0
+        self.llm_calls = 0
+        self.llm_ok_calls = 0
+        self.llm_rate_limited = 0
+        self.llm_wait_s = 0.0
+        self._llm_in_flight = 0
+        self.llm_in_flight_at_end = False
+        self.last_llm_error: str | None = None
 
     def _generate_event_id(self) -> str:
         self._event_counter += 1
@@ -773,6 +781,36 @@ class ToolBroker:
         if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
             raise PermissionError(f"LLM inference denied by boundary: {eval_res.rule_matched}")
 
+        self.llm_calls += 1
+        self._llm_in_flight += 1
+        try:
+            res = self._dispatch_llm_complete(
+                messages=messages,
+                tools=tools,
+                model=model,
+                temperature=temperature,
+                provider=provider,
+                custom_provider=custom_provider,
+                **kwargs,
+            )
+            self.llm_ok_calls += 1
+            return res
+        except Exception as e:
+            self.last_llm_error = redact_llm_error(str(e), max_chars=300)
+            raise
+        finally:
+            self._llm_in_flight = max(0, self._llm_in_flight - 1)
+
+    def _dispatch_llm_complete(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[dict[str, Any]] | None = None,
+        model: str | None = None,
+        temperature: float = 0.0,
+        provider: str | None = None,
+        custom_provider: Any | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
         # 1. Custom or broker-attached mock provider (for offline testing & benchmarks)
         eff_provider = custom_provider or getattr(self, "default_llm_provider", None)
         if eff_provider is not None:
@@ -909,6 +947,7 @@ class ToolBroker:
                 with httpx.Client(timeout=client_timeout) as client:
                     resp = client.post(endpoint_url, json=payload, headers=headers)
                     if resp.status_code in (429, 503):
+                        self.llm_rate_limited += 1
                         if attempt < max_tries - 1:
                             retry_after_hdr = resp.headers.get("Retry-After") or resp.headers.get("retry-after")
                             sleep_s = None
@@ -921,9 +960,19 @@ class ToolBroker:
                                 sleep_s = min(max(2.0 * (2 ** attempt), 2.0), 30.0)
                             else:
                                 sleep_s = min(max(sleep_s, 0.0), 30.0)
+                            self.llm_wait_s += sleep_s
                             time.sleep(sleep_s)
                             continue
-                        raise RuntimeError(f"{provider} rate limit exceeded: HTTP {resp.status_code} after {max_tries} attempts")
+                        body = resp.text[:300] if resp.text else ""
+                        body_redacted = redact_llm_error(body, max_chars=300) if body else ""
+                        body_part = f": {body_redacted}" if body_redacted else ""
+                        raise RuntimeError(f"{provider} rate limit exceeded: HTTP {resp.status_code} after {max_tries} attempts{body_part}")
+
+                    if resp.status_code >= 400:
+                        body = resp.text[:300] if resp.text else ""
+                        body_redacted = redact_llm_error(body, max_chars=300) if body else ""
+                        body_part = f": {body_redacted}" if body_redacted else ""
+                        raise RuntimeError(f"{provider} request failed with HTTP {resp.status_code}{body_part}")
 
                     resp.raise_for_status()
                     data = resp.json()
@@ -940,17 +989,22 @@ class ToolBroker:
                     }
             except (httpx.ConnectError, httpx.TimeoutException) as ce:
                 if attempt < max_tries - 1:
-                    time.sleep(min(max(2.0 * (2 ** attempt), 2.0), 30.0))
+                    sleep_s = min(max(2.0 * (2 ** attempt), 2.0), 30.0)
+                    self.llm_wait_s += sleep_s
+                    time.sleep(sleep_s)
                     continue
                 err_msg = str(ce).replace(api_key, "[REDACTED]") if api_key else str(ce)
                 raise RuntimeError(
                     f"{provider} service is unreachable or timed out at {endpoint_url} after {max_tries} attempts: {err_msg}"
                 ) from None
             except httpx.HTTPStatusError as hse:
+                body = hse.response.text[:300] if (hse.response and hse.response.text) else ""
+                body_redacted = redact_llm_error(body, max_chars=300) if body else ""
+                body_part = f": {body_redacted}" if body_redacted else ""
                 err_msg = str(hse).replace(api_key, "[REDACTED]") if api_key else str(hse)
-                raise RuntimeError(f"{provider} request failed with HTTP {hse.response.status_code}: {err_msg}") from None
+                raise RuntimeError(f"{provider} request failed with HTTP {hse.response.status_code}{body_part}") from None
             except Exception as e:
-                if "rate limit" in str(e).lower():
+                if "rate limit" in str(e).lower() or str(e).startswith(f"{provider} "):
                     raise
                 err_msg = str(e).replace(api_key, "[REDACTED]") if api_key else str(e)
                 raise RuntimeError(f"{provider} call failed: {err_msg}") from None
@@ -1042,6 +1096,11 @@ class ToolBroker:
                     time.sleep(3.0 * (attempt + 1))
                     continue
                 raise RuntimeError(f"Ollama local service is unreachable or timed out at {v1_url} after {max_retries} attempts: {ce}. Ensure Ollama is running.") from ce
+            except httpx.HTTPStatusError as hse:
+                body = hse.response.text[:300] if (hse.response and hse.response.text) else ""
+                body_redacted = redact_llm_error(body, max_chars=300) if body else ""
+                body_part = f": {body_redacted}" if body_redacted else ""
+                raise RuntimeError(f"Ollama inference failed with HTTP {hse.response.status_code}{body_part}") from hse
             except Exception as e:
                 if attempt < max_retries - 1:
                     time.sleep(2.0)
