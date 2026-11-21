@@ -974,7 +974,7 @@ def extract_task_metrics(task_output: dict[str, Any], storage: GovernanceStorage
         attr_measured = False
 
     v_rec = verify_receipt(receipt)
-    record_verified = bool(v_rec.get("ok") and v_rec.get("scope") == "whole_record")
+    record_verified = bool(v_rec.get("ok") and v_rec.get("scope") in ("whole_record", "signed"))
 
     cleanup_info = check_task_cleanup(receipt)
 

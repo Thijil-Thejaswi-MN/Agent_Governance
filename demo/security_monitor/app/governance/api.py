@@ -780,6 +780,31 @@ _records_verification_cache: dict[str, tuple[float, bool, str]] = {}
 _records_cache_lock = threading.Lock()
 
 
+
+@governance_router.get("/records/public-keys")
+async def get_records_public_keys(request: Request = None, org_id: str | None = Query(None)) -> dict[str, Any]:
+    """Returns the key ids and public keys for an organisation. Inventory view role required.
+    Never returns private keys.
+    """
+    user = get_current_user_session(request)
+    if not PermissionMatrix.can_view_inventory(user):
+        raise HTTPException(status_code=403, detail="Forbidden: Inventory view role required.")
+    eff_org = _extract_org_id(request, org_id)
+    from .signing import load_public_keys
+    keys = load_public_keys(eff_org)
+    return {
+        "org_id": eff_org,
+        "keys": [
+            {
+                "key_id": k["key_id"],
+                "public_key": k["public_key"],
+                "created_at": k.get("created_at"),
+                "retired_at": k.get("retired_at"),
+            }
+            for k in keys
+        ],
+    }
+
 @governance_router.get("/records/summary")
 async def get_records_summary(request: Request = None) -> dict[str, Any]:
     """Runs verify_chain on every stored receipt (cached by file mtime) and returns summary counts.
@@ -814,6 +839,8 @@ async def get_records_summary(request: Request = None) -> dict[str, Any]:
     # Per record, so the console labels each row from what was checked, not by assumption.
     verified_ids: list[str] = []
     events_only_ids: list[str] = []
+    signed_ids: list[str] = []
+    key_ids: dict[str, str] = {}
 
     for rf in candidate_files:
         try:
@@ -823,13 +850,14 @@ async def get_records_summary(request: Request = None) -> dict[str, Any]:
             with _records_cache_lock:
                 cached = _records_verification_cache.get(key)
             if cached and cached[0] == mtime:
-                is_valid, scope = cached[1], cached[2]
+                is_valid, scope, k_id = cached[1], cached[2], cached[3] if len(cached) > 3 else None
             else:
                 data = json.loads(rf.read_text(encoding="utf-8"))
                 res = verify_receipt(data)
                 is_valid, scope = res["ok"], res.get("scope", "")
+                k_id = (data.get("signature") or {}).get("key_id")
                 with _records_cache_lock:
-                    _records_verification_cache[key] = (mtime, is_valid, scope)
+                    _records_verification_cache[key] = (mtime, is_valid, scope, k_id)
 
             total += 1
             if is_valid:
@@ -837,6 +865,10 @@ async def get_records_summary(request: Request = None) -> dict[str, Any]:
                 verified_ids.append(rf.stem)
                 if scope == "events_only":
                     events_only_ids.append(rf.stem)
+                elif scope == "signed":
+                    signed_ids.append(rf.stem)
+                    if k_id:
+                        key_ids[rf.stem] = k_id
             else:
                 failed += 1
                 failed_ids.append(rf.stem)
@@ -852,6 +884,8 @@ async def get_records_summary(request: Request = None) -> dict[str, Any]:
         "failed_ids": failed_ids,
         "verified_ids": verified_ids,
         "events_only_ids": events_only_ids,
+        "signed_ids": signed_ids,
+        "key_ids": key_ids,
     }
 
 
@@ -914,6 +948,8 @@ def _receipt_check(task_id: str) -> dict[str, Any]:
         file_sha256 = hashlib.sha256(Path(receipt_file).read_bytes()).hexdigest()
     final_hash = receipt_data.get("hash_chain", {}).get("final_hash")
 
+    sig = receipt_data.get("signature") if isinstance(receipt_data, dict) else None
+    key_id = sig.get("key_id") if isinstance(sig, dict) else None
     return {
         "task_id": task_id,
         "available": True,
@@ -924,6 +960,8 @@ def _receipt_check(task_id: str) -> dict[str, Any]:
         "receipt_file": receipt_file,
         "file_sha256": file_sha256,
         "final_hash": final_hash,
+        "signature": sig,
+        "key_id": key_id,
     }
 
 
@@ -963,6 +1001,9 @@ def _task_report(task_id: str, request: Request | None) -> dict[str, Any]:
         "final_hash": rc.get("final_hash"),
         "event_count": len(receipt_events),
     }
+    if rc.get("key_id"):
+        record["key_id"] = rc.get("key_id")
+        record["signature_status"] = "signature_verified" if rc.get("verified_scope") == "signed" else ("failed" if not rc.get("verified") else "unsigned")
     events = _build_unified_task_events(task_id, storage.get_events_for_task(task_id))
     return build_task_report(
         task=task,

@@ -122,6 +122,11 @@ export const api = {
   getRecordsSummary: () =>
     request<RecordsSummary>(`${API_BASE}/records/summary`),
 
+  getPublicKeys: (orgId?: string) =>
+    request<{ org_id: string; keys: Array<{ key_id: string; public_key: string; created_at: string; retired_at?: string | null }> }>(
+      `${API_BASE}/records/public-keys${orgId ? `?org_id=${encodeURIComponent(orgId)}` : ''}`
+    ),
+
   // Expansions
   getExpansions: (taskId?: string, status?: string) => {
     const params = new URLSearchParams();
