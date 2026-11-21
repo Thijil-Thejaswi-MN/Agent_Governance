@@ -39,7 +39,9 @@ def world(tmp_path: Path):
     ("api.example.com:443", "https://api.example.com/v1/x", True),
     ("api.example.com:443", "api.example.com:443", True),
     ("api.example.com:443", "http://api.example.com/x", False),     # port 80
-    ("api.example.com", "http://api.example.com:8080/x", True),     # a bare host covers its ports
+    ("api.example.com", "http://api.example.com/x", True),          # a bare host covers ports 80 and 443
+    ("api.example.com", "https://api.example.com/x", True),
+    ("api.example.com", "http://api.example.com:8080/x", False),    # ...and no other port (audit B2)
     ("api.example.com:443", "https://evil.example.com/", False),
 ])
 def test_network_grant_matching(grant, access, ok) -> None:
