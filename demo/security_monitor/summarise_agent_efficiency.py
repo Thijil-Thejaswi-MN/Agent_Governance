@@ -1,25 +1,10 @@
-"""Summarise agent efficiency from committed evaluation runs (no new runs).
+"""Summarise agent efficiency and governance overhead across evaluation datasets.
 
-Processes:
-  - inworkspace_v1_qwen2.5_7b.jsonl
-  - inworkspace_v1_gpt-oss-20b.jsonl
-  - full_v3b_qwen2.5_7b.jsonl
-  - utility_v3d_qwen2.5_7b.jsonl
-under demo/data/evaluation_v3/results/.
+Parses committed evaluation run logs from demo/data/evaluation_v3/results/,
+extracts metrics per task and condition, and outputs per-dataset markdown tables.
 
-Per condition:
-  - median & p95 trial time
-  - tool calls (median, p95)
-  - model calls (median, p95)
-  - tokens (if recorded)
-  - refusals
-  - timeouts
-  - correct answers
-Excludes infra errors from all denominators and metrics.
-
-Outputs:
-  demo/data/perf/agent_efficiency_v1.json
-  demo/data/perf/agent_efficiency_v1.md
+Excludes infrastructure errors (e.g., provider timeouts or throttling) from all
+counts and denominators. Distinguishes strict governance refusals from ordinary tool errors.
 """
 from __future__ import annotations
 
@@ -99,13 +84,53 @@ def is_correct_answer(record: dict[str, Any]) -> bool:
     return gt.get("answer_correct") is True
 
 
-def has_refusal(record: dict[str, Any]) -> bool:
-    """Check if any attempted action was prevented or marked outside."""
-    attempts = record.get("attempts") or []
-    for att in attempts:
-        if att.get("prevented_by") or att.get("outside"):
+def is_governance_refusal(attempt: dict[str, Any]) -> bool:
+    """Check if an attempt was strictly a governance refusal."""
+    prev = attempt.get("prevented_by")
+    if prev in ("broker", "landlock", "seccomp", "proxy"):
+        return True
+    if attempt.get("action_taken") in ("BLOCK_ACTION", "PAUSE_TASK", "KILL_TASK"):
+        return True
+    return False
+
+
+def has_governance_refusal(record: dict[str, Any]) -> bool:
+    """Check if record encountered any strict governance refusal.
+    
+    A governance refusal is strictly one of:
+      - Broker BLOCK or denial
+      - Landlock / seccomp Permission denied (EACCES/EPERM) outside boundary
+      - Proxy 403
+      - Denied access request
+    """
+    for att in record.get("attempts", []):
+        if is_governance_refusal(att):
+            return True
+    for t in record.get("tool_history", []):
+        if t.get("status") == "permission_denied":
+            return True
+        err = str(t.get("error", "")).lower()
+        if "denied by boundary" in err or "permission denied" in err or "access denied" in err or "403" in err:
+            return True
+        if t.get("tool") == "request_access" and t.get("status") in ("denied", "rejected"):
             return True
     return False
+
+
+def count_tool_errors(record: dict[str, Any]) -> int:
+    """Count ordinary tool errors (excluding governance refusals).
+    
+    Includes file not found, directory read errors, invalid arguments, or command non-zero exits.
+    """
+    count = 0
+    for t in record.get("tool_history", []):
+        if t.get("status") == "error":
+            err = str(t.get("error", "")).lower()
+            if not ("denied by boundary" in err or "permission denied" in err or "access denied" in err or "403" in err):
+                count += 1
+        elif t.get("malformed_tool_call"):
+            count += 1
+    return count
 
 
 def extract_trial_metrics(
@@ -114,11 +139,9 @@ def extract_trial_metrics(
     """Extract numeric metrics from a single trial."""
     wall_time = float(record.get("wall_time_s") or 0.0)
     
-    # Tool calls from tool_history
     tool_history = record.get("tool_history") or []
     tool_calls = len(tool_history)
     
-    # Model calls and tokens from receipt or fallback
     model_calls = 0
     tokens = None
     rp = record.get("receipt_path")
@@ -150,7 +173,6 @@ def extract_trial_metrics(
         if tok_val is not None:
             tokens = int(tok_val)
     else:
-        # Fallback heuristic: 1 initial call + 1 per tool call
         model_calls = max(1, tool_calls)
 
     return {
@@ -158,9 +180,11 @@ def extract_trial_metrics(
         "tool_calls": tool_calls,
         "model_calls": model_calls,
         "tokens": tokens,
-        "refused": has_refusal(record),
+        "refused": has_governance_refusal(record),
+        "tool_errors": count_tool_errors(record),
         "timeout": is_timeout(record),
         "correct": is_correct_answer(record),
+        "category": record.get("category"),
     }
 
 
@@ -175,6 +199,7 @@ def summarise_condition_data(metrics_list: list[dict[str, Any]]) -> dict[str, An
             "model_calls": {"median": 0.0, "p95": 0.0},
             "tokens": None,
             "refusals": {"count": 0, "rate": 0.0},
+            "tool_errors": {"count": 0, "rate": 0.0},
             "timeouts": {"count": 0, "rate": 0.0},
             "correct_answers": {"count": 0, "rate": 0.0},
         }
@@ -192,6 +217,7 @@ def summarise_condition_data(metrics_list: list[dict[str, Any]]) -> dict[str, An
         }
 
     refusals_count = sum(1 for m in metrics_list if m["refused"])
+    tool_errors_count = sum(m["tool_errors"] for m in metrics_list)
     timeouts_count = sum(1 for m in metrics_list if m["timeout"])
     correct_count = sum(1 for m in metrics_list if m["correct"])
 
@@ -214,6 +240,10 @@ def summarise_condition_data(metrics_list: list[dict[str, Any]]) -> dict[str, An
             "count": refusals_count,
             "rate": round(refusals_count / n, 4),
         },
+        "tool_errors": {
+            "count": tool_errors_count,
+            "mean_per_trial": round(tool_errors_count / n, 2),
+        },
         "timeouts": {
             "count": timeouts_count,
             "rate": round(timeouts_count / n, 4),
@@ -228,8 +258,9 @@ def summarise_condition_data(metrics_list: list[dict[str, Any]]) -> dict[str, An
 def parse_results_file(
     path: Path, receipt_cache: dict[str, dict[str, Any]]
 ) -> dict[str, Any]:
-    """Parse one evaluation result file, grouping by condition."""
-    conditions_data: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    """Parse one evaluation result file, grouping by condition (or category + condition)."""
+    is_utility = "utility_v3d" in path.name
+    groups_data: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
     infra_errors_count = 0
     total_rows = 0
 
@@ -245,73 +276,106 @@ def parse_results_file(
                 continue
             cond = rec.get("condition", "UNKNOWN")
             metrics = extract_trial_metrics(rec, receipt_cache)
-            conditions_data[cond].append(metrics)
+            
+            if is_utility:
+                cat = rec.get("category", "unspecified")
+                cat_label = "anticipated" if "anticipated" in cat and "unanticipated" not in cat else ("unanticipated" if "unanticipated" in cat else cat)
+                groups_data[cat_label][cond].append(metrics)
+            else:
+                groups_data["all"][cond].append(metrics)
 
-    summary_by_cond: dict[str, Any] = {}
-    for cond, mlist in sorted(conditions_data.items()):
-        summary_by_cond[cond] = summarise_condition_data(mlist)
+    summary_by_group: dict[str, dict[str, Any]] = {}
+    for grp, cond_map in sorted(groups_data.items()):
+        summary_by_group[grp] = {}
+        for cond, mlist in sorted(cond_map.items()):
+            summary_by_group[grp][cond] = summarise_condition_data(mlist)
 
     return {
         "file_name": path.name,
+        "is_utility": is_utility,
+        "is_full_v3b": "full_v3b" in path.name,
         "total_rows": total_rows,
         "infra_errors_excluded": infra_errors_count,
         "valid_trials": total_rows - infra_errors_count,
-        "conditions": summary_by_cond,
+        "groups": summary_by_group,
     }
 
 
-def generate_markdown_report(report_data: dict[str, Any]) -> str:
-    """Generate Markdown tables documenting agent efficiency."""
-    lines: list[str] = [
-        "# Agent Efficiency and Governance Overhead Summary",
+def format_dataset_table(run: dict[str, Any]) -> list[str]:
+    """Format a single dataset's markdown table."""
+    fname = run["file_name"].replace(".jsonl", "")
+    is_full_v3b = run.get("is_full_v3b", False)
+    is_utility = run.get("is_utility", False)
+    
+    title = fname
+    if "inworkspace_v1_qwen2.5_7b" in fname:
+        title = "In-Workspace Tasks — Qwen 2.5 7B"
+    elif "inworkspace_v1_gpt-oss-20b" in fname:
+        title = "In-Workspace Tasks — GPT-OSS 20B"
+    elif "full_v3b_qwen2.5_7b" in fname:
+        title = "Full Evaluation Tasks (v3b) — Qwen 2.5 7B"
+    elif "utility_v3d_qwen2.5_7b" in fname:
+        title = "Dynamic Utility Evaluation (v3d) — Qwen 2.5 7B"
+
+    lines = [
+        f"### {title}",
         "",
-        "Summary of agent efficiency across evaluation datasets, comparing execution time, tool usage, "
-        "model interactions, refusals, timeouts, and task correctness across governance conditions.",
-        "Infrastructure errors (e.g., provider timeouts or throttling) are excluded from all counts and denominators.",
-        "",
-        "## Summary by Dataset and Condition",
-        "",
-        "| Dataset / Run | Condition | Trials | Wall Time p50 (s) | Wall Time p95 (s) | Tool Calls p50 | Model Calls p50 | Refusals | Timeouts | Correct |",
-        "| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |",
+        "| Slice / Variant | Condition | Trials | Wall Time p50 (s) | Wall Time p95 (s) | Tool Calls p50 | Model Calls p50 | Refusals | Tool Errors | Timeouts | Correct |",
+        "| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |",
     ]
 
-    for run in report_data.get("datasets", []):
-        fname = run["file_name"].replace(".jsonl", "")
-        for cond, stats in run["conditions"].items():
+    for grp, cond_map in run.get("groups", {}).items():
+        slice_label = grp if is_utility else "standard"
+        for cond, stats in cond_map.items():
             cnt = stats["trials_count"]
             wt_p50 = f"{stats['wall_time_s']['median']:.2f}"
             wt_p95 = f"{stats['wall_time_s']['p95']:.2f}"
             tools_p50 = f"{stats['tool_calls']['median']:.0f}"
             model_p50 = f"{stats['model_calls']['median']:.0f}"
             refusals = f"{stats['refusals']['count']} ({stats['refusals']['rate']*100:.1f}%)"
+            tool_errs = f"{stats['tool_errors']['count']} ({stats['tool_errors']['mean_per_trial']:.2f}/trial)"
             timeouts = f"{stats['timeouts']['count']} ({stats['timeouts']['rate']*100:.1f}%)"
-            correct = f"{stats['correct_answers']['count']} ({stats['correct_answers']['rate']*100:.1f}%)"
+            
+            if is_full_v3b:
+                correct = "—*"
+            else:
+                correct = f"{stats['correct_answers']['count']} ({stats['correct_answers']['rate']*100:.1f}%)"
+
             lines.append(
-                f"| `{fname}` | **{cond}** | {cnt} | {wt_p50} | {wt_p95} | {tools_p50} | {model_p50} | {refusals} | {timeouts} | {correct} |"
+                f"| {slice_label} | **{cond}** | {cnt} | {wt_p50} | {wt_p95} | {tools_p50} | {model_p50} | {refusals} | {tool_errs} | {timeouts} | {correct} |"
             )
 
-    lines.extend([
-        "",
-        "## Aggregated Summary by Condition",
-        "",
-        "| Condition | Total Trials | Wall Time p50 (s) | Wall Time p95 (s) | Tool Calls p50 | Model Calls p50 | Refusal Rate | Timeout Rate | Correct Rate |",
-        "| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |",
-    ])
-
-    for cond, stats in report_data.get("aggregate_by_condition", {}).items():
-        cnt = stats["trials_count"]
-        wt_p50 = f"{stats['wall_time_s']['median']:.2f}"
-        wt_p95 = f"{stats['wall_time_s']['p95']:.2f}"
-        tools_p50 = f"{stats['tool_calls']['median']:.0f}"
-        model_p50 = f"{stats['model_calls']['median']:.0f}"
-        refusals = f"{stats['refusals']['count']}/{cnt} ({stats['refusals']['rate']*100:.1f}%)"
-        timeouts = f"{stats['timeouts']['count']}/{cnt} ({stats['timeouts']['rate']*100:.1f}%)"
-        correct = f"{stats['correct_answers']['count']}/{cnt} ({stats['correct_answers']['rate']*100:.1f}%)"
-        lines.append(
-            f"| **{cond}** | {cnt} | {wt_p50} | {wt_p95} | {tools_p50} | {model_p50} | {refusals} | {timeouts} | {correct} |"
-        )
+    if is_full_v3b:
+        lines.extend([
+            "",
+            "\\* *Note: Expected answers in legit_v3b are known to be wrong (see FINAL_VERIFIED_RESULTS). Timing and refusal metrics remain reported.*",
+        ])
 
     lines.append("")
+    return lines
+
+
+def generate_markdown_report(report_data: dict[str, Any]) -> str:
+    """Generate Markdown tables documenting agent efficiency per dataset."""
+    lines: list[str] = [
+        "# Agent Efficiency and Governance Overhead Summary",
+        "",
+        "Summary of agent efficiency across evaluation datasets, comparing execution time, tool usage, "
+        "model interactions, governance refusals, tool errors, timeouts, and task correctness across governance conditions.",
+        "",
+        "> [!NOTE]",
+        "> **Refusal and Error Accounting:**",
+        "> - **Refusals** strictly count governance refusals: tool broker BLOCK decisions, Landlock / seccomp EACCES/EPERM outside boundary, proxy 403 status, and denied access requests.",
+        "> - **Condition A** displays 0 refusals because no governance runtime (broker, Landlock, seccomp, proxy) is active.",
+        "> - **Condition W** grants the entire task workspace and displays 0 file-access refusals; its only refusals are Landlock network restrictions when outbound network attempts occur.",
+        "> - **Tool Errors** are ordinary operational errors (file not found, directory read errors, invalid arguments, non-zero command exits) and are counted in a separate column.",
+        "> - **Infrastructure errors** (provider timeouts, 429 throttling) are excluded from all denominators.",
+        "",
+    ]
+
+    for run in report_data.get("datasets", []):
+        lines.extend(format_dataset_table(run))
+
     return "\n".join(lines)
 
 
@@ -322,9 +386,6 @@ def run_summary(output_dir: Path | None = None) -> tuple[dict[str, Any], str]:
     
     receipt_cache = _build_receipt_cache()
     dataset_reports: list[dict[str, Any]] = []
-    
-    # Collect all metrics across files for aggregation by condition
-    aggregate_metrics: dict[str, list[dict[str, Any]]] = defaultdict(list)
 
     for fname in TARGET_FILES:
         fpath = EVAL_RESULTS_DIR / fname
@@ -332,26 +393,9 @@ def run_summary(output_dir: Path | None = None) -> tuple[dict[str, Any], str]:
             continue
         rep = parse_results_file(fpath, receipt_cache)
         dataset_reports.append(rep)
-        
-        # Accumulate condition data
-        with open(fpath, "r", encoding="utf-8") as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                rec = json.loads(line)
-                if is_infra_error(rec):
-                    continue
-                cond = rec.get("condition", "UNKNOWN")
-                metrics = extract_trial_metrics(rec, receipt_cache)
-                aggregate_metrics[cond].append(metrics)
-
-    aggregate_by_condition: dict[str, Any] = {}
-    for cond in sorted(aggregate_metrics.keys()):
-        aggregate_by_condition[cond] = summarise_condition_data(aggregate_metrics[cond])
 
     report_payload = {
         "datasets": dataset_reports,
-        "aggregate_by_condition": aggregate_by_condition,
     }
 
     markdown_str = generate_markdown_report(report_payload)

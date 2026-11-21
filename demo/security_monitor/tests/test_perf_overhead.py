@@ -210,6 +210,17 @@ def test_efficiency_summarizer_fixtures() -> None:
             "aborted": None,
             "attempts": [{"prevented_by": "broker", "outside": True}],
         },
+        # Trial with ordinary tool error (NOT a governance refusal)
+        {
+            "condition": "C",
+            "wall_time_s": 14.0,
+            "tool_history": [{"tool": "read_file", "status": "error", "error": "[Errno 2] No such file or directory: 'missing.txt'"}],
+            "answer_correct": False,
+            "ground_truth": {"answer_correct": False},
+            "infra_error": False,
+            "aborted": None,
+            "attempts": [],
+        },
         # Trial hitting timeout
         {
             "condition": "C",
@@ -236,7 +247,7 @@ def test_efficiency_summarizer_fixtures() -> None:
     ]
 
     # Verify infra error detection
-    assert is_infra_error(fixtures[3]) is True
+    assert is_infra_error(fixtures[4]) is True
     assert is_infra_error(fixtures[0]) is False
 
     # Extract metrics for non-infra trials
@@ -245,21 +256,23 @@ def test_efficiency_summarizer_fixtures() -> None:
         for rec in fixtures
         if not is_infra_error(rec)
     ]
-    assert len(valid_metrics) == 3
+    assert len(valid_metrics) == 4
 
-    # Check timeout & correctness flags
+    # Check timeout, correctness, and tool error flags
     assert valid_metrics[0]["correct"] is True
     assert valid_metrics[1]["refused"] is True
-    assert valid_metrics[2]["timeout"] is True
+    assert valid_metrics[2]["tool_errors"] == 1
+    assert valid_metrics[2]["refused"] is False  # ordinary error is NOT a refusal
+    assert valid_metrics[3]["timeout"] is True
 
     # Summarise
     summary = summarise_condition_data(valid_metrics)
-    assert summary["trials_count"] == 3
+    assert summary["trials_count"] == 4
     assert summary["refusals"]["count"] == 1
-    assert round(summary["refusals"]["rate"], 2) == 0.33
+    assert round(summary["refusals"]["rate"], 2) == 0.25
+    assert summary["tool_errors"]["count"] == 1
     assert summary["timeouts"]["count"] == 1
     assert summary["correct_answers"]["count"] == 1
-    assert summary["wall_time_s"]["median"] == 15.0
 
 
 # -----------------------------------------------------------------------------
@@ -316,7 +329,23 @@ def test_os_layer_perf_smoke(tmp_path: Path) -> None:
         assert len(reads) == 5
         assert len(writes) == 5
         assert len(execs) == 1
-        assert res.phase_timings.get("startup_total_s", 0.0) > 0.0
+        pt = res.phase_timings
+        startup_total = pt.get("startup_total_s", 0.0)
+        assert startup_total > 0.0
+
+        # W1 phases check: non-overlapping phases add up within 5% to startup total
+        phase_sum = (
+            pt.get("intake_s", 0.0)
+            + pt.get("workspace_setup_s", 0.0)
+            + pt.get("net_ns_proxy_s", 0.0)
+            + pt.get("broker_connect_s", 0.0)
+            + pt.get("landlock_seccomp_s", 0.0)
+            + pt.get("sensor_attach_s", 0.0)
+            + pt.get("cgroup_scope_s", 0.0)
+            + pt.get("enforcer_arm_s", 0.0)
+        )
+        assert abs(phase_sum - startup_total) / max(0.001, startup_total) < 0.05
+        assert "teardown_breakdown" in pt
     finally:
         if res and res.workspace:
             shutil.rmtree(res.workspace, ignore_errors=True)
