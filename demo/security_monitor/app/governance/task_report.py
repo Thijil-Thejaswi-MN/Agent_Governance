@@ -181,14 +181,25 @@ def report_to_csv(report: dict[str, Any]) -> str:
         outcome = "Comparison run: decoy was read (would be blocked by the kernel lock)" if b.get("layer") == "comparison_unlocked" else "attempted, not successful"
         row("blocked", b["timestamp"], b["layer"], b["kind"], b["target"], outcome, b["rule"] or "")
     rec = report["record"]
-    outcome_str = (
-        "signature verified"
-        if rec.get("verified_scope") == "signed"
-        else ("verified" if rec.get("verified") else ("no record" if not rec.get("available") else "does not verify"))
-    )
+    scope = rec.get("verified_scope")
+    if scope == "signed":
+        outcome_str = "signature verified"
+    elif scope == "signing_unavailable":
+        outcome_str = "signature unavailable"
+    elif scope == "unsigned_after_signing_enabled":
+        outcome_str = "missing signature"
+    elif rec.get("verified"):
+        outcome_str = "verified"
+    elif not rec.get("available"):
+        outcome_str = "no record"
+    else:
+        outcome_str = "does not verify"
+
     detail_str = rec.get("message") or ""
     if rec.get("key_id"):
         detail_str = f"key_id: {rec.get('key_id')}; {detail_str}"
+    if rec.get("signature_reason"):
+        detail_str = f"reason: {rec.get('signature_reason')}; {detail_str}"
     row("record", report["generated_at"], "hash-chain check", "", rec.get("final_hash") or "",
         outcome_str,
         detail_str)

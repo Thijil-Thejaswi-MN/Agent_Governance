@@ -76,9 +76,21 @@ export const RecordsPage: React.FC = () => {
     const headers = ['task_id', 'agent_id', 'owner', 'team', 'status', 'total_actions', 'stops', 'created_at', 'key_id', 'signature_status'];
     const rows = tasks.map(t => {
       const isSigned = recordsSummary?.signed_ids?.includes(t.task_id);
+      const isUnavailable = recordsSummary?.signing_unavailable_ids?.includes(t.task_id);
+      const isUnsignedAfterEnabled = recordsSummary?.unsigned_after_signing_enabled_ids?.includes(t.task_id);
       const isFailed = recordsSummary?.failed_ids?.includes(t.task_id);
       const keyId = recordsSummary?.key_ids?.[t.task_id] || (isSigned ? 'active' : 'N/A');
-      const sigStatus = isSigned ? 'signature_verified' : isFailed ? 'failed' : recordsSummary?.verified_ids?.includes(t.task_id) ? 'unsigned' : 'unknown';
+      const sigStatus = isSigned
+        ? 'signature_verified'
+        : isUnavailable
+        ? 'signing_unavailable'
+        : isUnsignedAfterEnabled
+        ? 'unsigned_after_signing_enabled'
+        : isFailed
+        ? 'failed'
+        : recordsSummary?.verified_ids?.includes(t.task_id)
+        ? 'unsigned'
+        : 'unknown';
       return [
         t.task_id,
         t.agent_id,
@@ -105,9 +117,21 @@ export const RecordsPage: React.FC = () => {
   const handleExportJSON = () => {
     const data = tasks.map(t => {
       const isSigned = recordsSummary?.signed_ids?.includes(t.task_id);
+      const isUnavailable = recordsSummary?.signing_unavailable_ids?.includes(t.task_id);
+      const isUnsignedAfterEnabled = recordsSummary?.unsigned_after_signing_enabled_ids?.includes(t.task_id);
       const isFailed = recordsSummary?.failed_ids?.includes(t.task_id);
       const keyId = recordsSummary?.key_ids?.[t.task_id] || (isSigned ? 'active' : null);
-      const sigStatus = isSigned ? 'signature_verified' : isFailed ? 'failed' : recordsSummary?.verified_ids?.includes(t.task_id) ? 'unsigned' : 'unknown';
+      const sigStatus = isSigned
+        ? 'signature_verified'
+        : isUnavailable
+        ? 'signing_unavailable'
+        : isUnsignedAfterEnabled
+        ? 'unsigned_after_signing_enabled'
+        : isFailed
+        ? 'failed'
+        : recordsSummary?.verified_ids?.includes(t.task_id)
+        ? 'unsigned'
+        : 'unknown';
       return {
         task_id: t.task_id,
         agent_id: t.agent_id,
@@ -318,6 +342,10 @@ export const RecordsPage: React.FC = () => {
                         <td className="py-2 px-3">
                           {badge === 'failed' ? (
                             <StatusPill tone="bad" label="Verification failed" />
+                          ) : badge === 'unsigned_after_signing_enabled' ? (
+                            <StatusPill tone="bad" label="Missing signature (keys active)" />
+                          ) : badge === 'signing_unavailable' ? (
+                            <StatusPill tone="wait" label={`Signature unavailable: ${recordsSummary?.signing_unavailable_reasons?.[t.task_id] || 'unavailable'}`} />
                           ) : badge === 'signature_verified' ? (
                             <StatusPill tone="ok" label={`Record checked: signature verified (key ${recordsSummary?.key_ids?.[t.task_id] || 'active'})`} />
                           ) : badge === 'events_only' ? (
@@ -389,6 +417,10 @@ export const RecordsPage: React.FC = () => {
               <div className="text-fg-3">Hash chain verification:</div>
               {selectedReceipt?.available === false ? (
                 <StatusPill tone="neutral" label="No stored record" />
+              ) : selectedReceipt?.verified_scope === 'unsigned_after_signing_enabled' ? (
+                <StatusPill tone="bad" label="No signature, but signature verification was active when this record was made" />
+              ) : selectedReceipt?.verified_scope === 'signing_unavailable' ? (
+                <StatusPill tone="wait" label={`Signature unavailable: ${selectedReceipt?.signature_reason || selectedReceipt?.verification_message?.replace(/^signing unavailable:\s*/, '') || 'unavailable'}`} />
               ) : selectedReceipt?.verified === false ? (
                 <StatusPill tone="bad" label="Verification failed: entry changed or hash mismatch" />
               ) : selectedReceipt?.verified_scope === 'signed' ? (

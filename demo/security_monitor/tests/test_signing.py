@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import base64
+import datetime
 import json
 import os
 import stat
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -318,3 +321,147 @@ def test_landlock_condition_c_blocks_private_key(tmp_path: Path) -> None:
 
     for ap in allowed_paths:
         assert not keys_path.startswith(ap) or ap == "/"
+
+
+ROOT = Path(__file__).resolve().parents[3]
+
+
+def test_downgraded_v2_to_v1_flagged_unsigned_after_signing_enabled(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    keys_dir = tmp_path / "keys"
+    monkeypatch.setenv("GOVERNANCE_KEYS_DIR", str(keys_dir))
+
+    rec = _make_dummy_receipt()
+    now_iso = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=1)).isoformat()
+    rec["created_at"] = now_iso
+    rec["started_at"] = now_iso
+    sealed = seal(rec, org_id="default")
+    assert sealed["receipt_version"] == "v2"
+    assert "signature" in sealed
+
+    # Downgrade: remove signature field and set receipt_version to v1
+    forged = dict(sealed)
+    forged.pop("signature", None)
+    forged["receipt_version"] = "v1"
+    forged["hash_chain"] = dict(forged["hash_chain"])
+    forged["hash_chain"]["document_sha256"] = document_hash(forged)
+
+    res = verify_receipt(forged)
+    assert res["ok"] is False
+    assert res["scope"] == "unsigned_after_signing_enabled"
+    assert res["message"] == "No signature, but signing was enabled when this record was made"
+
+
+def test_genuine_v1_record_before_initial_key_verifies_whole_record(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    keys_dir = tmp_path / "keys"
+    monkeypatch.setenv("GOVERNANCE_KEYS_DIR", str(keys_dir))
+
+    # Initialize keys with current timestamp
+    get_or_create_signing_key("default")
+
+    # A genuine record from October 2026, before signing was enabled
+    rec = _make_dummy_receipt()
+    rec["created_at"] = "2026-10-15T12:00:00Z"
+    rec["started_at"] = "2026-10-15T12:00:00Z"
+    rec["receipt_version"] = "v1"
+    sealed = seal(rec, sign=False)
+
+    res = verify_receipt(sealed)
+    assert res["ok"] is True
+    assert res["scope"] == "whole_record"
+    assert "whole record checked" in res["message"]
+
+
+def test_signing_unavailable_shows_signing_unavailable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    keys_dir = tmp_path / "keys"
+    monkeypatch.setenv("GOVERNANCE_KEYS_DIR", str(keys_dir))
+
+    rec = _make_dummy_receipt()
+    rec["extra"] = {"signing": "unavailable: permission denied on keys dir"}
+    rec["receipt_version"] = "v1"
+    sealed = seal(rec, sign=False)
+
+    res = verify_receipt(sealed)
+    assert res["scope"] == "signing_unavailable"
+    assert res["ok"] is False
+    assert "permission denied on keys dir" in res["message"]
+    assert res["signature_reason"] == "permission denied on keys dir"
+
+
+def test_all_existing_demo_data_records_verify_as_before() -> None:
+    demo_receipts_dir = Path("demo/data/evaluation_v3/receipts")
+    assert demo_receipts_dir.is_dir()
+    receipt_files = list(demo_receipts_dir.glob("*.json"))
+    assert len(receipt_files) > 0
+
+    for rf in receipt_files:
+        data = json.loads(rf.read_text(encoding="utf-8"))
+        res = verify_receipt(data)
+        assert res["ok"] is True, f"Failed to verify {rf.name}: {res}"
+        assert res["scope"] in ("whole_record", "events_only")
+
+
+def test_scripts_verify_receipt_downgrade_flags(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    keys_dir = tmp_path / "keys"
+    monkeypatch.setenv("GOVERNANCE_KEYS_DIR", str(keys_dir))
+    priv, kid = get_or_create_signing_key("default")
+
+    # Sealed record downgraded to v1
+    rec = _make_dummy_receipt()
+    now_iso = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=1)).isoformat()
+    rec["created_at"] = now_iso
+    rec["started_at"] = now_iso
+    sealed = seal(rec, org_id="default")
+    downgraded = dict(sealed)
+    downgraded.pop("signature", None)
+    downgraded["receipt_version"] = "v1"
+    downgraded["hash_chain"] = dict(downgraded["hash_chain"])
+    downgraded["hash_chain"]["document_sha256"] = document_hash(downgraded)
+
+    rec_file = tmp_path / "downgraded.json"
+    rec_file.write_text(json.dumps(downgraded), encoding="utf-8")
+
+    pub_file = keys_dir / "default" / "public_keys.json"
+
+    # 1. Without --signing-enabled-since, downgrade check is skipped when --pubkey is passed
+    out_skip = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "verify_receipt.py"), str(rec_file), "--pubkey", str(pub_file)],
+        capture_output=True,
+        text=True,
+    )
+    assert "downgrade check was skipped" in out_skip.stdout
+    assert "PASS" in out_skip.stdout
+
+    # 2. With --signing-enabled-since, downgrade is detected and fails
+    out_fail = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "verify_receipt.py"),
+            str(rec_file),
+            "--pubkey",
+            str(pub_file),
+            "--signing-enabled-since",
+            "2026-11-21T00:00:00Z",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert out_fail.returncode == 1
+    assert "FAIL" in out_fail.stdout
+    assert "No signature, but signing was enabled when this record was made" in out_fail.stdout
+
+    # 3. Signing unavailable record prints WARN and does not exit with code 1
+    unavail = dict(downgraded)
+    unavail["extra"] = {"signing": "unavailable: test write failure"}
+    unavail["hash_chain"] = dict(unavail["hash_chain"])
+    unavail["hash_chain"]["document_sha256"] = document_hash(unavail)
+    unavail_file = tmp_path / "unavail.json"
+    unavail_file.write_text(json.dumps(unavail), encoding="utf-8")
+
+    out_warn = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "verify_receipt.py"), str(unavail_file)],
+        capture_output=True,
+        text=True,
+    )
+    assert out_warn.returncode == 0
+    assert "WARN" in out_warn.stdout
+    assert "signing unavailable" in out_warn.stdout

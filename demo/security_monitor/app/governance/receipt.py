@@ -278,13 +278,53 @@ def seal(receipt: dict[str, Any], org_id: str = "default", sign: bool | None = N
     return out
 
 
-def verify_receipt(r: Any, pubkey: Any = None) -> dict[str, Any]:
+def get_record_start_time(r: dict[str, Any]) -> str | None:
+    """Extracts the start time or initial creation timestamp of a record."""
+    if not isinstance(r, dict):
+        return None
+    if r.get("started_at"):
+        return str(r["started_at"])
+    if r.get("created_at"):
+        return str(r["created_at"])
+    events = r.get("events")
+    if isinstance(events, list) and len(events) > 0 and isinstance(events[0], dict) and events[0].get("timestamp"):
+        return str(events[0]["timestamp"])
+    if r.get("generated_at"):
+        return str(r["generated_at"])
+    return None
+
+
+def _parse_iso_datetime(ts: str | None) -> datetime.datetime | None:
+    if not ts or not isinstance(ts, str):
+        return None
+    try:
+        clean = ts.replace("Z", "+00:00")
+        dt = datetime.datetime.fromisoformat(clean)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
+        return dt
+    except Exception:
+        pass
+    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            dt = datetime.datetime.strptime(ts, fmt)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=datetime.timezone.utc)
+            return dt
+        except Exception:
+            pass
+    return None
+
+
+def verify_receipt(r: Any, pubkey: Any = None, signing_enabled_since: str | None = None) -> dict[str, Any]:
     """Checks a stored record. Returns {ok, scope, message, final_hash}.
 
     scope "signed": chain OK, whole-record hash OK, AND signature valid for known public key (v2).
     scope "whole_record": events chained and the whole-record hash matches (v1).
     scope "events_only": an older v0 record; only the event list could be checked.
     scope "unknown_key": signature present and validly structured, but key is unknown.
+    scope "unsigned_after_signing_enabled": no signature, but signing was active when made.
+    scope "signing_unavailable": signing failed at write time; shown as a warning.
     """
     def fail(msg: str, final: str | None = None, scope: str | None = None) -> dict[str, Any]:
         return {"ok": False, "scope": scope, "message": msg, "final_hash": final}
@@ -326,10 +366,10 @@ def verify_receipt(r: Any, pubkey: Any = None) -> dict[str, Any]:
         if doc != document_hash(r):
             return fail("the record was changed after it was written (whole-record hash does not match)", final)
 
-    # Check signature if present
-    if "signature" in r:
-        sig = r.get("signature")
-        if not isinstance(sig, dict) or not sig.get("value") or not sig.get("key_id"):
+    # Check signature if present and non-empty
+    sig = r.get("signature")
+    if sig is not None and isinstance(sig, dict) and (sig.get("value") or sig.get("key_id")):
+        if not sig.get("value") or not sig.get("key_id"):
             return fail("signature has the wrong shape", final)
 
         key_id = sig.get("key_id")
@@ -368,6 +408,44 @@ def verify_receipt(r: Any, pubkey: Any = None) -> dict[str, Any]:
             "message": f"ok ({len(events)} entries; whole record checked; signature verified key {key_id})",
             "final_hash": final,
         }
+
+    # Record has no valid signature: check for signing_unavailable or unsigned_after_signing_enabled
+    extra = r.get("extra") if isinstance(r, dict) else {}
+    signing_extra = str((extra or {}).get("signing") or "")
+    if "unavailable" in signing_extra.lower():
+        reason = signing_extra.split("unavailable:", 1)[1].strip() if "unavailable:" in signing_extra else signing_extra
+        return {
+            "ok": False,
+            "scope": "signing_unavailable",
+            "message": f"signing unavailable: {reason}",
+            "signature_reason": reason,
+            "final_hash": final,
+        }
+
+    eff_org = (
+        (sig if isinstance(sig, dict) else {}).get("org_id")
+        or (extra or {}).get("org_id")
+        or "default"
+    )
+    enabled_since_str: str | None = signing_enabled_since
+    if enabled_since_str is None and pubkey is None:
+        try:
+            from .signing import get_signing_enabled_since
+            enabled_since_str = get_signing_enabled_since(eff_org)
+        except Exception:
+            enabled_since_str = None
+
+    if enabled_since_str is not None:
+        start_time_str = get_record_start_time(r)
+        if start_time_str:
+            start_dt = _parse_iso_datetime(start_time_str)
+            enabled_dt = _parse_iso_datetime(enabled_since_str)
+            if start_dt and enabled_dt and start_dt >= enabled_dt:
+                return fail(
+                    "No signature, but signing was enabled when this record was made",
+                    final,
+                    scope="unsigned_after_signing_enabled",
+                )
 
     if doc:
         return {
