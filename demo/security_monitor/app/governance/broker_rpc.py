@@ -120,7 +120,12 @@ class BrokerRPCServer:
         self.llm_requests: collections.deque[list[dict[str, Any]]] = collections.deque(maxlen=4)
         self.llm_turns = 0
         self.llm_calls = 0
+        self.llm_ok_calls = 0
         self.llm_errors = 0
+        self._llm_in_flight = 0
+        self.llm_in_flight_at_end = False
+        self._llm_rate_limited = 0
+        self._llm_wait_s = 0.0
         self.last_llm_error: str | None = None
         self.rejections_dropped = 0
         self.connections_refused = 0
@@ -168,6 +173,9 @@ class BrokerRPCServer:
 
     def stop(self) -> None:
         self._stopping = True
+        with self._lock:
+            if self._llm_in_flight > 0 or getattr(self.broker, "_llm_in_flight", 0) > 0:
+                self.llm_in_flight_at_end = True
         if self._sock:
             try:
                 self._sock.close()
@@ -180,6 +188,14 @@ class BrokerRPCServer:
                 self.socket_path.unlink()
         except OSError:
             pass
+
+    @property
+    def llm_rate_limited(self) -> int:
+        return getattr(self.broker, "llm_rate_limited", self._llm_rate_limited)
+
+    @property
+    def llm_wait_s(self) -> float:
+        return getattr(self.broker, "llm_wait_s", self._llm_wait_s)
 
     def is_alive(self) -> bool:
         return bool(self._thread and self._thread.is_alive() and self.socket_path.exists())
@@ -918,14 +934,20 @@ class BrokerRPCServer:
             self.llm_requests.append(messages)
             self.llm_turns += 1
             self.llm_calls += 1
+            self._llm_in_flight += 1
             turn_idx = self.llm_turns
         try:
             res = self.broker.llm_complete(token=token, messages=messages, tools=tools, model=self.llm_model, **self.llm_options)
+            with self._lock:
+                self.llm_ok_calls += 1
         except Exception as e:
             with self._lock:
                 self.llm_errors += 1
                 self.last_llm_error = redact_llm_error(str(e), max_chars=300)
             raise
+        finally:
+            with self._lock:
+                self._llm_in_flight = max(0, self._llm_in_flight - 1)
         content = res.get("content") or ""
         tool_calls = res.get("tool_calls") or []
         summary = f"Model turn {turn_idx}: response generated"

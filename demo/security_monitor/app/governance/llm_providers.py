@@ -127,11 +127,18 @@ def redact_llm_error(error: Any, max_chars: int | None = 300) -> str | None:
     s = re.sub(r'Bearer\s+[A-Za-z0-9\-._~+/]+=*', '[REDACTED_AUTH]', s, flags=re.IGNORECASE)
     s = re.sub(r'Bearer\b[^\s,]*', '[REDACTED_AUTH]', s, flags=re.IGNORECASE)
 
-    # 2. Remove key=... query parameters
+    # 2. Remove key=... and api_key=... query/url/json parameters
+    s = re.sub(r'([?&]api[_-]?key=)[^&\s]+', r'\1[REDACTED_KEY]', s, flags=re.IGNORECASE)
+    s = re.sub(r'(\bapi[_-]?key=)[^&\s,]+', r'\1[REDACTED_KEY]', s, flags=re.IGNORECASE)
     s = re.sub(r'([?&]key=)[^&\s]+', r'\1[REDACTED_KEY]', s, flags=re.IGNORECASE)
     s = re.sub(r'(\bkey=)[^&\s,]+', r'\1[REDACTED_KEY]', s, flags=re.IGNORECASE)
+    s = re.sub(r'("(?:api[_-]?key|key|token|secret)"\s*:\s*")[^"]+(")', r'\1[REDACTED_KEY]\2', s, flags=re.IGNORECASE)
 
     # 3. Remove values of configured environment variables if set
+    for env_var, val in os.environ.items():
+        if (env_var.endswith("_API_KEY") or env_var.endswith("_KEY")) and val and len(val.strip()) >= 4:
+            s = s.replace(val.strip(), "[REDACTED_KEY]")
+
     for env_var in (
         "GROQ_API_KEY",
         "CEREBRAS_API_KEY",
