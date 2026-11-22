@@ -31,6 +31,8 @@ export interface TaskRecord {
   bench_mode?: boolean;
   sensor_disabled?: boolean;
   benchmark_label?: string | null;
+  sensor_kind?: 'ebpf' | 'ptrace' | string | null;
+  sensor_reason?: string | null;
 }
 
 export interface TaskBoundary {

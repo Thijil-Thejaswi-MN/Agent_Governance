@@ -155,6 +155,7 @@ class BrokerRPCServer:
             "run_command_begin": self._h_run_command_begin,
             "llm_complete": self._h_llm_complete,
         }
+        self.task_result: dict[str, Any] | None = None
         assert tuple(self._handlers) == AGENT_ENDPOINTS
 
     # --- lifecycle ---
@@ -263,56 +264,63 @@ class BrokerRPCServer:
         peer = _peer_pid(conn)
         method = None
         try:
-            conn.settimeout(self.read_timeout)
-            try:
-                req = rpc_recv_frame(conn, self.max_request_bytes)
-            except ValueError as ve:
-                self._reject(f"malformed_or_oversized_request: {ve}", None, peer)
-                rpc_send_frame(conn, {"ok": False, "error_type": "ValueError", "error": str(ve)})
-                return
-            method = req.get("method")
-            token = req.get("token")
-            params = req.get("params") or {}
-            if not isinstance(method, str) or not isinstance(token, str) or not isinstance(params, dict):
-                self._reject("bad_request_shape", method if isinstance(method, str) else None, peer)
-                rpc_send_frame(conn, {"ok": False, "error_type": "ValueError", "error": "bad request"})
-                return
-            handler = self._handlers.get(method)
-            if handler is None:
-                self._reject("endpoint_not_exposed", method, peer)
-                rpc_send_frame(conn, {"ok": False, "error_type": "PermissionError",
-                                      "error": f"endpoint '{method[:64]}' is not exposed to agents"})
-                return
-            if not self.armed.wait(self.arm_timeout):
-                self._reject("task_not_armed", method, peer)
-                rpc_send_frame(conn, {"ok": False, "error_type": "RuntimeError", "error": "task sandbox not armed"})
-                return
-            owner = self.broker.storage.lookup_task_by_token(token)
-            if not owner or owner[0] != self.task_id:
-                self._reject("token_not_for_this_task", method, peer)
-                rpc_send_frame(conn, {"ok": False, "error_type": "PermissionError", "error": "invalid task token"})
-                return
-            if self.expected_cgroup is not None:
-                peer_cg = self.cgroup_reader(peer) if (self.cgroup_reader and peer) else None
-                if peer_cg is None or not (peer_cg == self.expected_cgroup or peer_cg.startswith(self.expected_cgroup + "/")):
-                    self._reject("peer_not_in_task_cgroup", method, peer)
+            while not self._stopping:
+                try:
+                    conn.settimeout(self.read_timeout)
+                    req = rpc_recv_frame(conn, self.max_request_bytes)
+                except (EOFError, ConnectionResetError, BrokenPipeError):
+                    break
+                except (socket.timeout, OSError):
+                    if self._stopping:
+                        break
+                    break
+                except ValueError as ve:
+                    self._reject(f"malformed_or_oversized_request: {ve}", None, peer)
+                    rpc_send_frame(conn, {"ok": False, "error_type": "ValueError", "error": str(ve)})
+                    break
+                method = req.get("method")
+                token = req.get("token")
+                params = req.get("params") or {}
+                if not isinstance(method, str) or not isinstance(token, str) or not isinstance(params, dict):
+                    self._reject("bad_request_shape", method if isinstance(method, str) else None, peer)
+                    rpc_send_frame(conn, {"ok": False, "error_type": "ValueError", "error": "bad request"})
+                    break
+                handler = self._handlers.get(method)
+                if handler is None:
+                    self._reject("endpoint_not_exposed", method, peer)
                     rpc_send_frame(conn, {"ok": False, "error_type": "PermissionError",
-                                          "error": "caller is not a process of this task"})
-                    return
+                                          "error": f"endpoint '{method[:64]}' is not exposed to agents"})
+                    break
+                if not self.armed.wait(self.arm_timeout):
+                    self._reject("task_not_armed", method, peer)
+                    rpc_send_frame(conn, {"ok": False, "error_type": "RuntimeError", "error": "task sandbox not armed"})
+                    break
+                owner = self.broker.storage.lookup_task_by_token(token)
+                if not owner or owner[0] != self.task_id:
+                    self._reject("token_not_for_this_task", method, peer)
+                    rpc_send_frame(conn, {"ok": False, "error_type": "PermissionError", "error": "invalid task token"})
+                    break
+                if self.expected_cgroup is not None:
+                    peer_cg = self.cgroup_reader(peer) if (self.cgroup_reader and peer) else None
+                    if peer_cg is None or not (peer_cg == self.expected_cgroup or peer_cg.startswith(self.expected_cgroup + "/")):
+                        self._reject("peer_not_in_task_cgroup", method, peer)
+                        rpc_send_frame(conn, {"ok": False, "error_type": "PermissionError",
+                                              "error": "caller is not a process of this task"})
+                        break
 
-            with self._lock:
-                self.call_counts[method] = self.call_counts.get(method, 0) + 1
-            params = {k: v for k, v in params.items() if k != "_peer_pid"}
-            if method == "run_command_begin":
-                params["_peer_pid"] = peer  # from SO_PEERCRED, never from the agent
-            timeout = self.llm_timeout if method == "llm_complete" else self.call_timeout
-            ok, value = self._run_with_timeout(handler, token, params, timeout)
-            conn.settimeout(self.read_timeout)
-            if ok:
-                rpc_send_frame(conn, {"ok": True, "result": value})
-            else:
-                etype, msg = value
-                rpc_send_frame(conn, {"ok": False, "error_type": etype, "error": msg})
+                with self._lock:
+                    self.call_counts[method] = self.call_counts.get(method, 0) + 1
+                params = {k: v for k, v in params.items() if k != "_peer_pid"}
+                if method == "run_command_begin":
+                    params["_peer_pid"] = peer  # from SO_PEERCRED, never from the agent
+                timeout = self.llm_timeout if method == "llm_complete" else self.call_timeout
+                ok, value = self._run_with_timeout(handler, token, params, timeout)
+                conn.settimeout(self.read_timeout)
+                if ok:
+                    rpc_send_frame(conn, {"ok": True, "result": value})
+                else:
+                    etype, msg = value
+                    rpc_send_frame(conn, {"ok": False, "error_type": etype, "error": msg})
         except (OSError, ConnectionError):
             pass
         finally:
@@ -965,3 +973,8 @@ class BrokerRPCServer:
             source_label="model output (untrusted)",
         )
         return {k: res.get(k) for k in ("role", "content", "tool_calls", "provider", "model", "model_digest")}
+
+    def _h_report_result(self, token: str, p: dict[str, Any]) -> dict[str, Any]:
+        self.task_result = p.get("result", p)
+        return {"recorded": True}
+

@@ -199,11 +199,13 @@ class GovernanceBenchmarkRunner:
         # Governed configurations: W, C, C-nosensor, C-ebpf
         env_backup = dict(os.environ)
         try:
-            if config in ("W", "C-nosensor", "C-ebpf"):
+            if config in ("W", "C-nosensor"):
                 os.environ["GOVERNANCE_BENCH_MODE"] = "1"
                 os.environ["GOVERNANCE_BENCH_DISABLE_PTRACE_SENSOR"] = "1"
-            if config == "C-ebpf":
-                os.environ["GOVERNANCE_EBPF_SHADOW"] = "1"
+            if config == "C":
+                os.environ["GOVERNANCE_SENSOR"] = "ptrace"
+            elif config == "C-ebpf":
+                os.environ["GOVERNANCE_SENSOR"] = "ebpf"
 
             target_cond = "W" if config == "W" else "C"
             spec = TaskSpec(
@@ -323,11 +325,13 @@ class GovernanceBenchmarkRunner:
 
         env_backup = dict(os.environ)
         try:
-            if config in ("W", "C-nosensor", "C-ebpf"):
+            if config in ("W", "C-nosensor"):
                 os.environ["GOVERNANCE_BENCH_MODE"] = "1"
                 os.environ["GOVERNANCE_BENCH_DISABLE_PTRACE_SENSOR"] = "1"
-            if config == "C-ebpf":
-                os.environ["GOVERNANCE_EBPF_SHADOW"] = "1"
+            if config == "C":
+                os.environ["GOVERNANCE_SENSOR"] = "ptrace"
+            elif config == "C-ebpf":
+                os.environ["GOVERNANCE_SENSOR"] = "ebpf"
 
             target_cond = "W" if config == "W" else "C"
             spec = TaskSpec(
@@ -490,11 +494,13 @@ class GovernanceBenchmarkRunner:
 
         env_backup = dict(os.environ)
         try:
-            if config in ("W", "C-nosensor", "C-ebpf"):
+            if config in ("W", "C-nosensor"):
                 os.environ["GOVERNANCE_BENCH_MODE"] = "1"
                 os.environ["GOVERNANCE_BENCH_DISABLE_PTRACE_SENSOR"] = "1"
-            if config == "C-ebpf":
-                os.environ["GOVERNANCE_EBPF_SHADOW"] = "1"
+            if config == "C":
+                os.environ["GOVERNANCE_SENSOR"] = "ptrace"
+            elif config == "C-ebpf":
+                os.environ["GOVERNANCE_SENSOR"] = "ebpf"
 
             target_cond = "W" if config == "W" else "C"
             spec = TaskSpec(
@@ -610,11 +616,13 @@ class GovernanceBenchmarkRunner:
 
         env_backup = dict(os.environ)
         try:
-            if config in ("W", "C-nosensor", "C-ebpf"):
+            if config in ("W", "C-nosensor"):
                 os.environ["GOVERNANCE_BENCH_MODE"] = "1"
                 os.environ["GOVERNANCE_BENCH_DISABLE_PTRACE_SENSOR"] = "1"
-            if config == "C-ebpf":
-                os.environ["GOVERNANCE_EBPF_SHADOW"] = "1"
+            if config == "C":
+                os.environ["GOVERNANCE_SENSOR"] = "ptrace"
+            elif config == "C-ebpf":
+                os.environ["GOVERNANCE_SENSOR"] = "ebpf"
 
             target_cond = "W" if config == "W" else "C"
             spec = TaskSpec(
@@ -680,11 +688,13 @@ class GovernanceBenchmarkRunner:
 
         env_backup = dict(os.environ)
         try:
-            if config in ("W", "C-nosensor", "C-ebpf"):
+            if config in ("W", "C-nosensor"):
                 os.environ["GOVERNANCE_BENCH_MODE"] = "1"
                 os.environ["GOVERNANCE_BENCH_DISABLE_PTRACE_SENSOR"] = "1"
-            if config == "C-ebpf":
-                os.environ["GOVERNANCE_EBPF_SHADOW"] = "1"
+            if config == "C":
+                os.environ["GOVERNANCE_SENSOR"] = "ptrace"
+            elif config == "C-ebpf":
+                os.environ["GOVERNANCE_SENSOR"] = "ebpf"
 
             target_cond = "A" if config == "A" else ("W" if config == "W" else "C")
             spec = TaskSpec(
@@ -1079,7 +1089,7 @@ def generate_perf_markdown(summary: dict[str, Any]) -> str:
         "- **W**: Workspace sandbox (Landlock workspace boundary)",
         "- **C**: Full governance (tool broker, Landlock, seccomp, netns/proxy, ptrace sensor)",
         "- **C-nosensor**: Condition C with the ptrace sensor disabled (benchmark mode)",
-        "- **C-ebpf**: Condition C with eBPF shadow sensor",
+        "- **C-ebpf**: Condition C with eBPF primary sensor",
         "",
         f"**Environment**: {sys_b.get('cpu_model')} ({sys_b.get('cpu_cores')} cores), Linux {sys_b.get('kernel')}  ",
         f"**System Load**: 1m={sys_b.get('load_avg_1m')}, 5m={sys_b.get('load_avg_5m')}  ",

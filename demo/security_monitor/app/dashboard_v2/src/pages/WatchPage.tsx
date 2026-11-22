@@ -178,6 +178,15 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
                   {live ? 'Live' : run.state === 'stopped' ? 'Stopped' : 'Finished'}
                 </span>
               </div>
+              {(run.receipt?.receipt?.sensor?.kind || run.task?.sensor_kind) && (
+                <div
+                  id="run-sensor-badge"
+                  data-sensor-kind={run.receipt?.receipt?.sensor?.kind || run.task?.sensor_kind}
+                  className="flex h-9 shrink-0 items-center justify-center gap-2 rounded-xl border border-line bg-surface-2 px-3 text-[13px] font-medium text-fg"
+                >
+                  {(run.receipt?.receipt?.sensor?.kind || run.task?.sensor_kind) === 'ebpf' ? 'eBPF sensor' : 'ptrace sensor'}
+                </div>
+              )}
               {(run.task?.benchmark_label || (run.task?.bench_mode && run.task?.sensor_disabled)) && (
                 <div
                   id="benchmark-sensor-chip"
@@ -419,6 +428,15 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
         <DetailsSection title="Run">
           <KV k="Task" v={taskId} />
           <KV k="Status" v={STATUS_LABELS[run.state] || run.state} id="run-status-label" />
+          {(run.receipt?.receipt?.sensor?.kind || run.task?.sensor_kind) && (
+            <KV
+              k="Sensor"
+              v={(run.receipt?.receipt?.sensor?.reason || run.task?.sensor_reason)
+                ? `${(run.receipt?.receipt?.sensor?.kind || run.task?.sensor_kind) === 'ebpf' ? 'eBPF' : 'ptrace'} (${run.receipt?.receipt?.sensor?.reason || run.task?.sensor_reason})`
+                : ((run.receipt?.receipt?.sensor?.kind || run.task?.sensor_kind) === 'ebpf' ? 'eBPF' : 'ptrace')}
+              id="run-sensor-detail"
+            />
+          )}
           {(run.task?.benchmark_label || (run.task?.bench_mode && run.task?.sensor_disabled)) && (
             <KV k="Benchmark" v="benchmark: sensor off" id="run-bench-mode" />
           )}

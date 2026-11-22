@@ -18,6 +18,7 @@
 #include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
+#include <pthread.h>
 
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
@@ -26,6 +27,8 @@
 
 #define VERSION "1.0.0"
 #define MAX_CLIENTS 64
+
+static long long monotonic_ms(void);
 
 static volatile sig_atomic_t stop_requested = 0;
 static unsigned long long g_seq = 0;
@@ -97,6 +100,45 @@ static uint64_t get_total_rate_limited(void) {
         total += vals[i];
     }
     return total;
+}
+
+static uint64_t get_total_filtered(void) {
+    if (!g_skel) return 0;
+    int fd = bpf_map__fd(g_skel->maps.filtered_events);
+    if (fd < 0) return 0;
+    uint64_t vals[g_num_cpus];
+    memset(vals, 0, sizeof(vals));
+    uint32_t key = 0;
+    if (bpf_map_lookup_elem(fd, &key, vals) != 0) {
+        return 0;
+    }
+    uint64_t total = 0;
+    for (int i = 0; i < g_num_cpus; i++) {
+        total += vals[i];
+    }
+    return total;
+}
+
+static void init_runtime_prefixes(struct sensor_bpf *skel) {
+    static const char *prefixes[] = {
+        "/usr/lib",
+        "/lib",
+        "/usr/share/zoneinfo",
+        "/etc/ld.so.cache",
+        "/lib64",
+        "/usr/lib64",
+        "/usr/share/locale",
+        NULL
+    };
+    int map_fd = bpf_map__fd(skel->maps.runtime_prefixes);
+    if (map_fd < 0) return;
+    for (uint32_t i = 0; prefixes[i] != NULL && i < MAX_RUNTIME_PREFIXES; i++) {
+        struct prefix_entry entry;
+        memset(&entry, 0, sizeof(entry));
+        entry.len = (uint32_t)strlen(prefixes[i]);
+        strncpy(entry.prefix, prefixes[i], sizeof(entry.prefix) - 1);
+        bpf_map_update_elem(map_fd, &i, &entry, BPF_ANY);
+    }
 }
 
 static int set_discovery_config(uint32_t enabled, uint32_t rate_limit, uint32_t dns_port) {
@@ -245,7 +287,44 @@ static void describe_sock(const char *raw, uint32_t len, char *out_buf, size_t o
     }
 }
 
-static void resolve_abs_path(uint32_t pid, const char *rel, char *out_buf, size_t out_len) {
+struct dirfd_cache_entry {
+    uint32_t pid;
+    int32_t dfd;
+    char path[PATH_MAX];
+    uint64_t ts_ms;
+};
+#define DIRFD_CACHE_SIZE 512
+static struct dirfd_cache_entry g_dirfd_cache[DIRFD_CACHE_SIZE];
+static pthread_mutex_t g_dirfd_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static void update_dirfd_cache(uint32_t pid, int32_t fd, const char *path) {
+    if (fd < 0 || !path || path[0] == '\0') return;
+    pthread_mutex_lock(&g_dirfd_mutex);
+    uint32_t idx = ((pid * 31) ^ (uint32_t)fd) % DIRFD_CACHE_SIZE;
+    g_dirfd_cache[idx].pid = pid;
+    g_dirfd_cache[idx].dfd = fd;
+    strncpy(g_dirfd_cache[idx].path, path, sizeof(g_dirfd_cache[idx].path) - 1);
+    g_dirfd_cache[idx].path[sizeof(g_dirfd_cache[idx].path) - 1] = '\0';
+    g_dirfd_cache[idx].ts_ms = (uint64_t)monotonic_ms();
+    pthread_mutex_unlock(&g_dirfd_mutex);
+}
+
+static const char *lookup_dirfd_cache(uint32_t pid, int32_t fd) {
+    if (fd < 0) return NULL;
+    static __thread char result[PATH_MAX];
+    pthread_mutex_lock(&g_dirfd_mutex);
+    uint32_t idx = ((pid * 31) ^ (uint32_t)fd) % DIRFD_CACHE_SIZE;
+    if (g_dirfd_cache[idx].pid == pid && g_dirfd_cache[idx].dfd == fd) {
+        strncpy(result, g_dirfd_cache[idx].path, sizeof(result) - 1);
+        result[sizeof(result) - 1] = '\0';
+        pthread_mutex_unlock(&g_dirfd_mutex);
+        return result;
+    }
+    pthread_mutex_unlock(&g_dirfd_mutex);
+    return NULL;
+}
+
+static void resolve_abs_path(uint32_t pid, int32_t dfd, const char *rel, char *out_buf, size_t out_len) {
     if (!rel || rel[0] == '\0') {
         out_buf[0] = '\0';
         return;
@@ -254,18 +333,39 @@ static void resolve_abs_path(uint32_t pid, const char *rel, char *out_buf, size_
         snprintf(out_buf, out_len, "%s", rel);
         return;
     }
-    char cwd_link[64];
-    snprintf(cwd_link, sizeof(cwd_link), "/proc/%u/cwd", (unsigned int)pid);
-    char cwd[PATH_MAX];
-    ssize_t n = readlink(cwd_link, cwd, sizeof(cwd) - 1);
+    char link[64];
+    if (dfd == -100 /* AT_FDCWD */ || dfd < 0) {
+        snprintf(link, sizeof(link), "/proc/%u/cwd", (unsigned int)pid);
+    } else {
+        snprintf(link, sizeof(link), "/proc/%u/fd/%d", (unsigned int)pid, (int)dfd);
+    }
+    char base[PATH_MAX];
+    ssize_t n = readlink(link, base, sizeof(base) - 1);
     if (n > 0) {
-        cwd[n] = '\0';
-        int w = snprintf(out_buf, out_len, "%s/%s", cwd, rel);
+        base[n] = '\0';
+        int w = snprintf(out_buf, out_len, "%s/%s", base, rel);
         if (w < 0 || (size_t)w >= out_len) {
             snprintf(out_buf, out_len, "%s", rel);
         }
     } else {
-        snprintf(out_buf, out_len, "%s", rel);
+        if (dfd == -100 || dfd < 0) {
+            char cwd_link[64];
+            snprintf(cwd_link, sizeof(cwd_link), "/proc/%u/cwd", (unsigned int)pid);
+            n = readlink(cwd_link, base, sizeof(base) - 1);
+            if (n > 0) {
+                base[n] = '\0';
+                snprintf(out_buf, out_len, "%s/%s", base, rel);
+            } else {
+                snprintf(out_buf, out_len, "%s", rel);
+            }
+        } else {
+            const char *cached = lookup_dirfd_cache(pid, dfd);
+            if (cached) {
+                snprintf(out_buf, out_len, "%s/%s", cached, rel);
+            } else {
+                out_buf[0] = '\0';
+            }
+        }
     }
 }
 
@@ -533,7 +633,10 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
         snprintf(abs_target, sizeof(abs_target), "%s", target);
     } else if (e->has_target) {
         snprintf(target, sizeof(target), "%s", e->target);
-        resolve_abs_path(e->pid, e->target, abs_target, sizeof(abs_target));
+        resolve_abs_path(e->pid, e->dfd, e->target, abs_target, sizeof(abs_target));
+        if (e->op == EBPF_OP_OPEN && e->ret >= 0 && abs_target[0] != '\0') {
+            update_dirfd_cache(e->pid, (int32_t)e->ret, abs_target);
+        }
     } else if (e->op == EBPF_OP_LISTEN || e->op == EBPF_OP_ACCEPT) {
         snprintf(target, sizeof(target), "fd:%d", e->dfd);
         snprintf(abs_target, sizeof(abs_target), "fd:%d", e->dfd);
@@ -545,7 +648,7 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
     abs_target2[0] = '\0';
     if (e->has_target2) {
         snprintf(target2, sizeof(target2), "%s", e->target2);
-        resolve_abs_path(e->pid, e->target2, abs_target2, sizeof(abs_target2));
+        resolve_abs_path(e->pid, e->dfd2, e->target2, abs_target2, sizeof(abs_target2));
     }
 
     const char *result_str = "ok";
@@ -569,12 +672,10 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
     char container_id[128] = "";
     char dns_question[256] = "";
 
-    if (e->is_discovery) {
-        resolve_cgroup_info(e->cgroup_id, (pid_t)e->pid, cgroup_path, sizeof(cgroup_path),
-                            unit, sizeof(unit), container_id, sizeof(container_id));
-        if (e->dns_payload_len > 0) {
-            parse_dns_qname(e->dns_payload, e->dns_payload_len, dns_question, sizeof(dns_question));
-        }
+    resolve_cgroup_info(e->cgroup_id, (pid_t)e->pid, cgroup_path, sizeof(cgroup_path),
+                        unit, sizeof(unit), container_id, sizeof(container_id));
+    if (e->is_discovery && e->dns_payload_len > 0) {
+        parse_dns_qname(e->dns_payload, e->dns_payload_len, dns_question, sizeof(dns_question));
     }
 
     char *line = NULL;
@@ -587,20 +688,22 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
         fputs(",\"mode\":\"discovery\"", mem);
     }
     fprintf(mem, ",\"seq\":%llu,\"timestamp\":\"%s\",\"ts_ms\":%lld,"
-                 "\"pid\":%u,\"ppid\":%u,\"cgroup_id\":\"%llu\"",
-            g_seq, ts, ms, e->pid, e->ppid, (unsigned long long)e->cgroup_id);
+                 "\"pid\":%u,\"ppid\":%u",
+            g_seq, ts, ms, e->pid, e->ppid);
 
-    if (e->is_discovery) {
-        fputs(",\"cgroup_path\":", mem);
-        json_escape(mem, cgroup_path);
-        if (unit[0]) {
-            fputs(",\"unit\":", mem);
-            json_escape(mem, unit);
-        }
-        if (container_id[0]) {
-            fputs(",\"container_id\":", mem);
-            json_escape(mem, container_id);
-        }
+    fputs(",\"cgroup_id\":", mem);
+    json_escape(mem, cgroup_path[0] ? cgroup_path : "");
+    fprintf(mem, ",\"cgroup_status\":\"ok\"");
+
+    fputs(",\"cgroup_path\":", mem);
+    json_escape(mem, cgroup_path);
+    if (unit[0]) {
+        fputs(",\"unit\":", mem);
+        json_escape(mem, unit);
+    }
+    if (container_id[0]) {
+        fputs(",\"container_id\":", mem);
+        json_escape(mem, container_id);
     }
 
     fprintf(mem, ",\"syscall\":\"%s\",\"op\":\"%s\",\"target\":",
@@ -609,6 +712,13 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
     fputs(",\"abs_target\":", mem);
     json_escape(mem, abs_target);
     fprintf(mem, ",\"target_status\":\"%s\"", target_status_str);
+
+    if (e->op == EBPF_OP_OPEN) {
+        const char *acc = "read";
+        if ((e->flags & 3) == 1) acc = "write";
+        else if ((e->flags & 3) == 2) acc = "read_write";
+        fprintf(mem, ",\"access\":\"%s\",\"creat\":%s", acc, (e->flags & 0x40) ? "true" : "false");
+    }
 
     if (e->has_target2) {
         fputs(",\"target2\":", mem);
@@ -649,6 +759,12 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
     return 0;
 }
 
+static long long monotonic_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
 static void emit_heartbeat(void) {
     g_seq++;
     char ts[48];
@@ -656,12 +772,13 @@ static void emit_heartbeat(void) {
     now_iso(ts, sizeof(ts), &ms);
     uint64_t dropped = get_total_dropped();
     uint64_t rate_limited = get_total_rate_limited();
+    uint64_t filtered = get_total_filtered();
 
     char line[512];
     snprintf(line, sizeof(line),
              "{\"source\":\"ebpf_sensor\",\"type\":\"heartbeat\",\"seq\":%llu,\"timestamp\":\"%s\",\"ts_ms\":%lld,"
-             "\"events_total\":%llu,\"dropped_total\":%llu,\"rate_limited_total\":%llu,\"version\":\"%s\"}",
-             g_seq, ts, ms, (unsigned long long)g_events_total, (unsigned long long)dropped, (unsigned long long)rate_limited, VERSION);
+             "\"events_total\":%llu,\"dropped_total\":%llu,\"rate_limited_total\":%llu,\"filtered_total\":%llu,\"version\":\"%s\"}",
+             g_seq, ts, ms, (unsigned long long)g_events_total, (unsigned long long)dropped, (unsigned long long)rate_limited, (unsigned long long)filtered, VERSION);
     broadcast_line(line, 0);
 }
 
@@ -784,16 +901,49 @@ static void process_cmd(char *cmd, int client_idx) {
         if (arg) {
             uint64_t cgid = strtoull(arg + 1, NULL, 0);
             if (cgid > 0) {
+                uint64_t filtered_count = 0;
+                if (g_skel) {
+                    int f_map_fd = bpf_map__fd(g_skel->maps.cgroup_filtered_reads);
+                    if (f_map_fd >= 0) {
+                        bpf_map_lookup_elem(f_map_fd, &cgid, &filtered_count);
+                        bpf_map_delete_elem(f_map_fd, &cgid);
+                    }
+                }
                 unregister_cgroup(cgid);
                 if (client_idx >= 0 && client_idx < MAX_CLIENTS && g_clients[client_idx].watched_cgroup == cgid) {
                     g_clients[client_idx].watched_cgroup = 0;
                 }
-                char ack[128];
-                snprintf(ack, sizeof(ack), "{\"source\":\"ebpf_sensor\",\"type\":\"ack\",\"action\":\"unregistered\",\"cgroup_id\":\"%llu\"}",
-                         (unsigned long long)cgid);
+                char ack[256];
+                snprintf(ack, sizeof(ack), "{\"source\":\"ebpf_sensor\",\"type\":\"ack\",\"action\":\"unregistered\",\"cgroup_id\":\"%llu\",\"filtered_runtime_reads\":%llu}",
+                         (unsigned long long)cgid, (unsigned long long)filtered_count);
                 broadcast_line(ack, cgid);
             }
         }
+    } else if (strncmp(cmd, "FILTERED ", 9) == 0) {
+        char *arg = strchr(cmd, ' ');
+        if (arg) {
+            uint64_t cgid = strtoull(arg + 1, NULL, 0);
+            uint64_t fc = 0;
+            if (g_skel) {
+                int f_map_fd = bpf_map__fd(g_skel->maps.cgroup_filtered_reads);
+                if (f_map_fd >= 0) {
+                    bpf_map_lookup_elem(f_map_fd, &cgid, &fc);
+                }
+            }
+            char ack[128];
+            snprintf(ack, sizeof(ack), "{\"source\":\"ebpf_sensor\",\"type\":\"ack\",\"action\":\"filtered_reads\",\"cgroup_id\":\"%llu\",\"filtered_runtime_reads\":%llu}", (unsigned long long)cgid, (unsigned long long)fc);
+            broadcast_line(ack, cgid);
+        }
+    } else if (strcmp(cmd, "STATUS") == 0) {
+        uint64_t dropped = get_total_dropped();
+        uint64_t rate_limited = get_total_rate_limited();
+        uint64_t filtered = get_total_filtered();
+        char resp[512];
+        snprintf(resp, sizeof(resp),
+                 "{\"source\":\"ebpf_sensor\",\"type\":\"status\",\"status\":\"healthy\","
+                 "\"events_total\":%llu,\"dropped_total\":%llu,\"rate_limited_total\":%llu,\"filtered_total\":%llu,\"version\":\"%s\"}",
+                 (unsigned long long)g_events_total, (unsigned long long)dropped, (unsigned long long)rate_limited, (unsigned long long)filtered, VERSION);
+        broadcast_line(resp, 0);
     } else if (strncmp(cmd, "DISCOVERY ON", 12) == 0) {
         uint32_t limit = g_rate_limit;
         char *arg = strchr(cmd + 12, ' ');
@@ -890,6 +1040,7 @@ int main(int argc, char **argv) {
     }
 
     set_discovery_config(g_discovery_enabled, g_rate_limit, g_dns_port);
+    init_runtime_prefixes(g_skel);
 
     g_rb = ring_buffer__new(bpf_map__fd(g_skel->maps.events_rb), handle_event, NULL, NULL);
     if (!g_rb) {
@@ -937,7 +1088,7 @@ int main(int argc, char **argv) {
     }
 
     int rb_fd = ring_buffer__epoll_fd(g_rb);
-    time_t last_hb = time(NULL);
+    long long last_hb = monotonic_ms();
 
     emit_heartbeat();
 
@@ -974,13 +1125,13 @@ int main(int argc, char **argv) {
             }
         }
 
-        int ret = poll(pfds, nfds, 200);
+        int ret = poll(pfds, nfds, 100);
         if (ret < 0 && errno != EINTR) {
             break;
         }
 
-        time_t now = time(NULL);
-        if (now - last_hb >= 1) {
+        long long now = monotonic_ms();
+        if (now - last_hb >= 500) {
             emit_heartbeat();
             last_hb = now;
         }

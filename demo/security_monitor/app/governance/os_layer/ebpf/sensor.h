@@ -7,6 +7,14 @@
 #define ARGV_ITEM_MAX 128
 #define DNS_PAYLOAD_MAX 256
 
+#define RUNTIME_PREFIX_MAX 64
+#define MAX_RUNTIME_PREFIXES 16
+
+struct prefix_entry {
+    __u32 len;
+    char prefix[RUNTIME_PREFIX_MAX];
+};
+
 enum {
     TARGET_STATUS_OK = 0,
     TARGET_STATUS_TRUNCATED = 1,

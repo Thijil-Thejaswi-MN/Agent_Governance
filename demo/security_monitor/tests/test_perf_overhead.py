@@ -127,7 +127,7 @@ def test_bench_mode_switch_ignored_without_bench_mode(tmp_path: Path) -> None:
             assert extra.get("sensor_disabled") is not True
             sensor_sec = (res.receipt or {}).get("sensor", {})
             assert sensor_sec.get("disabled") is not True
-            assert sensor_sec.get("mode") == "observation_only"
+            assert sensor_sec.get("mode") in ("observation_only", "ebpf_primary")
         finally:
             if res and res.workspace:
                 shutil.rmtree(res.workspace, ignore_errors=True)
