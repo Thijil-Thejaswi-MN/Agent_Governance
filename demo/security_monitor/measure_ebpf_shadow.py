@@ -604,6 +604,7 @@ def run_single_task(
         "ebpf_shadow_meta": ebpf_meta,
         "dropped": ebpf_meta.get("dropped", 0),
         "heartbeat_ok": ebpf_meta.get("heartbeat_ok", False),
+        "unresolved_relative": (res.receipt or {}).get("sensor", {}).get("unresolved_relative_paths", 0),
         "udp_probe_info": udp_probe_info,
     }
 
@@ -675,6 +676,7 @@ def run_concurrency_round(
         "total_basename": total_basename,
         "total_pid_op": total_pid_op,
         "total_dropped": total_dropped,
+        "total_unresolved_relative": sum(r.get("unresolved_relative", 0) for r in results),
         "heartbeat_ok": all_heartbeats_ok,
         "ptrace_only_by_reason": ptrace_reasons,
         "ebpf_only_by_category": ebpf_categories,
@@ -889,7 +891,7 @@ def main() -> None:
                   f"{res['total_matched']} matched, "
                   f"{sum(res['ptrace_only_by_reason'].values())} ptrace-only, "
                   f"{sum(res['ebpf_only_by_category'].values())} eBPF-only, "
-                  f"dropped: {res['total_dropped']}")
+                  f"dropped: {res['total_dropped']}, unresolved relative: {res['total_unresolved_relative']}")
     finally:
         shutil.rmtree(tmp_base, ignore_errors=True)
 

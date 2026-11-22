@@ -96,6 +96,7 @@ class OSEventCorrelator:
         condition: str | None = None,
         freeze_on_outside: bool | None = None,
         task_owned_dirs: tuple[str, ...] = ("output", "scratch"),
+        harness_pids: set[int] | None = None,
     ) -> None:
         self.storage = storage
         self.task_id = task_id
@@ -122,6 +123,8 @@ class OSEventCorrelator:
 
         self.sensor_pid: int | None = None
         self.root_pid: int | None = None
+        self.harness_pids: set[int] = set(harness_pids or ())
+        self.unresolved_relative_paths: int = 0
         self.setup_done = False
         self.exit_trailer: dict[str, Any] | None = None
         self.records: list[dict[str, Any]] = []
@@ -152,18 +155,16 @@ class OSEventCorrelator:
 
     # --- classification ---
     def _rel(self, path: str) -> str | None:
-        if not path:
-            return None
-        if not os.path.isabs(path):
-            norm = os.path.normpath(path).replace(os.sep, "/")
-            if not norm.startswith(".."):
-                return norm
+        if not path or not os.path.isabs(path):
             return None
         if _under(path, self.ws):
             return os.path.relpath(path, self.ws).replace(os.sep, "/")
         return None
 
     def _classify_path(self, boundary: Any, path: str, is_write: bool, pid: int | None = None) -> tuple[EventVerdict, RiskTier, str]:
+        if not path or not os.path.isabs(path):
+            self.unresolved_relative_paths += 1
+            return EventVerdict.AMBIGUOUS, RiskTier.MEDIUM, "unresolved relative path"
         rel = self._rel(path)
         if rel is not None:
             top = rel.split("/")[0]
@@ -254,11 +255,12 @@ class OSEventCorrelator:
         pid = ev.get("pid")
         if sc in ("open", "openat", "openat2"):
             flags = int(ev.get("flags", 0) or 0)
-            if not tgt:
-                return EventVerdict.AMBIGUOUS, RiskTier.MEDIUM, "relative path could not be resolved", "file_open", None
-            path = os.path.normpath(tgt)
             access = ev.get("access", "read")
             is_write = access in ("write", "read_write") or bool(ev.get("creat"))
+            if not tgt or not os.path.isabs(tgt):
+                self.unresolved_relative_paths += 1
+                return EventVerdict.AMBIGUOUS, RiskTier.MEDIUM, "unresolved relative path", "file_write" if is_write else "file_read", None
+            path = os.path.normpath(tgt)
             if flags & O_PATH:
                 rights: list[str] = []
             elif flags & O_DIRECTORY:
@@ -268,7 +270,10 @@ class OSEventCorrelator:
             v, r, rule = self._classify_path(boundary, path, is_write, pid)
             return v, r, rule, "file_write" if is_write else "file_read", [(path, rights)]
         if sc in ("execve", "execveat"):
-            path = os.path.normpath(tgt) if tgt else ""
+            if not tgt or not os.path.isabs(tgt):
+                self.unresolved_relative_paths += 1
+                return EventVerdict.AMBIGUOUS, RiskTier.MEDIUM, "unresolved relative path", "process_exec", None
+            path = os.path.normpath(tgt)
             checks = [(path, ["execute"])] if path else None
             if path and any(_under(path, p) for p in SYSTEM_RX_PATHS):
                 if boundary is not None and "run_command" in boundary.tools:
@@ -286,8 +291,9 @@ class OSEventCorrelator:
                 paths = [p1, p2]
             else:
                 paths = [p1]
-            if not all(paths):
-                return EventVerdict.AMBIGUOUS, RiskTier.MEDIUM, f"{sc}: path could not be resolved", op, None
+            if not all(paths) or any(not os.path.isabs(x) for x in paths):
+                self.unresolved_relative_paths += 1
+                return EventVerdict.AMBIGUOUS, RiskTier.MEDIUM, "unresolved relative path", op, None
             parts = [self._classify_path(boundary, x, True, pid) for x in paths]
             v, r, rule = self._worst(parts)
             parent = os.path.dirname
@@ -343,7 +349,8 @@ class OSEventCorrelator:
     # --- main entry ---
     def handle_line(self, line: str, boundary_provider: Callable[[], Any]) -> dict[str, Any] | None:
         line = line.strip()
-        if not (line.startswith('{"source":"os_sensor"') or line.startswith('{"source":"ebpf_sensor"')):
+        if not (line.startswith('{"source":"os_sensor"') or line.startswith('{"source":"ebpf_sensor"')
+                or line.startswith('{"source": "os_sensor"') or line.startswith('{"source": "ebpf_sensor"')):
             return None
         try:
             ev = json.loads(line)
@@ -352,6 +359,8 @@ class OSEventCorrelator:
         typ = ev.get("type")
         if typ == "start":
             self.sensor_pid = ev.get("sensor_pid")
+            if self.sensor_pid is not None:
+                self.harness_pids.add(self.sensor_pid)
             self.root_pid = ev.get("child_pid")
             return None
         if typ == "exit":
@@ -374,7 +383,7 @@ class OSEventCorrelator:
         tool_call = tool_call_of(cg_path, task_cg)
 
         phase = "agent"
-        is_harness = (self.sensor_pid is not None and pid is not None and pid <= self.sensor_pid)
+        is_harness = (pid is not None and pid in self.harness_pids)
         if is_harness or not self.setup_done:
             phase = "launch_chain_setup"
             if (pid == self.root_pid and sc in ("execve", "execveat") and ev.get("result") == "ok"

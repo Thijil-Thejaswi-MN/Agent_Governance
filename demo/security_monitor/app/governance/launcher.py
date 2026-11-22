@@ -1060,7 +1060,8 @@ class TaskLauncher:
 
         # Benchmark-only switch: disable ptrace sensor
         bench_mode = os.environ.get("GOVERNANCE_BENCH_MODE") == "1"
-        disable_ptrace_sensor = (selected_sensor_kind == "ebpf" and not is_ebpf_shadow_enabled()) or (bench_mode and (os.environ.get("GOVERNANCE_BENCH_DISABLE_PTRACE_SENSOR") == "1"))
+        bench_sensor_disabled = bench_mode and (os.environ.get("GOVERNANCE_BENCH_DISABLE_PTRACE_SENSOR") == "1")
+        disable_ptrace_sensor = (selected_sensor_kind == "ebpf" and not is_ebpf_shadow_enabled()) or bench_sensor_disabled
 
         hook_fn = self.test_hooks.get("after_workspace_created")
         if hook_fn:
@@ -1286,6 +1287,7 @@ class TaskLauncher:
             freeze_on_outside=sensor_freeze_on_outside,
             evaluator=file_evaluator,
             task_owned_dirs=() if resolved_path else ("output", "scratch"),
+            harness_pids={proc.pid},
         )
         raw_events = open(control / "sensor_events.jsonl", "w", encoding="utf-8")
         events_done = threading.Event()
@@ -1350,7 +1352,7 @@ class TaskLauncher:
             self.live.update({"cgroup": cg, "sensor_pid": correlator.sensor_pid, "root_pid": correlator.root_pid})
             t_cg_end = time.monotonic()
             rpc.expected_cgroup = cg
-            if selected_sensor_kind == "ebpf" or is_ebpf_shadow_enabled():
+            if (selected_sensor_kind == "ebpf" or is_ebpf_shadow_enabled()) and not bench_sensor_disabled:
                 ebpf_out = self.receipts_dir / f"{task_id}.ebpf.jsonl"
                 ebpf_session = EBPFShadowSession(
                     task_id=task_id,
@@ -1553,7 +1555,7 @@ class TaskLauncher:
             self.live.pop("expansion", None)  # grants end with the run: nothing left to cancel
             delivery.cleanup()
             self.storage.revoke_token(token)
-            if selected_sensor_kind == "ebpf" or is_ebpf_shadow_enabled():
+            if (selected_sensor_kind == "ebpf" or is_ebpf_shadow_enabled()) and not bench_sensor_disabled:
                 if ebpf_session is not None:
                     ebpf_summary = ebpf_session.finish()
                 else:
@@ -1617,16 +1619,17 @@ class TaskLauncher:
             "kind": selected_sensor_kind,
             "reason": selected_sensor_reason,
             "binary": "ebpf_sensor" if selected_sensor_kind == "ebpf" else str(SENSOR_BIN.name),
-            "mode": "ebpf_primary" if selected_sensor_kind == "ebpf" else ("disabled" if disable_ptrace_sensor else "observation_only"),
-            "ran": True if selected_sensor_kind == "ebpf" else ((correlator.sensor_pid is not None) and not disable_ptrace_sensor),
-            "exit_trailer_seen": True if selected_sensor_kind == "ebpf" else (correlator.exit_trailer is not None),
+            "mode": "disabled" if bench_sensor_disabled else ("ebpf_primary" if selected_sensor_kind == "ebpf" else ("disabled" if disable_ptrace_sensor else "observation_only")),
+            "ran": False if bench_sensor_disabled else (True if selected_sensor_kind == "ebpf" else ((correlator.sensor_pid is not None) and not disable_ptrace_sensor)),
+            "exit_trailer_seen": True if (selected_sensor_kind == "ebpf" and not bench_sensor_disabled) else (correlator.exit_trailer is not None),
             "exited_early": False if (selected_sensor_kind == "ebpf" or disable_ptrace_sensor) else (correlator.exit_trailer is None),
             "events_observed": len(correlator.records),
             "cross_attributions": correlator.cross_attributions,
             "unattributed_reasons": correlator.unattributed_reasons,
-            "syscalls_observed": ["open", "openat", "openat2", "execve", "execveat", "connect", "bind", "sendto", "sendmsg"] if selected_sensor_kind == "ebpf" else ([] if disable_ptrace_sensor else ["open", "openat", "openat2", "execve", "execveat", "connect"]),
+            "syscalls_observed": [] if bench_sensor_disabled else (["open", "openat", "openat2", "execve", "execveat", "connect", "bind", "sendto", "sendmsg"] if selected_sensor_kind == "ebpf" else ([] if disable_ptrace_sensor else ["open", "openat", "openat2", "execve", "execveat", "connect"])),
             "filtered_runtime_reads": ebpf_summary.get("filtered_runtime_reads", 0) if ebpf_summary else 0,
-            **({"disabled": True} if (disable_ptrace_sensor and selected_sensor_kind != "ebpf") else {}),
+            "unresolved_relative_paths": correlator.unresolved_relative_paths,
+            **({"disabled": True} if bench_sensor_disabled else {}),
         }
         identity = self.storage.get_task_cgroup(task_id)
         receipt = build_receipt(
@@ -1645,7 +1648,7 @@ class TaskLauncher:
             condition=spec.condition,
             extra={
                 **({"bench_mode": True} if bench_mode else {}),
-                **({"sensor_disabled": True, "ptrace_sensor_disabled": True} if disable_ptrace_sensor else {}),
+                **({"sensor_disabled": True, "ptrace_sensor_disabled": True} if bench_sensor_disabled else {}),
                 "phase_timings": phase_timings,
                 "cgroup_resources": cgroup_resources,
                 "policy": receipt_policy_section(initial_boundary, self.storage.get_boundary(task_id)),

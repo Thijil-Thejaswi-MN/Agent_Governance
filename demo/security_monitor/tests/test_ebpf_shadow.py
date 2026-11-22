@@ -203,6 +203,7 @@ def test_ebpf_shadow_unavailable_path(monkeypatch, tmp_path):
 
 
 def test_launcher_unavailable_fallback(monkeypatch, tmp_path):
+    monkeypatch.setenv("GOVERNANCE_SENSOR", "auto")
     monkeypatch.setenv("GOVERNANCE_EBPF_SHADOW", "1")
     # Point socket to nonexistent path
     monkeypatch.setattr(
@@ -696,4 +697,181 @@ print("EXTRA_FD_REFUSAL_OK")
     res = subprocess.run([sys.executable, "-c", test_code], capture_output=True, text=True)
     assert res.returncode == 0
     assert "EXTRA_FD_REFUSAL_OK" in res.stdout
+
+
+def test_harness_detection_does_not_use_pid_comparison(tmp_path):
+    from demo.security_monitor.app.governance.correlator import OSEventCorrelator, EventVerdict
+    from demo.security_monitor.app.governance.storage import GovernanceStorage
+    from demo.security_monitor.app.governance.models import TaskBoundary, EnforcementMode
+
+    storage = GovernanceStorage(tmp_path / "gov.db")
+    task_id = "test_pid_wrap"
+    storage.save_task_cgroup(task_id, f"/user.slice/agtask-{task_id}.scope", f"agtask-{task_id}.scope", 1234)
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "output").mkdir()
+    (ws / "scratch").mkdir()
+    (ws / "runtime").mkdir()
+
+    boundary = TaskBoundary(
+        task_id=task_id,
+        workspace_root=str(ws),
+        files_read=[],
+        files_write=["output/out.txt"],
+        tools=["run_command"],
+        network=[],
+        enforcement_mode=EnforcementMode.ENFORCE,
+    )
+
+    violations = []
+    def on_violation(reason, rec):
+        violations.append((reason, rec))
+
+    sensor_pid = 50000
+    root_pid = 100
+    interp = sys.executable
+
+    correlator = OSEventCorrelator(
+        storage=storage,
+        task_id=task_id,
+        workspace_root=str(ws),
+        enforcement_mode=EnforcementMode.ENFORCE,
+        landlock_spec=None,
+        proxy_port=None,
+        interpreter_path=interp,
+        runtime_dir=str(ws / "runtime"),
+        seccomp_active=True,
+        on_violation=on_violation,
+        freeze_on_outside=True,
+        harness_pids={49999},
+    )
+
+    # 1. Start event arrives with sensor_pid = 50000, root_pid = 100
+    correlator.handle_line(json.dumps({
+        "source": "ebpf_sensor",
+        "type": "start",
+        "sensor_pid": sensor_pid,
+        "child_pid": root_pid,
+    }), lambda: boundary)
+
+    assert correlator.setup_done is False
+    assert sensor_pid in correlator.harness_pids
+
+    # 2. Setup execve of agent interpreter by root_pid
+    correlator.handle_line(json.dumps({
+        "source": "ebpf_sensor",
+        "type": "syscall",
+        "pid": root_pid,
+        "syscall": "execve",
+        "abs_target": interp,
+        "result": "ok",
+        "cgroup_path": f"/user.slice/agtask-{task_id}.scope",
+    }), lambda: boundary)
+
+    assert correlator.setup_done is True
+
+    # 3. Agent child process (pid 105 < sensor_pid 50000) accesses /home/other/secret.txt
+    agent_child_pid = 105
+    res = correlator.handle_line(json.dumps({
+        "source": "ebpf_sensor",
+        "type": "syscall",
+        "pid": agent_child_pid,
+        "syscall": "openat",
+        "abs_target": "/home/other/secret.txt",
+        "result": "ok",
+        "cgroup_path": f"/user.slice/agtask-{task_id}.scope",
+    }), lambda: boundary)
+
+    assert res is not None
+    assert res["verdict"] == EventVerdict.OUTSIDE.value
+    assert len(violations) == 1
+    assert violations[0][0] == "unprevented_outside_os_event"
+    assert violations[0][1]["pid"] == agent_child_pid
+
+
+def test_relative_path_classification_and_dirfd_resolution(tmp_path):
+    from demo.security_monitor.app.governance.correlator import OSEventCorrelator, EventVerdict
+    from demo.security_monitor.app.governance.storage import GovernanceStorage
+    from demo.security_monitor.app.governance.models import TaskBoundary, EnforcementMode
+
+    storage = GovernanceStorage(tmp_path / "gov.db")
+    task_id = "test_rel_path"
+    storage.save_task_cgroup(task_id, f"/user.slice/agtask-{task_id}.scope", f"agtask-{task_id}.scope", 1234)
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "scratch").mkdir()
+    (ws / "output").mkdir()
+
+    boundary = TaskBoundary(
+        task_id=task_id,
+        workspace_root=str(ws),
+        files_read=["notes.txt"],
+        files_write=[],
+        tools=[],
+        network=[],
+        enforcement_mode=EnforcementMode.ENFORCE,
+    )
+
+    correlator = OSEventCorrelator(
+        storage=storage,
+        task_id=task_id,
+        workspace_root=str(ws),
+        enforcement_mode=EnforcementMode.ENFORCE,
+        landlock_spec=None,
+        proxy_port=None,
+        interpreter_path=sys.executable,
+        runtime_dir=None,
+        seccomp_active=True,
+    )
+    correlator.setup_done = True
+
+    # Case A: A relative "notes.txt" without abs_target (could not be resolved against cwd)
+    # Even though boundary allows "notes.txt", relative path MUST be AMBIGUOUS with "unresolved relative path", NEVER INSIDE
+    ev_rel = {
+        "source": "ebpf_sensor",
+        "type": "syscall",
+        "pid": 1234,
+        "syscall": "openat",
+        "target": "notes.txt",
+        "abs_target": "",
+        "result": "ok",
+        "cgroup_path": f"/user.slice/agtask-{task_id}.scope",
+    }
+    res_rel = correlator.handle_line(json.dumps(ev_rel), lambda: boundary)
+    assert res_rel is not None
+    assert res_rel["verdict"] == EventVerdict.AMBIGUOUS.value
+    assert "unresolved relative path" in res_rel["rule_matched"]
+    assert correlator.unresolved_relative_paths == 1
+
+    # Case B: notes.txt opened with cwd outside workspace (e.g. /tmp/other_dir/notes.txt)
+    # The loader resolved it against cwd to /tmp/other_dir/notes.txt
+    ev_outside = {
+        "source": "ebpf_sensor",
+        "type": "syscall",
+        "pid": 1234,
+        "syscall": "openat",
+        "target": "notes.txt",
+        "abs_target": "/tmp/other_dir/notes.txt",
+        "result": "ok",
+        "cgroup_path": f"/user.slice/agtask-{task_id}.scope",
+    }
+    res_outside = correlator.handle_line(json.dumps(ev_outside), lambda: boundary)
+    assert res_outside is not None
+    assert res_outside["verdict"] == EventVerdict.OUTSIDE.value
+
+    # Case C: openat with dirfd pointing to scratch inside workspace
+    (ws / "scratch" / "data.txt").write_text("hello")
+    ev_dirfd = {
+        "source": "ebpf_sensor",
+        "type": "syscall",
+        "pid": 1234,
+        "syscall": "openat",
+        "target": "data.txt",
+        "abs_target": str(ws / "scratch" / "data.txt"),
+        "result": "ok",
+        "cgroup_path": f"/user.slice/agtask-{task_id}.scope",
+    }
+    res_dirfd = correlator.handle_line(json.dumps(ev_dirfd), lambda: boundary)
+    assert res_dirfd is not None
+    assert res_dirfd["verdict"] == EventVerdict.INSIDE.value
 
