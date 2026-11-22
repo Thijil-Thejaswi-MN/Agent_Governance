@@ -259,12 +259,14 @@ class AgentBrokerClient:
         gateway_url: str | None = None,
         uds_path: str | None = None,
         uds_timeout: float = 330.0,
+        sock_fd: int | None = None,
     ) -> None:
         self.broker = broker
         self.token = token
         self.gateway_url = gateway_url
         self.uds_path = uds_path
         self.uds_timeout = uds_timeout
+        self.sock_fd = sock_fd
 
     def read_file(self, file_path: str) -> str:
         if self.broker:
@@ -330,10 +332,32 @@ class AgentBrokerClient:
             return {"call_id": call_id, "placed": False}
         return self._remote_call("run_command_begin", {"call_id": call_id, "pid": pid})
 
+    def report_result(self, result: dict[str, Any]) -> dict[str, Any]:
+        if self.broker and hasattr(self.broker, "report_result"):
+            return self.broker.report_result(self.token, result)
+        return self._remote_call("report_result", {"result": result})
+
     def _remote_call(self, endpoint: str, payload: dict[str, Any]) -> Any:
+        if self.sock_fd is not None:
+            return self._fd_call(endpoint, payload)
         if self.uds_path:
             return self._uds_call(endpoint, payload)
         return self._http_call(endpoint, payload)
+
+    def _fd_call(self, endpoint: str, payload: dict[str, Any]) -> Any:
+        sock = socket.fromfd(self.sock_fd, socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(self.uds_timeout)
+        try:
+            rpc_send_frame(sock, {"token": self.token, "method": endpoint, "params": payload})
+            resp = rpc_recv_frame(sock, RPC_MAX_RESPONSE_BYTES)
+        finally:
+            sock.close()
+        if resp.get("ok"):
+            return resp.get("result")
+        err = str(resp.get("error", "broker error"))
+        if resp.get("error_type") == "PermissionError":
+            raise PermissionError(err)
+        raise RuntimeError(err)
 
     def _uds_call(self, endpoint: str, payload: dict[str, Any]) -> Any:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

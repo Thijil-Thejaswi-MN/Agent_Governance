@@ -133,6 +133,14 @@ def create_app(
         from ..governance.api import start_rule_watcher
         start_rule_watcher()
 
+    @app.on_event("startup")
+    async def start_ebpf_loader_if_selected() -> None:
+        sensor_choice = os.getenv("GOVERNANCE_SENSOR", "auto").strip().lower()
+        if sensor_choice in ("auto", "ebpf"):
+            from ..governance.os_layer.ebpf_shadow import EBPFShadowManager
+            manager = EBPFShadowManager.get_instance()
+            manager.ensure_running()
+
     @app.on_event("shutdown")
     async def shutdown() -> None:
         from ..governance.api import stop_rule_watcher

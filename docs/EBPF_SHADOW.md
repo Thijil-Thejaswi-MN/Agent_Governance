@@ -1,9 +1,10 @@
-# eBPF Shadow Sensor Integration
+# eBPF Shadow Mode & Differential Evaluation
+
+> For overall Condition C sensor architecture (primary eBPF sensor and fallback ptrace sensor), see [docs/SENSOR.md](file:///home/thiji/Agent_Governance/docs/SENSOR.md).
 
 ## Overview
 
-The eBPF shadow sensor runs alongside the ptrace sensor in observation-only mode.
-The ptrace sensor remains the system of record: no verdicts, receipts, steps, or decisions are altered or influenced by eBPF events.
+The eBPF shadow evaluation mode runs both sensors in parallel for differential verification.
 
 When shadow mode is enabled (`GOVERNANCE_EBPF_SHADOW=1`), the task launcher communicates with the `ebpf_sensor` loader over a UNIX domain socket, registers the task's cgroup ID, streams eBPF syscall records to a separate log (`<task_id>.ebpf.jsonl`), and logs summary metrics in the receipt (`extra.ebpf_shadow`).
 

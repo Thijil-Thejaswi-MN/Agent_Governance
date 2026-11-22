@@ -110,7 +110,7 @@ To prevent kernel ring buffer exhaustion or Denial-of-Service from high-frequenc
 
 ### Workload Overhead Measurement (W3 Shell Benchmark)
 
-Empirical CPU overhead measured across the shell-heavy W3 workload (5k file find, recursive grep, python reading 2k files, 50MB tar archive, and 500 binary executions):
+Empirical CPU overhead measured across the shell-heavy W3 workload using `demo/security_monitor/measure_discovery_overhead.py` (5k file find, recursive grep, python reading 2k files, 50MB tar archive, and 500 binary executions):
 
 | Metric | Discovery OFF | Discovery ON (`GOVERNANCE_DISCOVERY_EBPF=1`) | Delta |
 |---|---|---|---|

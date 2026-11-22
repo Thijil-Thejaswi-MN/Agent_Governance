@@ -152,6 +152,13 @@ class OSEventCorrelator:
 
     # --- classification ---
     def _rel(self, path: str) -> str | None:
+        if not path:
+            return None
+        if not os.path.isabs(path):
+            norm = os.path.normpath(path).replace(os.sep, "/")
+            if not norm.startswith(".."):
+                return norm
+            return None
         if _under(path, self.ws):
             return os.path.relpath(path, self.ws).replace(os.sep, "/")
         return None
@@ -230,6 +237,8 @@ class OSEventCorrelator:
     def _classify_net(self, tgt: str, op: str) -> tuple[EventVerdict, RiskTier, str]:
         if tgt == f"unix:{os.path.join(self.ws, BROKER_SOCKET_NAME)}":
             return EventVerdict.INSIDE, RiskTier.LOW, "broker socket"
+        if tgt == f"unix:{os.path.join(self.ws, '.proxy_bridge.sock')}":
+            return EventVerdict.INSIDE, RiskTier.LOW, "proxy bridge socket"
         m = self._NET_RE.match(tgt)
         if m:
             host = m.group(2) or m.group(1)
@@ -334,7 +343,7 @@ class OSEventCorrelator:
     # --- main entry ---
     def handle_line(self, line: str, boundary_provider: Callable[[], Any]) -> dict[str, Any] | None:
         line = line.strip()
-        if not line.startswith('{"source":"os_sensor"'):
+        if not (line.startswith('{"source":"os_sensor"') or line.startswith('{"source":"ebpf_sensor"')):
             return None
         try:
             ev = json.loads(line)
@@ -359,11 +368,14 @@ class OSEventCorrelator:
         self._n += 1
         pid = ev.get("pid")
         sc = ev.get("syscall")
-        attributed, unattr_reason, task_cg = self._attribute_path(ev.get("cgroup_id", ""), ev.get("cgroup_status", ""))
-        tool_call = tool_call_of(ev.get("cgroup_id", ""), task_cg)
+        cg_path = ev.get("cgroup_path") or ev.get("cgroup_id") or ""
+        cg_status = ev.get("cgroup_status") or "ok"
+        attributed, unattr_reason, task_cg = self._attribute_path(cg_path, cg_status)
+        tool_call = tool_call_of(cg_path, task_cg)
 
         phase = "agent"
-        if not self.setup_done:
+        is_harness = (self.sensor_pid is not None and pid is not None and pid <= self.sensor_pid)
+        if is_harness or not self.setup_done:
             phase = "launch_chain_setup"
             if (pid == self.root_pid and sc in ("execve", "execveat") and ev.get("result") == "ok"
                     and os.path.realpath(ev.get("abs_target") or "") == self.interpreter):
@@ -403,7 +415,7 @@ class OSEventCorrelator:
             action = TaskAction.LOG
 
         rec = {
-            "seq": ev.get("seq"),
+            "seq": ev.get("seq", self._n),
             "timestamp": _iso_from_ms(ev.get("ts_ms")),
             "source": EventSource.OS_SENSOR.value,
             "kind": op,
@@ -412,7 +424,7 @@ class OSEventCorrelator:
             "result": result,
             "pid": pid,
             "ppid": ev.get("ppid"),
-            "cgroup_path": ev.get("cgroup_id"),
+            "cgroup_path": cg_path,
             "attribution_method": "cgroup",
             "attributed_task_id": attributed,
             "tracer_task_hint": self.task_id,
@@ -425,7 +437,7 @@ class OSEventCorrelator:
             "action_taken": action.value,
             "prevented": prevented,
             "prevented_by": prevented_by,
-            "observed_by": ["os_sensor"],
+            "observed_by": [ev.get("source", "os_sensor")],
         }
         self.records.append(rec)
         self.counts[verdict.value] += 1

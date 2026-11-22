@@ -786,6 +786,19 @@ async def get_task_detail(task_id: str, request: Request = None) -> dict[str, An
     task_dict["llm_provider"] = llm_provider
     task_dict["condition"] = getattr(task, "condition", None)
     task_dict["comparison_mode"] = getattr(task, "condition", None) == "B"
+    receipt_p = get_receipt_dir() / f"{task_id}.receipt.json"
+    if not receipt_p.exists():
+        receipt_p = get_receipt_dir() / f"{task_id}.json"
+    if receipt_p.exists():
+        try:
+            with open(receipt_p, "r", encoding="utf-8") as rf:
+                rdata = json.load(rf)
+                sinfo = rdata.get("sensor") or {}
+                if isinstance(sinfo, dict):
+                    task_dict["sensor_kind"] = sinfo.get("kind")
+                    task_dict["sensor_reason"] = sinfo.get("reason")
+        except Exception:
+            pass
     from .llm_providers import HOSTED_PROVIDERS
     if llm_provider in HOSTED_PROVIDERS:
         task_dict["hosted_model_note"] = f"hosted model: the task's prompts and file contents were sent to {llm_provider}" 

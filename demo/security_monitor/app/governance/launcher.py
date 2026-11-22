@@ -64,7 +64,7 @@ from .llm_providers import HOSTED_PROVIDERS
 from .policy_sim import receipt_policy_section
 from .staged_writes import land_snapshot, normalize_write_target, snapshot_staged
 from .storage import GovernanceStorage
-from .os_layer.ebpf_shadow import is_ebpf_shadow_enabled, EBPFShadowSession
+from .os_layer.ebpf_shadow import is_ebpf_shadow_enabled, EBPFShadowSession, EBPFShadowManager
 
 HERE = Path(__file__).resolve().parent
 OS_LAYER = HERE / "os_layer"
@@ -832,8 +832,8 @@ class TaskLauncher:
                 storage=self.storage,
                 os_records=[],
                 deliveries=[],
-                sensor_status={"binary": str(SENSOR_BIN.name), "mode": "observation_only", "ran": False,
-                               "exit_trailer_seen": False, "exited_early": False, "events_observed": 0},
+                sensor_status={"kind": "ptrace", "reason": "not started (cancelled)", "binary": str(SENSOR_BIN.name), "mode": "observation_only", "ran": False,
+                               "exit_trailer_seen": False, "exited_early": False, "events_observed": 0, "filtered_runtime_reads": 0},
                 isolation={"isolation_level": None, "note": "sandbox not started (cancelled by operator)"},
                 freeze_events=[],
                 termination=self.termination,
@@ -1030,9 +1030,37 @@ class TaskLauncher:
         token = f"gov_tok_{uuid.uuid4().hex}"
         self.storage.save_token(token, task_id, task.agent_id)
 
+        # Sensor selection: GOVERNANCE_SENSOR=auto|ebpf|ptrace (default auto)
+        sensor_choice = os.environ.get("GOVERNANCE_SENSOR", "auto").strip().lower()
+        if sensor_choice not in ("auto", "ebpf", "ptrace"):
+            sensor_choice = "auto"
+
+        ebpf_manager = EBPFShadowManager.get_instance()
+        if sensor_choice == "ebpf":
+            ebpf_manager.ensure_running()
+        is_ebpf_healthy, ebpf_health_reason = ebpf_manager.check_health()
+
+        if sensor_choice == "ebpf":
+            if not is_ebpf_healthy:
+                raise RuntimeError(
+                    f"eBPF sensor forced (GOVERNANCE_SENSOR=ebpf) but loader is unavailable or unhealthy: {ebpf_health_reason}"
+                )
+            selected_sensor_kind = "ebpf"
+            selected_sensor_reason = "forced by GOVERNANCE_SENSOR=ebpf"
+        elif sensor_choice == "ptrace":
+            selected_sensor_kind = "ptrace"
+            selected_sensor_reason = "forced by GOVERNANCE_SENSOR=ptrace"
+        else:  # auto
+            if is_ebpf_healthy:
+                selected_sensor_kind = "ebpf"
+                selected_sensor_reason = "auto: ebpf_sensor running and healthy"
+            else:
+                selected_sensor_kind = "ptrace"
+                selected_sensor_reason = f"auto fallback: ebpf_sensor unavailable ({ebpf_health_reason})"
+
         # Benchmark-only switch: disable ptrace sensor
         bench_mode = os.environ.get("GOVERNANCE_BENCH_MODE") == "1"
-        disable_ptrace_sensor = bench_mode and (os.environ.get("GOVERNANCE_BENCH_DISABLE_PTRACE_SENSOR") == "1")
+        disable_ptrace_sensor = (selected_sensor_kind == "ebpf" and not is_ebpf_shadow_enabled()) or (bench_mode and (os.environ.get("GOVERNANCE_BENCH_DISABLE_PTRACE_SENSOR") == "1"))
 
         hook_fn = self.test_hooks.get("after_workspace_created")
         if hook_fn:
@@ -1266,10 +1294,20 @@ class TaskLauncher:
             with os.fdopen(events_r, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
                     raw_events.write(line)
-                    try:
-                        correlator.handle_line(line, boundary_provider)
-                    except Exception as ex:  # never let one bad line stop observation
-                        raw_events.write(json.dumps({"correlator_error": str(ex)}) + "\n")
+                    if selected_sensor_kind != "ebpf":
+                        try:
+                            correlator.handle_line(line, boundary_provider)
+                        except Exception as ex:  # never let one bad line stop observation
+                            raw_events.write(json.dumps({"correlator_error": str(ex)}) + "\n")
+                    else:
+                        # eBPF is primary sensor; only process the 'start' event from the launcher gate
+                        # to establish correlator.root_pid and correlator.sensor_pid.
+                        try:
+                            ev = json.loads(line)
+                            if ev.get("type") == "start":
+                                correlator.handle_line(line, boundary_provider)
+                        except Exception:
+                            pass
             events_done.set()
 
         result_box: dict[str, bytes] = {"data": b""}
@@ -1312,9 +1350,16 @@ class TaskLauncher:
             self.live.update({"cgroup": cg, "sensor_pid": correlator.sensor_pid, "root_pid": correlator.root_pid})
             t_cg_end = time.monotonic()
             rpc.expected_cgroup = cg
-            if is_ebpf_shadow_enabled():
+            if selected_sensor_kind == "ebpf" or is_ebpf_shadow_enabled():
                 ebpf_out = self.receipts_dir / f"{task_id}.ebpf.jsonl"
-                ebpf_session = EBPFShadowSession(task_id, cg, ebpf_out)
+                ebpf_session = EBPFShadowSession(
+                    task_id=task_id,
+                    cgroup_path=cg,
+                    output_path=ebpf_out,
+                    correlator=correlator if selected_sensor_kind == "ebpf" else None,
+                    boundary_provider=boundary_provider if selected_sensor_kind == "ebpf" else None,
+                    on_freeze=(lambda r, d: self._freeze(r, d)) if selected_sensor_kind == "ebpf" else None,
+                )
                 ebpf_session.start()
             self.storage.record_task_step(
                 task_id,
@@ -1508,20 +1553,28 @@ class TaskLauncher:
             self.live.pop("expansion", None)  # grants end with the run: nothing left to cancel
             delivery.cleanup()
             self.storage.revoke_token(token)
-            if is_ebpf_shadow_enabled():
+            if selected_sensor_kind == "ebpf" or is_ebpf_shadow_enabled():
                 if ebpf_session is not None:
                     ebpf_summary = ebpf_session.finish()
                 else:
-                    ebpf_summary = {"status": "unavailable", "reason": "task cgroup not established"}
+                    ebpf_summary = {"status": "unavailable", "reason": "task cgroup not established", "filtered_runtime_reads": 0}
 
         if not self.termination:
             self.termination = {"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                                 "reason": "agent_exited", "sensor_exit_code": proc.returncode}
 
         shim_result = None
-        if result_box["data"]:
+        shim_res_file = ws / "tmp" / ".shim_result.json"
+        if getattr(rpc, "task_result", None):
+            shim_result = rpc.task_result
+        elif result_box["data"]:
             try:
                 shim_result = json.loads(result_box["data"].decode("utf-8", "replace"))
+            except json.JSONDecodeError:
+                shim_result = {"status": "unparseable_result"}
+        elif shim_res_file.exists():
+            try:
+                shim_result = json.loads(shim_res_file.read_text(encoding="utf-8"))
             except json.JSONDecodeError:
                 shim_result = {"status": "unparseable_result"}
 
@@ -1561,16 +1614,19 @@ class TaskLauncher:
         }
 
         sensor_status = {
-            "binary": str(SENSOR_BIN.name),
-            "mode": "disabled" if disable_ptrace_sensor else "observation_only",
-            "ran": (correlator.sensor_pid is not None) and not disable_ptrace_sensor,
-            "exit_trailer_seen": correlator.exit_trailer is not None,
-            "exited_early": False if disable_ptrace_sensor else (correlator.exit_trailer is None),
+            "kind": selected_sensor_kind,
+            "reason": selected_sensor_reason,
+            "binary": "ebpf_sensor" if selected_sensor_kind == "ebpf" else str(SENSOR_BIN.name),
+            "mode": "ebpf_primary" if selected_sensor_kind == "ebpf" else ("disabled" if disable_ptrace_sensor else "observation_only"),
+            "ran": True if selected_sensor_kind == "ebpf" else ((correlator.sensor_pid is not None) and not disable_ptrace_sensor),
+            "exit_trailer_seen": True if selected_sensor_kind == "ebpf" else (correlator.exit_trailer is not None),
+            "exited_early": False if (selected_sensor_kind == "ebpf" or disable_ptrace_sensor) else (correlator.exit_trailer is None),
             "events_observed": len(correlator.records),
             "cross_attributions": correlator.cross_attributions,
             "unattributed_reasons": correlator.unattributed_reasons,
-            "syscalls_observed": [] if disable_ptrace_sensor else ["open", "openat", "openat2", "execve", "execveat", "connect"],
-            **({"disabled": True} if disable_ptrace_sensor else {}),
+            "syscalls_observed": ["open", "openat", "openat2", "execve", "execveat", "connect", "bind", "sendto", "sendmsg"] if selected_sensor_kind == "ebpf" else ([] if disable_ptrace_sensor else ["open", "openat", "openat2", "execve", "execveat", "connect"]),
+            "filtered_runtime_reads": ebpf_summary.get("filtered_runtime_reads", 0) if ebpf_summary else 0,
+            **({"disabled": True} if (disable_ptrace_sensor and selected_sensor_kind != "ebpf") else {}),
         }
         identity = self.storage.get_task_cgroup(task_id)
         receipt = build_receipt(

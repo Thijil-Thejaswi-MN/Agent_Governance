@@ -198,12 +198,50 @@ def main() -> int:
 
     token = _read_fd("GOVERNANCE_TOKEN_FD").decode("utf-8").strip()
     task = json.loads(_read_fd("GOVERNANCE_TASK_FD").decode("utf-8"))
-    result_fd = int(os.environ.pop("GOVERNANCE_RESULT_FD"))
-    sock_path = os.environ.pop("GOVERNANCE_BROKER_SOCK")
+    result_fd_str = os.environ.pop("GOVERNANCE_RESULT_FD", None)
+    result_fd = int(result_fd_str) if result_fd_str is not None else None
+    sock_path = os.environ.pop("GOVERNANCE_BROKER_SOCK", None)
     workspace = os.getcwd()
 
     condition = (task.get("condition") or "").split("_")[0]
     is_direct = condition in ("A", "D", "W") or task.get("client_mode") == "direct"
+
+    # Close the "files opened before the task started" gap by construction:
+    # 0 (stdin), 1 (stdout), 2 (stderr) are standard.
+    # Place broker socket (or result fd for direct mode) on FD 3, then close all FDs >= 4.
+    has_broker = bool(sock_path and os.path.exists(sock_path))
+    if has_broker:
+        import socket
+        bsock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        bsock.connect(sock_path)
+        if bsock.fileno() != 3:
+            os.dup2(bsock.fileno(), 3)
+            bsock.close()
+        if result_fd is not None and result_fd != 3:
+            try:
+                os.close(result_fd)
+            except OSError:
+                pass
+            result_fd = None
+    elif result_fd is not None:
+        if result_fd != 3:
+            os.dup2(result_fd, 3)
+            try:
+                os.close(result_fd)
+            except OSError:
+                pass
+            result_fd = 3
+
+    # Verify that only 0, 1, 2, 3 are open before execution begins
+    extra_fds: list[int] = []
+    for fd in range(4, 1024):
+        try:
+            os.fstat(fd)
+            extra_fds.append(fd)
+        except OSError:
+            pass
+    if extra_fds:
+        raise RuntimeError(f"open_fds_at_start: unexpected open descriptors {extra_fds}")
 
     if is_direct:
         client = DirectIOClient(
@@ -217,6 +255,7 @@ def main() -> int:
         client = SandboxedBrokerClient(
             token=token,
             uds_path=sock_path,
+            sock_fd=3 if has_broker else None,
             workspace=workspace,
             command_timeout=float(task.get("command_timeout", 60)),
         )
@@ -248,11 +287,30 @@ def main() -> int:
         "tool_history": result.get("tool_history", []),
         "attempted_tools": result.get("attempted_tools", []),
     }
-    data = json.dumps(payload, default=str).encode("utf-8")
-    off = 0
-    while off < len(data):
-        off += os.write(result_fd, data[off:])
-    os.close(result_fd)
+
+    if hasattr(client, "report_result"):
+        try:
+            client.report_result(payload)
+        except Exception:
+            pass
+
+    res_path = os.path.join(workspace, "tmp", ".shim_result.json")
+    try:
+        with open(res_path, "w", encoding="utf-8") as rf:
+            json.dump(payload, rf, default=str)
+    except Exception:
+        pass
+
+    if result_fd is not None:
+        try:
+            data = json.dumps(payload, default=str).encode("utf-8")
+            off = 0
+            while off < len(data):
+                off += os.write(result_fd, data[off:])
+            os.close(result_fd)
+        except Exception:
+            pass
+
     return 0 if status == "completed" else 3
 
 

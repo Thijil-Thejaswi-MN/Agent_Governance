@@ -109,6 +109,30 @@ struct {
     __uint(max_entries, 16 * 1024 * 1024);
 } events_rb SEC(".maps");
 
+/* Runtime prefix filtering map */
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, MAX_RUNTIME_PREFIXES);
+    __type(key, __u32);
+    __type(value, struct prefix_entry);
+} runtime_prefixes SEC(".maps");
+
+/* Per-cgroup counter tracking filtered runtime read opens */
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 4096);
+    __type(key, __u64);
+    __type(value, __u64);
+} cgroup_filtered_reads SEC(".maps");
+
+/* Per-CPU total counter tracking filtered runtime reads */
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, __u64);
+} filtered_events SEC(".maps");
+
 volatile const __u64 pidns_dev = 0;
 volatile const __u64 pidns_ino = 0;
 
@@ -597,12 +621,66 @@ int BPF_PROG(raw_tp_sys_enter, struct pt_regs *regs, long id) {
     return 0;
 }
 
+static __always_inline int has_runtime_prefix(const char *path) {
+    #pragma unroll
+    for (__u32 i = 0; i < 8; i++) {
+        __u32 idx = i;
+        struct prefix_entry *p = bpf_map_lookup_elem(&runtime_prefixes, &idx);
+        if (!p) {
+            continue;
+        }
+        __u32 len = p->len;
+        if (len == 0 || len > RUNTIME_PREFIX_MAX) {
+            continue;
+        }
+        int match = 1;
+        for (int j = 0; j < 32; j++) {
+            if (j >= len) {
+                break;
+            }
+            if (path[j & (TARGET_PATH_MAX - 1)] != p->prefix[j & (RUNTIME_PREFIX_MAX - 1)]) {
+                match = 0;
+                break;
+            }
+        }
+        if (match) {
+            char end_c = p->prefix[(len - 1) & (RUNTIME_PREFIX_MAX - 1)];
+            char next_c = path[len & (TARGET_PATH_MAX - 1)];
+            if (end_c == '/' || next_c == '/' || next_c == '\0') {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
 SEC("raw_tp/sys_exit")
 int BPF_PROG(raw_tp_sys_exit, struct pt_regs *regs, long ret) {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     struct ebpf_event *pending = bpf_map_lookup_elem(&active_syscalls, &pid_tgid);
     if (!pending) {
         return 0;
+    }
+
+    /* In-kernel filtering: drop ONLY successful read-only opens under runtime-profile prefixes */
+    if (pending->op == EBPF_OP_OPEN && ret >= 0) {
+        __u64 wr_flags = 0x3ULL | 0x40ULL | 0x200ULL | 0x400ULL | 0x410000ULL;
+        if ((pending->flags & wr_flags) == 0 && has_runtime_prefix(pending->target)) {
+            __u64 *fc = bpf_map_lookup_elem(&cgroup_filtered_reads, &pending->cgroup_id);
+            if (fc) {
+                *fc += 1;
+            } else {
+                __u64 init_cnt = 1;
+                bpf_map_update_elem(&cgroup_filtered_reads, &pending->cgroup_id, &init_cnt, BPF_ANY);
+            }
+            __u32 zero = 0;
+            __u64 *tot_fc = bpf_map_lookup_elem(&filtered_events, &zero);
+            if (tot_fc) {
+                *tot_fc += 1;
+            }
+            bpf_map_delete_elem(&active_syscalls, &pid_tgid);
+            return 0;
+        }
     }
 
     struct ebpf_event *out = bpf_ringbuf_reserve(&events_rb, sizeof(*out), 0);

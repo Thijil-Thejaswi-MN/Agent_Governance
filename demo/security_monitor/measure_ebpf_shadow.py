@@ -165,7 +165,9 @@ PREFIX_REASONS: dict[str, str] = {
     "network_udp": "raw_syscall tracepoint captures UDP sendto/sendmsg datagrams bypassing local TCP proxy",
     "network_server": "raw_syscall tracepoint records socket server lifecycle (bind/listen/accept) not emitted by ptrace",
     "process_lifecycle": "raw_syscall tracepoint captures clone/fork/exit handled via ptrace event notifications",
-    "other": "launcher.py:1020,1418 task decoy setup/cleanup in user home directory and proxy.py:150 loopback connect",
+    "decoy_and_home": "launcher.py:1020,1418 and eval_world.py decoy verification and snapshot diffs in user home directory",
+    "proxy_loopback": "launcher.py:1193 and proxy.py:150 loopback connect to task proxy port",
+    "other": "unmatched event outside standard runtime prefixes",
 }
 
 
@@ -202,6 +204,11 @@ def classify_ebpf_only(
         return ("library-and-system", "/sys", PREFIX_REASONS["/sys"])
     if target.startswith("/tmp"):
         return ("library-and-system", "/tmp", PREFIX_REASONS["/tmp"])
+
+    if target.startswith("/home") or target.startswith("~") or "/home/" in target:
+        return ("decoy-and-home", "/home", PREFIX_REASONS["decoy_and_home"])
+    if target.startswith("inet:127.0.0.1") or target.startswith("inet6:[::1]") or "127.0.0.1:" in target:
+        return ("proxy-loopback", "proxy_loopback", PREFIX_REASONS["proxy_loopback"])
 
     return ("unexplained", "other", PREFIX_REASONS["other"])
 
@@ -304,6 +311,8 @@ def match_task_events(
         "clone-exit": 0,
         "library-and-system": 0,
         "workspace": 0,
+        "decoy-and-home": 0,
+        "proxy-loopback": 0,
         "unexplained": 0,
     }
     ebpf_by_prefix: dict[str, int] = {}
@@ -448,6 +457,48 @@ def build_custom_probe_specs() -> list[TaskSpec]:
     ]
 
 
+RUNTIME_FILTER_PREFIXES = (
+    "/usr/lib",
+    "/lib",
+    "/usr/share/zoneinfo",
+    "/etc/ld.so.cache",
+    "/lib64",
+    "/usr/lib64",
+    "/usr/share/locale",
+)
+
+
+def is_filtered_runtime_read(ev: dict[str, Any]) -> bool:
+    op = (ev.get("op") or ev.get("kind") or "").lower()
+    sc = (ev.get("syscall") or "").lower()
+    if op != "open" and sc not in ("open", "openat", "openat2"):
+        return False
+    flags = ev.get("flags")
+    if flags is not None:
+        try:
+            if isinstance(flags, str):
+                flags_int = int(flags, 0)
+            else:
+                flags_int = int(flags)
+            if (flags_int & 3) != 0:
+                return False
+            if (flags_int & (64 | 512)) != 0:
+                return False
+        except (ValueError, TypeError):
+            pass
+    ret = ev.get("ret")
+    result = ev.get("result")
+    try:
+        val = int(ret if ret is not None else (0 if result == "ok" else -1))
+        if val < 0:
+            return False
+    except (ValueError, TypeError):
+        pass
+
+    target = ev.get("target") or ev.get("abs_target") or ""
+    return any(target.startswith(p) for p in RUNTIME_FILTER_PREFIXES)
+
+
 def run_single_task(
     spec: TaskSpec,
     ws_base: Path,
@@ -481,6 +532,9 @@ def run_single_task(
                             pass
     if not ptrace_events and res.receipt:
         ptrace_events = [e for e in res.receipt.get("events", []) if e.get("type", "syscall") == "syscall" and e.get("syscall")]
+
+    # With in-kernel runtime filtering on in eBPF, filter runtime reads from ptrace events
+    ptrace_events = [e for e in ptrace_events if not is_filtered_runtime_read(e)]
 
     # Read eBPF events from receipts/<task_id>.ebpf.jsonl
     ebpf_file = receipts_dir / f"{task_id}.ebpf.jsonl"
@@ -597,6 +651,8 @@ def run_concurrency_round(
         "clone-exit": 0,
         "library-and-system": 0,
         "workspace": 0,
+        "decoy-and-home": 0,
+        "proxy-loopback": 0,
         "unexplained": 0,
     }
     for r in results:
@@ -638,7 +694,7 @@ def generate_markdown_report(report_data: dict[str, Any]) -> str:
         "",
         "## Summary by Concurrency Level",
         "",
-        "| Concurrency | Tasks | Exact | Basename | PID+Op | Ptrace-Only | eBPF-Only (UDP / bind-listen-accept / clone-exit / library-and-system / workspace / unexplained) | Dropped | Heartbeat |",
+        "| Concurrency | Tasks | Exact | Basename | PID+Op | Ptrace-Only | eBPF-Only (UDP / bind-listen-accept / clone-exit / library-and-system / workspace / decoy-and-home / proxy-loopback / unexplained) | Dropped | Heartbeat |",
         "|---|---|---|---|---|---|---|---|---|",
     ]
 
@@ -650,7 +706,7 @@ def generate_markdown_report(report_data: dict[str, Any]) -> str:
         pid_op = round_res["total_pid_op"]
         po = sum(round_res["ptrace_only_by_reason"].values())
         eb_cats = round_res["ebpf_only_by_category"]
-        eb_str = f"{eb_cats.get('UDP', 0)} / {eb_cats.get('bind-listen-accept', 0)} / {eb_cats.get('clone-exit', 0)} / {eb_cats.get('library-and-system', 0)} / {eb_cats.get('workspace', 0)} / {eb_cats.get('unexplained', 0)}"
+        eb_str = f"{eb_cats.get('UDP', 0)} / {eb_cats.get('bind-listen-accept', 0)} / {eb_cats.get('clone-exit', 0)} / {eb_cats.get('library-and-system', 0)} / {eb_cats.get('workspace', 0)} / {eb_cats.get('decoy-and-home', 0)} / {eb_cats.get('proxy-loopback', 0)} / {eb_cats.get('unexplained', 0)}"
         dropped = round_res["total_dropped"]
         hb = "OK" if round_res["heartbeat_ok"] else "FAIL"
         lines.append(f"| {c} | {tasks} | {exact} | {basename} | {pid_op} | {po} | {eb_str} | {dropped} | {hb} |")
