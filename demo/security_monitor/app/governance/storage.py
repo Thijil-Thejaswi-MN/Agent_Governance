@@ -162,14 +162,27 @@ class GovernanceStorage:
                     team TEXT,
                     condition TEXT,
                     requested_by TEXT,
-                    model TEXT
+                    model TEXT,
+                    parent_task_id TEXT,
+                    root_task_id TEXT,
+                    depth INTEGER DEFAULT 0,
+                    chain TEXT
                 )
             """)
 
             # 2. Task Boundaries (versioned contracts)
-            for _col in ("condition", "requested_by", "model", "org"):
+            for _col, _type in (
+                ("condition", "TEXT"),
+                ("requested_by", "TEXT"),
+                ("model", "TEXT"),
+                ("org", "TEXT"),
+                ("parent_task_id", "TEXT"),
+                ("root_task_id", "TEXT"),
+                ("depth", "INTEGER DEFAULT 0"),
+                ("chain", "TEXT"),
+            ):
                 try:
-                    cursor.execute(f"ALTER TABLE governance_tasks ADD COLUMN {_col} TEXT")
+                    cursor.execute(f"ALTER TABLE governance_tasks ADD COLUMN {_col} {_type}")
                 except Exception:
                     pass
             cursor.execute("""
@@ -346,12 +359,41 @@ class GovernanceStorage:
                 )
             """)
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_discovery_scans_org ON discovery_scans (org_id, started_at)")
+
+            # 12. A2A Messages
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS a2a_messages (
+                    message_id TEXT PRIMARY KEY,
+                    root_task_id TEXT NOT NULL,
+                    parent_task_id TEXT NOT NULL,
+                    child_task_id TEXT,
+                    from_agent TEXT NOT NULL,
+                    to_agent TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    fanout_group TEXT,
+                    reply_to TEXT,
+                    sent_at TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    verdict TEXT NOT NULL,
+                    reason TEXT,
+                    integrity TEXT NOT NULL,
+                    forwarded_from TEXT NOT NULL,
+                    contains_private INTEGER NOT NULL DEFAULT 0
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_a2a_root ON a2a_messages(root_task_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_a2a_parent ON a2a_messages(parent_task_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_a2a_sent ON a2a_messages(sent_at)")
             try:
                 cursor.execute("ALTER TABLE governance_tasks ADD COLUMN owner TEXT")
             except Exception:
                 pass
             try:
                 cursor.execute("ALTER TABLE governance_tasks ADD COLUMN team TEXT")
+            except Exception:
+                pass
+            try:
+                cursor.execute("ALTER TABLE governance_tasks ADD COLUMN timeout_s REAL")
             except Exception:
                 pass
             conn.commit()
@@ -363,8 +405,9 @@ class GovernanceStorage:
                 """
                 INSERT INTO governance_tasks (
                     task_id, request_text, request_hash, agent_id, workspace_root,
-                    status, created_at, started_at, completed_at, current_boundary_version, pid, owner, team, condition, requested_by, model, org
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    status, created_at, started_at, completed_at, current_boundary_version, pid, owner, team, condition, requested_by, model, org,
+                    parent_task_id, root_task_id, depth, chain, timeout_s
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(task_id) DO UPDATE SET
                     status=excluded.status,
                     started_at=coalesce(excluded.started_at, governance_tasks.started_at),
@@ -376,7 +419,12 @@ class GovernanceStorage:
                     condition=coalesce(excluded.condition, governance_tasks.condition),
                     requested_by=coalesce(excluded.requested_by, governance_tasks.requested_by),
                     model=coalesce(excluded.model, governance_tasks.model),
-                    org=coalesce(excluded.org, governance_tasks.org)
+                    org=coalesce(excluded.org, governance_tasks.org),
+                    parent_task_id=coalesce(excluded.parent_task_id, governance_tasks.parent_task_id),
+                    root_task_id=coalesce(excluded.root_task_id, governance_tasks.root_task_id),
+                    depth=coalesce(excluded.depth, governance_tasks.depth),
+                    chain=coalesce(excluded.chain, governance_tasks.chain),
+                    timeout_s=coalesce(excluded.timeout_s, governance_tasks.timeout_s)
                 """,
                 (
                     task.task_id,
@@ -396,6 +444,11 @@ class GovernanceStorage:
                     getattr(task, "requested_by", None),
                     getattr(task, "model", None),
                     getattr(task, "org", None) or "default",
+                    getattr(task, "parent_task_id", None),
+                    getattr(task, "root_task_id", None),
+                    getattr(task, "depth", 0) or 0,
+                    json.dumps(getattr(task, "chain", []) or []),
+                    getattr(task, "timeout_s", 900.0),
                 ),
             )
             conn.commit()
@@ -424,6 +477,11 @@ class GovernanceStorage:
                 requested_by=row["requested_by"] if "requested_by" in keys else None,
                 model=row["model"] if "model" in keys else None,
                 org=row["org"] if "org" in keys and row["org"] else "default",
+                parent_task_id=row["parent_task_id"] if "parent_task_id" in keys else None,
+                root_task_id=row["root_task_id"] if "root_task_id" in keys else None,
+                depth=row["depth"] if "depth" in keys and row["depth"] is not None else 0,
+                chain=json.loads(row["chain"]) if ("chain" in keys and row["chain"]) else [],
+                timeout_s=float(row["timeout_s"]) if ("timeout_s" in keys and row["timeout_s"] is not None) else 900.0,
             )
 
     def list_tasks(self) -> list[TaskRecord]:
@@ -451,6 +509,11 @@ class GovernanceStorage:
                         requested_by=r["requested_by"] if "requested_by" in k else None,
                         model=r["model"] if "model" in k else None,
                         org=r["org"] if "org" in k and r["org"] else "default",
+                        parent_task_id=r["parent_task_id"] if "parent_task_id" in k else None,
+                        root_task_id=r["root_task_id"] if "root_task_id" in k else None,
+                        depth=r["depth"] if "depth" in k and r["depth"] is not None else 0,
+                        chain=json.loads(r["chain"]) if ("chain" in k and r["chain"]) else [],
+                        timeout_s=float(r["timeout_s"]) if ("timeout_s" in k and r["timeout_s"] is not None) else 900.0,
                     )
                 )
             return out
@@ -582,7 +645,8 @@ class GovernanceStorage:
     def _write_batch_to_db(self, items: list[tuple[str, Any]]) -> None:
         steps = [it[1] for it in items if it[0] == "step"]
         events = [it[1] for it in items if it[0] == "event"]
-        if not steps and not events:
+        a2a_msgs = [it[1] for it in items if it[0] == "a2a_msg"]
+        if not steps and not events and not a2a_msgs:
             return
         with self._get_raw_connection() as conn:
                 if steps:
@@ -636,6 +700,43 @@ class GovernanceStorage:
                                 json.dumps(e.details),
                             )
                             for e in events
+                        ],
+                    )
+                if a2a_msgs:
+                    conn.executemany(
+                        """
+                        INSERT INTO a2a_messages (
+                            message_id, root_task_id, parent_task_id, child_task_id,
+                            from_agent, to_agent, kind, fanout_group, reply_to,
+                            sent_at, text, verdict, reason, integrity, forwarded_from, contains_private
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(message_id) DO UPDATE SET
+                            child_task_id=coalesce(excluded.child_task_id, a2a_messages.child_task_id),
+                            verdict=excluded.verdict,
+                            reason=excluded.reason,
+                            forwarded_from=excluded.forwarded_from,
+                            contains_private=excluded.contains_private
+                        """,
+                        [
+                            (
+                                m["message_id"],
+                                m["root_task_id"],
+                                m["parent_task_id"],
+                                m.get("child_task_id"),
+                                m["from_agent"],
+                                m["to_agent"],
+                                m["kind"],
+                                m.get("fanout_group"),
+                                m.get("reply_to"),
+                                m["sent_at"],
+                                (m.get("text") or "")[:8192],
+                                m["verdict"],
+                                m.get("reason"),
+                                m["integrity"],
+                                m["forwarded_from"] if isinstance(m["forwarded_from"], str) else json.dumps(m["forwarded_from"]),
+                                1 if m.get("contains_private") else 0,
+                            )
+                            for m in a2a_msgs
                         ],
                     )
                 conn.commit()
@@ -1378,3 +1479,97 @@ class GovernanceStorage:
                 details=details,
             ))
         return scans
+
+    # --- A2A Message Store ---
+    def save_a2a_message(self, msg: dict[str, Any]) -> None:
+        tid = msg.get("parent_task_id") or msg.get("root_task_id")
+        if not tid:
+            self._write_batch_with_retry([("a2a_msg", msg)])
+            return
+        with self._writer_lock:
+            if tid not in self._task_queues:
+                self._task_queues[tid] = []
+            self._task_queues[tid].append(("a2a_msg", msg))
+            if sum(len(q) for q in self._task_queues.values()) >= 50:
+                self._writer_cond.notify()
+
+    def get_a2a_messages(
+        self,
+        root_task_id: str | None = None,
+        parent_task_id: str | None = None,
+        task_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        self.flush(root_task_id or parent_task_id or task_id)
+        query = "SELECT * FROM a2a_messages"
+        params: list[Any] = []
+        conds: list[str] = []
+        if root_task_id:
+            conds.append("root_task_id = ?")
+            params.append(root_task_id)
+        if parent_task_id:
+            conds.append("parent_task_id = ?")
+            params.append(parent_task_id)
+        if task_id:
+            conds.append("(parent_task_id = ? OR child_task_id = ? OR root_task_id = ?)")
+            params.extend([task_id, task_id, task_id])
+        if conds:
+            query += " WHERE " + " AND ".join(conds)
+        query += " ORDER BY sent_at ASC"
+        with self.get_connection() as conn:
+            rows = conn.execute(query, params).fetchall()
+            out = []
+            for r in rows:
+                fw = r["forwarded_from"]
+                try:
+                    fw_val = json.loads(fw) if isinstance(fw, str) else fw
+                except Exception:
+                    fw_val = []
+                out.append({
+                    "message_id": r["message_id"],
+                    "root_task_id": r["root_task_id"],
+                    "parent_task_id": r["parent_task_id"],
+                    "child_task_id": r["child_task_id"],
+                    "from_agent": r["from_agent"],
+                    "to_agent": r["to_agent"],
+                    "kind": r["kind"],
+                    "fanout_group": r["fanout_group"],
+                    "reply_to": r["reply_to"],
+                    "sent_at": r["sent_at"],
+                    "text": r["text"],
+                    "verdict": r["verdict"],
+                    "reason": r["reason"],
+                    "integrity": r["integrity"],
+                    "forwarded_from": fw_val,
+                    "contains_private": bool(r["contains_private"]),
+                })
+            return out
+
+    def get_a2a_message(self, message_id: str) -> dict[str, Any] | None:
+        self.flush()
+        with self.get_connection() as conn:
+            r = conn.execute("SELECT * FROM a2a_messages WHERE message_id = ?", (message_id,)).fetchone()
+            if not r:
+                return None
+            fw = r["forwarded_from"]
+            try:
+                fw_val = json.loads(fw) if isinstance(fw, str) else fw
+            except Exception:
+                fw_val = []
+            return {
+                "message_id": r["message_id"],
+                "root_task_id": r["root_task_id"],
+                "parent_task_id": r["parent_task_id"],
+                "child_task_id": r["child_task_id"],
+                "from_agent": r["from_agent"],
+                "to_agent": r["to_agent"],
+                "kind": r["kind"],
+                "fanout_group": r["fanout_group"],
+                "reply_to": r["reply_to"],
+                "sent_at": r["sent_at"],
+                "text": r["text"],
+                "verdict": r["verdict"],
+                "reason": r["reason"],
+                "integrity": r["integrity"],
+                "forwarded_from": fw_val,
+                "contains_private": bool(r["contains_private"]),
+            }

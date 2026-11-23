@@ -1,0 +1,53 @@
+{
+  "id": "researcher",
+  "name": "Researcher Agent",
+  "owner": "Travel Desk",
+  "description": "Researches destination attractions and cultural sites",
+  "approval_timeout_s": 20.0,
+  "ceiling": {
+    "tools": [
+      "read_file",
+      "http_get",
+      "request_access"
+    ],
+    "files_read": [
+      "input/attractions.txt"
+    ],
+    "files_write": [
+      "output/*"
+    ],
+    "network": [
+      "127.0.0.1:*",
+      "localhost:*"
+    ],
+    "peer_agents": []
+  },
+  "runner": {
+    "provider": "scripted",
+    "steps": [
+      {
+        "tool": "http_get",
+        "args": {
+          "url": "http://127.0.0.1:8765/kyoto_attractions"
+        }
+      },
+      {
+        "tool": "request_access",
+        "args": {
+          "resource_type": "file_read",
+          "resource_target": "input/travel_history.csv",
+          "justification": "Need traveler history for tailored recommendations"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "file_path": "input/travel_history.csv"
+        }
+      },
+      {
+        "final": "1. Kinkaku-ji\n2. Fushimi Inari-taisha\n3. Kiyomizu-dera"
+      }
+    ]
+  }
+}

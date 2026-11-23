@@ -186,8 +186,14 @@ class DirectIOClient(AgentBrokerClient):
     def request_access(self, resource_type: str, resource_target: str, justification: str) -> dict[str, Any]:
         raise PermissionError("governance disabled / container baseline: request_access not available")
 
-    def call_agent(self, target_agent: str, message: dict[str, Any]) -> dict[str, Any]:
+    def http_post(self, url: str, file_path: str | None = None, data: str | None = None) -> dict[str, Any]:
+        raise RuntimeError("http_post not supported in direct mode")
+
+    def call_agent(self, target_agent: str, message: dict[str, Any] | str) -> dict[str, Any]:
         raise RuntimeError("call_agent not supported in direct mode")
+
+    def call_agents(self, calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        raise RuntimeError("call_agents not supported in direct mode")
 
 
 def main() -> int:

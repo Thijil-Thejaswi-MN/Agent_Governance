@@ -97,6 +97,11 @@ class TaskRecord(BaseModel):
     bench_mode: bool | None = False
     sensor_disabled: bool | None = False
     benchmark_label: str | None = None
+    parent_task_id: str | None = None
+    root_task_id: str | None = None
+    depth: int = 0
+    chain: list[str] = Field(default_factory=list)
+    timeout_s: float | None = 900.0
 
 
 class GovernanceEvent(BaseModel):

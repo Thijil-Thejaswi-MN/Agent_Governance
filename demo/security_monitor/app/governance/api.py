@@ -2687,3 +2687,150 @@ async def get_task_output_files(task_id: str, request: Request = None) -> dict[s
         # "clean" / "leaked" when this run planted private files with a unique code; else null.
         "private_check": (("leaked" if any(f.get("contains_private") for f in files) else "clean") if canary else None),
     }
+
+
+@governance_router.get("/a2a/jobs/{root_task_id}")
+async def get_a2a_job(root_task_id: str, request: Request = None) -> dict[str, Any]:
+    storage = get_storage()
+    root_task = _require_view(request, storage, root_task_id)
+    if not root_task:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    messages = storage.get_a2a_messages(root_task_id=root_task_id)
+
+    # All tasks belonging to this delegation tree
+    all_tasks = [t for t in storage.list_tasks() if t.root_task_id == root_task_id or t.task_id == root_task_id]
+    task_ids = {t.task_id for t in all_tasks}
+
+    # Approvals pending for any task in the tree
+    pending_approvals: list[dict[str, Any]] = []
+    for tid in task_ids:
+        for req in storage.list_expansion_requests(task_id=tid):
+            if req.status == ExpansionStatus.PENDING:
+                pending_approvals.append({
+                    "request_id": req.request_id,
+                    "task_id": req.task_id,
+                    "resource_type": req.resource_type,
+                    "resource_target": req.resource_target,
+                    "justification": req.justification,
+                    "requested_at": req.requested_at,
+                    "status": req.status.value,
+                })
+
+    from .agent_profiles import load_all_agent_profiles
+    known_profiles = load_all_agent_profiles()
+
+    agent_ids: set[str] = {root_task.agent_id}
+    for m in messages:
+        if m.get("from_agent"):
+            agent_ids.add(m["from_agent"])
+        if m.get("to_agent") and not m["to_agent"].startswith("host:"):
+            agent_ids.add(m["to_agent"])
+    for t in all_tasks:
+        if t.agent_id:
+            agent_ids.add(t.agent_id)
+
+    sorted_agents = sorted(agent_ids)
+    agents: list[dict[str, Any]] = []
+    for idx, aid in enumerate(sorted_agents):
+        prof = known_profiles.get(aid)
+        if prof and isinstance(prof, dict):
+            display_name = prof.get("name") or aid.replace("_", " ").title()
+        elif prof and hasattr(prof, "name"):
+            display_name = prof.name
+        else:
+            display_name = aid.replace("_", " ").title()
+        agents.append({
+            "id": aid,
+            "name": display_name,
+            "colour_index": idx % 6,
+        })
+
+    pairs: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for m in messages:
+        fa = m.get("from_agent") or ""
+        ta = m.get("to_agent") or ""
+        pair_key = tuple(sorted([fa, ta]))
+        pairs.setdefault(pair_key, []).append(m)
+
+    threads: list[dict[str, Any]] = []
+    job_status = "pending_approval" if pending_approvals else (
+        "refused" if any(m.get("verdict") == "refused" for m in messages) else (
+            "active" if root_task.status == TaskLifecycle.ACTIVE else "finished"
+        )
+    )
+    threads.append({
+        "thread_id": "job",
+        "title": "Entire Job",
+        "participants": sorted_agents,
+        "message_count": len(messages),
+        "status": job_status,
+    })
+
+    for (a1, a2), pair_msgs in sorted(pairs.items(), key=lambda x: x[0]):
+        pair_refused = any(pm.get("verdict") == "refused" for pm in pair_msgs)
+        pair_status = "refused" if pair_refused else "delivered"
+        threads.append({
+            "thread_id": f"{a1}__{a2}",
+            "title": f"{a1} <-> {a2}",
+            "participants": [a1, a2],
+            "message_count": len(pair_msgs),
+            "status": pair_status,
+        })
+
+    return {
+        "root_task_id": root_task_id,
+        "status": job_status,
+        "agents": agents,
+        "threads": threads,
+        "messages": messages,
+        "pending_approvals": pending_approvals,
+    }
+
+
+@governance_router.get("/a2a/jobs/{root_task_id}/stream")
+async def stream_a2a_job(root_task_id: str, request: Request) -> StreamingResponse:
+    storage = get_storage()
+    root_task = _require_view(request, storage, root_task_id)
+    if not root_task:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    async def event_generator():
+        sent_ids: set[str] = set()
+        try:
+            while True:
+                msgs = storage.get_a2a_messages(root_task_id=root_task_id)
+                for m in msgs:
+                    mid = m.get("message_id")
+                    if mid and mid not in sent_ids:
+                        sent_ids.add(mid)
+                        yield f"data: {json.dumps(m)}\n\n"
+
+                t = storage.get_task(root_task_id)
+                if t is None or t.status in _TERMINAL_STATUS_STATE:
+                    msgs = storage.get_a2a_messages(root_task_id=root_task_id)
+                    for m in msgs:
+                        mid = m.get("message_id")
+                        if mid and mid not in sent_ids:
+                            sent_ids.add(mid)
+                            yield f"data: {json.dumps(m)}\n\n"
+                    state_name = "done" if t and t.status not in (TaskLifecycle.FAILED, TaskLifecycle.TERMINATED, TaskLifecycle.EXPIRED) else (t.status.value if t else "failed")
+                    yield f"event: end\ndata: {json.dumps({'root_task_id': root_task_id, 'state': state_name})}\n\n"
+                    return
+
+                if await request.is_disconnected():
+                    return
+
+                await asyncio.sleep(0.5)
+        except asyncio.CancelledError:
+            pass
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

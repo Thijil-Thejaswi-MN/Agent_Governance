@@ -182,11 +182,11 @@ def test_derivation_benchmark_results_validation() -> None:
 # =====================================================================
 
 def test_governed_tools_schema_completeness() -> None:
-    """Verifies that the agent's tool schema exposes ONLY the 6 broker-governed tools."""
+    """Verifies that the agent's tool schema exposes the broker-governed tools."""
     tool_names = [t["function"]["name"] for t in GOVERNED_TOOLS_SCHEMA]
-    expected_tools = {"read_file", "write_file", "http_get", "call_agent", "request_access", "run_command"}
+    expected_tools = {"read_file", "write_file", "http_get", "http_post", "call_agent", "call_agents", "request_access", "run_command"}
     assert set(tool_names) == expected_tools
-    assert len(tool_names) == 6
+    assert len(tool_names) == 8
 
 
 def test_api_key_protection_no_key_leak_to_agent_process(

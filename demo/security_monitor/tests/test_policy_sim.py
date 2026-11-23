@@ -108,6 +108,15 @@ def test_the_simulator_agrees_with_the_live_broker(tmp_path: Path, variant: str,
     storage, task, boundary, evaluator = _task(tmp_path, variant, _variants()[variant], resolved)
     sim = PolicySimulator(evaluator).sequence(boundary, CALLS)
     broker = ToolBroker(storage, evaluator=evaluator)
+
+    class StubDelegationManager:
+        def delegate_single(self, token, target_agent, message, fanout_group=None):
+            return {"status": "ok", "reply": "stub"}
+
+        def delegate_parallel(self, token, calls):
+            return [{"status": "ok", "reply": "stub", "target": c.get("target")} for c in calls]
+
+    broker.delegation_manager = StubDelegationManager()
     for (tool, target), predicted in zip(CALLS, sim):
         seen = {e.event_id for e in storage.get_events_for_task(task.task_id)}
         allowed = _live(broker, f"tok_{variant}", tool, target)

@@ -132,6 +132,11 @@ class TaskSpec:
     # A boundary the requester checked on the Run page (run_manager.take_file_review): the model's
     # grounded choice, minus any file they unticked. Applied as derived, with its account.
     reviewed_boundary: dict[str, Any] | None = None
+    parent_task_id: str | None = None
+    root_task_id: str | None = None
+    depth: int = 0
+    chain: list[str] = field(default_factory=list)
+    peer_agents: list[str] | None = None
 
     @classmethod
     def from_file(cls, path: str | Path) -> "TaskSpec":
@@ -406,15 +411,34 @@ def proxy_http_fetcher(proxy_port: int, max_body: int = 65536, timeout: float = 
                 pass
             thread_local.sock = None
 
-    def fetch(token: str, task_id: str, url: str) -> dict[str, Any]:
+    def fetch(token: str, task_id: str, url: str, method: str = "GET", data: bytes | str | None = None) -> dict[str, Any]:
         u = urlparse(url if "://" in url else "http://" + url)
         if u.scheme != "http":
             raise PermissionError("only plain http:// is fetched through the evaluation proxy")
         host = u.hostname or ""
         port = u.port or 80
         path = (u.path or "/") + (f"?{u.query}" if u.query else "")
-        req = (f"GET http://{host}:{port}{path} HTTP/1.1\r\nHost: {host}:{port}\r\n"
-               f"Proxy-Authorization: Bearer {token}\r\n\r\n").encode()
+        method_str = method.upper()
+
+        body_bytes = b""
+        if data is not None:
+            if isinstance(data, str):
+                body_bytes = data.encode("utf-8")
+            else:
+                body_bytes = bytes(data)
+
+        headers_list = [
+            f"{method_str} http://{host}:{port}{path} HTTP/1.1",
+            f"Host: {host}:{port}",
+            f"Proxy-Authorization: Bearer {token}",
+        ]
+        if body_bytes:
+            headers_list.append(f"Content-Length: {len(body_bytes)}")
+            headers_list.append("Content-Type: application/octet-stream")
+        elif method_str == "POST":
+            headers_list.append("Content-Length: 0")
+
+        req = ("\r\n".join(headers_list) + "\r\n\r\n").encode("utf-8") + body_bytes
 
         for attempt in range(2):
             try:
@@ -620,6 +644,24 @@ class TaskLauncher:
         # Serialises "release the agent gate" against cancel(): either the agent starts
         # and cancel() kills its cgroup, or cancel() wins and the agent never starts.
         self._gate_lock = threading.Lock()
+        self.child_launchers: list[TaskLauncher] = []
+        self.child_receipt_hashes: list[dict[str, str]] = []
+
+    def register_child_launcher(self, child: "TaskLauncher") -> None:
+        with self.status_lock:
+            self.child_launchers.append(child)
+
+    def unregister_child_launcher(self, child: "TaskLauncher") -> None:
+        with self.status_lock:
+            if child in self.child_launchers:
+                self.child_launchers.remove(child)
+
+    def record_child_receipt(self, child_task_id: str, receipt_hash: str) -> None:
+        with self.status_lock:
+            self.child_receipt_hashes.append({
+                "child_task_id": child_task_id,
+                "receipt_hash": receipt_hash,
+            })
 
     def expire_due_grants(self, task_id: str, now: datetime.datetime | None = None) -> list[str]:
         """Ends every approved grant of this run whose time limit has passed. Returns their ids."""
@@ -783,6 +825,11 @@ class TaskLauncher:
 
     def _freeze_now(self, reason: str, detail: Any = None) -> None:
         with self.status_lock:
+            for ch in list(self.child_launchers):
+                try:
+                    ch._freeze_now(reason, detail)
+                except Exception:
+                    pass
             if self._frozen.is_set():
                 self.freeze_events.append({"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                                            "reason": reason, "detail": detail, "method": "already_frozen"})
@@ -804,6 +851,11 @@ class TaskLauncher:
                                        "frozen_confirmed": bool(cg) and cgroup_ctl.is_frozen(cg)})
 
     def _kill(self, reason: str) -> None:
+        for ch in list(self.child_launchers):
+            try:
+                ch._kill(reason)
+            except Exception:
+                pass
         cg = self.live.get("cgroup")
         method = cgroup_ctl.kill_all(cg, self.live.get("unit")) if cg else "no_cgroup"
         proc = self.live.get("proc")
@@ -821,6 +873,11 @@ class TaskLauncher:
 
     def stop(self, reason: str = "operator_stop") -> None:
         """Terminates the task cgroup and marks the termination reason."""
+        for ch in list(self.child_launchers):
+            try:
+                ch.stop(reason)
+            except Exception:
+                pass
         self._kill(reason)
         task_id = self.live.get("task_id")
         if task_id:
@@ -868,6 +925,13 @@ class TaskLauncher:
             t.started_at = t.started_at or now
         if completed:
             t.completed_at = now
+            for req in self.storage.list_expansion_requests(task_id):
+                if req.status == ExpansionStatus.PENDING:
+                    req.status = ExpansionStatus.DENIED
+                    req.resolved_by = "task_ended"
+                    req.resolved_at = now
+                    req.reason = "Task ended before a decision"
+                    self.storage.save_expansion_request(req)
         self.storage.save_task(t)
 
     def _finish_cancelled(
@@ -898,7 +962,15 @@ class TaskLauncher:
             if spec.condition:
                 t.condition = spec.condition
             t.status = TaskLifecycle.TERMINATED
-            t.completed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            t.completed_at = now_iso
+            for req in self.storage.list_expansion_requests(t.task_id):
+                if req.status == ExpansionStatus.PENDING:
+                    req.status = ExpansionStatus.DENIED
+                    req.resolved_by = "task_ended"
+                    req.resolved_at = now_iso
+                    req.reason = "Task ended before a decision"
+                    self.storage.save_expansion_request(req)
             self.storage.save_task(t)
             receipt = build_receipt(
                 task=t,
@@ -1022,8 +1094,17 @@ class TaskLauncher:
         if spec.condition:
             task.condition = spec.condition
         task.requested_by = spec.requester
+        if spec.parent_task_id is not None:
+            task.parent_task_id = spec.parent_task_id
+        task.root_task_id = spec.root_task_id or task.task_id
+        task.depth = spec.depth
+        task.chain = list(spec.chain) if spec.chain else [spec.agent_id]
+        if spec.peer_agents is not None:
+            boundary.peer_agents = list(spec.peer_agents)
+            self.storage.save_boundary(boundary)
         llm = spec.llm or {}
         task.model = "scripted" if llm.get("provider") in ("scripted", "scripted_mock") else (llm.get("model") or llm.get("provider"))
+        task.timeout_s = float(spec.timeout_s)
         self.storage.save_task(task)
         return task, boundary
 
@@ -1163,6 +1244,14 @@ class TaskLauncher:
         # M7 path: the broker's file checks and the Landlock rules both come from resolve_boundary.
         file_evaluator = ResolvedBoundaryEvaluator(self.storage) if resolved_path else None
         broker = ToolBroker(self.storage, expansion_service=expansion, evaluator=file_evaluator)
+        from .delegation import DelegationManager
+        broker.delegation_manager = DelegationManager(
+            self.storage,
+            workspace_base=self.workspace_base,
+            receipts_dir=self.receipts_dir,
+            parent_launcher=self,
+            test_hooks=self.test_hooks,
+        )
         broker.default_approval_timeout = float(spec.approval_timeout_s)
         broker.http_fetcher = proxy_http_fetcher(proxy_port)  # type: ignore[attr-defined]
         llm_cfg = dict(spec.llm)
@@ -1772,6 +1861,7 @@ class TaskLauncher:
                 **({"sensor_disabled": True, "ptrace_sensor_disabled": True} if bench_sensor_disabled else {}),
                 "phase_timings": phase_timings,
                 "cgroup_resources": cgroup_resources,
+                "children": list(self.child_receipt_hashes),
                 "policy": receipt_policy_section(initial_boundary, self.storage.get_boundary(task_id)),
                 "llm_provider": provider_label,
                 "llm_model": llm_model,

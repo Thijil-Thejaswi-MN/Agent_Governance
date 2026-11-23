@@ -1,0 +1,30 @@
+{
+  "id": "payment",
+  "name": "Payment Agent",
+  "owner": "Finance Desk",
+  "description": "Handles corporate card transactions and invoices",
+  "ceiling": {
+    "tools": [
+      "read_file",
+      "http_get"
+    ],
+    "files_read": [
+      "input/*"
+    ],
+    "files_write": [
+      "output/*"
+    ],
+    "network": [
+      "127.0.0.1:*"
+    ],
+    "peer_agents": []
+  },
+  "runner": {
+    "provider": "scripted",
+    "steps": [
+      {
+        "final": "Payment processed successfully."
+      }
+    ]
+  }
+}

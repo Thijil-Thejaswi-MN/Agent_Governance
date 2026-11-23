@@ -1,0 +1,34 @@
+{
+  "id": "budget",
+  "name": "Budget Agent",
+  "owner": "Finance Desk",
+  "description": "Analyzes trip expenses against corporate travel policy",
+  "ceiling": {
+    "tools": [
+      "read_file"
+    ],
+    "files_read": [
+      "input/*",
+      "input/budget_policy.txt"
+    ],
+    "files_write": [
+      "output/*"
+    ],
+    "network": [],
+    "peer_agents": []
+  },
+  "runner": {
+    "provider": "scripted",
+    "steps": [
+      {
+        "tool": "read_file",
+        "args": {
+          "file_path": "input/budget_policy.txt"
+        }
+      },
+      {
+        "final": "Estimated total budget: $2,400"
+      }
+    ]
+  }
+}

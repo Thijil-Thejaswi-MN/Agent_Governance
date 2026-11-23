@@ -1,0 +1,25 @@
+{
+  "id": "brief_bot",
+  "name": "Brief Bot",
+  "owner": "Meena R",
+  "description": "Legal briefs: summarises contracts and compliance documents",
+  "ceiling": {
+    "tools": [
+      "read_file",
+      "write_file",
+      "request_access"
+    ],
+    "files_read": [
+      "input/*"
+    ],
+    "files_write": [
+      "output/*"
+    ],
+    "network": [],
+    "peer_agents": []
+  },
+  "runner": {
+    "provider": "ollama",
+    "model": "llama3.1:8b"
+  }
+}

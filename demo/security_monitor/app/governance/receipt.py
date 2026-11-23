@@ -211,6 +211,29 @@ def build_receipt(
         "events": entries,
         "hash_chain": {"algorithm": "sha256", "genesis": GENESIS_HASH, "count": len(entries), "final_hash": final_hash},
     }
+    # A2A delegation links and messages
+    sent_messages = storage.get_a2a_messages(parent_task_id=task.task_id) if hasattr(storage, "get_a2a_messages") else []
+    a2a_hashes = []
+    for m in sent_messages:
+        m_canon = json.loads(json.dumps(m, default=str))
+        a2a_hashes.append({
+            "message_id": m["message_id"],
+            "hash": hashlib.sha256(canonical(m_canon)).hexdigest(),
+            "to_agent": m["to_agent"],
+            "kind": m["kind"],
+            "verdict": m["verdict"],
+        })
+
+    extra_dict = dict(extra or {})
+    extra_dict["a2a_messages"] = a2a_hashes
+    if getattr(task, "parent_task_id", None):
+        receipt["parent_task_id"] = task.parent_task_id
+        receipt["root_task_id"] = getattr(task, "root_task_id", None)
+        receipt["depth"] = getattr(task, "depth", 0)
+        receipt["chain"] = getattr(task, "chain", [])
+        extra_dict["parent_task_id"] = task.parent_task_id
+    extra = extra_dict
+
     if extra:
         receipt["extra"] = extra
         if extra.get("hosted_model_note"):
@@ -500,3 +523,43 @@ def verify_receipt(
         "message": f"ok ({len(events)} entries; older v0 record: only the event list is chained{suffix})",
         "final_hash": final,
     }
+
+
+def verify_delegation_links(
+    parent_receipt: dict[str, Any],
+    child_receipt: dict[str, Any],
+    storage: Any = None,
+) -> tuple[bool, str]:
+    """Verifies cryptographic linkage between parent and child receipts."""
+    p_tid = parent_receipt.get("task_id")
+    c_tid = child_receipt.get("task_id")
+    c_parent_tid = child_receipt.get("parent_task_id") or (child_receipt.get("extra") or {}).get("parent_task_id")
+
+    if c_parent_tid != p_tid:
+        return False, f"Child receipt {c_tid} parent_task_id ({c_parent_tid}) does not match parent {p_tid}"
+
+    p_children = (parent_receipt.get("extra") or {}).get("children", [])
+    c_doc_hash = (child_receipt.get("hash_chain") or {}).get("document_sha256")
+    matched_child = False
+    for ch in p_children:
+        if ch.get("child_task_id") == c_tid:
+            if ch.get("receipt_hash") and ch.get("receipt_hash") != c_doc_hash:
+                return False, f"Child receipt hash mismatch in parent: recorded {ch.get('receipt_hash')}, actual {c_doc_hash}"
+            matched_child = True
+            break
+
+    if p_children and not matched_child:
+        return False, f"Child {c_tid} not found in parent {p_tid} children list"
+
+    if storage and hasattr(storage, "get_a2a_messages"):
+        stored_msgs = storage.get_a2a_messages(parent_task_id=p_tid)
+        parent_msg_hashes = {m.get("message_id"): m.get("hash") for m in (parent_receipt.get("extra") or {}).get("a2a_messages", [])}
+        for sm in stored_msgs:
+            mid = sm["message_id"]
+            if mid in parent_msg_hashes:
+                sm_canon = json.loads(json.dumps(sm, default=str))
+                expected = hashlib.sha256(canonical(sm_canon)).hexdigest()
+                if parent_msg_hashes[mid] != expected:
+                    return False, f"Message hash mismatch for {mid}"
+
+    return True, "ok"
