@@ -10,6 +10,7 @@ import {
 import {
   buildConversationTree,
   canDecideApproval,
+  getAgentDisplayName,
 } from '../logic/conversations';
 import { ConversationsTree } from '../components/conversations/ConversationsTree';
 import { ChatMessages } from '../components/conversations/ChatMessages';
@@ -339,11 +340,10 @@ export const ConversationsPage: React.FC = () => {
           type="button"
           id="mobile-tab-chats"
           onClick={() => setMobileTab('chats')}
-          className={`flex-1 py-2.5 text-[14px] font-medium text-center border-b-2 transition-colors ${
-            mobileTab === 'chats'
-              ? 'border-accent text-fg bg-surface-1'
-              : 'border-transparent text-fg-3 hover:text-fg'
-          }`}
+          className={`flex-1 py-2.5 text-[14px] font-medium text-center border-b-2 transition-colors ${mobileTab === 'chats'
+            ? 'border-accent text-fg bg-surface-1'
+            : 'border-transparent text-fg-3 hover:text-fg'
+            }`}
         >
           Chats
         </button>
@@ -351,11 +351,10 @@ export const ConversationsPage: React.FC = () => {
           type="button"
           id="mobile-tab-conversation"
           onClick={() => setMobileTab('conversation')}
-          className={`flex-1 py-2.5 text-[14px] font-medium text-center border-b-2 transition-colors ${
-            mobileTab === 'conversation'
-              ? 'border-accent text-fg bg-surface-1'
-              : 'border-transparent text-fg-3 hover:text-fg'
-          }`}
+          className={`flex-1 py-2.5 text-[14px] font-medium text-center border-b-2 transition-colors ${mobileTab === 'conversation'
+            ? 'border-accent text-fg bg-surface-1'
+            : 'border-transparent text-fg-3 hover:text-fg'
+            }`}
         >
           Conversation
         </button>
@@ -363,11 +362,10 @@ export const ConversationsPage: React.FC = () => {
           type="button"
           id="mobile-tab-timeline"
           onClick={() => setMobileTab('timeline')}
-          className={`flex-1 py-2.5 text-[14px] font-medium text-center border-b-2 transition-colors ${
-            mobileTab === 'timeline'
-              ? 'border-accent text-fg bg-surface-1'
-              : 'border-transparent text-fg-3 hover:text-fg'
-          }`}
+          className={`flex-1 py-2.5 text-[14px] font-medium text-center border-b-2 transition-colors ${mobileTab === 'timeline'
+            ? 'border-accent text-fg bg-surface-1'
+            : 'border-transparent text-fg-3 hover:text-fg'
+            }`}
         >
           Timeline
         </button>
@@ -377,10 +375,10 @@ export const ConversationsPage: React.FC = () => {
       <div className="flex-1 flex overflow-hidden">
         {/* Panel 1: Left, Conversations Tree */}
         <section
+          id="panel-chats"
           aria-label="Conversations"
-          className={`w-full md:w-72 lg:w-80 border-r border-line bg-surface-1 flex-col shrink-0 ${
-            mobileTab === 'chats' ? 'flex' : 'hidden md:flex'
-          }`}
+          className={`w-full md:w-72 lg:w-80 border-r border-line bg-surface-1 flex-col shrink-0 ${mobileTab === 'chats' ? 'flex' : 'hidden md:flex'
+            }`}
         >
           {conversationTree && (
             <ConversationsTree
@@ -398,17 +396,20 @@ export const ConversationsPage: React.FC = () => {
 
         {/* Panel 2: Middle, Selected Conversation */}
         <section
+          id="panel-conversation"
           aria-label="Selected Conversation"
-          className={`w-full md:flex-1 border-r border-line bg-bg flex-col min-w-0 ${
-            mobileTab === 'conversation' ? 'flex' : 'hidden md:flex'
-          }`}
+          className={`w-full md:flex-1 border-r border-line bg-bg flex-col min-w-0 ${mobileTab === 'conversation' ? 'flex' : 'hidden md:flex'
+            }`}
         >
           {/* Active Chat Header */}
           <div className="px-5 py-3 border-b border-line bg-surface-1 shrink-0 flex items-center justify-between">
             <span className="text-[14px] font-semibold text-fg">
               {selectedThreadId === 'job'
                 ? 'Whole job messages'
-                : selectedThreadId.replace('__', ' ↔ ')}
+                : selectedThreadId
+                    .split('__')
+                    .map((id) => getAgentDisplayName(id, agentNames))
+                    .join(' ↔ ')}
             </span>
             <span className="text-[12px] text-fg-3 font-mono">
               {currentMessages.length} {currentMessages.length === 1 ? 'message' : 'messages'}
@@ -429,10 +430,10 @@ export const ConversationsPage: React.FC = () => {
 
         {/* Panel 3: Right, Timeline of the Whole Job */}
         <section
+          id="panel-timeline"
           aria-label="Whole Job Timeline"
-          className={`w-full md:w-[380px] lg:w-[480px] xl:w-[540px] bg-surface-1 flex-col shrink-0 ${
-            mobileTab === 'timeline' ? 'flex' : 'hidden md:flex'
-          }`}
+          className={`w-full md:w-[380px] lg:w-[480px] xl:w-[540px] bg-surface-1 flex-col shrink-0 ${mobileTab === 'timeline' ? 'flex' : 'hidden md:flex'
+            }`}
         >
           <div className="px-4 py-3 border-b border-line bg-surface-2 shrink-0 flex items-center justify-between">
             <span className="text-[13px] font-semibold uppercase tracking-wider text-fg-3">
@@ -444,6 +445,7 @@ export const ConversationsPage: React.FC = () => {
           </div>
 
           <WholeJobTimeline
+            rootAgentId={job.task?.agent_id || 'planner'}
             agents={job.agents.map((a) => a.id)}
             messages={job.messages}
             pendingApprovals={job.pending_approvals}

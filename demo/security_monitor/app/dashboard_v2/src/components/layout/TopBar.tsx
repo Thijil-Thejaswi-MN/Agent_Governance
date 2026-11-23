@@ -74,6 +74,9 @@ export const TopBar: React.FC<TopBarProps> = ({ breadcrumb, activeAgentsCount = 
     } else if (path.startsWith('results')) {
       title = 'Results';
       context = 'Audit & Reports';
+    } else if (path.startsWith('conversations')) {
+      title = 'Agent conversations';
+      context = 'Runtime';
     } else if (path.startsWith('evidence')) {
       title = 'Evidence';
       context = 'Audit & Reports';

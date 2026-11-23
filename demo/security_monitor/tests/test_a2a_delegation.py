@@ -607,6 +607,13 @@ def test_trip_planner_preset(tmp_path: Path, fixture_server):
     assert outside_refusal["from_agent"] == "planner"
     assert "gion-maru-travel.example" in (outside_refusal.get("reason") or "")
 
+    # Check Researcher's reply forwarded_from
+    researcher_reply = next((m for m in all_msgs if m.get("from_agent") == "researcher" and m.get("to_agent") == "planner"), None)
+    assert researcher_reply is not None
+    ff = researcher_reply.get("forwarded_from") or []
+    assert ff == ["host:127.0.0.1:8765"]
+    assert not any("/proc" in s or "/usr" in s or "/tmp/pytest" in s or "/bin" in s for s in ff)
+
 
 def test_api_auth(tmp_path: Path, monkeypatch):
     """API GET endpoints enforce owner and admin access control."""

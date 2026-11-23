@@ -128,6 +128,7 @@ def test_a2a_conversations_page(page: Page, a2a_console_server, tmp_path: Path):
 
     mgr = DelegationManager(storage, workspace_base=tmp_path / "workspaces")
     broker = ToolBroker(storage, expansion_service=expansion)
+    broker.default_approval_timeout = 30.0
     broker.delegation_manager = mgr
 
     # Sign in to console server as operator
@@ -156,14 +157,18 @@ def test_a2a_conversations_page(page: Page, a2a_console_server, tmp_path: Path):
     page.set_viewport_size({"width": 1440, "height": 900})
     page.goto(f"{console_server.url}/dashboard/conversations/{root_task_id}")
 
+    # TopBar title verification (Item 6): shows "Agent conversations" and not "Page not found"
+    expect(page.locator("[data-topbar]")).to_contain_text("Agent conversations")
+    expect(page.locator("[data-topbar]")).not_to_contain_text("Page not found")
+
     # 1. Verify header has title and owner request
     expect(page.locator("h1")).to_contain_text("conversations", timeout=10000)
     expect(page.locator("#request-text")).to_contain_text("Plan trip with trip planner")
 
-    # 2. Verify fanout tag "3 at once" appears
+    # 2. Verify fanout tag "sent 3 at once" appears (Item 4 & 9)
     fanout_tag = page.locator('[data-testid="fanout-tag"]')
     expect(fanout_tag).to_be_visible(timeout=10000)
-    expect(fanout_tag).to_contain_text("3 at once")
+    expect(fanout_tag).to_contain_text("sent 3 at once")
 
     # 3. Verify Researcher approval card appears with approve button
     approval_card = page.locator("[id^=approval-card-]")
@@ -189,7 +194,23 @@ def test_a2a_conversations_page(page: Page, a2a_console_server, tmp_path: Path):
     expect(refused_marks.nth(0)).to_have_text("✕")
     expect(refused_marks.nth(1)).to_have_text("✕")
 
-    # 6. Verify clicking Booking chat highlights Booking rows and dims others
+    # 6. Verify every timeline arrow has a positive width (Item 9)
+    arrow_containers = page.locator('[data-testid="timeline-row"] .h-7 > div')
+    arrow_count = arrow_containers.count()
+    assert arrow_count == 8, f"Expected 8 arrow graphics, got {arrow_count}"
+    for i in range(arrow_count):
+        box = arrow_containers.nth(i).bounding_box()
+        assert box is not None and box["width"] > 0, f"Arrow {i} has non-positive width: {box}"
+
+    # 7. Verify the page shows no text containing /proc/, /usr/lib, /tmp/pytest or /bin/ (Item 9)
+    body_text = page.locator("body").inner_text()
+    for forbidden_path in ("/proc/", "/usr/lib", "/tmp/pytest", "/bin/"):
+        assert forbidden_path not in body_text, f"Found leaked path {forbidden_path} in page text"
+
+    # 8. Verify names, not ids, everywhere (Item 7): "host:x" shows as "x (website)"
+    expect(page.locator("body")).to_contain_text("gion-maru-travel.example (website)")
+
+    # 9. Verify clicking Booking chat highlights Booking rows and dims others
     booking_thread = page.locator("#thread-booking__planner")
     expect(booking_thread).to_be_visible()
     booking_thread.click()
@@ -199,37 +220,55 @@ def test_a2a_conversations_page(page: Page, a2a_console_server, tmp_path: Path):
     expect(booking_rows.first).to_have_class(re.compile(r"opacity-100"))
 
     non_booking_rows = page.locator('[data-testid="timeline-row"][data-from="planner"][data-to="researcher"]')
-    expect(non_booking_rows.first).to_have_class(re.compile(r"opacity-40"))
+    expect(non_booking_rows.nth(0)).to_have_class(re.compile(r"opacity-40"))
 
-    # 7. Save desktop screenshot at 1440px
+    # 10. Save desktop screenshot at 1440px
     screenshot_dir = Path("docs/screenshots/a2a")
     screenshot_dir.mkdir(parents=True, exist_ok=True)
     desktop_png = screenshot_dir / "conversations_1440.png"
     page.screenshot(path=str(desktop_png))
 
-    # Also copy to artifact directory if present
     artifact_dir = Path(os.getenv("ARTIFACT_DIR", "/mnt/c/Users/thiji/.gemini/antigravity/brain/7dfddae5-2ec5-4828-adfc-82c7f1c598c6/screenshots"))
     if artifact_dir.parent.exists():
         artifact_dir.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(desktop_png, artifact_dir / "conversations_1440.png")
 
-    # 8. Responsive phone viewport at 375px
+    # 11. Phone width checks (Item 8): selected tab always matches panel shown
     page.set_viewport_size({"width": 375, "height": 812})
     tab_chats = page.locator("#mobile-tab-chats")
     tab_conv = page.locator("#mobile-tab-conversation")
     tab_timeline = page.locator("#mobile-tab-timeline")
 
-    expect(tab_chats).to_be_visible()
-    expect(tab_conv).to_be_visible()
-    expect(tab_timeline).to_be_visible()
+    panel_chats = page.locator("#panel-chats")
+    panel_conv = page.locator("#panel-conversation")
+    panel_timeline = page.locator("#panel-timeline")
 
-    # Test tab switching
-    tab_timeline.click()
-    expect(page.locator('[data-testid="timeline-row"]').first).to_be_visible()
+    # Default is Conversation
+    expect(panel_conv).to_be_visible()
+    expect(panel_chats).not_to_be_visible()
+    expect(panel_timeline).not_to_be_visible()
 
-    tab_conv.click()
+    # Switching to Chats tab shows Chats panel
     tab_chats.click()
-    expect(page.locator("#thread-booking__planner")).to_be_visible()
+    expect(panel_chats).to_be_visible()
+    expect(panel_conv).not_to_be_visible()
+    expect(panel_timeline).not_to_be_visible()
+
+    # Picking a chat in tree switches to Conversation panel
+    page.locator("#thread-booking__planner").click()
+    expect(panel_conv).to_be_visible()
+    expect(panel_chats).not_to_be_visible()
+    expect(panel_timeline).not_to_be_visible()
+
+    # Switching to Timeline tab shows Timeline panel
+    tab_timeline.click()
+    expect(panel_timeline).to_be_visible()
+    expect(panel_conv).not_to_be_visible()
+    expect(panel_chats).not_to_be_visible()
+
+    # Switch back to Conversation tab for mobile view screenshot
+    tab_conv.click()
+    expect(panel_conv).to_be_visible()
 
     # Save phone screenshot at 375px
     phone_png = screenshot_dir / "conversations_375.png"

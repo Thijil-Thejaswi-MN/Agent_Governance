@@ -3,6 +3,7 @@ import { A2AMessage, A2APendingApproval } from '../../types';
 import { AgentRingAvatar } from './AgentAvatar';
 import { InlineApprovalCard } from './InlineApprovalCard';
 import { localClock } from '../v3/TechnicalTimeline';
+import { getAgentDisplayName } from '../../logic/conversations';
 import { FileText, CornerDownRight } from 'lucide-react';
 
 interface ChatMessagesProps {
@@ -27,7 +28,7 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
   onDeny,
 }) => {
   const isWholeJob = threadId === 'job';
-  const firstSender = messages.length > 0 ? messages[0].from_agent : '';
+  const leadSender = messages.length > 0 ? messages[0].from_agent : '';
 
   if (messages.length === 0 && pendingApprovals.length === 0) {
     return (
@@ -40,9 +41,9 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
       {messages.map(m => {
-        const isRight = !isWholeJob && m.from_agent === firstSender;
-        const senderName = agentNames[m.from_agent] || m.from_agent;
-        const receiverName = agentNames[m.to_agent] || m.to_agent;
+        const isRight = !isWholeJob && m.from_agent === leadSender;
+        const senderName = getAgentDisplayName(m.from_agent, agentNames);
+        const receiverName = getAgentDisplayName(m.to_agent, agentNames);
         const isRefused = m.verdict === 'refused';
         const isDelivered = m.verdict === 'delivered';
         const hasForwarded =
@@ -82,14 +83,33 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
                   : 'bg-surface-2 border-line text-fg'
               } ${isRefused ? 'border-dashed border-bad/50 bg-bad/10' : ''}`}
             >
-              {/* Forwarded from source chip */}
+              {/* Forwarded from source chip: rounded-md, max 3 sources +N more, full list in title */}
               {hasForwarded && (
                 <div
                   data-testid="forwarded-chip"
-                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 mb-2 rounded-full text-[12px] font-mono bg-cyan/10 text-cyan border border-cyan/25"
+                  title={`Forwarded from: ${m.forwarded_from.join(', ')}`}
+                  className="inline-flex items-center flex-wrap gap-1.5 px-2.5 py-1 mb-2 rounded-md text-[12px] font-mono bg-cyan/10 text-cyan border border-cyan/25 max-w-full"
                 >
                   <CornerDownRight className="w-3.5 h-3.5 shrink-0" />
-                  <span>Forwarded from {m.forwarded_from.join(', ')}</span>
+                  <span className="shrink-0">Forwarded from</span>
+                  {m.forwarded_from.slice(0, 3).map((src, idx) => (
+                    <span
+                      key={idx}
+                      className="truncate max-w-[160px] inline-block align-bottom"
+                      title={src}
+                    >
+                      {src}
+                      {idx < Math.min(3, m.forwarded_from.length) - 1 ||
+                      m.forwarded_from.length > 3
+                        ? ','
+                        : ''}
+                    </span>
+                  ))}
+                  {m.forwarded_from.length > 3 && (
+                    <span className="shrink-0 font-semibold">
+                      +{m.forwarded_from.length - 3} more
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -97,7 +117,7 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
               {m.contains_private && (
                 <div
                   data-testid="private-file-chip"
-                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 mb-2 rounded-full text-[12px] font-mono bg-wait/15 text-wait-text border border-wait/30"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 mb-2 rounded-md text-[12px] font-mono bg-wait/15 text-wait-text border border-wait/30"
                 >
                   <FileText className="w-3.5 h-3.5 shrink-0" />
                   <span>Private file: {m.text || 'Protected resource'}</span>

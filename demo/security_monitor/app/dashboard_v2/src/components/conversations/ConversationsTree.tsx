@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ConversationTreeNode } from '../../logic/conversations';
+import { ConversationTreeNode, getAgentDisplayName } from '../../logic/conversations';
 import { AgentRingAvatar } from './AgentAvatar';
 import { ChevronDown, ChevronRight, MessageSquare } from 'lucide-react';
 
@@ -42,8 +42,8 @@ export const ConversationsTree: React.FC<ConversationsTreeProps> = ({
     const isCollapsed = collapsed[node.id];
     const cfg = statusConfig[node.status] || { dot: 'bg-fg-3', label: node.status };
 
-    const nameA = agentNames[node.agentA] || node.agentA;
-    const nameB = agentNames[node.agentB] || node.agentB;
+    const nameA = getAgentDisplayName(node.agentA, agentNames);
+    const nameB = getAgentDisplayName(node.agentB, agentNames);
 
     return (
       <div key={node.id} className="flex flex-col">

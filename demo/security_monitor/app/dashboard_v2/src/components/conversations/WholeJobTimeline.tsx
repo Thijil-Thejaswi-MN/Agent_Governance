@@ -2,14 +2,18 @@ import React from 'react';
 import { A2AMessage, A2APendingApproval } from '../../types';
 import { AgentRingAvatar } from './AgentAvatar';
 import {
+  computeTimelineColumns,
+  countFanoutRequests,
   formatArrowLabel,
   formatFanoutTag,
-  getArrowSpan,
+  getAgentDisplayName,
+  getArrowLayout,
 } from '../../logic/conversations';
 import { localClock } from '../v3/TechnicalTimeline';
 import { Lock, AlertCircle, Globe } from 'lucide-react';
 
 interface WholeJobTimelineProps {
+  rootAgentId?: string;
   agents: string[]; // List of agent IDs (columns), plus 'Web'
   messages: A2AMessage[];
   pendingApprovals: A2APendingApproval[];
@@ -20,6 +24,7 @@ interface WholeJobTimelineProps {
 }
 
 export const WholeJobTimeline: React.FC<WholeJobTimelineProps> = ({
+  rootAgentId = 'planner',
   agents,
   messages,
   pendingApprovals,
@@ -28,8 +33,8 @@ export const WholeJobTimeline: React.FC<WholeJobTimelineProps> = ({
   agentNames,
   agentColourIndexes,
 }) => {
-  // Build columns: agents in order, plus 'Web' column at the end
-  const columns = [...agents.filter(a => a !== 'Web'), 'Web'];
+  // Column order: root task agent lead, then other agents by earliest message, then Web last
+  const columns = computeTimelineColumns(rootAgentId, messages, agents);
 
   // Check if a message belongs to the selected thread
   const isMessageSelected = (m: A2AMessage) => {
@@ -45,13 +50,11 @@ export const WholeJobTimeline: React.FC<WholeJobTimelineProps> = ({
     return false;
   };
 
-  // Group messages into timeline items and detect fan-out headers
-  // A fanout group tag is displayed above the first message of each fanout_group
   const renderedFanoutGroups = new Set<string>();
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-surface-1">
-      {/* Column Headers */}
+      {/* Column Headers: horizontal scroll if wider than panel */}
       <div className="overflow-x-auto border-b border-line bg-surface-2 shrink-0">
         <div
           className="grid gap-2 px-4 py-3 min-w-[640px]"
@@ -61,7 +64,7 @@ export const WholeJobTimeline: React.FC<WholeJobTimelineProps> = ({
         >
           {columns.map(col => {
             const isWeb = col === 'Web';
-            const displayName = isWeb ? 'Web' : agentNames[col] || col;
+            const displayName = isWeb ? 'Web' : getAgentDisplayName(col, agentNames);
             return (
               <div
                 key={col}
@@ -79,7 +82,7 @@ export const WholeJobTimeline: React.FC<WholeJobTimelineProps> = ({
                     size="md"
                   />
                 )}
-                <span className="text-[12px] font-medium text-fg truncate w-full">
+                <span className="text-[12px] font-medium text-fg truncate w-full" title={displayName}>
                   {displayName}
                 </span>
               </div>
@@ -88,7 +91,7 @@ export const WholeJobTimeline: React.FC<WholeJobTimelineProps> = ({
         </div>
       </div>
 
-      {/* Timeline Rows Area */}
+      {/* Timeline Rows Area: horizontal scroll if wider than panel */}
       <div className="flex-1 overflow-x-auto overflow-y-auto p-4 space-y-4 min-w-0">
         <div
           className="min-w-[640px] space-y-3"
@@ -110,25 +113,26 @@ export const WholeJobTimeline: React.FC<WholeJobTimelineProps> = ({
 
           {/* Markers for private files and pending approvals */}
           {messages.some(m => m.contains_private) && (
-            <div className="relative z-10 flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg bg-surface-2 border border-wait/30 text-wait-text text-[12px] font-mono mx-auto max-w-fit">
+            <div className="relative z-10 flex items-center justify-center gap-2 py-1.5 px-3 rounded-md bg-surface-2 border border-wait/30 text-wait-text text-[12px] font-mono mx-auto max-w-fit">
               <Lock className="w-3.5 h-3.5" />
               <span>opened private file</span>
             </div>
           )}
 
           {pendingApprovals.length > 0 && (
-            <div className="relative z-10 flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg bg-wait/15 border border-wait/40 text-wait-text text-[12px] font-mono mx-auto max-w-fit">
+            <div className="relative z-10 flex items-center justify-center gap-2 py-1.5 px-3 rounded-md bg-wait/15 border border-wait/40 text-wait-text text-[12px] font-mono mx-auto max-w-fit">
               <AlertCircle className="w-3.5 h-3.5 animate-pulse" />
               <span>needs your OK</span>
             </div>
           )}
 
           {/* Render each message as an interactive timeline row */}
-          {messages.map((m, index) => {
+          {messages.map((m) => {
             const selected = isMessageSelected(m);
             const isRefused = m.verdict === 'refused';
             const label = formatArrowLabel(m);
-            const spanInfo = getArrowSpan(columns, m.from_agent, m.to_agent);
+            const layout = getArrowLayout(columns, m.from_agent, m.to_agent, isRefused);
+
             const fanoutGroup = m.fanout_group;
             const showFanoutTag =
               fanoutGroup && !renderedFanoutGroups.has(fanoutGroup);
@@ -137,14 +141,12 @@ export const WholeJobTimeline: React.FC<WholeJobTimelineProps> = ({
               renderedFanoutGroups.add(fanoutGroup);
             }
 
-            const senderName = agentNames[m.from_agent] || m.from_agent;
-            const receiverName = m.to_agent.startsWith('host:')
-              ? 'Web'
-              : agentNames[m.to_agent] || m.to_agent;
+            const senderName = getAgentDisplayName(m.from_agent, agentNames);
+            const receiverName = getAgentDisplayName(m.to_agent, agentNames);
 
-            // Compute fanout group count
+            // Item 4: count only kind === "request" messages in the fanout_group
             const fanoutCount = fanoutGroup
-              ? messages.filter(msg => msg.fanout_group === fanoutGroup).length
+              ? countFanoutRequests(messages, fanoutGroup)
               : 0;
 
             const ariaLabel = `${senderName} to ${receiverName} at ${localClock(
@@ -184,21 +186,23 @@ export const WholeJobTimeline: React.FC<WholeJobTimelineProps> = ({
                       gridTemplateColumns: `repeat(${columns.length}, minmax(110px, 1fr))`,
                     }}
                   >
-                    {/* The arrow graphic stretches across columns from sender to receiver */}
+                    {/* The arrow graphic stretches between column centres */}
                     <div
                       className="col-span-full relative h-7 flex items-center"
                       style={{
-                        paddingLeft: `${(spanInfo.fromIndex / columns.length) * 100}%`,
-                        paddingRight: `${
-                          ((columns.length - 1 - spanInfo.toIndex) /
-                            columns.length) *
-                          100
-                        }%`,
+                        paddingLeft: `${layout.leftPercent}%`,
+                        paddingRight: `${layout.rightPercent}%`,
                       }}
                     >
-                      {/* Arrow Container */}
-                      <div className="relative w-full flex items-center justify-between">
-                        {/* Dot at tail */}
+                      {/* Arrow Container: flex direction places receiver at appropriate end */}
+                      <div
+                        className={`relative w-full flex items-center justify-between ${
+                          layout.direction === 'right-to-left'
+                            ? 'flex-row-reverse'
+                            : 'flex-row'
+                        }`}
+                      >
+                        {/* Dot at tail (sender) */}
                         <div
                           className={`w-2.5 h-2.5 rounded-full shrink-0 ${
                             isRefused ? 'bg-bad' : 'bg-accent'
@@ -225,7 +229,7 @@ export const WholeJobTimeline: React.FC<WholeJobTimelineProps> = ({
                           </span>
                         </div>
 
-                        {/* Head or ✕ */}
+                        {/* Head at receiver: arrowhead or ✕ if refused */}
                         {isRefused ? (
                           <div
                             data-testid="refused-x"
@@ -234,10 +238,16 @@ export const WholeJobTimeline: React.FC<WholeJobTimelineProps> = ({
                           >
                             ✕
                           </div>
-                        ) : spanInfo.direction === 'left-to-right' ? (
-                          <div className="w-0 h-0 border-y-[4px] border-y-transparent border-l-[6px] border-l-accent shrink-0" />
+                        ) : layout.direction === 'left-to-right' ? (
+                          <div
+                            data-testid="arrow-head-right"
+                            className="w-0 h-0 border-y-[4px] border-y-transparent border-l-[6px] border-l-accent shrink-0"
+                          />
                         ) : (
-                          <div className="w-0 h-0 border-y-[4px] border-y-transparent border-r-[6px] border-r-accent shrink-0" />
+                          <div
+                            data-testid="arrow-head-left"
+                            className="w-0 h-0 border-y-[4px] border-y-transparent border-r-[6px] border-r-accent shrink-0"
+                          />
                         )}
                       </div>
                     </div>
