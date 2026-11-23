@@ -3,6 +3,7 @@
   "name": "Researcher Agent",
   "owner": "Travel Desk",
   "description": "Researches destination attractions and cultural sites",
+  "approval_timeout_s": 20.0,
   "ceiling": {
     "tools": [
       "read_file",
@@ -10,7 +11,7 @@
       "request_access"
     ],
     "files_read": [
-      "input/*"
+      "input/attractions.txt"
     ],
     "files_write": [
       "output/*"
@@ -36,6 +37,12 @@
           "resource_type": "file_read",
           "resource_target": "input/travel_history.csv",
           "justification": "Need traveler history for tailored recommendations"
+        }
+      },
+      {
+        "tool": "read_file",
+        "args": {
+          "file_path": "input/travel_history.csv"
         }
       },
       {

@@ -411,15 +411,34 @@ def proxy_http_fetcher(proxy_port: int, max_body: int = 65536, timeout: float = 
                 pass
             thread_local.sock = None
 
-    def fetch(token: str, task_id: str, url: str) -> dict[str, Any]:
+    def fetch(token: str, task_id: str, url: str, method: str = "GET", data: bytes | str | None = None) -> dict[str, Any]:
         u = urlparse(url if "://" in url else "http://" + url)
         if u.scheme != "http":
             raise PermissionError("only plain http:// is fetched through the evaluation proxy")
         host = u.hostname or ""
         port = u.port or 80
         path = (u.path or "/") + (f"?{u.query}" if u.query else "")
-        req = (f"GET http://{host}:{port}{path} HTTP/1.1\r\nHost: {host}:{port}\r\n"
-               f"Proxy-Authorization: Bearer {token}\r\n\r\n").encode()
+        method_str = method.upper()
+
+        body_bytes = b""
+        if data is not None:
+            if isinstance(data, str):
+                body_bytes = data.encode("utf-8")
+            else:
+                body_bytes = bytes(data)
+
+        headers_list = [
+            f"{method_str} http://{host}:{port}{path} HTTP/1.1",
+            f"Host: {host}:{port}",
+            f"Proxy-Authorization: Bearer {token}",
+        ]
+        if body_bytes:
+            headers_list.append(f"Content-Length: {len(body_bytes)}")
+            headers_list.append("Content-Type: application/octet-stream")
+        elif method_str == "POST":
+            headers_list.append("Content-Length: 0")
+
+        req = ("\r\n".join(headers_list) + "\r\n\r\n").encode("utf-8") + body_bytes
 
         for attempt in range(2):
             try:
@@ -906,6 +925,13 @@ class TaskLauncher:
             t.started_at = t.started_at or now
         if completed:
             t.completed_at = now
+            for req in self.storage.list_expansion_requests(task_id):
+                if req.status == ExpansionStatus.PENDING:
+                    req.status = ExpansionStatus.DENIED
+                    req.resolved_by = "task_ended"
+                    req.resolved_at = now
+                    req.reason = "Task ended before a decision"
+                    self.storage.save_expansion_request(req)
         self.storage.save_task(t)
 
     def _finish_cancelled(
@@ -936,7 +962,15 @@ class TaskLauncher:
             if spec.condition:
                 t.condition = spec.condition
             t.status = TaskLifecycle.TERMINATED
-            t.completed_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            t.completed_at = now_iso
+            for req in self.storage.list_expansion_requests(t.task_id):
+                if req.status == ExpansionStatus.PENDING:
+                    req.status = ExpansionStatus.DENIED
+                    req.resolved_by = "task_ended"
+                    req.resolved_at = now_iso
+                    req.reason = "Task ended before a decision"
+                    self.storage.save_expansion_request(req)
             self.storage.save_task(t)
             receipt = build_receipt(
                 task=t,
@@ -1070,6 +1104,7 @@ class TaskLauncher:
             self.storage.save_boundary(boundary)
         llm = spec.llm or {}
         task.model = "scripted" if llm.get("provider") in ("scripted", "scripted_mock") else (llm.get("model") or llm.get("provider"))
+        task.timeout_s = float(spec.timeout_s)
         self.storage.save_task(task)
         return task, boundary
 
@@ -1206,8 +1241,6 @@ class TaskLauncher:
 
         expansion = ExpansionService(self.storage, provenance_enabled=True, user_approval_hook=hook,
                                      simulated_user_policy=spec.approval_policy)
-        if spec.approval_policy == "operator":
-            expansion.leave_pending = True
         # M7 path: the broker's file checks and the Landlock rules both come from resolve_boundary.
         file_evaluator = ResolvedBoundaryEvaluator(self.storage) if resolved_path else None
         broker = ToolBroker(self.storage, expansion_service=expansion, evaluator=file_evaluator)

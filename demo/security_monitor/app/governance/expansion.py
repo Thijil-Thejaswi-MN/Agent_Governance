@@ -600,9 +600,7 @@ class ExpansionService:
             if current.status == ExpansionStatus.DENIED:
                 return False, f"Denied by {current.resolved_by}"
 
-        # Timeout reached: Fail-closed to DENY unless leave_pending is set
-        if getattr(self, "leave_pending", False):
-            return False, "Approval request pending operator review"
+        # Timeout reached: Fail-closed to DENY
         now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
         self.deny_request(req.request_id, denied_by="timeout_fail_closed", reason="Approval request timed out")
         return False, "Approval request timed out: denied (fail-closed)"

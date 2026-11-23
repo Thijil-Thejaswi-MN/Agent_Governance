@@ -143,8 +143,8 @@ def test_rpc_exposes_only_agent_endpoints_no_self_approval(rpc_env) -> None:
     from demo.security_monitor.app.governance.broker_rpc import AGENT_ENDPOINTS
     from demo.security_monitor.app.governance.models import ExpansionStatus
 
-    assert set(AGENT_ENDPOINTS) == {"read_file", "write_file", "http_get", "call_agent",
-                                    "request_access", "run_command_check", "run_command_begin",
+    assert set(AGENT_ENDPOINTS) == {"read_file", "write_file", "http_get", "http_post", "call_agent",
+                                    "call_agents", "request_access", "run_command_check", "run_command_begin",
                                     "llm_complete"}
     client = AgentBrokerClient(token=rpc_env["token"], uds_path=rpc_env["sock"], uds_timeout=10)
     # Agent requests something MEDIUM (pending -> times out -> denied); then tries to approve it itself.

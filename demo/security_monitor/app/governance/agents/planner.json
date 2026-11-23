@@ -27,6 +27,9 @@
       "researcher",
       "budget",
       "booking"
+    ],
+    "private_files": [
+      "input/passport_scan.pdf"
     ]
   },
   "runner": {

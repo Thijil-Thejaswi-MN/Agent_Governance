@@ -40,6 +40,12 @@ class ServiceCatalog:
                 description="Perform outbound HTTP GET to authorized host:port destinations",
                 risk_level=RiskTier.MEDIUM,
             ),
+            "http_post": ServiceItem(
+                name="http_post",
+                category="tool",
+                description="Perform outbound HTTP POST to authorized host:port destinations",
+                risk_level=RiskTier.MEDIUM,
+            ),
             "run_command": ServiceItem(
                 name="run_command",
                 category="tool",
@@ -50,6 +56,12 @@ class ServiceCatalog:
                 name="call_agent",
                 category="tool",
                 description="Invoke peer A2A agents",
+                risk_level=RiskTier.MEDIUM,
+            ),
+            "call_agents": ServiceItem(
+                name="call_agents",
+                category="tool",
+                description="Invoke multiple peer A2A agents in parallel",
                 risk_level=RiskTier.MEDIUM,
             ),
             "request_access": ServiceItem(

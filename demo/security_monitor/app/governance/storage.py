@@ -392,6 +392,10 @@ class GovernanceStorage:
                 cursor.execute("ALTER TABLE governance_tasks ADD COLUMN team TEXT")
             except Exception:
                 pass
+            try:
+                cursor.execute("ALTER TABLE governance_tasks ADD COLUMN timeout_s REAL")
+            except Exception:
+                pass
             conn.commit()
 
     # --- Task Methods ---
@@ -402,8 +406,8 @@ class GovernanceStorage:
                 INSERT INTO governance_tasks (
                     task_id, request_text, request_hash, agent_id, workspace_root,
                     status, created_at, started_at, completed_at, current_boundary_version, pid, owner, team, condition, requested_by, model, org,
-                    parent_task_id, root_task_id, depth, chain
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    parent_task_id, root_task_id, depth, chain, timeout_s
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(task_id) DO UPDATE SET
                     status=excluded.status,
                     started_at=coalesce(excluded.started_at, governance_tasks.started_at),
@@ -419,7 +423,8 @@ class GovernanceStorage:
                     parent_task_id=coalesce(excluded.parent_task_id, governance_tasks.parent_task_id),
                     root_task_id=coalesce(excluded.root_task_id, governance_tasks.root_task_id),
                     depth=coalesce(excluded.depth, governance_tasks.depth),
-                    chain=coalesce(excluded.chain, governance_tasks.chain)
+                    chain=coalesce(excluded.chain, governance_tasks.chain),
+                    timeout_s=coalesce(excluded.timeout_s, governance_tasks.timeout_s)
                 """,
                 (
                     task.task_id,
@@ -443,6 +448,7 @@ class GovernanceStorage:
                     getattr(task, "root_task_id", None),
                     getattr(task, "depth", 0) or 0,
                     json.dumps(getattr(task, "chain", []) or []),
+                    getattr(task, "timeout_s", 900.0),
                 ),
             )
             conn.commit()
@@ -475,6 +481,7 @@ class GovernanceStorage:
                 root_task_id=row["root_task_id"] if "root_task_id" in keys else None,
                 depth=row["depth"] if "depth" in keys and row["depth"] is not None else 0,
                 chain=json.loads(row["chain"]) if ("chain" in keys and row["chain"]) else [],
+                timeout_s=float(row["timeout_s"]) if ("timeout_s" in keys and row["timeout_s"] is not None) else 900.0,
             )
 
     def list_tasks(self) -> list[TaskRecord]:
@@ -506,6 +513,7 @@ class GovernanceStorage:
                         root_task_id=r["root_task_id"] if "root_task_id" in k else None,
                         depth=r["depth"] if "depth" in k and r["depth"] is not None else 0,
                         chain=json.loads(r["chain"]) if ("chain" in k and r["chain"]) else [],
+                        timeout_s=float(r["timeout_s"]) if ("timeout_s" in k and r["timeout_s"] is not None) else 900.0,
                     )
                 )
             return out

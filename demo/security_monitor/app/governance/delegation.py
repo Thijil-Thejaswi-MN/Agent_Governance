@@ -235,28 +235,20 @@ class DelegationManager:
                 depth=next_depth,
                 chain=chain + [target_agent],
                 approval_policy="operator",
-                approval_timeout_s=0.5,
+                approval_timeout_s=float(profile.get("approval_timeout_s", 120.0)),
             )
 
             launch_res = child_launcher.run(child_spec)
 
-            # If child has pending expansion requests, child has not finished or replied yet
-            pending_requests = [
-                r for r in self.storage.list_expansion_requests(task_id=child_task_id)
-                if r.status == ExpansionStatus.PENDING
-            ]
-            if pending_requests:
-                if self.parent_launcher is not None:
-                    doc_hash = ""
-                    if launch_res.receipt:
-                        doc_hash = (launch_res.receipt.get("hash_chain") or {}).get("document_sha256") or ""
-                    self.parent_launcher.record_child_receipt(child_task_id, doc_hash)
-                    self.parent_launcher.unregister_child_launcher(child_launcher)
-                return {
-                    "status": "pending_approval",
-                    "reply": "Waiting for operator approval.",
-                    "child_task_id": child_task_id,
-                }
+            # When a child task ends, any of its requests still pending are closed as denied
+            now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            for req in self.storage.list_expansion_requests(task_id=child_task_id):
+                if req.status == ExpansionStatus.PENDING:
+                    req.status = ExpansionStatus.DENIED
+                    req.resolved_by = "task_ended"
+                    req.resolved_at = now_iso
+                    req.reason = "Task ended before a decision"
+                    self.storage.save_expansion_request(req)
 
             # 9. Harvest child response and telemetry
             reply_text = ""
@@ -407,15 +399,41 @@ class DelegationManager:
         authorized_patterns: list[str],
     ) -> dict[str, str]:
         """Copies files matching authorized_patterns from parent workspace into child workspace."""
+        import stat
         copied: dict[str, str] = {}
         if not parent_ws.is_dir():
             return copied
 
-        for root, _, files in os.walk(parent_ws):
+        parent_real = os.path.realpath(str(parent_ws))
+        for root, dirs, files in os.walk(str(parent_ws), followlinks=False):
+            # Don't descend into symlinked directories
+            dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(root, d))]
             for fname in files:
-                fpath = Path(root) / fname
+                fpath_str = os.path.join(root, fname)
                 try:
-                    rel = fpath.relative_to(parent_ws).as_posix()
+                    st = os.lstat(fpath_str)
+                except OSError:
+                    continue
+
+                # Skip anything that is not a regular file (symlinks, devices, FIFOs)
+                if not stat.S_ISREG(st.st_mode):
+                    continue
+
+                # Skip files with st_nlink > 1
+                if st.st_nlink > 1:
+                    continue
+
+                # Require os.path.realpath(f) to be inside realpath(parent_ws)
+                file_real = os.path.realpath(fpath_str)
+                try:
+                    rel_to_parent_real = os.path.relpath(file_real, parent_real)
+                    if rel_to_parent_real.startswith("..") or os.path.isabs(rel_to_parent_real):
+                        continue
+                except ValueError:
+                    continue
+
+                try:
+                    rel = Path(fpath_str).relative_to(parent_ws).as_posix()
                 except ValueError:
                     continue
 
@@ -424,19 +442,41 @@ class DelegationManager:
 
                 # Check if rel matches any authorized read pattern
                 matched = any(fnmatch.fnmatch(rel, pat) for pat in authorized_patterns)
-                if matched:
-                    dst = child_ws / rel
-                    dst.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(fpath, dst)
+                if not matched:
+                    continue
+
+                # Open with O_NOFOLLOW and copy from that fd (no shutil.copy2 on a path)
+                flags = os.O_RDONLY
+                if hasattr(os, "O_NOFOLLOW"):
+                    flags |= os.O_NOFOLLOW
+                try:
+                    fd = os.open(fpath_str, flags)
+                except OSError:
+                    continue
+
+                dst = child_ws / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    with open(fd, "rb", closefd=True) as src_f, open(dst, "wb") as dst_f:
+                        content_bytes = src_f.read()
+                        dst_f.write(content_bytes)
                     try:
-                        copied[rel] = fpath.read_text(encoding="utf-8")
+                        copied[rel] = content_bytes.decode("utf-8")
                     except Exception:
-                        copied[rel] = f"[binary file: {fpath.name}]"
+                        copied[rel] = f"[binary file: {fname}]"
+                except Exception:
+                    continue
         return copied
 
     def _calculate_deadline(self, parent_task: TaskRecord, profile: dict[str, Any]) -> float:
         """Ensures child deadline <= parent remaining time."""
         profile_timeout = float(profile.get("timeout_s", 900.0))
+        parent_total = float(getattr(parent_task, "timeout_s", None) or 900.0)
+        if self.parent_launcher is not None and hasattr(self.parent_launcher, "spec"):
+            spec_timeout = getattr(self.parent_launcher.spec, "timeout_s", None)
+            if spec_timeout is not None:
+                parent_total = float(spec_timeout)
+
         parent_started = parent_task.started_at or parent_task.created_at
         try:
             st = datetime.datetime.fromisoformat(parent_started)
@@ -446,7 +486,6 @@ class DelegationManager:
         except Exception:
             elapsed = 0.0
 
-        parent_total = 900.0
         parent_remaining = max(1.0, parent_total - max(0.0, elapsed))
         return min(profile_timeout, parent_remaining)
 
@@ -464,18 +503,32 @@ class DelegationManager:
         return sorted(forwarded)
 
     def _has_read_private_files(self, task_id: str, boundary: TaskBoundary) -> bool:
-        """Determines if the task read any file matching sensitive patterns or a canary."""
+        """Determines if the task read any file matching sensitive patterns, private_files, or a canary."""
         canary = (boundary.metadata or {}).get("canary", "")
         private_files = (boundary.metadata or {}).get("private_files", [])
-        private_paths = {p.get("path") for p in private_files if isinstance(p, dict) and p.get("path")}
+        private_paths = set()
+        for p in private_files:
+            if isinstance(p, dict):
+                pth = p.get("path")
+                if pth:
+                    private_paths.add(pth)
+                    private_paths.add(Path(pth).name)
+            elif isinstance(p, str):
+                private_paths.add(p)
+                private_paths.add(Path(p).name)
+
+        sensitive_patterns = list((boundary.metadata or {}).get("sensitive_patterns", []))
+        if hasattr(boundary, "sensitive_patterns") and boundary.sensitive_patterns:
+            sensitive_patterns.extend(boundary.sensitive_patterns)
 
         events = self.storage.get_events_for_task(task_id)
         for ev in events:
             if ev.kind in ("file_read", "read_file") and ev.verdict == EventVerdict.INSIDE:
                 tgt = ev.target
-                if tgt in private_paths:
+                tgt_name = Path(tgt).name
+                if tgt in private_paths or tgt_name in private_paths:
                     return True
-                if "passport" in tgt.lower() or "credentials" in tgt.lower() or "secret" in tgt.lower():
+                if any(fnmatch.fnmatch(tgt, pat) or fnmatch.fnmatch(tgt_name, pat) for pat in sensitive_patterns):
                     return True
                 if canary and canary in str(ev.details):
                     return True

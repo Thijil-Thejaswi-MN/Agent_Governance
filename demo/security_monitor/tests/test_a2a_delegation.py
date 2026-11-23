@@ -87,6 +87,7 @@ def make_task_record(
     workspace_root: str = "/tmp/ws",
     owner: str | None = None,
     team: str | None = None,
+    timeout_s: float | None = 900.0,
 ) -> TaskRecord:
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     return TaskRecord(
@@ -103,6 +104,7 @@ def make_task_record(
         chain=chain or [agent_id],
         owner=owner,
         team=team,
+        timeout_s=timeout_s,
     )
 
 
@@ -542,9 +544,26 @@ def test_trip_planner_preset(tmp_path: Path, fixture_server):
         network=["127.0.0.1:*", "localhost:*"],
         peer_agents=["researcher", "budget", "booking"],
         workspace_root=str(ws),
-        metadata={"canary": "CANARY_TRIP_TEST_123"},
+        metadata={"canary": "CANARY_TRIP_TEST_123", "private_files": [{"path": "input/passport_scan.pdf"}]},
     )
     storage.save_boundary(planner_boundary)
+
+    pending_observed = threading.Event()
+
+    def _watcher():
+        for _ in range(100):
+            time.sleep(0.05)
+            reqs = storage.list_expansion_requests()
+            p = [r for r in reqs if r.status == ExpansionStatus.PENDING]
+            if p and p[0].resource_target == "input/travel_history.csv":
+                pending_observed.set()
+                time.sleep(0.1)
+                from demo.security_monitor.app.governance.expansion import ExpansionService
+                ExpansionService(storage).deny_request(p[0].request_id, denied_by="operator", reason="operator review")
+                return
+
+    w_th = threading.Thread(target=_watcher, daemon=True)
+    w_th.start()
 
     # 1. Step 1: Planner reads passport scan
     from demo.security_monitor.app.governance.broker import ToolBroker
@@ -568,32 +587,25 @@ def test_trip_planner_preset(tmp_path: Path, fixture_server):
 
     # 4. Check message rows in a2a_messages
     all_msgs = storage.get_a2a_messages(root_task_id=root_task_id)
-    assert len(all_msgs) == 7, f"Expected exactly 7 messages, got {len(all_msgs)}: {json.dumps(all_msgs, indent=2)}"
+    assert len(all_msgs) == 8, f"Expected exactly 8 messages, got {len(all_msgs)}: {json.dumps(all_msgs, indent=2)}"
 
     refused_msgs = [m for m in all_msgs if m.get("verdict") == "refused"]
     assert len(refused_msgs) == 2, f"Expected exactly 2 refused messages, got {len(refused_msgs)}: {json.dumps(refused_msgs, indent=2)}"
+
+    assert pending_observed.is_set(), "Pending approval was not observed"
 
     # Check the 2 refusals:
     # Refusal 1: Booking calling payment (payment not in booking's narrowed peer_agents)
     booking_refusal = next((m for m in refused_msgs if m.get("to_agent") == "payment"), None)
     assert booking_refusal is not None
     assert booking_refusal["from_agent"] == "booking"
-    assert "peer_agents" in (booking_refusal.get("reason") or "")
+    assert "payment" in (booking_refusal.get("reason") or "")
 
     # Refusal 2: Planner calling external host
     outside_refusal = next((m for m in refused_msgs if m.get("to_agent") == "host:gion-maru-travel.example"), None)
     assert outside_refusal is not None
     assert outside_refusal["from_agent"] == "planner"
     assert "gion-maru-travel.example" in (outside_refusal.get("reason") or "")
-
-    # Check pending approvals: exactly 1 pending approval (researcher requested travel_history.csv)
-    # Find researcher child task id from messages
-    res_req = next(m for m in all_msgs if m.get("to_agent") == "researcher" and m.get("kind") == "request")
-    researcher_task_id = res_req["child_task_id"]
-    requests = storage.list_expansion_requests(task_id=researcher_task_id)
-    pending = [r for r in requests if r.status == ExpansionStatus.PENDING]
-    assert len(pending) == 1
-    assert pending[0].resource_target == "input/travel_history.csv"
 
 
 def test_api_auth(tmp_path: Path, monkeypatch):
@@ -663,3 +675,381 @@ def test_api_auth(tmp_path: Path, monkeypatch):
         headers={"Cookie": "gov_session=sess_alice"},
     )
     assert resp_404.status_code == 404
+
+
+def test_agent_tool_limit_lacks_call_agent_refused(tmp_path: Path):
+    """An agent whose tool limit lacks call_agent is refused, even when the peer is listed."""
+    storage = GovernanceStorage(tmp_path / "test_no_tool.db")
+    tid = "task_no_tool"
+    tok = "tok_no_tool"
+    storage.save_token(tok, tid, "agent_limited")
+    ws = tmp_path / "ws_no_tool"
+    ws.mkdir(parents=True, exist_ok=True)
+    task = make_task_record(task_id=tid, agent_id="agent_limited", workspace_root=str(ws))
+    storage.save_task(task)
+    boundary = TaskBoundary(
+        task_id=tid,
+        tools=["read_file", "write_file"],
+        peer_agents=["allowed_peer"],
+        workspace_root=str(ws),
+        metadata={"agent_tool_limit": ["read_file", "write_file"], "agent_tool_limit_agent": "agent_limited"},
+    )
+    storage.save_boundary(boundary)
+    from demo.security_monitor.app.governance.broker import ToolBroker
+    broker = ToolBroker(storage)
+    with pytest.raises(PermissionError) as exc_info:
+        broker.call_agent(tok, "allowed_peer", {"text": "hello"})
+    assert "call_agent" in str(exc_info.value)
+
+
+def test_call_agent_observe_mode_records_not_block(tmp_path: Path):
+    """Observe mode records but does not block."""
+    storage = GovernanceStorage(tmp_path / "test_observe.db")
+    tid = "task_observe"
+    tok = "tok_observe"
+    storage.save_token(tok, tid, "agent_obs")
+    ws = tmp_path / "ws_obs"
+    ws.mkdir(parents=True, exist_ok=True)
+    task = make_task_record(task_id=tid, agent_id="agent_obs", workspace_root=str(ws))
+    storage.save_task(task)
+    boundary = TaskBoundary(
+        task_id=tid,
+        tools=["call_agent"],
+        peer_agents=[],
+        workspace_root=str(ws),
+        enforcement_mode=EnforcementMode.OBSERVE,
+    )
+    storage.save_boundary(boundary)
+    from demo.security_monitor.app.governance.broker import ToolBroker
+    broker = ToolBroker(storage)
+    class StubDM:
+        def delegate_single(self, token, target_agent, message, fanout_group=None):
+            return {"status": "ok", "reply": "obs_ok"}
+    broker.delegation_manager = StubDM()
+    res = broker.call_agent(tok, "unlisted_peer", {"text": "hello"})
+    assert res.get("status") == "ok"
+    events = storage.get_events_for_task(tid)
+    peer_evs = [e for e in events if e.kind == "peer_agent"]
+    assert len(peer_evs) == 1
+    assert peer_evs[0].prevented is False
+
+
+def test_call_agent_single_use_consumed(tmp_path: Path):
+    """A single-use peer grant is consumed."""
+    storage = GovernanceStorage(tmp_path / "test_single_use.db")
+    tid = "task_single_use"
+    tok = "tok_single_use"
+    storage.save_token(tok, tid, "agent_su")
+    ws = tmp_path / "ws_su"
+    ws.mkdir(parents=True, exist_ok=True)
+    task = make_task_record(task_id=tid, agent_id="agent_su", workspace_root=str(ws))
+    storage.save_task(task)
+    boundary = TaskBoundary(
+        task_id=tid,
+        tools=["call_agent"],
+        peer_agents=["one_time_peer"],
+        workspace_root=str(ws),
+    )
+    storage.save_boundary(boundary)
+    from demo.security_monitor.app.governance.models import ExpansionRequest, ExpansionStatus, RiskTier
+    exp_req = ExpansionRequest(
+        request_id="grant_req_01",
+        task_id=tid,
+        agent_id="agent_su",
+        resource_type="peer_agent",
+        resource_target="one_time_peer",
+        justification="test",
+        baseline_risk_tier=RiskTier.HIGH,
+        effective_risk_tier=RiskTier.HIGH,
+        created_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        status=ExpansionStatus.APPROVED,
+        single_use=True,
+    )
+    storage.save_expansion_request(exp_req)
+    storage.mark_expansion_single_use("grant_req_01")
+    from demo.security_monitor.app.governance.broker import ToolBroker
+    broker = ToolBroker(storage)
+    class StubDM:
+        def delegate_single(self, token, target_agent, message, fanout_group=None):
+            return {"status": "ok", "reply": "su_reply"}
+    broker.delegation_manager = StubDM()
+    # Call to consume single-use
+    broker._check_and_consume_single_use(boundary, "peer_agent", "one_time_peer")
+    # Verify consumed
+    updated_req = storage.get_expansion_request("grant_req_01")
+    assert updated_req.used_count == 1
+    assert "one_time_peer" not in boundary.peer_agents
+
+
+def test_copy_authorized_inputs_skips_symlink_outside(tmp_path: Path):
+    """A parent workspace symlink pointing outside workspace is not copied."""
+    storage = GovernanceStorage(tmp_path / "test_copy_sym.db")
+    mgr = DelegationManager(storage)
+    parent_ws = tmp_path / "parent_ws"
+    parent_ws.mkdir(parents=True, exist_ok=True)
+    (parent_ws / "input").mkdir(parents=True, exist_ok=True)
+    outside_file = tmp_path / "outside_secret.txt"
+    outside_file.write_text("OUTSIDE EXFIL", encoding="utf-8")
+    symlink_file = parent_ws / "input" / "sym_outside.txt"
+    symlink_file.symlink_to(outside_file)
+    child_ws = tmp_path / "child_ws"
+    child_ws.mkdir(parents=True, exist_ok=True)
+    copied = mgr._copy_authorized_inputs(parent_ws, child_ws, ["input/*"])
+    assert "input/sym_outside.txt" not in copied
+    assert not (child_ws / "input" / "sym_outside.txt").exists()
+
+
+def test_copy_authorized_inputs_skips_hardlink(tmp_path: Path):
+    """A hard-linked file is not copied."""
+    storage = GovernanceStorage(tmp_path / "test_copy_hl.db")
+    mgr = DelegationManager(storage)
+    parent_ws = tmp_path / "parent_ws"
+    parent_ws.mkdir(parents=True, exist_ok=True)
+    (parent_ws / "input").mkdir(parents=True, exist_ok=True)
+    orig_file = parent_ws / "input" / "original.txt"
+    orig_file.write_text("ORIGINAL", encoding="utf-8")
+    hl_file = parent_ws / "input" / "hardlink.txt"
+    os.link(str(orig_file), str(hl_file))
+    child_ws = tmp_path / "child_ws"
+    child_ws.mkdir(parents=True, exist_ok=True)
+    copied = mgr._copy_authorized_inputs(parent_ws, child_ws, ["input/*"])
+    assert "input/hardlink.txt" not in copied
+    assert not (child_ws / "input" / "hardlink.txt").exists()
+
+
+def test_copy_authorized_inputs_copies_normal_file(tmp_path: Path):
+    """A normal file is copied."""
+    storage = GovernanceStorage(tmp_path / "test_copy_normal.db")
+    mgr = DelegationManager(storage)
+    parent_ws = tmp_path / "parent_ws"
+    parent_ws.mkdir(parents=True, exist_ok=True)
+    (parent_ws / "input").mkdir(parents=True, exist_ok=True)
+    normal_file = parent_ws / "input" / "data.txt"
+    normal_file.write_text("VALID DATA", encoding="utf-8")
+    child_ws = tmp_path / "child_ws"
+    child_ws.mkdir(parents=True, exist_ok=True)
+    copied = mgr._copy_authorized_inputs(parent_ws, child_ws, ["input/*"])
+    assert "input/data.txt" in copied
+    assert (child_ws / "input" / "data.txt").read_text(encoding="utf-8") == "VALID DATA"
+
+
+def test_deadline_inheritance_parent_30s(tmp_path: Path):
+    """Child deadline is bounded by parent remaining time with a parent of 30 s."""
+    storage = GovernanceStorage(tmp_path / "test_deadline.db")
+    mgr = DelegationManager(storage)
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    parent_task = make_task_record(task_id="parent_30", timeout_s=30.0)
+    parent_task.started_at = now
+    profile = {"timeout_s": 900.0}
+    deadline = mgr._calculate_deadline(parent_task, profile)
+    assert deadline <= 30.0
+    assert deadline >= 28.0
+
+
+def test_http_post_allowed_and_refused(tmp_path: Path, fixture_server):
+    """Allowed POST reaches sink; refused POST of private file records contains_private=True and only file name."""
+    storage = GovernanceStorage(tmp_path / "test_http_post.db")
+    tid = "task_post"
+    tok = "tok_post"
+    storage.save_token(tok, tid, "planner")
+    ws = tmp_path / "ws_post"
+    ws.mkdir(parents=True, exist_ok=True)
+    (ws / "input").mkdir(parents=True, exist_ok=True)
+    (ws / "input" / "passport_scan.pdf").write_text("PASSPORT CONTENT", encoding="utf-8")
+    task = make_task_record(task_id=tid, agent_id="planner", workspace_root=str(ws))
+    storage.save_task(task)
+    boundary = TaskBoundary(
+        task_id=tid,
+        tools=["read_file", "http_post"],
+        files_read=["input/*"],
+        network=["127.0.0.1:8765"],
+        workspace_root=str(ws),
+        metadata={"private_files": [{"path": "input/passport_scan.pdf"}]},
+    )
+    storage.save_boundary(boundary)
+    from demo.security_monitor.app.governance.broker import ToolBroker
+    broker = ToolBroker(storage)
+    # 1. Allowed post to sink
+    sink_res = broker.http_post(tok, "http://127.0.0.1:8765/api/sink", data='{"event":"ping"}')
+    assert sink_res.get("status") == 200
+
+    # 2. Refused post to unlisted destination
+    with pytest.raises(PermissionError):
+        broker.http_post(tok, "https://unauthorized-host.example/upload", file_path="input/passport_scan.pdf")
+
+    msgs = storage.get_a2a_messages(root_task_id=tid)
+    refused = [m for m in msgs if m.get("verdict") == "refused"]
+    assert len(refused) == 1
+    r_msg = refused[0]
+    assert r_msg["contains_private"] is True
+    assert r_msg["text"] == "passport_scan.pdf"
+
+
+def test_trip_planner_approval_flow_via_api(tmp_path: Path, fixture_server, monkeypatch):
+    """An operator approval via API allows Researcher to read the file and conclude."""
+    monkeypatch.setenv("GOVERNANCE_OPERATOR_TOKEN", "test_op_token")
+    from fastapi.testclient import TestClient
+    from demo.security_monitor.app.governance import api as gov_api
+    from demo.security_monitor.app.governance.roles import Role
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    app.include_router(gov_api.governance_router, prefix="/api/governance")
+    client = TestClient(app)
+
+    db_path = tmp_path / "test_api_approve.db"
+    storage = GovernanceStorage(db_path)
+    monkeypatch.setattr(gov_api, "get_storage", lambda: storage)
+    from demo.security_monitor.app.governance.expansion import ExpansionService
+    monkeypatch.setattr(gov_api, "get_expansion_service", lambda: ExpansionService(storage))
+
+    mgr = DelegationManager(storage, workspace_base=tmp_path / "workspaces")
+    root_task_id = "task_planner_appr"
+    token = "tok_planner_appr"
+    storage.save_token(token, root_task_id, "planner")
+
+    ws = tmp_path / "workspaces" / root_task_id
+    (ws / "input").mkdir(parents=True, exist_ok=True)
+    (ws / "output").mkdir(parents=True, exist_ok=True)
+    (ws / "input" / "travel_history.csv").write_text("trip_id,year,destination\n1,2023,Tokyo\n", encoding="utf-8")
+
+    planner_task = make_task_record(
+        task_id=root_task_id,
+        agent_id="planner",
+        root_task_id=root_task_id,
+        depth=0,
+        chain=["planner"],
+        workspace_root=str(ws),
+        owner="admin_user",
+        team="travel",
+    )
+    storage.save_task(planner_task)
+
+    planner_boundary = TaskBoundary(
+        task_id=root_task_id,
+        tools=["read_file", "call_agent"],
+        files_read=["input/*"],
+        files_write=["output/*"],
+        network=["127.0.0.1:*", "localhost:*"],
+        peer_agents=["researcher"],
+        workspace_root=str(ws),
+    )
+    storage.save_boundary(planner_boundary)
+
+    # Set up session
+    with gov_api._sessions_lock:
+        gov_api._sessions["sess_admin"] = time.time() + 3600
+        gov_api._session_users["sess_admin"] = {"name": "admin_user", "role": Role.ADMIN, "team": "travel"}
+
+    def _approve_in_thread():
+        for _ in range(100):
+            time.sleep(0.05)
+            reqs = storage.list_expansion_requests()
+            p = [r for r in reqs if r.status == ExpansionStatus.PENDING]
+            if p:
+                req_id = p[0].request_id
+                resp = client.post(
+                    f"/api/governance/expansions/{req_id}/approve",
+                    headers={"Cookie": "gov_session=sess_admin", "Authorization": "Bearer test_op_token"},
+                    json={"scope": "run"},
+                )
+                assert resp.status_code == 200
+                return
+
+    th = threading.Thread(target=_approve_in_thread, daemon=True)
+    th.start()
+
+    from demo.security_monitor.app.governance.broker import ToolBroker
+    broker = ToolBroker(storage)
+    broker.delegation_manager = mgr
+
+    res = broker.call_agent(token, "researcher", {"text": "research attractions"})
+    assert res.get("status") == "ok"
+    # Researcher was able to read travel_history.csv
+    evs = storage.get_events_for_task(res["child_task_id"])
+    read_evs = [e for e in evs if e.kind in ("file_read", "read_file") and "travel_history.csv" in e.target]
+    assert len(read_evs) >= 1
+
+
+def test_trip_planner_denial_flow_via_api(tmp_path: Path, fixture_server, monkeypatch):
+    """An operator denial via API records the denial."""
+    monkeypatch.setenv("GOVERNANCE_OPERATOR_TOKEN", "test_op_token")
+    from fastapi.testclient import TestClient
+    from demo.security_monitor.app.governance import api as gov_api
+    from demo.security_monitor.app.governance.roles import Role
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    app.include_router(gov_api.governance_router, prefix="/api/governance")
+    client = TestClient(app)
+
+    db_path = tmp_path / "test_api_deny.db"
+    storage = GovernanceStorage(db_path)
+    monkeypatch.setattr(gov_api, "get_storage", lambda: storage)
+    from demo.security_monitor.app.governance.expansion import ExpansionService
+    monkeypatch.setattr(gov_api, "get_expansion_service", lambda: ExpansionService(storage))
+
+    mgr = DelegationManager(storage, workspace_base=tmp_path / "workspaces")
+    root_task_id = "task_planner_deny"
+    token = "tok_planner_deny"
+    storage.save_token(token, root_task_id, "planner")
+
+    ws = tmp_path / "workspaces" / root_task_id
+    (ws / "input").mkdir(parents=True, exist_ok=True)
+    (ws / "output").mkdir(parents=True, exist_ok=True)
+    (ws / "input" / "travel_history.csv").write_text("trip_id,year,destination\n1,2023,Tokyo\n", encoding="utf-8")
+
+    planner_task = make_task_record(
+        task_id=root_task_id,
+        agent_id="planner",
+        root_task_id=root_task_id,
+        depth=0,
+        chain=["planner"],
+        workspace_root=str(ws),
+        owner="admin_user",
+        team="travel",
+    )
+    storage.save_task(planner_task)
+
+    planner_boundary = TaskBoundary(
+        task_id=root_task_id,
+        tools=["read_file", "call_agent"],
+        files_read=["input/*"],
+        files_write=["output/*"],
+        network=["127.0.0.1:*", "localhost:*"],
+        peer_agents=["researcher"],
+        workspace_root=str(ws),
+    )
+    storage.save_boundary(planner_boundary)
+
+    # Set up session
+    with gov_api._sessions_lock:
+        gov_api._sessions["sess_admin"] = time.time() + 3600
+        gov_api._session_users["sess_admin"] = {"name": "admin_user", "role": Role.ADMIN, "team": "travel"}
+
+    def _deny_in_thread():
+        for _ in range(100):
+            time.sleep(0.05)
+            reqs = storage.list_expansion_requests()
+            p = [r for r in reqs if r.status == ExpansionStatus.PENDING]
+            if p:
+                req_id = p[0].request_id
+                resp = client.post(
+                    f"/api/governance/expansions/{req_id}/deny",
+                    headers={"Cookie": "gov_session=sess_admin", "Authorization": "Bearer test_op_token"},
+                    json={"reason": "Access denied by operator"},
+                )
+                assert resp.status_code == 200
+                return
+
+    th = threading.Thread(target=_deny_in_thread, daemon=True)
+    th.start()
+
+    from demo.security_monitor.app.governance.broker import ToolBroker
+    broker = ToolBroker(storage)
+    broker.delegation_manager = mgr
+
+    res = broker.call_agent(token, "researcher", {"text": "research attractions"})
+    # Denial was recorded
+    reqs = storage.list_expansion_requests()
+    assert any(r.status == ExpansionStatus.DENIED for r in reqs)

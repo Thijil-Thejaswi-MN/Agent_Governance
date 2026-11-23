@@ -6,7 +6,9 @@ and emits normalized governance audit events.
 """
 from __future__ import annotations
 
+import concurrent.futures
 import datetime
+import fnmatch
 import json
 import os
 import uuid
@@ -679,7 +681,21 @@ class ToolBroker:
             host = parsed.netloc.split(":")[0] if parsed.netloc else url
             task = self.storage.get_task(task_id)
             root_id = task.root_task_id or task_id if task else task_id
-            payload_text = f"file:{Path(file_path).name}" if file_path else (str(data)[:200] if data else "")
+
+            contains_priv = False
+            if file_path:
+                fname = Path(file_path).name
+                pfiles = (boundary.metadata or {}).get("private_files", [])
+                ppaths = {p if isinstance(p, str) else p.get("path") for p in pfiles}
+                if file_path in ppaths or fname in ppaths or any(p and (p.endswith(file_path) or p.endswith(fname)) for p in ppaths if isinstance(p, str)):
+                    contains_priv = True
+                spats = list((boundary.metadata or {}).get("sensitive_patterns", []))
+                if hasattr(boundary, "sensitive_patterns") and boundary.sensitive_patterns:
+                    spats.extend(boundary.sensitive_patterns)
+                if any(fnmatch.fnmatch(file_path, pat) or fnmatch.fnmatch(fname, pat) for pat in spats):
+                    contains_priv = True
+
+            payload_text = Path(file_path).name if file_path else (str(data)[:200] if data else "")
             refused_msg = {
                 "message_id": f"msg_{uuid.uuid4().hex[:16]}",
                 "root_task_id": root_id,
@@ -696,14 +712,19 @@ class ToolBroker:
                 "reason": eval_res.rule_matched,
                 "integrity": "trusted",
                 "forwarded_from": [],
-                "contains_private": False,
+                "contains_private": contains_priv,
             }
             self.storage.save_a2a_message(refused_msg)
             raise PermissionError(f"Outbound network request to '{url}' denied by boundary: {eval_res.rule_matched}")
 
+        # When file_path is given, the broker reads it through the same checks as read_file (boundary + realpath)
+        post_data = data
+        if file_path:
+            post_data = self.read_file(token, file_path)
+
         fetcher = getattr(self, "http_fetcher", None)
         if fetcher is not None:
-            fetched = fetcher(token=token, task_id=task_id, url=url, method="POST", data=data)
+            fetched = fetcher(token=token, task_id=task_id, url=url, method="POST", data=post_data)
             return {"status": fetched.get("status", 200), "url": url, "body": fetched.get("body", "")}
 
         return {"status": 200, "url": url, "body": "Mock POST response from authorized endpoint"}
@@ -895,26 +916,217 @@ class ToolBroker:
     def call_agent(self, token: str, target_agent: str, message: dict[str, Any] | str) -> dict[str, Any]:
         """
         Tool: call_agent
-        Executes real delegation to a governed child task.
+        Checks peer agent boundary BEFORE message dispatch.
         """
+        task_id, agent_id = self._authenticate(token)
+        boundary = self.storage.get_boundary(task_id)
+        if not boundary:
+            raise RuntimeError(f"Active boundary not found for task {task_id}")
+        self._check_agent_tool(task_id, agent_id, boundary, "call_agent")
+
+        norm_target = str(target_agent).strip().lower()
+        grant_state = self._get_grant_state(task_id)
+        cache_key = ("call_agent", norm_target, boundary.version, grant_state)
+        cached = self._policy_cache.get(task_id, {}).get(cache_key)
+
+        if cached is not None:
+            eval_res, action, prevented = cached
+        else:
+            eval_res = self.evaluator.evaluate_peer_agent(boundary, target_agent)
+            action, prevented = self.policy_engine.decide(boundary, eval_res)
+            if eval_res.verdict == EventVerdict.INSIDE and not prevented and action == TaskAction.ALLOW:
+                if task_id not in self._policy_cache:
+                    self._policy_cache[task_id] = {}
+                self._policy_cache[task_id][cache_key] = (eval_res, action, prevented)
+
+        event = GovernanceEvent(
+            event_id=self._generate_event_id(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            source=EventSource.TOOL_BROKER,
+            task_id=task_id,
+            agent_id=agent_id,
+            pid=os.getpid(),
+            kind="peer_agent",
+            target=target_agent,
+            details={"message_summary": str(message)[:100]},
+            verdict=eval_res.verdict,
+            risk_tier=eval_res.risk_tier,
+            action_taken=action,
+            prevented=prevented,
+            rule_matched=eval_res.rule_matched,
+            boundary_version=boundary.version,
+        )
+        self._record(event)
+
+        if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
+            task = self.storage.get_task(task_id)
+            root_id = task.root_task_id or task_id if task else task_id
+            msg_text = message.get("text", "") if isinstance(message, dict) else str(message)
+            refused_msg = {
+                "message_id": f"msg_{uuid.uuid4().hex[:16]}",
+                "root_task_id": root_id,
+                "parent_task_id": task_id,
+                "child_task_id": None,
+                "from_agent": agent_id,
+                "to_agent": target_agent,
+                "kind": "request",
+                "fanout_group": None,
+                "reply_to": None,
+                "sent_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "text": msg_text[:8192],
+                "verdict": "refused",
+                "reason": eval_res.rule_matched,
+                "integrity": "trusted",
+                "forwarded_from": [],
+                "contains_private": False,
+            }
+            self.storage.save_a2a_message(refused_msg)
+            raise PermissionError(f"Communication with agent '{target_agent}' denied by boundary: {eval_res.rule_matched}")
+
         dm = getattr(self, "delegation_manager", None)
         if dm is None:
             from .delegation import DelegationManager
             dm = DelegationManager(self.storage)
             self.delegation_manager = dm
-        return dm.delegate_single(token, target_agent, message)
+
+        res = dm.delegate_single(token, target_agent, message)
+        self._check_and_consume_single_use(boundary, "peer_agent", target_agent)
+
+        reply_content = res.get("reply", "") if isinstance(res, dict) else str(res)
+        if self.expansion_service:
+            self.expansion_service.record_untrusted_read(
+                task_id=task_id,
+                source_type="peer_message",
+                source_target=target_agent,
+                content=reply_content,
+            )
+
+        return res
 
     def call_agents(self, token: str, calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Tool: call_agents
-        Executes parallel delegation to multiple governed child tasks at once.
+        Checks tool limit once for call_agent. Then runs the same per-target checks for each target
+        before starting any child. Refused targets get a refused row; allowed ones run in parallel.
         """
-        dm = getattr(self, "delegation_manager", None)
-        if dm is None:
-            from .delegation import DelegationManager
-            dm = DelegationManager(self.storage)
-            self.delegation_manager = dm
-        return dm.delegate_parallel(token, calls)
+        task_id, agent_id = self._authenticate(token)
+        boundary = self.storage.get_boundary(task_id)
+        if not boundary:
+            raise RuntimeError(f"Active boundary not found for task {task_id}")
+        self._check_agent_tool(task_id, agent_id, boundary, "call_agent")
+
+        grant_state = self._get_grant_state(task_id)
+        task = self.storage.get_task(task_id)
+        root_id = task.root_task_id or task_id if task else task_id
+        group_id = f"fanout_{uuid.uuid4().hex[:12]}"
+
+        allowed_calls: list[tuple[int, dict[str, Any]]] = []
+        indexed_results: dict[int, dict[str, Any]] = {}
+
+        for idx, call_dict in enumerate(calls):
+            tgt = call_dict.get("target") or call_dict.get("target_agent", "")
+            msg = call_dict.get("message", {})
+            norm_target = str(tgt).strip().lower()
+            cache_key = ("call_agent", norm_target, boundary.version, grant_state)
+            cached = self._policy_cache.get(task_id, {}).get(cache_key)
+
+            if cached is not None:
+                eval_res, action, prevented = cached
+            else:
+                eval_res = self.evaluator.evaluate_peer_agent(boundary, tgt)
+                action, prevented = self.policy_engine.decide(boundary, eval_res)
+                if eval_res.verdict == EventVerdict.INSIDE and not prevented and action == TaskAction.ALLOW:
+                    if task_id not in self._policy_cache:
+                        self._policy_cache[task_id] = {}
+                    self._policy_cache[task_id][cache_key] = (eval_res, action, prevented)
+
+            event = GovernanceEvent(
+                event_id=self._generate_event_id(),
+                timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                source=EventSource.TOOL_BROKER,
+                task_id=task_id,
+                agent_id=agent_id,
+                pid=os.getpid(),
+                kind="peer_agent",
+                target=tgt,
+                details={"message_summary": str(msg)[:100]},
+                verdict=eval_res.verdict,
+                risk_tier=eval_res.risk_tier,
+                action_taken=action,
+                prevented=prevented,
+                rule_matched=eval_res.rule_matched,
+                boundary_version=boundary.version,
+            )
+            self._record(event)
+
+            if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
+                msg_text = msg.get("text", "") if isinstance(msg, dict) else str(msg)
+                refused_msg = {
+                    "message_id": f"msg_{uuid.uuid4().hex[:16]}",
+                    "root_task_id": root_id,
+                    "parent_task_id": task_id,
+                    "child_task_id": None,
+                    "from_agent": agent_id,
+                    "to_agent": tgt,
+                    "kind": "request",
+                    "fanout_group": group_id,
+                    "reply_to": None,
+                    "sent_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "text": msg_text[:8192],
+                    "verdict": "refused",
+                    "reason": eval_res.rule_matched,
+                    "integrity": "trusted",
+                    "forwarded_from": [],
+                    "contains_private": False,
+                }
+                self.storage.save_a2a_message(refused_msg)
+                indexed_results[idx] = {
+                    "status": "refused",
+                    "reply": f"Communication with agent '{tgt}' denied by boundary: {eval_res.rule_matched}",
+                    "child_task_id": None,
+                    "target": tgt,
+                }
+            else:
+                allowed_calls.append((idx, call_dict))
+
+        if allowed_calls:
+            dm = getattr(self, "delegation_manager", None)
+            if dm is None:
+                from .delegation import DelegationManager
+                dm = DelegationManager(self.storage)
+                self.delegation_manager = dm
+
+            def _worker(item: tuple[int, dict[str, Any]]) -> tuple[int, dict[str, Any]]:
+                i, c = item
+                t_agent = c.get("target") or c.get("target_agent", "")
+                m = c.get("message", {})
+                try:
+                    res = dm.delegate_single(token, t_agent, m, fanout_group=group_id)
+                    res["target"] = t_agent
+                    return i, res
+                except Exception as e:
+                    return i, {
+                        "status": "refused",
+                        "reply": str(e),
+                        "child_task_id": None,
+                        "target": t_agent,
+                    }
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(allowed_calls))) as executor:
+                for idx_item, res_dict in executor.map(_worker, allowed_calls):
+                    indexed_results[idx_item] = res_dict
+                    tgt_name = res_dict.get("target", "")
+                    self._check_and_consume_single_use(boundary, "peer_agent", tgt_name)
+                    reply_str = res_dict.get("reply", "") if isinstance(res_dict, dict) else ""
+                    if self.expansion_service:
+                        self.expansion_service.record_untrusted_read(
+                            task_id=task_id,
+                            source_type="peer_message",
+                            source_target=tgt_name,
+                            content=reply_str,
+                        )
+
+        return [indexed_results[i] for i in range(len(calls))]
 
     def llm_complete(
         self,
