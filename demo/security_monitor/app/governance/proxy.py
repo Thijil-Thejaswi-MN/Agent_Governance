@@ -31,6 +31,11 @@ from .single_use import consume_single_use
 logger = logging.getLogger(__name__)
 
 
+class _EmptyResponseError(Exception):
+    """Raised when upstream closes before sending any response bytes."""
+    pass
+
+
 class EgressProxyServer:
     """Asyncio HTTP CONNECT proxy enforcing task-boundary network rules."""
 
@@ -56,7 +61,7 @@ class EgressProxyServer:
         self.max_line_length: int = 8192
         self.max_content_length: int = 1024 * 1024
         self._dns_cache: dict[str, tuple[list[str], float]] = {}
-        self._upstream_pool: dict[tuple[str, int], list[tuple[asyncio.StreamReader, asyncio.StreamWriter]]] = {}
+        self._upstream_pool: dict[tuple[str, int], list[tuple[asyncio.StreamReader, asyncio.StreamWriter, float]]] = {}
 
     def cache_dns(self, host: str, ips: list[str], ttl: int = 60) -> None:
         """Explicitly caches DNS resolution with TTL clamped between 5 s and 300 s."""
@@ -99,68 +104,119 @@ class EgressProxyServer:
             self.cache_dns(host, resolved_ips, ttl=60)
         return resolved_ips
 
-    async def _get_upstream_conn(self, ip: str, port: int) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-        pool = self._upstream_pool.setdefault((ip, port), [])
-        while pool:
-            r, w = pool.pop(0)
-            if not r.at_eof() and not w.is_closing():
-                return r, w
-            try:
-                w.close()
-            except Exception:
-                pass
-        return await asyncio.open_connection(ip, port)
-
-    def _release_upstream_conn(self, ip: str, port: int, r: asyncio.StreamReader, w: asyncio.StreamWriter) -> None:
-        if not r.at_eof() and not w.is_closing():
+    async def _get_upstream_conn(
+        self, ip: str, port: int, allow_pool: bool = True
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter, bool]:
+        if allow_pool:
             pool = self._upstream_pool.setdefault((ip, port), [])
-            pool.append((r, w))
+            now = time.monotonic()
+            while pool:
+                r, w, ts = pool.pop()
+                if (now - ts) > 30.0 or r.at_eof() or w.is_closing():
+                    try:
+                        w.close()
+                    except Exception:
+                        pass
+                    continue
+                return r, w, True
+        r, w = await asyncio.open_connection(ip, port)
+        return r, w, False
+
+    def _release_upstream_conn(
+        self, ip: str, port: int, r: asyncio.StreamReader, w: asyncio.StreamWriter
+    ) -> None:
+        now = time.monotonic()
+        pool = self._upstream_pool.setdefault((ip, port), [])
+        surviving: list[tuple[asyncio.StreamReader, asyncio.StreamWriter, float]] = []
+        for pr, pw, ts in pool:
+            if (now - ts) > 30.0 or pr.at_eof() or pw.is_closing():
+                try:
+                    pw.close()
+                except Exception:
+                    pass
+            else:
+                surviving.append((pr, pw, ts))
+        pool = surviving
+
+        if not r.at_eof() and not w.is_closing() and len(pool) < 8:
+            pool.append((r, w, now))
+            self._upstream_pool[(ip, port)] = pool
         else:
             try:
                 w.close()
             except Exception:
                 pass
+            self._upstream_pool[(ip, port)] = pool
 
     async def _forward_http_response(
-        self, remote_reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+        self,
+        remote_reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+        request_method: str = "GET",
     ) -> bool:
-        status_line = await remote_reader.readline()
-        if not status_line:
-            return False
-        writer.write(status_line)
-
-        headers: dict[str, str] = {}
         while True:
-            line = await remote_reader.readline()
-            if not line:
+            status_line = await remote_reader.readline()
+            if not status_line:
+                raise _EmptyResponseError("empty status line")
+
+            parts = status_line.strip().split()
+            if len(parts) < 2:
                 return False
-            writer.write(line)
-            if line == b"\r\n":
-                break
-            line_str = line.decode("latin1", errors="replace").strip()
-            if ":" in line_str:
-                k, v = line_str.split(":", 1)
-                headers[k.lower()] = v.strip()
-        await writer.drain()
+            try:
+                status_code = int(parts[1])
+            except ValueError:
+                return False
+
+            writer.write(status_line)
+
+            headers: dict[str, str] = {}
+            while True:
+                line = await remote_reader.readline()
+                if not line:
+                    return False
+                writer.write(line)
+                if line == b"\r\n" or line == b"\n":
+                    break
+                line_str = line.decode("latin1", errors="replace").strip()
+                if ":" in line_str:
+                    k, v = line_str.split(":", 1)
+                    headers[k.lower()] = v.strip()
+            await writer.drain()
+
+            if 100 <= status_code < 200 and status_code != 101:
+                continue
+
+            break
+
+        is_head = (request_method.upper() == "HEAD")
+        has_no_body = is_head or (status_code in (204, 304)) or (100 <= status_code < 200)
+        conn_header = headers.get("connection", "").lower()
+
+        if has_no_body:
+            return conn_header != "close"
 
         te = headers.get("transfer-encoding", "").lower()
         cl_str = headers.get("content-length")
-        conn_header = headers.get("connection", "").lower()
 
         if "chunked" in te:
             while True:
                 chunk_header = await remote_reader.readline()
-                writer.write(chunk_header)
                 if not chunk_header:
                     return False
+                writer.write(chunk_header)
                 chunk_len_str = chunk_header.strip().split(b";")[0]
                 try:
                     chunk_len = int(chunk_len_str, 16)
                 except ValueError:
                     return False
                 if chunk_len == 0:
-                    trailer = await remote_reader.readline()
-                    writer.write(trailer)
+                    while True:
+                        trailer_line = await remote_reader.readline()
+                        if not trailer_line:
+                            return False
+                        writer.write(trailer_line)
+                        if trailer_line == b"\r\n" or trailer_line == b"\n":
+                            break
                     await writer.drain()
                     break
                 data = await remote_reader.readexactly(chunk_len + 2)
@@ -169,7 +225,7 @@ class EgressProxyServer:
             return conn_header != "close"
         elif cl_str is not None:
             try:
-                cl = int(cl_str)
+                cl = int(cl_str.strip())
             except ValueError:
                 cl = 0
             if cl > 0:
@@ -212,9 +268,9 @@ class EgressProxyServer:
             await asyncio.gather(*list(self._client_tasks), return_exceptions=True)
             self._client_tasks.clear()
         for pool in self._upstream_pool.values():
-            for _, w in pool:
+            for item in pool:
                 try:
-                    w.close()
+                    item[1].close()
                 except Exception:
                     pass
         self._upstream_pool.clear()
@@ -368,12 +424,8 @@ class EgressProxyServer:
 
                 # Check Content-Length limits
                 if "content-length" in headers:
-                    cl_raw = headers.get("content-length", "")
-                    try:
-                        cl = int(cl_raw)
-                        if cl < 0:
-                            raise ValueError("negative content length")
-                    except ValueError:
+                    cl_raw = headers.get("content-length", "").strip()
+                    if not cl_raw.isdigit():
                         self._record_proxy_event(
                             task_id=None,
                             agent_id="UNATTRIBUTED",
@@ -386,6 +438,7 @@ class EgressProxyServer:
                         writer.write(b"HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nInvalid Content-Length\r\n")
                         await self._drain_and_close(writer)
                         return
+                    cl = int(cl_raw)
 
                     if cl > self.max_content_length:
                         self._record_proxy_event(
@@ -606,34 +659,119 @@ class EgressProxyServer:
                     )
                     return
                 else:
-                    try:
-                        remote_reader, remote_writer = await self._get_upstream_conn(target_connect_ip, dst_port)
-                    except Exception as e:
-                        writer.write(f"HTTP/1.1 502 Bad Gateway\r\n\r\n{e}\r\n".encode("utf-8"))
-                        await self._drain_and_close(writer)
-                        return
+                    req_te = headers.get("transfer-encoding", "").lower()
+                    is_chunked_req = "chunked" in req_te
+                    cl_raw = headers.get("content-length", "").strip()
+                    req_cl = int(cl_raw) if (cl_raw and cl_raw.isdigit()) else 0
 
                     parsed = urlparse(target)
                     upstream_path = parsed.path or "/"
                     if parsed.query:
                         upstream_path += f"?{parsed.query}"
-                    req_line = f"{method} {upstream_path} {version}\r\n"
-                    remote_writer.write(req_line.encode("utf-8"))
+                    req_line_bytes = f"{method} {upstream_path} {version}\r\n".encode("utf-8")
 
+                    headers_bytes = bytearray()
                     for hk, hv in headers.items():
                         if hk not in ("proxy-authorization", "proxy-connection"):
-                            remote_writer.write(f"{hk.title()}: {hv}\r\n".encode("utf-8"))
-                    remote_writer.write(b"\r\n")
-                    await remote_writer.drain()
+                            headers_bytes.extend(f"{hk.title()}: {hv}\r\n".encode("utf-8"))
+                    headers_bytes.extend(b"\r\n")
 
-                    cl = int(headers.get("content-length", 0))
-                    if cl > 0:
-                        body_data = await reader.readexactly(cl)
-                        remote_writer.write(body_data)
-                        await remote_writer.drain()
+                    can_retry = (method.upper() in ("GET", "HEAD", "OPTIONS")) or (not is_chunked_req and req_cl == 0)
+                    allow_pool = not is_chunked_req
 
-                    can_keep_upstream = await self._forward_http_response(remote_reader, writer)
-                    if can_keep_upstream:
+                    try:
+                        remote_reader, remote_writer, is_pooled = await self._get_upstream_conn(
+                            target_connect_ip, dst_port, allow_pool=allow_pool
+                        )
+                    except Exception as e:
+                        writer.write(f"HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n{e}\r\n".encode("utf-8"))
+                        await self._drain_and_close(writer)
+                        return
+
+                    async def _send_req_data(r_writer: asyncio.StreamWriter) -> None:
+                        r_writer.write(req_line_bytes)
+                        r_writer.write(headers_bytes)
+                        await r_writer.drain()
+                        if is_chunked_req:
+                            while True:
+                                chunk_header = await reader.readline()
+                                if not chunk_header:
+                                    raise ValueError("client disconnected mid-chunk")
+                                r_writer.write(chunk_header)
+                                chunk_len_str = chunk_header.strip().split(b";")[0]
+                                try:
+                                    chunk_len = int(chunk_len_str, 16)
+                                except ValueError:
+                                    raise ValueError("invalid chunk length in request")
+                                if chunk_len == 0:
+                                    while True:
+                                        trailer_line = await reader.readline()
+                                        if not trailer_line:
+                                            break
+                                        r_writer.write(trailer_line)
+                                        if trailer_line == b"\r\n" or trailer_line == b"\n":
+                                            break
+                                    await r_writer.drain()
+                                    break
+                                data = await reader.readexactly(chunk_len + 2)
+                                r_writer.write(data)
+                                await r_writer.drain()
+                        elif req_cl > 0:
+                            body_data = await reader.readexactly(req_cl)
+                            r_writer.write(body_data)
+                            await r_writer.drain()
+
+                    can_keep_upstream = False
+                    try:
+                        await _send_req_data(remote_writer)
+                        can_keep_upstream = await self._forward_http_response(
+                            remote_reader, writer, request_method=method
+                        )
+                    except (_EmptyResponseError, ConnectionResetError, BrokenPipeError, OSError):
+                        try:
+                            remote_writer.close()
+                        except Exception:
+                            pass
+
+                        if is_pooled and can_retry:
+                            try:
+                                remote_reader, remote_writer, _ = await self._get_upstream_conn(
+                                    target_connect_ip, dst_port, allow_pool=False
+                                )
+                                remote_writer.write(req_line_bytes)
+                                remote_writer.write(headers_bytes)
+                                await remote_writer.drain()
+                                can_keep_upstream = await self._forward_http_response(
+                                    remote_reader, writer, request_method=method
+                                )
+                            except Exception:
+                                try:
+                                    remote_writer.close()
+                                except Exception:
+                                    pass
+                                writer.write(b"HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nBad Gateway\r\n")
+                                await self._drain_and_close(writer)
+                                return
+                        else:
+                            writer.write(b"HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nBad Gateway\r\n")
+                            await self._drain_and_close(writer)
+                            return
+                    except Exception as e:
+                        try:
+                            remote_writer.close()
+                        except Exception:
+                            pass
+                        writer.write(b"HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nBad Gateway\r\n")
+                        await self._drain_and_close(writer)
+                        return
+
+                    if is_chunked_req:
+                        can_keep_upstream = False
+                        try:
+                            remote_writer.close()
+                        except Exception:
+                            pass
+                    elif can_keep_upstream:
                         self._release_upstream_conn(target_connect_ip, dst_port, remote_reader, remote_writer)
                     else:
                         try:
@@ -643,7 +781,7 @@ class EgressProxyServer:
 
                     client_conn = headers.get("connection", "").lower()
                     proxy_conn = headers.get("proxy-connection", "").lower()
-                    client_keep = (client_conn != "close") and (proxy_conn != "close") and (version in ("HTTP/1.1", "HTTP/2.0"))
+                    client_keep = (client_conn != "close") and (proxy_conn != "close") and (version in ("HTTP/1.1", "HTTP/2.0")) and (not is_chunked_req)
                     if not client_keep or not can_keep_upstream:
                         await self._drain_and_close(writer)
                         return
