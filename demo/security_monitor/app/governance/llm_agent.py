@@ -118,6 +118,56 @@ GOVERNED_TOOLS_SCHEMA: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "http_post",
+            "description": "Send HTTP POST request to authorized network destination",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "Target HTTP or HTTPS destination",
+                    },
+                    "file_path": {
+                        "type": "string",
+                        "description": "Path to file payload",
+                    },
+                    "data": {
+                        "type": "string",
+                        "description": "Raw string or json data",
+                    },
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "call_agents",
+            "description": "Delegate tasks in parallel to multiple authorized peer agents",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "calls": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "target": {"type": "string"},
+                                "message": {"type": "object"},
+                            },
+                            "required": ["target", "message"],
+                        },
+                        "description": "List of delegation calls to peer agents",
+                    },
+                },
+                "required": ["calls"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "call_agent",
             "description": "Send a structured message to an authorized peer A2A agent",
             "parameters": {
@@ -283,10 +333,20 @@ class AgentBrokerClient:
             return self.broker.http_get(self.token, url)
         return self._remote_call("http_get", {"url": url})
 
-    def call_agent(self, target_agent: str, message: dict[str, Any]) -> dict[str, Any]:
+    def http_post(self, url: str, file_path: str | None = None, data: str | None = None) -> dict[str, Any]:
+        if self.broker:
+            return self.broker.http_post(self.token, url, file_path=file_path, data=data)
+        return self._remote_call("http_post", {"url": url, "file_path": file_path, "data": data})
+
+    def call_agent(self, target_agent: str, message: dict[str, Any] | str) -> dict[str, Any]:
         if self.broker:
             return self.broker.call_agent(self.token, target_agent, message)
         return self._remote_call("call_agent", {"target_agent": target_agent, "message": message})
+
+    def call_agents(self, calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if self.broker:
+            return self.broker.call_agents(self.token, calls)
+        return self._remote_call("call_agents", {"calls": calls})
 
     def request_access(self, resource_type: str, resource_target: str, justification: str) -> dict[str, Any]:
         if self.broker:
@@ -478,7 +538,7 @@ class LLMAgent:
                     "tool": fn_name,
                     "args": args,
                     "raw_args": raw_args,
-                    "malformed_tool_call": malformed_args or (fn_name not in ("read_file", "write_file", "http_get", "call_agent", "request_access", "run_command")),
+                    "malformed_tool_call": malformed_args or (fn_name not in ("read_file", "write_file", "http_get", "http_post", "call_agent", "call_agents", "request_access", "run_command")),
                     "status": "success",
                     "output": None,
                     "error": None,
@@ -495,8 +555,17 @@ class LLMAgent:
                         res = self.client.write_file(fpath, content)
                     elif fn_name == "http_get":
                         res = self.client.http_get(args.get("url", ""))
+                    elif fn_name == "http_post":
+                        res = self.client.http_post(args.get("url", ""), file_path=args.get("file_path"), data=args.get("data"))
                     elif fn_name == "call_agent":
-                        res = self.client.call_agent(args.get("target_agent", ""), args.get("message", {}))
+                        tgt = args.get("target") or args.get("target_agent", "")
+                        msg = args.get("message", {})
+                        res = self.client.call_agent(tgt, msg)
+                    elif fn_name == "call_agents":
+                        calls_arg = args.get("calls", [])
+                        if not isinstance(calls_arg, list):
+                            calls_arg = [args]
+                        res = self.client.call_agents(calls_arg)
                     elif fn_name == "request_access":
                         norm_args, is_valid, val_err = normalize_request_access_args(args)
                         if not is_valid:

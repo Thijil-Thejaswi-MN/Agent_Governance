@@ -132,6 +132,11 @@ class TaskSpec:
     # A boundary the requester checked on the Run page (run_manager.take_file_review): the model's
     # grounded choice, minus any file they unticked. Applied as derived, with its account.
     reviewed_boundary: dict[str, Any] | None = None
+    parent_task_id: str | None = None
+    root_task_id: str | None = None
+    depth: int = 0
+    chain: list[str] = field(default_factory=list)
+    peer_agents: list[str] | None = None
 
     @classmethod
     def from_file(cls, path: str | Path) -> "TaskSpec":
@@ -620,6 +625,24 @@ class TaskLauncher:
         # Serialises "release the agent gate" against cancel(): either the agent starts
         # and cancel() kills its cgroup, or cancel() wins and the agent never starts.
         self._gate_lock = threading.Lock()
+        self.child_launchers: list[TaskLauncher] = []
+        self.child_receipt_hashes: list[dict[str, str]] = []
+
+    def register_child_launcher(self, child: "TaskLauncher") -> None:
+        with self.status_lock:
+            self.child_launchers.append(child)
+
+    def unregister_child_launcher(self, child: "TaskLauncher") -> None:
+        with self.status_lock:
+            if child in self.child_launchers:
+                self.child_launchers.remove(child)
+
+    def record_child_receipt(self, child_task_id: str, receipt_hash: str) -> None:
+        with self.status_lock:
+            self.child_receipt_hashes.append({
+                "child_task_id": child_task_id,
+                "receipt_hash": receipt_hash,
+            })
 
     def expire_due_grants(self, task_id: str, now: datetime.datetime | None = None) -> list[str]:
         """Ends every approved grant of this run whose time limit has passed. Returns their ids."""
@@ -783,6 +806,11 @@ class TaskLauncher:
 
     def _freeze_now(self, reason: str, detail: Any = None) -> None:
         with self.status_lock:
+            for ch in list(self.child_launchers):
+                try:
+                    ch._freeze_now(reason, detail)
+                except Exception:
+                    pass
             if self._frozen.is_set():
                 self.freeze_events.append({"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                                            "reason": reason, "detail": detail, "method": "already_frozen"})
@@ -804,6 +832,11 @@ class TaskLauncher:
                                        "frozen_confirmed": bool(cg) and cgroup_ctl.is_frozen(cg)})
 
     def _kill(self, reason: str) -> None:
+        for ch in list(self.child_launchers):
+            try:
+                ch._kill(reason)
+            except Exception:
+                pass
         cg = self.live.get("cgroup")
         method = cgroup_ctl.kill_all(cg, self.live.get("unit")) if cg else "no_cgroup"
         proc = self.live.get("proc")
@@ -821,6 +854,11 @@ class TaskLauncher:
 
     def stop(self, reason: str = "operator_stop") -> None:
         """Terminates the task cgroup and marks the termination reason."""
+        for ch in list(self.child_launchers):
+            try:
+                ch.stop(reason)
+            except Exception:
+                pass
         self._kill(reason)
         task_id = self.live.get("task_id")
         if task_id:
@@ -1022,6 +1060,14 @@ class TaskLauncher:
         if spec.condition:
             task.condition = spec.condition
         task.requested_by = spec.requester
+        if spec.parent_task_id is not None:
+            task.parent_task_id = spec.parent_task_id
+        task.root_task_id = spec.root_task_id or task.task_id
+        task.depth = spec.depth
+        task.chain = list(spec.chain) if spec.chain else [spec.agent_id]
+        if spec.peer_agents is not None:
+            boundary.peer_agents = list(spec.peer_agents)
+            self.storage.save_boundary(boundary)
         llm = spec.llm or {}
         task.model = "scripted" if llm.get("provider") in ("scripted", "scripted_mock") else (llm.get("model") or llm.get("provider"))
         self.storage.save_task(task)
@@ -1160,9 +1206,19 @@ class TaskLauncher:
 
         expansion = ExpansionService(self.storage, provenance_enabled=True, user_approval_hook=hook,
                                      simulated_user_policy=spec.approval_policy)
+        if spec.approval_policy == "operator":
+            expansion.leave_pending = True
         # M7 path: the broker's file checks and the Landlock rules both come from resolve_boundary.
         file_evaluator = ResolvedBoundaryEvaluator(self.storage) if resolved_path else None
         broker = ToolBroker(self.storage, expansion_service=expansion, evaluator=file_evaluator)
+        from .delegation import DelegationManager
+        broker.delegation_manager = DelegationManager(
+            self.storage,
+            workspace_base=self.workspace_base,
+            receipts_dir=self.receipts_dir,
+            parent_launcher=self,
+            test_hooks=self.test_hooks,
+        )
         broker.default_approval_timeout = float(spec.approval_timeout_s)
         broker.http_fetcher = proxy_http_fetcher(proxy_port)  # type: ignore[attr-defined]
         llm_cfg = dict(spec.llm)
@@ -1772,6 +1828,7 @@ class TaskLauncher:
                 **({"sensor_disabled": True, "ptrace_sensor_disabled": True} if bench_sensor_disabled else {}),
                 "phase_timings": phase_timings,
                 "cgroup_resources": cgroup_resources,
+                "children": list(self.child_receipt_hashes),
                 "policy": receipt_policy_section(initial_boundary, self.storage.get_boundary(task_id)),
                 "llm_provider": provider_label,
                 "llm_model": llm_model,

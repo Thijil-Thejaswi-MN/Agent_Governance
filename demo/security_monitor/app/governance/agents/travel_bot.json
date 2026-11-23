@@ -1,0 +1,36 @@
+{
+  "id": "travel_bot",
+  "name": "Travel Bot",
+  "owner": "Kiran S",
+  "description": "Plans business trips with the travel planner program",
+  "ceiling": {
+    "tools": [
+      "read_file",
+      "write_file",
+      "request_access",
+      "run_command",
+      "call_agent",
+      "call_agents"
+    ],
+    "files_read": [
+      "input/*"
+    ],
+    "files_write": [
+      "output/*"
+    ],
+    "network": [
+      "127.0.0.1:*"
+    ],
+    "peer_agents": [
+      "planner",
+      "researcher",
+      "budget",
+      "booking",
+      "payment"
+    ]
+  },
+  "runner": {
+    "provider": "ollama",
+    "model": "qwen2.5:7b"
+  }
+}

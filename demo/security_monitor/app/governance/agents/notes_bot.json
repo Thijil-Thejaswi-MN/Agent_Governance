@@ -1,0 +1,26 @@
+{
+  "id": "notes_bot",
+  "name": "Notes Bot",
+  "owner": "Ravi K",
+  "description": "Operations notes: summarises server logs and system audits",
+  "ceiling": {
+    "tools": [
+      "read_file",
+      "write_file",
+      "request_access",
+      "run_command"
+    ],
+    "files_read": [
+      "input/*"
+    ],
+    "files_write": [
+      "output/*"
+    ],
+    "network": [],
+    "peer_agents": []
+  },
+  "runner": {
+    "provider": "ollama",
+    "model": "qwen2.5:7b"
+  }
+}

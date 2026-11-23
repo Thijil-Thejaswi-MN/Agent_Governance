@@ -1,0 +1,26 @@
+{
+  "id": "finance_bot",
+  "name": "Finance Bot",
+  "owner": "Ana Dev",
+  "description": "Revenue, targets and timesheet summaries",
+  "ceiling": {
+    "tools": [
+      "read_file",
+      "write_file",
+      "request_access",
+      "run_command"
+    ],
+    "files_read": [
+      "input/*"
+    ],
+    "files_write": [
+      "output/*"
+    ],
+    "network": [],
+    "peer_agents": []
+  },
+  "runner": {
+    "provider": "ollama",
+    "model": "qwen2.5:7b"
+  }
+}

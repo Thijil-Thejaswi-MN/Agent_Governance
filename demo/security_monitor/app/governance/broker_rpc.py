@@ -38,7 +38,9 @@ AGENT_ENDPOINTS = (
     "read_file",
     "write_file",
     "http_get",
+    "http_post",
     "call_agent",
+    "call_agents",
     "request_access",
     "run_command_check",
     "run_command_begin",
@@ -149,7 +151,9 @@ class BrokerRPCServer:
             "read_file": self._h_read_file,
             "write_file": self._h_write_file,
             "http_get": self._h_http_get,
+            "http_post": self._h_http_post,
             "call_agent": self._h_call_agent,
+            "call_agents": self._h_call_agents,
             "request_access": self._h_request_access,
             "run_command_check": self._h_run_command_check,
             "run_command_begin": self._h_run_command_begin,
@@ -459,6 +463,18 @@ class BrokerRPCServer:
         self._step("ALLOW", f"http_get allowed: {url}", f"Fetched {url}")
         return res
 
+    def _h_http_post(self, token: str, p: dict[str, Any]) -> Any:
+        url = _str_param(p, "url", 2048)
+        file_path = p.get("file_path")
+        data = p.get("data")
+        try:
+            res = self.broker.http_post(token, url, file_path=file_path, data=data)
+        except Exception as err:
+            self._step("BLOCK_ACTION", f"http_post blocked: {url}", str(err))
+            raise
+        self._step("ALLOW", f"http_post allowed: {url}", f"POST request to {url}")
+        return res
+
     def _h_call_agent(self, token: str, p: dict[str, Any]) -> Any:
         msg = p.get("message", {})
         if not isinstance(msg, dict):
@@ -470,6 +486,18 @@ class BrokerRPCServer:
             self._step("BLOCK_ACTION", f"call_agent blocked: {target}", str(err))
             raise
         self._step("ALLOW", f"call_agent allowed: {target}", f"Message sent to {target}")
+        return res
+
+    def _h_call_agents(self, token: str, p: dict[str, Any]) -> Any:
+        calls = p.get("calls", [])
+        if not isinstance(calls, list):
+            calls = [p]
+        try:
+            res = self.broker.call_agents(token, calls)
+        except Exception as err:
+            self._step("BLOCK_ACTION", "call_agents blocked", str(err))
+            raise
+        self._step("ALLOW", "call_agents allowed", f"Delegation to {len(calls)} peer agents")
         return res
 
     def _h_request_access(self, token: str, p: dict[str, Any]) -> Any:

@@ -13,6 +13,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import urllib.parse
 from .models import (
     EventSource,
     GovernanceEvent,
@@ -582,6 +583,29 @@ class ToolBroker:
         self._record(event)
 
         if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
+            parsed = urllib.parse.urlsplit(url)
+            host = parsed.netloc.split(":")[0] if parsed.netloc else url
+            task = self.storage.get_task(task_id)
+            root_id = task.root_task_id or task_id if task else task_id
+            refused_msg = {
+                "message_id": f"msg_{uuid.uuid4().hex[:16]}",
+                "root_task_id": root_id,
+                "parent_task_id": task_id,
+                "child_task_id": None,
+                "from_agent": agent_id,
+                "to_agent": f"host:{host}",
+                "kind": "request",
+                "fanout_group": None,
+                "reply_to": None,
+                "sent_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "text": url,
+                "verdict": "refused",
+                "reason": eval_res.rule_matched,
+                "integrity": "trusted",
+                "forwarded_from": [],
+                "contains_private": False,
+            }
+            self.storage.save_a2a_message(refused_msg)
             raise PermissionError(f"Outbound network request to '{url}' denied by boundary: {eval_res.rule_matched}")
 
         # M6: when a fetcher is attached (launcher routes it through the per-task
@@ -611,6 +635,78 @@ class ToolBroker:
             )
         self._check_and_consume_single_use(boundary, "network", url)
         return {"status": 200, "url": url, "body": body_content}
+
+    def http_post(
+        self,
+        token: str,
+        url: str,
+        file_path: str | None = None,
+        data: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Tool: http_post
+        Checks network destination BEFORE opening socket.
+        """
+        task_id, agent_id = self._authenticate(token)
+        boundary = self.storage.get_boundary(task_id)
+        if not boundary:
+            raise RuntimeError(f"Active boundary not found for task {task_id}")
+        self._check_agent_tool(task_id, agent_id, boundary, "http_post")
+
+        eval_res = self.evaluator.evaluate_network(boundary, url)
+        action, prevented = self.policy_engine.decide(boundary, eval_res)
+
+        event = GovernanceEvent(
+            event_id=self._generate_event_id(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            source=EventSource.TOOL_BROKER,
+            task_id=task_id,
+            agent_id=agent_id,
+            pid=os.getpid(),
+            kind="network_http",
+            target=url,
+            verdict=eval_res.verdict,
+            risk_tier=eval_res.risk_tier,
+            action_taken=action,
+            prevented=prevented,
+            rule_matched=eval_res.rule_matched,
+            boundary_version=boundary.version,
+        )
+        self._record(event)
+
+        if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
+            parsed = urllib.parse.urlsplit(url)
+            host = parsed.netloc.split(":")[0] if parsed.netloc else url
+            task = self.storage.get_task(task_id)
+            root_id = task.root_task_id or task_id if task else task_id
+            payload_text = f"file:{Path(file_path).name}" if file_path else (str(data)[:200] if data else "")
+            refused_msg = {
+                "message_id": f"msg_{uuid.uuid4().hex[:16]}",
+                "root_task_id": root_id,
+                "parent_task_id": task_id,
+                "child_task_id": None,
+                "from_agent": agent_id,
+                "to_agent": f"host:{host}",
+                "kind": "request",
+                "fanout_group": None,
+                "reply_to": None,
+                "sent_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "text": payload_text,
+                "verdict": "refused",
+                "reason": eval_res.rule_matched,
+                "integrity": "trusted",
+                "forwarded_from": [],
+                "contains_private": False,
+            }
+            self.storage.save_a2a_message(refused_msg)
+            raise PermissionError(f"Outbound network request to '{url}' denied by boundary: {eval_res.rule_matched}")
+
+        fetcher = getattr(self, "http_fetcher", None)
+        if fetcher is not None:
+            fetched = fetcher(token=token, task_id=task_id, url=url, method="POST", data=data)
+            return {"status": fetched.get("status", 200), "url": url, "body": fetched.get("body", "")}
+
+        return {"status": 200, "url": url, "body": "Mock POST response from authorized endpoint"}
 
     def handle_http_redirect(self, token: str, original_url: str, redirect_target: str) -> str:
         """
@@ -796,65 +892,29 @@ class ToolBroker:
             raise PermissionError(f"Command execution denied: {eval_res.rule_matched}")
         return {"allowed": True, "rule_matched": eval_res.rule_matched}
 
-    def call_agent(self, token: str, target_agent: str, message: dict[str, Any]) -> dict[str, Any]:
+    def call_agent(self, token: str, target_agent: str, message: dict[str, Any] | str) -> dict[str, Any]:
         """
         Tool: call_agent
-        Checks peer agent boundary BEFORE message dispatch.
+        Executes real delegation to a governed child task.
         """
-        task_id, agent_id = self._authenticate(token)
-        boundary = self.storage.get_boundary(task_id)
-        if not boundary:
-            raise RuntimeError(f"Active boundary not found for task {task_id}")
-        self._check_agent_tool(task_id, agent_id, boundary, "call_agent")
+        dm = getattr(self, "delegation_manager", None)
+        if dm is None:
+            from .delegation import DelegationManager
+            dm = DelegationManager(self.storage)
+            self.delegation_manager = dm
+        return dm.delegate_single(token, target_agent, message)
 
-        norm_target = str(target_agent).strip().lower()
-        grant_state = self._get_grant_state(task_id)
-        cache_key = ("call_agent", norm_target, boundary.version, grant_state)
-        cached = self._policy_cache.get(task_id, {}).get(cache_key)
-
-        if cached is not None:
-            eval_res, action, prevented = cached
-        else:
-            eval_res = self.evaluator.evaluate_peer_agent(boundary, target_agent)
-            action, prevented = self.policy_engine.decide(boundary, eval_res)
-            if eval_res.verdict == EventVerdict.INSIDE and not prevented and action == TaskAction.ALLOW:
-                if task_id not in self._policy_cache:
-                    self._policy_cache[task_id] = {}
-                self._policy_cache[task_id][cache_key] = (eval_res, action, prevented)
-
-        event = GovernanceEvent(
-            event_id=self._generate_event_id(),
-            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            source=EventSource.TOOL_BROKER,
-            task_id=task_id,
-            agent_id=agent_id,
-            pid=os.getpid(),
-            kind="peer_agent",
-            target=target_agent,
-            details={"message_summary": str(message)[:100]},
-            verdict=eval_res.verdict,
-            risk_tier=eval_res.risk_tier,
-            action_taken=action,
-            prevented=prevented,
-            rule_matched=eval_res.rule_matched,
-            boundary_version=boundary.version,
-        )
-        self._record(event)
-
-        if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
-            raise PermissionError(f"Communication with agent '{target_agent}' denied by boundary: {eval_res.rule_matched}")
-
-        reply_content = "Authorized message delivered"
-        if self.expansion_service:
-            self.expansion_service.record_untrusted_read(
-                task_id=task_id,
-                source_type="peer_message",
-                source_target=target_agent,
-                content=reply_content,
-            )
-        self._check_and_consume_single_use(boundary, "peer_agent", target_agent)
-
-        return {"status": "ok", "target_agent": target_agent, "reply": reply_content}
+    def call_agents(self, token: str, calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """
+        Tool: call_agents
+        Executes parallel delegation to multiple governed child tasks at once.
+        """
+        dm = getattr(self, "delegation_manager", None)
+        if dm is None:
+            from .delegation import DelegationManager
+            dm = DelegationManager(self.storage)
+            self.delegation_manager = dm
+        return dm.delegate_parallel(token, calls)
 
     def llm_complete(
         self,
