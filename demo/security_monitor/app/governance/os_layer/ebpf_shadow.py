@@ -7,15 +7,20 @@ to the correlator, and produces receipt summaries.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import queue
 import select
+import signal
 import socket
+import struct
 import subprocess
 import threading
 import time
 from pathlib import Path
 from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
 
 HERE = Path(__file__).resolve().parent
 EBPF_DIR = HERE / "ebpf"
@@ -69,6 +74,58 @@ class EBPFShadowManager:
         except Exception:
             return False
 
+    def _loader_pid(self) -> int | None:
+        """Pid of the process serving the control socket (SO_PEERCRED), or None."""
+        try:
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.settimeout(0.5)
+            s.connect(str(self.socket_path))
+            creds = s.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i"))
+            s.close()
+            pid, _uid, _gid = struct.unpack("3i", creds)
+            return pid or None
+        except Exception:
+            return None
+
+    def stale_loader_reason(self) -> str | None:
+        """A running loader started from an older build: its binary was replaced on disk
+        (make), so /proc/<pid>/exe is "(deleted)" or no longer the current file."""
+        pid = self._loader_pid()
+        if not pid:
+            return None
+        try:
+            exe = os.readlink(f"/proc/{pid}/exe")
+        except OSError:
+            return None
+        if exe.endswith(" (deleted)"):
+            return f"loader pid {pid} runs a binary that was rebuilt since it started"
+        try:
+            if os.path.realpath(exe) != os.path.realpath(EBPF_SENSOR_BIN):
+                return f"loader pid {pid} runs {exe}, not {EBPF_SENSOR_BIN}"
+        except OSError:
+            return None
+        return None
+
+    def _stop_stale_loader(self) -> None:
+        pid = self._loader_pid()
+        if not pid:
+            return
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            return
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                return
+            time.sleep(0.05)
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+
     def check_health(self) -> tuple[bool, str]:
         """Checks if loader is running and healthy (heartbeat recent, 0 drops)."""
         if not self.socket_path.exists():
@@ -101,7 +158,13 @@ class EBPFShadowManager:
         with self._lock:
             healthy, _ = self.check_health()
             if healthy:
-                return True, None
+                stale = self.stale_loader_reason()
+                if stale is None:
+                    return True, None
+                # A loader from an older build keeps serving the socket after `make`;
+                # replace it so fixes in the loader take effect.
+                logger.warning("restarting eBPF loader: %s", stale)
+                self._stop_stale_loader()
 
             if not EBPF_SENSOR_BIN.exists():
                 return False, f"loader binary not found at {EBPF_SENSOR_BIN}"

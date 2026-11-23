@@ -73,6 +73,9 @@ class ToolBroker:
         self.evaluator = evaluator or BoundaryEvaluator()
         self.policy_engine = policy_engine or TaskPolicyEngine()
         self.expansion_service = expansion_service or ExpansionService(self.storage)
+        self._policy_cache: dict[str, dict[tuple[str, str, int, Any], tuple[Any, Any, TaskAction, bool]]] = {}
+        if hasattr(self.storage, "register_boundary_change_callback"):
+            self.storage.register_boundary_change_callback(self.invalidate_policy_cache)
         self._event_counter = 0
         self.llm_calls = 0
         self.llm_ok_calls = 0
@@ -86,6 +89,32 @@ class ToolBroker:
     def _generate_event_id(self) -> str:
         self._event_counter += 1
         return f"evt_broker_{self._event_counter:04d}_{uuid.uuid4().hex[:6]}"
+
+    def invalidate_policy_cache(self, task_id: str | None = None) -> None:
+        """Invalidates cached policy decisions for a specific task or all tasks."""
+        if task_id:
+            self._policy_cache.pop(task_id, None)
+        else:
+            self._policy_cache.clear()
+
+    @staticmethod
+    def _cached_path_still_valid(eval_res: Any) -> bool:
+        """A cached file decision holds only while its resolved path still resolves to itself."""
+        resolved = getattr(eval_res, "resolved_path", "") or ""
+        if not resolved:
+            return False
+        try:
+            return str(Path(os.path.realpath(resolved))).replace("\\", "/") == resolved.replace("\\", "/")
+        except (OSError, ValueError):
+            return False
+
+    def _get_grant_state(self, task_id: str) -> tuple:
+        """Returns a stable tuple representing the current grant state of the task."""
+        try:
+            reqs = self.storage.list_expansion_requests(task_id=task_id)
+            return tuple((r.request_id, r.status.value, r.used_count or 0) for r in reqs)
+        except Exception:
+            return ()
 
     @staticmethod
     def decided_by(ev: GovernanceEvent) -> str:
@@ -312,32 +341,49 @@ class ToolBroker:
         self._check_agent_tool(task_id, agent_id, boundary, "read_file")
         file_path = self._console_path(boundary, file_path, "read_file")
 
-        # Check tool granted
-        tool_eval = self.evaluator.evaluate_tool(boundary, "read_file")
-        if tool_eval.verdict != EventVerdict.INSIDE:
-            action, prevented = self.policy_engine.decide(boundary, tool_eval)
-            event = GovernanceEvent(
-                event_id=self._generate_event_id(),
-                timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                source=EventSource.TOOL_BROKER,
-                task_id=task_id,
-                agent_id=agent_id,
-                pid=os.getpid(),
-                kind="tool_invocation",
-                target="read_file",
-                verdict=tool_eval.verdict,
-                risk_tier=tool_eval.risk_tier,
-                action_taken=action,
-                prevented=prevented,
-                rule_matched=tool_eval.rule_matched,
-                boundary_version=boundary.version,
-            )
-            self._record(event)
-            raise PermissionError(f"Tool read_file not granted in task boundary: {tool_eval.rule_matched}")
+        norm_target = str(file_path).strip().replace("\\", "/")
+        grant_state = self._get_grant_state(task_id)
+        cache_key = ("read_file", norm_target, boundary.version, grant_state)
+        cached = self._policy_cache.get(task_id, {}).get(cache_key)
+        if cached is not None and not self._cached_path_still_valid(cached[1]):
+            # A path component changed since the decision was cached (e.g. the file was
+            # replaced by a symlink): evaluate it again.
+            self._policy_cache.get(task_id, {}).pop(cache_key, None)
+            cached = None
 
-        # Evaluate target file path
-        eval_res = self.evaluator.evaluate_file_access(boundary, file_path, is_write=False)
-        action, prevented = self.policy_engine.decide(boundary, eval_res)
+        if cached is not None:
+            tool_eval, eval_res, action, prevented = cached
+        else:
+            # Check tool granted
+            tool_eval = self.evaluator.evaluate_tool(boundary, "read_file")
+            if tool_eval.verdict != EventVerdict.INSIDE:
+                action, prevented = self.policy_engine.decide(boundary, tool_eval)
+                event = GovernanceEvent(
+                    event_id=self._generate_event_id(),
+                    timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    source=EventSource.TOOL_BROKER,
+                    task_id=task_id,
+                    agent_id=agent_id,
+                    pid=os.getpid(),
+                    kind="tool_invocation",
+                    target="read_file",
+                    verdict=tool_eval.verdict,
+                    risk_tier=tool_eval.risk_tier,
+                    action_taken=action,
+                    prevented=prevented,
+                    rule_matched=tool_eval.rule_matched,
+                    boundary_version=boundary.version,
+                )
+                self._record(event)
+                raise PermissionError(f"Tool read_file not granted in task boundary: {tool_eval.rule_matched}")
+
+            # Evaluate target file path
+            eval_res = self.evaluator.evaluate_file_access(boundary, file_path, is_write=False)
+            action, prevented = self.policy_engine.decide(boundary, eval_res)
+            if eval_res.verdict == EventVerdict.INSIDE and not prevented and action == TaskAction.ALLOW:
+                if task_id not in self._policy_cache:
+                    self._policy_cache[task_id] = {}
+                self._policy_cache[task_id][cache_key] = (tool_eval, eval_res, action, prevented)
 
         event = GovernanceEvent(
             event_id=self._generate_event_id(),
@@ -406,30 +452,47 @@ class ToolBroker:
         self._check_agent_tool(task_id, agent_id, boundary, "write_file")
         file_path = self._console_path(boundary, file_path, "write_file")
 
-        tool_eval = self.evaluator.evaluate_tool(boundary, "write_file")
-        if tool_eval.verdict != EventVerdict.INSIDE:
-            action, prevented = self.policy_engine.decide(boundary, tool_eval)
-            event = GovernanceEvent(
-                event_id=self._generate_event_id(),
-                timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                source=EventSource.TOOL_BROKER,
-                task_id=task_id,
-                agent_id=agent_id,
-                pid=os.getpid(),
-                kind="tool_invocation",
-                target="write_file",
-                verdict=tool_eval.verdict,
-                risk_tier=tool_eval.risk_tier,
-                action_taken=action,
-                prevented=prevented,
-                rule_matched=tool_eval.rule_matched,
-                boundary_version=boundary.version,
-            )
-            self._record(event)
-            raise PermissionError(f"Tool write_file not granted: {tool_eval.rule_matched}")
+        norm_target = str(file_path).strip().replace("\\", "/")
+        grant_state = self._get_grant_state(task_id)
+        cache_key = ("write_file", norm_target, boundary.version, grant_state)
+        cached = self._policy_cache.get(task_id, {}).get(cache_key)
+        if cached is not None and not self._cached_path_still_valid(cached[1]):
+            # A path component changed since the decision was cached (e.g. the file was
+            # replaced by a symlink): evaluate it again.
+            self._policy_cache.get(task_id, {}).pop(cache_key, None)
+            cached = None
 
-        eval_res = self.evaluator.evaluate_file_access(boundary, file_path, is_write=True)
-        action, prevented = self.policy_engine.decide(boundary, eval_res)
+        if cached is not None:
+            tool_eval, eval_res, action, prevented = cached
+        else:
+            tool_eval = self.evaluator.evaluate_tool(boundary, "write_file")
+            if tool_eval.verdict != EventVerdict.INSIDE:
+                action, prevented = self.policy_engine.decide(boundary, tool_eval)
+                event = GovernanceEvent(
+                    event_id=self._generate_event_id(),
+                    timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    source=EventSource.TOOL_BROKER,
+                    task_id=task_id,
+                    agent_id=agent_id,
+                    pid=os.getpid(),
+                    kind="tool_invocation",
+                    target="write_file",
+                    verdict=tool_eval.verdict,
+                    risk_tier=tool_eval.risk_tier,
+                    action_taken=action,
+                    prevented=prevented,
+                    rule_matched=tool_eval.rule_matched,
+                    boundary_version=boundary.version,
+                )
+                self._record(event)
+                raise PermissionError(f"Tool write_file not granted: {tool_eval.rule_matched}")
+
+            eval_res = self.evaluator.evaluate_file_access(boundary, file_path, is_write=True)
+            action, prevented = self.policy_engine.decide(boundary, eval_res)
+            if eval_res.verdict == EventVerdict.INSIDE and not prevented and action == TaskAction.ALLOW:
+                if task_id not in self._policy_cache:
+                    self._policy_cache[task_id] = {}
+                self._policy_cache[task_id][cache_key] = (tool_eval, eval_res, action, prevented)
 
         event = GovernanceEvent(
             event_id=self._generate_event_id(),
@@ -485,8 +548,20 @@ class ToolBroker:
             raise RuntimeError(f"Active boundary not found for task {task_id}")
         self._check_agent_tool(task_id, agent_id, boundary, "http_get")
 
-        eval_res = self.evaluator.evaluate_network(boundary, url)
-        action, prevented = self.policy_engine.decide(boundary, eval_res)
+        norm_target = str(url).strip()
+        grant_state = self._get_grant_state(task_id)
+        cache_key = ("http_get", norm_target, boundary.version, grant_state)
+        cached = self._policy_cache.get(task_id, {}).get(cache_key)
+
+        if cached is not None:
+            eval_res, action, prevented = cached
+        else:
+            eval_res = self.evaluator.evaluate_network(boundary, url)
+            action, prevented = self.policy_engine.decide(boundary, eval_res)
+            if eval_res.verdict == EventVerdict.INSIDE and not prevented and action == TaskAction.ALLOW:
+                if task_id not in self._policy_cache:
+                    self._policy_cache[task_id] = {}
+                self._policy_cache[task_id][cache_key] = (eval_res, action, prevented)
 
         event = GovernanceEvent(
             event_id=self._generate_event_id(),
@@ -682,8 +757,21 @@ class ToolBroker:
         # The agent's own tool limit applies to sandboxed commands too (it used to be skipped
         # here, so an agent without run_command could still run commands if the boundary had it).
         self._check_agent_tool(task_id, agent_id, boundary, "run_command")
-        eval_res = self.evaluator.evaluate_command(boundary, command)
-        action, prevented = self.policy_engine.decide(boundary, eval_res)
+
+        norm_target = str(command).strip()
+        grant_state = self._get_grant_state(task_id)
+        cache_key = ("run_command", norm_target, boundary.version, grant_state)
+        cached = self._policy_cache.get(task_id, {}).get(cache_key)
+
+        if cached is not None:
+            eval_res, action, prevented = cached
+        else:
+            eval_res = self.evaluator.evaluate_command(boundary, command)
+            action, prevented = self.policy_engine.decide(boundary, eval_res)
+            if eval_res.verdict == EventVerdict.INSIDE and not prevented and action == TaskAction.ALLOW:
+                if task_id not in self._policy_cache:
+                    self._policy_cache[task_id] = {}
+                self._policy_cache[task_id][cache_key] = (eval_res, action, prevented)
 
         event = GovernanceEvent(
             event_id=self._generate_event_id(),
@@ -719,8 +807,20 @@ class ToolBroker:
             raise RuntimeError(f"Active boundary not found for task {task_id}")
         self._check_agent_tool(task_id, agent_id, boundary, "call_agent")
 
-        eval_res = self.evaluator.evaluate_peer_agent(boundary, target_agent)
-        action, prevented = self.policy_engine.decide(boundary, eval_res)
+        norm_target = str(target_agent).strip().lower()
+        grant_state = self._get_grant_state(task_id)
+        cache_key = ("call_agent", norm_target, boundary.version, grant_state)
+        cached = self._policy_cache.get(task_id, {}).get(cache_key)
+
+        if cached is not None:
+            eval_res, action, prevented = cached
+        else:
+            eval_res = self.evaluator.evaluate_peer_agent(boundary, target_agent)
+            action, prevented = self.policy_engine.decide(boundary, eval_res)
+            if eval_res.verdict == EventVerdict.INSIDE and not prevented and action == TaskAction.ALLOW:
+                if task_id not in self._policy_cache:
+                    self._policy_cache[task_id] = {}
+                self._policy_cache[task_id][cache_key] = (eval_res, action, prevented)
 
         event = GovernanceEvent(
             event_id=self._generate_event_id(),

@@ -11,9 +11,11 @@ import sqlite3
 import asyncio
 import datetime
 import hashlib
+import logging
 import threading
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .models import (
     TaskRecord,
@@ -66,23 +68,74 @@ class _ClosingConnection:
             self._conn.close()
 
 
+logger = logging.getLogger(__name__)
+
+
 class GovernanceStorage:
     """Persistent storage manager for tasks, dynamic boundaries, tokens, and audit events."""
 
+    _instances: dict[str, GovernanceStorage] = {}
+    _instance_lock = threading.Lock()
+
+    def __new__(cls, db_path: str | Path | None = None) -> GovernanceStorage:
+        if db_path == ":memory:":
+            return super().__new__(cls)
+        norm_path = str(Path(db_path or get_default_governance_db_path()).resolve())
+        with cls._instance_lock:
+            if norm_path in cls._instances:
+                inst = cls._instances[norm_path]
+                if getattr(inst, "_writer_thread", None) and inst._writer_thread.is_alive():
+                    return inst
+            inst = super().__new__(cls)
+            cls._instances[norm_path] = inst
+            return inst
+
     def __init__(self, db_path: str | Path | None = None) -> None:
+        if getattr(self, "_initialized", False):
+            return
+        self._initialized = True
         if db_path == ":memory:":
             self.db_path = ":memory:"
         else:
-            self.db_path = str(db_path or get_default_governance_db_path())
+            self.db_path = str(Path(db_path or get_default_governance_db_path()).resolve())
             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._step_subscribers: dict[str, list[Any]] = {}
         self._step_lock = threading.Lock()
+        self._boundary_change_callbacks: list[Callable[[str | None], None]] = []
+        self._task_queues: dict[str, list[tuple[str, Any]]] = {}
+        self._step_counters: dict[str, int] = {}
+        self._writer_lock = threading.Lock()
+        self._writer_cond = threading.Condition(self._writer_lock)
+        self._flush_done_cond = threading.Condition(self._writer_lock)
+        self._force_flush = False
+        # Items the writer has taken off the queues but not yet committed. flush() waits for
+        # these too, so a read right after flush() sees every write queued before it.
+        self._inflight = 0
+        self.dropped_writes = 0
+        self._writer_stop = threading.Event()
+        self._writer_thread = threading.Thread(target=self._writer_loop, daemon=True, name="gov-batch-writer")
+        self._writer_thread.start()
         self._init_schema()
 
-    def get_connection(self) -> sqlite3.Connection:
+    def register_boundary_change_callback(self, cb: Callable[[str | None], None]) -> None:
+        self._boundary_change_callbacks.append(cb)
+
+    def _notify_boundary_change(self, task_id: str | None = None) -> None:
+        for cb in self._boundary_change_callbacks:
+            try:
+                cb(task_id)
+            except Exception:
+                pass
+
+    def _get_raw_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, timeout=30.0)
         conn.row_factory = sqlite3.Row
         return _ClosingConnection(conn)  # type: ignore[return-value]
+
+    def get_connection(self) -> sqlite3.Connection:
+        if hasattr(self, "_task_queues"):
+            self.flush()
+        return self._get_raw_connection()
 
     def _init_schema(self) -> None:
         with self.get_connection() as conn:
@@ -424,6 +477,7 @@ class GovernanceStorage:
                 ),
             )
             conn.commit()
+        self._notify_boundary_change(boundary.task_id)
 
     def get_boundary(self, task_id: str, version: int | None = None) -> TaskBoundary | None:
         with self.get_connection() as conn:
@@ -476,64 +530,185 @@ class GovernanceStorage:
             )
             conn.commit()
 
+    def _writer_loop(self) -> None:
+        while not self._writer_stop.is_set():
+            batch_items: list[tuple[str, Any]] = []
+            with self._writer_cond:
+                total_pending = sum(len(q) for q in self._task_queues.values())
+                if total_pending < 50 and not self._force_flush:
+                    self._writer_cond.wait(timeout=0.1)
+
+                max_collect = 50 if not self._force_flush else 10000
+                collected = 0
+                for tid, q in list(self._task_queues.items()):
+                    if not q:
+                        continue
+                    take = q[:(max_collect - collected)]
+                    batch_items.extend(take)
+                    del q[:len(take)]
+                    collected += len(take)
+                    if collected >= max_collect:
+                        break
+                self._inflight += len(batch_items)
+
+            if batch_items:
+                self._write_batch_with_retry(batch_items)
+
+            with self._writer_cond:
+                self._inflight -= len(batch_items)
+                total_pending = sum(len(q) for q in self._task_queues.values())
+                if total_pending == 0 and self._force_flush:
+                    self._force_flush = False
+                self._flush_done_cond.notify_all()
+
+    def _write_batch_with_retry(self, items: list[tuple[str, Any]]) -> None:
+        """Writes one batch; on failure retries twice, then logs what was lost (never silently)."""
+        for attempt in range(3):
+            try:
+                self._write_batch_to_db(items)
+                return
+            except Exception:
+                if attempt == 2:
+                    self.dropped_writes += len(items)
+                    logger.exception("Batched write failed after 3 attempts; %d step/event rows not stored "
+                                     "(dropped_writes=%d)", len(items), self.dropped_writes)
+                    return
+                time.sleep(0.05 * (attempt + 1))
+
+    def _write_batch_to_db(self, items: list[tuple[str, Any]]) -> None:
+        steps = [it[1] for it in items if it[0] == "step"]
+        events = [it[1] for it in items if it[0] == "event"]
+        if not steps and not events:
+            return
+        with self._get_raw_connection() as conn:
+                if steps:
+                    conn.executemany(
+                        """
+                        INSERT INTO task_steps (
+                            task_id, step_number, timestamp, kind, layer, verdict, summary, detail, source_label
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        [
+                            (
+                                s["task_id"],
+                                s["step_number"],
+                                s["timestamp"],
+                                s["kind"],
+                                s["layer"],
+                                s["verdict"],
+                                s["summary"],
+                                s["detail"] or "",
+                                s["source_label"],
+                            )
+                            for s in steps
+                        ],
+                    )
+                if events:
+                    conn.executemany(
+                        """
+                        INSERT INTO governance_events (
+                            event_id, timestamp, source, task_id, agent_id, pid,
+                            kind, target, verdict, risk_tier, action_taken, prevented,
+                            rule_matched, boundary_version, details_json
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(event_id) DO NOTHING
+                        """,
+                        [
+                            (
+                                e.event_id,
+                                e.timestamp,
+                                e.source.value,
+                                e.task_id,
+                                e.agent_id,
+                                e.pid,
+                                e.kind,
+                                e.target,
+                                e.verdict.value,
+                                e.risk_tier.value,
+                                e.action_taken.value,
+                                1 if e.prevented else 0,
+                                e.rule_matched,
+                                e.boundary_version,
+                                json.dumps(e.details),
+                            )
+                            for e in events
+                        ],
+                    )
+                conn.commit()
+
+    def flush(self, task_id: str | None = None) -> None:
+        """Flushes queued in-memory database writes to disk synchronously."""
+        if threading.current_thread() is getattr(self, "_writer_thread", None):
+            return
+        with self._writer_cond:
+            def _pending() -> bool:
+                if self._inflight:
+                    return True
+                if task_id:
+                    return bool(self._task_queues.get(task_id))
+                return any(self._task_queues.values())
+
+            if not _pending():
+                return
+            self._force_flush = True
+            self._writer_cond.notify()
+            while _pending():
+                if not self._writer_thread.is_alive():
+                    drain: list[tuple[str, Any]] = []
+                    for q in self._task_queues.values():
+                        drain.extend(q)
+                        q.clear()
+                    if drain:
+                        self._write_batch_with_retry(drain)
+                    self._inflight = 0
+                    self._force_flush = False
+                    break
+                self._flush_done_cond.wait(timeout=0.05)
+
+    def close(self) -> None:
+        self.flush()
+        self._writer_stop.set()
+        with self._writer_cond:
+            self._writer_cond.notify()
+        if self._writer_thread.is_alive():
+            self._writer_thread.join(timeout=1.0)
+        with self._instance_lock:
+            self._instances.pop(self.db_path, None)
+
     # --- Event Recording ---
     def record_event(self, event: GovernanceEvent) -> None:
-        with self.get_connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO governance_events (
-                    event_id, timestamp, source, task_id, agent_id, pid,
-                    kind, target, verdict, risk_tier, action_taken, prevented,
-                    rule_matched, boundary_version, details_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(event_id) DO NOTHING
-                """,
-                (
-                    event.event_id,
-                    event.timestamp,
-                    event.source.value,
-                    event.task_id,
-                    event.agent_id,
-                    event.pid,
-                    event.kind,
-                    event.target,
-                    event.verdict.value,
-                    event.risk_tier.value,
-                    event.action_taken.value,
-                    1 if event.prevented else 0,
-                    event.rule_matched,
-                    event.boundary_version,
-                    json.dumps(event.details),
-                ),
-            )
-            conn.commit()
+        if not event.task_id:
+            self._write_batch_with_retry([("event", event)])
+            return
+        tid = event.task_id
+        with self._writer_lock:
+            if tid not in self._task_queues:
+                self._task_queues[tid] = []
+            self._task_queues[tid].append(("event", event))
+            if sum(len(q) for q in self._task_queues.values()) >= 50:
+                self._writer_cond.notify()
 
     def record_events(self, events: list[GovernanceEvent]) -> None:
         """Bulk insert (one transaction) for high-volume OS sensor streams."""
         if not events:
             return
-        with self.get_connection() as conn:
-            conn.executemany(
-                """
-                INSERT INTO governance_events (
-                    event_id, timestamp, source, task_id, agent_id, pid,
-                    kind, target, verdict, risk_tier, action_taken, prevented,
-                    rule_matched, boundary_version, details_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(event_id) DO NOTHING
-                """,
-                [
-                    (
-                        e.event_id, e.timestamp, e.source.value, e.task_id, e.agent_id, e.pid,
-                        e.kind, e.target, e.verdict.value, e.risk_tier.value, e.action_taken.value,
-                        1 if e.prevented else 0, e.rule_matched, e.boundary_version, json.dumps(e.details),
-                    )
-                    for e in events
-                ],
-            )
-            conn.commit()
+        unattributed = [e for e in events if not e.task_id]
+        if unattributed:
+            self._write_batch_with_retry([("event", e) for e in unattributed])
+        attributed = [e for e in events if e.task_id]
+        if not attributed:
+            return
+        with self._writer_lock:
+            for e in attributed:
+                tid = e.task_id
+                if tid not in self._task_queues:
+                    self._task_queues[tid] = []
+                self._task_queues[tid].append(("event", e))
+            if sum(len(q) for q in self._task_queues.values()) >= 50:
+                self._writer_cond.notify()
 
     def get_events_for_task(self, task_id: str) -> list[GovernanceEvent]:
+        self.flush(task_id)
         with self.get_connection() as conn:
             rows = conn.execute(
                 "SELECT * FROM governance_events WHERE task_id = ? ORDER BY timestamp ASC",
@@ -629,6 +804,7 @@ class GovernanceStorage:
 
     # --- Expansion Request Methods ---
     def save_expansion_request(self, req: ExpansionRequest) -> None:
+        self.flush(req.task_id)
         with self.get_connection() as conn:
             conn.execute(
                 """
@@ -668,6 +844,7 @@ class GovernanceStorage:
                 ),
             )
             conn.commit()
+        self._notify_boundary_change(req.task_id)
 
     def get_expansion_request(self, request_id: str) -> ExpansionRequest | None:
         with self.get_connection() as conn:
@@ -709,6 +886,7 @@ class GovernanceStorage:
                 (status.value, resolved_by, resolved_at, request_id),
             )
             conn.commit()
+        self._notify_boundary_change()
 
     def increment_expansion_usage(self, request_id: str) -> int:
         with self.get_connection() as conn:
@@ -718,9 +896,11 @@ class GovernanceStorage:
             )
             conn.commit()
             row = conn.execute(
-                "SELECT used_count FROM governance_expansions WHERE request_id = ?",
+                "SELECT used_count, task_id FROM governance_expansions WHERE request_id = ?",
                 (request_id,),
             ).fetchone()
+            tid = row["task_id"] if row else None
+            self._notify_boundary_change(tid)
             return int(row["used_count"]) if row else 1
 
     def _row_to_expansion(self, r: sqlite3.Row) -> ExpansionRequest:
@@ -775,45 +955,38 @@ class GovernanceStorage:
         if detail and len(detail) > 2048:
             detail = detail[:2045] + "..."
 
-        with self.get_connection() as conn:
+        with self._writer_lock:
             if step_number is None:
-                row = conn.execute(
-                    "SELECT COALESCE(MAX(step_number), 0) + 1 FROM task_steps WHERE task_id = ?",
-                    (task_id,),
-                ).fetchone()
-                step_number = int(row[0]) if row else 1
+                if task_id not in self._step_counters:
+                    with self._get_raw_connection() as conn:
+                        row = conn.execute(
+                            "SELECT COALESCE(MAX(step_number), 0) FROM task_steps WHERE task_id = ?",
+                            (task_id,),
+                        ).fetchone()
+                        self._step_counters[task_id] = int(row[0]) if row else 0
+                self._step_counters[task_id] += 1
+                step_number = self._step_counters[task_id]
+            else:
+                if task_id not in self._step_counters or step_number > self._step_counters[task_id]:
+                    self._step_counters[task_id] = step_number
 
-            conn.execute(
-                """
-                INSERT INTO task_steps (
-                    task_id, step_number, timestamp, kind, layer, verdict, summary, detail, source_label
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    task_id,
-                    step_number,
-                    timestamp,
-                    kind,
-                    layer,
-                    verdict,
-                    summary,
-                    detail or "",
-                    source_label,
-                ),
-            )
-            conn.commit()
+            step_dict = {
+                "task_id": task_id,
+                "step_number": step_number,
+                "timestamp": timestamp,
+                "kind": kind,
+                "layer": layer,
+                "verdict": verdict,
+                "summary": summary,
+                "detail": detail or "",
+                "source_label": source_label,
+            }
+            if task_id not in self._task_queues:
+                self._task_queues[task_id] = []
+            self._task_queues[task_id].append(("step", step_dict))
+            if sum(len(q) for q in self._task_queues.values()) >= 50:
+                self._writer_cond.notify()
 
-        step_dict = {
-            "task_id": task_id,
-            "step_number": step_number,
-            "timestamp": timestamp,
-            "kind": kind,
-            "layer": layer,
-            "verdict": verdict,
-            "summary": summary,
-            "detail": detail or "",
-            "source_label": source_label,
-        }
         self._dispatch_step(task_id, step_dict)
         return step_dict
 
@@ -848,6 +1021,7 @@ class GovernanceStorage:
                     del self._step_subscribers[task_id]
 
     def get_task_steps(self, task_id: str, after_step: int = 0) -> list[dict[str, Any]]:
+        self.flush(task_id)
         with self.get_connection() as conn:
             rows = conn.execute(
                 """
@@ -884,6 +1058,7 @@ class GovernanceStorage:
                 (rule["rule_id"], rule.get("created_at", ""), json.dumps(rule)),
             )
             conn.commit()
+        self._notify_boundary_change()
 
     def list_standing_rules(self) -> list[dict[str, Any]]:
         with self.get_connection() as conn:
@@ -906,6 +1081,7 @@ class GovernanceStorage:
                 (expires_at, request_id),
             )
             conn.commit()
+        self._notify_boundary_change()
 
     def mark_expansion_single_use(self, request_id: str) -> None:
         """Marks a still-pending request as single-use before it is approved ("Allow once")."""
@@ -915,6 +1091,7 @@ class GovernanceStorage:
                 (request_id,),
             )
             conn.commit()
+        self._notify_boundary_change()
 
     # --- Discovered Agents and Scans ---
     def _row_to_discovered_agent(self, r: sqlite3.Row | dict[str, Any]) -> DiscoveredAgent:

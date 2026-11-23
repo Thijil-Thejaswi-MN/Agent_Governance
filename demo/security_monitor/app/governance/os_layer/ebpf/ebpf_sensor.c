@@ -523,7 +523,8 @@ static int lookup_cgroup_cache(uint64_t cgid, char *path, size_t path_sz, char *
 }
 
 static void walk_cgroup_tree(const char *rel_base, int depth) {
-    if (depth > 6) return;
+    // Direct-mode per-call cgroups sit at depth 7 (.../agent-governance-parent/task_X/call_NNN), deeper under containers.
+    if (depth > 16) return;
     char full[1024];
     snprintf(full, sizeof(full), "/sys/fs/cgroup%s", rel_base);
 
@@ -672,7 +673,11 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
     char container_id[128] = "";
     char dns_question[256] = "";
 
-    resolve_cgroup_info(e->cgroup_id, (pid_t)e->pid, cgroup_path, sizeof(cgroup_path),
+    /* Resolve the cgroup the process is really in, not the registered ancestor: otherwise every
+       event from a per-call child cgroup (call_NNN) is reported as the task cgroup, and the
+       pid-based lookup below caches a child's path under the task's id. */
+    uint64_t path_cgid = e->cur_cgroup_id ? e->cur_cgroup_id : e->cgroup_id;
+    resolve_cgroup_info(path_cgid, (pid_t)e->pid, cgroup_path, sizeof(cgroup_path),
                         unit, sizeof(unit), container_id, sizeof(container_id));
     if (e->is_discovery && e->dns_payload_len > 0) {
         parse_dns_qname(e->dns_payload, e->dns_payload_len, dns_question, sizeof(dns_question));

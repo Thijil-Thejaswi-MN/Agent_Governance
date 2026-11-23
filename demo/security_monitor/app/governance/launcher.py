@@ -386,7 +386,25 @@ class ExpansionDelivery:
 # ---------------------------------------------------------------------------
 
 def proxy_http_fetcher(proxy_port: int, max_body: int = 65536, timeout: float = 15.0) -> Callable[..., dict[str, Any]]:
-    """Returns a broker http_fetcher that performs GETs through the per-task egress proxy."""
+    """Returns a broker http_fetcher that performs GETs through the per-task egress proxy with keep-alive."""
+    thread_local = threading.local()
+
+    def _get_sock() -> socket.socket:
+        s = getattr(thread_local, "sock", None)
+        if s is not None:
+            return s
+        s = socket.create_connection(("127.0.0.1", proxy_port), timeout=timeout)
+        thread_local.sock = s
+        return s
+
+    def _close_sock() -> None:
+        s = getattr(thread_local, "sock", None)
+        if s is not None:
+            try:
+                s.close()
+            except Exception:
+                pass
+            thread_local.sock = None
 
     def fetch(token: str, task_id: str, url: str) -> dict[str, Any]:
         u = urlparse(url if "://" in url else "http://" + url)
@@ -396,25 +414,69 @@ def proxy_http_fetcher(proxy_port: int, max_body: int = 65536, timeout: float = 
         port = u.port or 80
         path = (u.path or "/") + (f"?{u.query}" if u.query else "")
         req = (f"GET http://{host}:{port}{path} HTTP/1.1\r\nHost: {host}:{port}\r\n"
-               f"Proxy-Authorization: Bearer {token}\r\nConnection: close\r\n\r\n").encode()
-        with socket.create_connection(("127.0.0.1", proxy_port), timeout=timeout) as s:
-            s.sendall(req)
-            data = b""
-            while len(data) < max_body + 8192:
-                chunk = s.recv(65536)
-                if not chunk:
-                    break
-                data += chunk
-        head, _, body = data.partition(b"\r\n\r\n")
-        try:
-            status = int(head.split(b" ", 2)[1])
-        except (IndexError, ValueError):
-            status = 0
-        if status == 403:
-            raise PermissionError(f"egress proxy denied {url}")
-        if status == 407:
-            raise PermissionError("egress proxy authentication failed")
-        return {"status": status, "body": body[:max_body].decode("utf-8", "replace")}
+               f"Proxy-Authorization: Bearer {token}\r\n\r\n").encode()
+
+        for attempt in range(2):
+            try:
+                s = _get_sock()
+                s.sendall(req)
+                resp_buf = bytearray()
+                while b"\r\n\r\n" not in resp_buf:
+                    chunk = s.recv(4096)
+                    if not chunk:
+                        raise ConnectionResetError("proxy connection closed prematurely")
+                    resp_buf.extend(chunk)
+
+                header_bytes, _, body_prefix = bytes(resp_buf).partition(b"\r\n\r\n")
+                header_lines = header_bytes.split(b"\r\n")
+                status_parts = header_lines[0].split(b" ", 2)
+                status = int(status_parts[1]) if len(status_parts) > 1 and status_parts[1].isdigit() else 0
+
+                headers: dict[bytes, bytes] = {}
+                for hl in header_lines[1:]:
+                    if b":" in hl:
+                        hk, hv = hl.split(b":", 1)
+                        headers[hk.strip().lower()] = hv.strip().lower()
+
+                cl_val = headers.get(b"content-length")
+                if cl_val is not None:
+                    try:
+                        total_body_len = int(cl_val)
+                    except ValueError:
+                        total_body_len = 0
+                    body_bytes = bytearray(body_prefix)
+                    while len(body_bytes) < total_body_len:
+                        needed = total_body_len - len(body_bytes)
+                        chunk = s.recv(min(65536, needed))
+                        if not chunk:
+                            break
+                        body_bytes.extend(chunk)
+                else:
+                    body_bytes = bytearray(body_prefix)
+                    while len(body_bytes) < max_body + 8192:
+                        chunk = s.recv(65536)
+                        if not chunk:
+                            break
+                        body_bytes.extend(chunk)
+                    _close_sock()
+
+                if headers.get(b"connection") == b"close" or headers.get(b"proxy-connection") == b"close":
+                    _close_sock()
+
+                if status == 403:
+                    raise PermissionError(f"egress proxy denied {url}")
+                if status == 407:
+                    raise PermissionError("egress proxy authentication failed")
+
+                return {"status": status, "body": bytes(body_bytes[:max_body]).decode("utf-8", "replace")}
+            except Exception as e:
+                _close_sock()
+                if attempt == 1:
+                    if isinstance(e, PermissionError):
+                        raise
+                    raise
+
+        raise RuntimeError("proxy fetch failed after retry")
 
     return fetch
 
@@ -710,6 +772,16 @@ class TaskLauncher:
 
     # --- freeze / kill ---
     def _freeze(self, reason: str, detail: Any = None) -> None:
+        # Freeze first, then flush queued writes: a flush waits on the database, and the
+        # freeze must not wait for it.
+        try:
+            self._freeze_now(reason, detail)
+        finally:
+            tid = self.live.get("task_id")
+            if tid:
+                self.storage.flush(tid)
+
+    def _freeze_now(self, reason: str, detail: Any = None) -> None:
         with self.status_lock:
             if self._frozen.is_set():
                 self.freeze_events.append({"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -743,6 +815,9 @@ class TaskLauncher:
         if not self.termination:
             self.termination = {"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                                 "reason": reason, "method": method}
+        tid = self.live.get("task_id")
+        if tid:
+            self.storage.flush(tid)
 
     def stop(self, reason: str = "operator_stop") -> None:
         """Terminates the task cgroup and marks the termination reason."""
@@ -1253,17 +1328,54 @@ class TaskLauncher:
         shim_chain = [interpreter, "-E", "-s", "-B", str(ws / "runtime" / "agent_shim.py")]
 
         chain = [*world_cmd, *sensor_chain, *sandbox_chain, *shim_chain]
-        # Delegate=yes: the scope's subtree is ours, so each command a tool call runs can get its own
-        # child cgroup (call_NNN) for attribution. Freeze and kill act on the whole subtree.
-        cmd = ["systemd-run", "--user", "--scope", "--quiet", "-p", "Delegate=yes", f"--unit={unit}", "--",
-               *env_args, *chain]
+
+        cgroup_mode_req = os.environ.get("GOVERNANCE_CGROUP_MODE", "direct").strip().lower()
+        use_direct = (cgroup_mode_req != "systemd")
+        selected_cgroup_mode = "systemd"
+        cgroup_mode_fallback_reason: str | None = None
+        direct_cg_dir: Path | None = None
+        direct_cg_rel: str | None = None
+
+        if use_direct:
+            can_direct, reason = cgroup_ctl.check_direct_cgroup_support()
+            if not can_direct:
+                selected_cgroup_mode = "systemd"
+                cgroup_mode_fallback_reason = f"direct cgroup mode not supported ({reason}); falling back to systemd scope"
+            else:
+                try:
+                    parent_dir, parent_rel = cgroup_ctl.ensure_delegated_parent()
+                    direct_cg_dir, direct_cg_rel = cgroup_ctl.create_direct_task_cgroup(parent_dir, task_id)
+                    selected_cgroup_mode = "direct"
+                except Exception as e:
+                    selected_cgroup_mode = "systemd"
+                    cgroup_mode_fallback_reason = f"direct cgroup creation failed ({e}); falling back to systemd scope"
 
         launcher_cg = cgroup_ctl.read_proc_cgroup(os.getpid())
         stdout_f = open(control / "sandbox_stdout.log", "wb")
         stderr_f = open(control / "sandbox_stderr.log", "wb")
         pass_fds = (token_r, task_r, result_w, events_w, gate_r) if status_w == -1 else (token_r, task_r, result_w, events_w, gate_r, status_w)
-        proc = subprocess.Popen(cmd, cwd=str(ws), stdout=stdout_f, stderr=stderr_f, stdin=subprocess.DEVNULL,
-                                pass_fds=pass_fds)
+
+        if selected_cgroup_mode == "direct" and direct_cg_dir is not None:
+            cmd = [*env_args, *chain]
+            proc = subprocess.Popen(cmd, cwd=str(ws), stdout=stdout_f, stderr=stderr_f, stdin=subprocess.DEVNULL,
+                                    pass_fds=pass_fds)
+            try:
+                (direct_cg_dir / "cgroup.procs").write_text(str(proc.pid))
+            except Exception as e:
+                # If writing procs failed after spawn, kill proc and raise
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
+                raise RuntimeError(f"failed to place process {proc.pid} into task cgroup: {e}") from e
+        else:
+            # Delegate=yes: the scope's subtree is ours, so each command a tool call runs can get its own
+            # child cgroup (call_NNN) for attribution. Freeze and kill act on the whole subtree.
+            cmd = ["systemd-run", "--user", "--scope", "--quiet", "-p", "Delegate=yes", f"--unit={unit}", "--",
+                   *env_args, *chain]
+            proc = subprocess.Popen(cmd, cwd=str(ws), stdout=stdout_f, stderr=stderr_f, stdin=subprocess.DEVNULL,
+                                    pass_fds=pass_fds)
+
         for fd in (token_r, task_r, result_w, events_w, gate_r):
             os.close(fd)
         if status_w != -1:
@@ -1302,11 +1414,11 @@ class TaskLauncher:
                         except Exception as ex:  # never let one bad line stop observation
                             raw_events.write(json.dumps({"correlator_error": str(ex)}) + "\n")
                     else:
-                        # eBPF is primary sensor; only process the 'start' event from the launcher gate
-                        # to establish correlator.root_pid and correlator.sensor_pid.
+                        # eBPF is primary sensor; only process 'start' and 'exit' events from the launcher gate
+                        # to establish correlator.root_pid, correlator.sensor_pid, and correlator.exit_trailer.
                         try:
                             ev = json.loads(line)
-                            if ev.get("type") == "start":
+                            if ev.get("type") in ("start", "exit"):
                                 correlator.handle_line(line, boundary_provider)
                         except Exception:
                             pass
@@ -1333,11 +1445,14 @@ class TaskLauncher:
         try:
             # 3. Task cgroup read back from /proc/<pid>/cgroup
             t_cg_start = time.monotonic()
-            try:
-                cg = cgroup_ctl.wait_for_scope(proc.pid, unit, launcher_cg)
-            except RuntimeError as e:
-                aborted = f"scope_not_established: {e}"
-                raise
+            if selected_cgroup_mode == "systemd":
+                try:
+                    cg = cgroup_ctl.wait_for_scope(proc.pid, unit, launcher_cg)
+                except RuntimeError as e:
+                    aborted = f"scope_not_established: {e}"
+                    raise
+            else:
+                cg = direct_cg_rel or ""
             deadline = time.monotonic() + 5.0
             while correlator.root_pid is None and time.monotonic() < deadline and proc.poll() is None:
                 time.sleep(0.01)
@@ -1422,6 +1537,9 @@ class TaskLauncher:
             isolation["isolation_level"] = achieved
             isolation["seccomp_filter_baseline"] = seccomp_baseline
             isolation["requirement_problems"] = problems
+            isolation["cgroup_mode"] = selected_cgroup_mode
+            if cgroup_mode_fallback_reason:
+                isolation["cgroup_mode_fallback_reason"] = cgroup_mode_fallback_reason
             requires_rules = cond_upper in ("C", "D", "W")
             if requires_rules and isolation.get("enforcer") != "rules":
                 aborted = "condition requires boundary-compiled isolation; refusing legacy_workspace"
@@ -1541,6 +1659,8 @@ class TaskLauncher:
                 _sample_cg_resources()
             if self.live.get("cgroup"):
                 cgroup_ctl.remove_children(self.live["cgroup"])
+            if direct_cg_dir is not None:
+                cgroup_ctl.destroy_direct_task_cgroup(direct_cg_dir)
             cgroup_cleanup_s = time.monotonic() - t_cg_clean_start
 
             t_proxy_stop_start = time.monotonic()
@@ -1555,6 +1675,7 @@ class TaskLauncher:
             self.live.pop("expansion", None)  # grants end with the run: nothing left to cancel
             delivery.cleanup()
             self.storage.revoke_token(token)
+            self.storage.flush(task_id)
             if (selected_sensor_kind == "ebpf" or is_ebpf_shadow_enabled()) and not bench_sensor_disabled:
                 if ebpf_session is not None:
                     ebpf_summary = ebpf_session.finish()
@@ -1621,8 +1742,8 @@ class TaskLauncher:
             "binary": "ebpf_sensor" if selected_sensor_kind == "ebpf" else str(SENSOR_BIN.name),
             "mode": "disabled" if bench_sensor_disabled else ("ebpf_primary" if selected_sensor_kind == "ebpf" else ("disabled" if disable_ptrace_sensor else "observation_only")),
             "ran": False if bench_sensor_disabled else (True if selected_sensor_kind == "ebpf" else ((correlator.sensor_pid is not None) and not disable_ptrace_sensor)),
-            "exit_trailer_seen": True if (selected_sensor_kind == "ebpf" and not bench_sensor_disabled) else (correlator.exit_trailer is not None),
-            "exited_early": False if (selected_sensor_kind == "ebpf" or disable_ptrace_sensor) else (correlator.exit_trailer is None),
+            "exit_trailer_seen": correlator.exit_trailer is not None,
+            "exited_early": any(f.get("reason") == "sensor_exited_early" for f in self.freeze_events) or (correlator.exit_trailer is None and not bench_sensor_disabled),
             "events_observed": len(correlator.records),
             "cross_attributions": correlator.cross_attributions,
             "unattributed_reasons": correlator.unattributed_reasons,

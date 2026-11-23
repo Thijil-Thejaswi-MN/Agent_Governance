@@ -2532,10 +2532,14 @@ async def stream_task_steps(task_id: str, request: Request) -> StreamingResponse
                         yield _sse_end(task_id, "failed", "no such task and no active run")
                         return
                     if t.status in _TERMINAL_STATUS_STATE:
-                        # One more read: the launcher may have written its last steps.
+                        # One more read: the launcher may have written its last steps. If that
+                        # includes the run's own 'finished' step, it decides the end event.
                         for s in storage.get_task_steps(task_id, after_step=last_step):
                             last_step = max(last_step, s.get("step_number", 0))
                             yield f"data: {json.dumps(s)}\n\n"
+                            if s.get("kind") == "finished":
+                                yield _sse_end(task_id, str(s.get("verdict", "")).lower(), s.get("detail") or "")
+                                return
                         yield _sse_end(task_id, _TERMINAL_STATUS_STATE[t.status], f"task status {t.status.value}")
                         return
 

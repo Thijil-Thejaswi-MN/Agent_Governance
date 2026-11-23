@@ -51,6 +51,7 @@ sys.path.insert(0, str(SECMON_DIR))
 
 from app.governance.launcher import TaskLauncher, TaskSpec
 from app.governance.storage import GovernanceStorage
+from app.governance.os_layer import cgroup_ctl
 from app.governance.perf_stats import (
     bootstrap_ci,
     get_system_info,
@@ -1254,6 +1255,16 @@ def run_overhead_benchmark(
 
 
 def main() -> int:
+    # Ensure execution happens inside delegated parent scope for unprivileged direct cgroups
+    if os.environ.get("GOVERNANCE_IN_DELEGATED_SCOPE") != "1":
+        cg = cgroup_ctl.read_proc_cgroup(os.getpid())
+        if not cg or "user@" not in cg:
+            if shutil.which("systemd-run"):
+                env = dict(os.environ, GOVERNANCE_IN_DELEGATED_SCOPE="1")
+                unit = f"perf-ovh-{os.getpid()}"
+                cmd = ["systemd-run", "--user", "--scope", "-p", "Delegate=yes", f"--unit={unit}", "--", sys.executable, *sys.argv]
+                os.execvpe("systemd-run", cmd, env)
+
     parser = argparse.ArgumentParser(description="Governance performance overhead benchmark.")
     parser.add_argument("--quick", action="store_true", help="Run quick benchmark with minimal repeats for verification.")
     parser.add_argument("--out-dir", type=Path, default=OUTPUT_DIR, help="Output directory.")

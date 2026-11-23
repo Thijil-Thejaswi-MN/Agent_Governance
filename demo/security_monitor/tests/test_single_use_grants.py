@@ -11,6 +11,18 @@ import asyncio
 from pathlib import Path
 
 import pytest
+import concurrent.futures
+
+
+def _run_async(coro):
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if loop is not None and loop.is_running():
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, coro).result()
+    return asyncio.run(coro)
 
 from demo.security_monitor.app.governance.broker import ToolBroker
 from demo.security_monitor.app.governance.expansion import ExpansionService
@@ -111,8 +123,8 @@ def test_the_proxy_uses_up_a_single_use_network_grant(world) -> None:
             server.close()
             await server.wait_closed()
 
-    first, second = asyncio.run(run())
-    assert b"200" in first
-    assert b"403" in second
+    resp_a, resp_b = _run_async(run())
+    assert b"200" in resp_a
+    assert b"403" in resp_b
     used = [r for r in storage.list_expansion_requests(task_id=task.task_id) if r.resource_type == "network"]
     assert used and used[-1].used_count == 1

@@ -176,3 +176,120 @@ def own_seccomp_filter_count() -> int:
     except (OSError, ValueError, IndexError):
         pass
     return 0
+
+
+def check_direct_cgroup_support() -> tuple[bool, str | None]:
+    """Checks whether direct cgroup creation and process placement is supported.
+
+    Returns (is_supported, reason_if_not).
+    """
+    curr_cg = read_proc_cgroup(os.getpid())
+    if not curr_cg or curr_cg == "/non-systemd" or "user@" not in curr_cg:
+        return False, "current process is in non-systemd cgroup; moving processes across root cgroup requires privileges"
+    try:
+        parent_dir, parent_rel = ensure_delegated_parent()
+        probe = parent_dir / f"probe_{os.getpid()}"
+        probe.mkdir(parents=True, exist_ok=True)
+        probe.rmdir()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
+_DELEGATED_PARENT: tuple[Path, str] | None = None
+
+
+def ensure_delegated_parent() -> tuple[Path, str]:
+    """Finds or creates ONE delegated parent cgroup, once per process (cached).
+
+    Returns (absolute_path, relative_cgroup_path).
+    Raises RuntimeError if parent cannot be created or delegated.
+    """
+    global _DELEGATED_PARENT
+    if _DELEGATED_PARENT is not None and _DELEGATED_PARENT[0].is_dir():
+        return _DELEGATED_PARENT
+    _DELEGATED_PARENT = _find_or_create_delegated_parent()
+    return _DELEGATED_PARENT
+
+
+def _find_or_create_delegated_parent() -> tuple[Path, str]:
+    env_parent = os.environ.get("GOVERNANCE_CGROUP_PARENT")
+    if env_parent:
+        p = Path(env_parent)
+        if p.is_dir():
+            rel = "/" + str(p.relative_to(CGROUP_ROOT)).lstrip("/")
+            return p, rel
+
+    candidates: list[Path] = []
+    curr_cg = read_proc_cgroup(os.getpid())
+    if curr_cg and "user@" in curr_cg:
+        curr_dir = cgroup_dir(curr_cg)
+        candidates.append(curr_dir / "agent-governance-parent")
+        if "app.slice" in curr_cg:
+            app_slice = CGROUP_ROOT / curr_cg.split("app.slice")[0].lstrip("/") / "app.slice"
+            candidates.append(app_slice / "agent-governance-parent")
+
+    try:
+        r = subprocess.run(
+            ["systemctl", "--user", "show", "-p", "ControlGroup"],
+            capture_output=True,
+            text=True,
+            timeout=2.0,
+        )
+        if r.returncode == 0 and "ControlGroup=" in r.stdout:
+            user_cg = r.stdout.strip().split("=", 1)[1]
+            if user_cg:
+                app_slice = cgroup_dir(user_cg) / "app.slice"
+                candidates.append(app_slice / "agent-governance-parent")
+                candidates.append(cgroup_dir(user_cg) / "agent-governance-parent")
+    except Exception:
+        pass
+
+    uid = os.getuid() if hasattr(os, "getuid") else 1000
+    candidates.append(
+        CGROUP_ROOT / f"user.slice/user-{uid}.slice/user@{uid}.service/app.slice/agent-governance-parent"
+    )
+
+    for cand in candidates:
+        try:
+            cand.mkdir(parents=True, exist_ok=True)
+            try:
+                (cand / "cgroup.subtree_control").write_text("+memory +pids")
+            except OSError:
+                pass
+            rel = "/" + str(cand.relative_to(CGROUP_ROOT)).lstrip("/")
+            return cand, rel
+        except OSError:
+            continue
+
+    raise RuntimeError(
+        f"Could not create delegated parent cgroup under user service. "
+        f"Run: sudo systemctl set-property user-{uid}.slice Delegate=yes"
+    )
+
+
+def create_direct_task_cgroup(parent_dir: Path, task_id: str) -> tuple[Path, str]:
+    """Creates a child cgroup for task_id directly under parent_dir."""
+    d = parent_dir / f"task_{task_id}"
+    d.mkdir(parents=True, exist_ok=True)
+    # No controllers in the task cgroup's own subtree_control: the agent process lives in this
+    # cgroup and per-call child cgroups (call_NNN) are created under it, and cgroup v2 refuses
+    # processes in a cgroup that hands domain controllers to its children (EBUSY).
+    rel = "/" + str(d.relative_to(CGROUP_ROOT)).lstrip("/")
+    return d, rel
+
+
+def destroy_direct_task_cgroup(task_cg_dir: Path) -> None:
+    """Removes a direct task cgroup after removing any child cgroups."""
+    if not task_cg_dir.exists():
+        return
+    try:
+        for child in task_cg_dir.iterdir():
+            if child.is_dir() and CALL_CGROUP.match(child.name):
+                try:
+                    child.rmdir()
+                except OSError:
+                    pass
+        task_cg_dir.rmdir()
+    except OSError:
+        pass
