@@ -438,16 +438,17 @@ class ResourceSampler:
                     s = f.read().split(")")[-1].split()
                     utime = int(s[11])
                     stime = int(s[12])
-                    proc_t = (utime + stime) / 100.0
+                    proc_t = (utime + stime) / float(os.sysconf("SC_CLK_TCK") or 100)
+                t_read = time.monotonic()  # timestamp of this read, not of the loop start
                 if self._last_proc_stat:
                     d_proc = proc_t - self._last_proc_stat[0]
-                    d_time = now - self._last_proc_stat[1]
-                    if d_time > 0:
+                    d_time = t_read - self._last_proc_stat[1]
+                    if d_time >= 0.2:
                         cpus = os.cpu_count() or 1
                         proc_cpu = round((d_proc / d_time) * 100.0 / cpus, 1)
                         if proc_cpu > self.peak_api_cpu_pct:
                             self.peak_api_cpu_pct = proc_cpu
-                self._last_proc_stat = (proc_t, now)
+                self._last_proc_stat = (proc_t, t_read)
             except Exception:
                 pass
 
@@ -697,7 +698,11 @@ def classify_stopping_layer(
                 or e.get("channel") == "network"
                 or e.get("kind") in ("network", "network_egress")
             )
-            is_refused = (
+            rule = str(e.get("rule_matched") or "")
+            # A DNS failure or a client timeout is not a policy refusal: those stay
+            # "failed for another reason", never "stopped by the proxy".
+            not_policy = rule.startswith("DNS resolution failed") or "deadline exceeded" in rule
+            is_refused = not not_policy and (
                 e.get("verdict") in ("DENY", "BLOCK_ACTION", "OUTSIDE")
                 or e.get("action_taken") in ("DENY", "BLOCK_ACTION")
                 or bool(e.get("prevented") and e.get("source") in ("EGRESS_PROXY", "proxy"))
