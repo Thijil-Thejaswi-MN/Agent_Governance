@@ -128,8 +128,12 @@ class GovernanceStorage:
                 pass
 
     def _get_raw_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=30.0)
+        conn = sqlite3.connect(self.db_path, timeout=60.0)
         conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("PRAGMA busy_timeout=60000;")
+        except Exception:
+            pass
         return _ClosingConnection(conn)  # type: ignore[return-value]
 
     def get_connection(self) -> sqlite3.Connection:

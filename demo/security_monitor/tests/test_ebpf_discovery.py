@@ -345,6 +345,13 @@ class TestLiveEBPFDiscovery:
             s.connect(str(sock_path))
             sock_file = s.makefile("r", encoding="utf-8", errors="replace")
 
+            # Ensure client is fully registered in sensor before firing UDP packet
+            s.sendall(b"PING\n")
+            for _ in range(10):
+                l = sock_file.readline()
+                if "pong" in l:
+                    break
+
             # Send crafted DNS packet to local UDP port
             dns_pkt = craft_dns_query("api.openai.com")
             udp_sender = py_socket.socket(py_socket.AF_INET, py_socket.SOCK_DGRAM)

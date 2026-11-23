@@ -132,25 +132,32 @@ class EBPFShadowManager:
             return False, "socket does not exist"
         try:
             s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            s.settimeout(0.5)
+            s.settimeout(1.0)
             s.connect(str(self.socket_path))
             s.sendall(b"STATUS\n")
             f = s.makefile("r", encoding="utf-8", errors="replace")
-            line = f.readline()
+            last_line = ""
+            for _ in range(10):
+                line = f.readline()
+                if not line:
+                    break
+                last_line = line.strip()
+                try:
+                    data = json.loads(line)
+                except Exception:
+                    continue
+                if data.get("type") == "status":
+                    s.close()
+                    if data.get("status") != "healthy":
+                        return False, f"loader status: {data.get('status')}"
+                    if data.get("dropped_total", 0) > 0:
+                        return False, f"loader has dropped events: {data.get('dropped_total')}"
+                    age = data.get("heartbeat_age_s", 0)
+                    if age > 2.0:
+                        return False, f"loader heartbeat age {age:.2f}s exceeds 2s limit"
+                    return True, "healthy"
             s.close()
-            if not line:
-                return False, "empty response to STATUS"
-            data = json.loads(line)
-            if data.get("type") == "status":
-                if data.get("status") != "healthy":
-                    return False, f"loader status: {data.get('status')}"
-                if data.get("dropped_total", 0) > 0:
-                    return False, f"loader has dropped events: {data.get('dropped_total')}"
-                age = data.get("heartbeat_age_s", 0)
-                if age > 2.0:
-                    return False, f"loader heartbeat age {age:.2f}s exceeds 2s limit"
-                return True, "healthy"
-            return False, f"unexpected response: {line.strip()}"
+            return False, f"status response not received (last: {last_line})"
         except Exception as ex:
             return False, f"health check failed: {ex}"
 
@@ -262,21 +269,30 @@ class EBPFShadowSession:
             self.unavailable_reason = reason
             return
 
-        try:
-            self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            self.sock.settimeout(2.0)
-            self.sock.connect(str(self.socket_path))
-            cmd = f"REGISTER {self.cgroup_id}\n"
-            self.sock.sendall(cmd.encode("utf-8"))
-            self.last_heartbeat_time = time.monotonic()
-        except Exception as ex:
-            self.unavailable_reason = f"socket connection error: {ex}"
-            if self.sock:
-                try:
-                    self.sock.close()
-                except OSError:
-                    pass
-                self.sock = None
+        connected = False
+        last_ex = None
+        for attempt in range(5):
+            try:
+                self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                self.sock.settimeout(5.0)
+                self.sock.connect(str(self.socket_path))
+                cmd = f"REGISTER {self.cgroup_id}\n"
+                self.sock.sendall(cmd.encode("utf-8"))
+                self.last_heartbeat_time = time.monotonic()
+                connected = True
+                break
+            except Exception as ex:
+                last_ex = ex
+                if self.sock:
+                    try:
+                        self.sock.close()
+                    except OSError:
+                        pass
+                    self.sock = None
+                time.sleep(0.04 * (attempt + 1))
+
+        if not connected:
+            self.unavailable_reason = f"socket connection error: {last_ex}"
             return
 
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
