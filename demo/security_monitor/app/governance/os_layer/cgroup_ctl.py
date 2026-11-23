@@ -252,6 +252,10 @@ def _find_or_create_delegated_parent() -> tuple[Path, str]:
 
     for cand in candidates:
         try:
+            try:
+                (cand.parent / "cgroup.subtree_control").write_text("+memory +pids")
+            except OSError:
+                pass
             cand.mkdir(parents=True, exist_ok=True)
             try:
                 (cand / "cgroup.subtree_control").write_text("+memory +pids")

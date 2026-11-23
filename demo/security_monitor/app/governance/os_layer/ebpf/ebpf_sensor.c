@@ -26,7 +26,7 @@
 #include "sensor.skel.h"
 
 #define VERSION "1.0.0"
-#define MAX_CLIENTS 64
+#define MAX_CLIENTS 256
 
 static long long monotonic_ms(void);
 
@@ -603,7 +603,7 @@ static void broadcast_line(const char *line, uint64_t cgid) {
     size_t line_len = strlen(line);
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (g_clients[i].is_active && g_clients[i].fd >= 0) {
-            if (cgid == 0 || g_clients[i].watched_cgroup == 0 || g_clients[i].watched_cgroup == cgid) {
+            if (cgid == 0 || g_clients[i].watched_cgroup == cgid || (g_discovery_enabled && g_clients[i].watched_cgroup == 0)) {
                 ssize_t w1 = write(g_clients[i].fd, line, line_len);
                 ssize_t w2 = write(g_clients[i].fd, "\n", 1);
                 (void)w1; (void)w2;
@@ -1078,7 +1078,7 @@ int main(int argc, char **argv) {
             memset(&sun, 0, sizeof(sun));
             sun.sun_family = AF_UNIX;
             strncpy(sun.sun_path, sock_path, sizeof(sun.sun_path) - 1);
-            if (bind(server_fd, (struct sockaddr *)&sun, sizeof(sun)) == 0 && listen(server_fd, 16) == 0) {
+            if (bind(server_fd, (struct sockaddr *)&sun, sizeof(sun)) == 0 && listen(server_fd, 256) == 0) {
                 chmod(sock_path, 0600);
             } else {
                 fprintf(stderr, "Warning: failed to bind socket %s: %s\n", sock_path, strerror(errno));
