@@ -49,14 +49,21 @@ def test_configured_agents_have_different_tool_limits():
 
 
 def test_every_example_is_a_job_for_a_configured_agent():
+    from demo.security_monitor.app.governance.agent_profiles import load_all_agent_profiles
+
     agents = {a["id"]: a for a in run_manager.get_configured_agents()}
+    # Multi-agent examples (trip_planner) start from a callable agent profile in agents/,
+    # whose admin-set ceiling is its tool limit. Inventory agents stay as configured above.
+    profiles = {pid: {"tools": prof["ceiling"].get("tools", [])} for pid, prof in load_all_agent_profiles().items()}
     for pid, p in run_manager.PRESETS.items():
         if pid == "custom":
             continue
-        assert p.get("agent") in agents, pid
+        agent = p.get("agent")
+        limits = agents.get(agent) or profiles.get(agent)
+        assert limits is not None, pid
         # The agent's own tool limit covers what its example needs.
         needed = {s["tool"] for s in p.get("scripted_steps", []) if s.get("tool")}
-        assert needed <= set(agents[p["agent"]]["tools"]), pid
+        assert needed <= set(limits["tools"]), pid
     assert run_manager.PRESETS["contract_review"]["agent"] == "brief_bot"
     assert run_manager.PRESETS["a2a_agent"]["agent"] == "travel_bot"
     assert run_manager.PRESETS["network_exfiltration"]["agent"] == "notes_bot"

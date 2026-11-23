@@ -453,6 +453,16 @@ class DelegationManager:
                     fd = os.open(fpath_str, flags)
                 except OSError:
                     continue
+                # The opened file must be the one checked above: a directory on the path could
+                # have been swapped for a symlink between lstat/realpath and open.
+                try:
+                    fst = os.fstat(fd)
+                except OSError:
+                    os.close(fd)
+                    continue
+                if (fst.st_dev, fst.st_ino) != (st.st_dev, st.st_ino) or not stat.S_ISREG(fst.st_mode) or fst.st_nlink > 1:
+                    os.close(fd)
+                    continue
 
                 dst = child_ws / rel
                 dst.parent.mkdir(parents=True, exist_ok=True)
