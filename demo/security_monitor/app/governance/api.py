@@ -712,6 +712,12 @@ async def list_tasks(request: Request = None) -> list[dict[str, Any]]:
     user = get_current_user_session(request)
     storage = get_storage()
     tasks = storage.list_tasks()
+    all_tasks = storage.list_tasks()
+    child_map: dict[str, int] = {}
+    for t in all_tasks:
+        if t.parent_task_id:
+            child_map[t.parent_task_id] = child_map.get(t.parent_task_id, 0) + 1
+
     output = []
     for t in tasks:
         if not PermissionMatrix.can_view_run(user, t.owner, t.team):
@@ -722,6 +728,7 @@ async def list_tasks(request: Request = None) -> list[dict[str, Any]]:
         llm_provider = _extract_llm_provider(t, t.task_id)
 
         bench_mode, sensor_disabled, bench_label = _extract_bench_info(t, t.task_id)
+        a2a_msgs = storage.get_a2a_messages(root_task_id=t.task_id)
         output.append({
             "task_id": t.task_id,
             "request_text": t.request_text,
@@ -746,6 +753,8 @@ async def list_tasks(request: Request = None) -> list[dict[str, Any]]:
             "bench_mode": bench_mode,
             "sensor_disabled": sensor_disabled,
             "benchmark_label": bench_label,
+            "has_children": (child_map.get(t.task_id, 0) > 0),
+            "a2a_messages_count": len(a2a_msgs),
         })
     return output
 
@@ -802,6 +811,11 @@ async def get_task_detail(task_id: str, request: Request = None) -> dict[str, An
     from .llm_providers import HOSTED_PROVIDERS
     if llm_provider in HOSTED_PROVIDERS:
         task_dict["hosted_model_note"] = f"hosted model: the task's prompts and file contents were sent to {llm_provider}" 
+
+    children = [c for c in storage.list_tasks() if c.parent_task_id == task_id]
+    a2a_msgs = storage.get_a2a_messages(root_task_id=task_id)
+    task_dict["has_children"] = len(children) > 0
+    task_dict["a2a_messages_count"] = len(a2a_msgs)
 
     return {
         "task": task_dict,
@@ -2710,10 +2724,11 @@ async def get_a2a_job(root_task_id: str, request: Request = None) -> dict[str, A
                 pending_approvals.append({
                     "request_id": req.request_id,
                     "task_id": req.task_id,
+                    "agent_id": req.agent_id,
                     "resource_type": req.resource_type,
                     "resource_target": req.resource_target,
                     "justification": req.justification,
-                    "requested_at": req.requested_at,
+                    "requested_at": getattr(req, "created_at", None),
                     "status": req.status.value,
                 })
 
@@ -2781,6 +2796,15 @@ async def get_a2a_job(root_task_id: str, request: Request = None) -> dict[str, A
     return {
         "root_task_id": root_task_id,
         "status": job_status,
+        "task": {
+            "task_id": root_task.task_id,
+            "request_text": root_task.request_text,
+            "agent_id": root_task.agent_id,
+            "owner": root_task.owner,
+            "team": root_task.team,
+            "status": root_task.status.value if hasattr(root_task.status, "value") else str(root_task.status),
+            "created_at": root_task.created_at,
+        },
         "agents": agents,
         "threads": threads,
         "messages": messages,

@@ -10,6 +10,7 @@ export const PROTECTED_PATHS = [
   '/history',
   '/evidence',
   '/report',
+  '/conversations',
   '/incidents',
   '/inventory',
 ];
