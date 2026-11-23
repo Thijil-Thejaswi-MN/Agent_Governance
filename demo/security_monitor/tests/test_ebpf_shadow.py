@@ -875,3 +875,23 @@ def test_relative_path_classification_and_dirfd_resolution(tmp_path):
     assert res_dirfd is not None
     assert res_dirfd["verdict"] == EventVerdict.INSIDE.value
 
+
+
+def test_a_loader_from_an_older_build_is_reported_stale(tmp_path, monkeypatch):
+    """After `make`, the running loader keeps the old code; it must be noticed and replaced."""
+    import os as _os
+    from demo.security_monitor.app.governance.os_layer import ebpf_shadow as es
+
+    mgr = es.EBPFShadowManager(socket_path=tmp_path / "s.sock")
+    monkeypatch.setattr(mgr, "_loader_pid", lambda: _os.getpid())
+    # This test process's binary is python, not the loader: a different file.
+    monkeypatch.setattr(es, "EBPF_SENSOR_BIN", tmp_path / "ebpf_sensor")
+    (tmp_path / "ebpf_sensor").write_text("")
+    assert mgr.stale_loader_reason() is not None
+
+    # The same file as the running process: not stale.
+    monkeypatch.setattr(es, "EBPF_SENSOR_BIN", Path(_os.readlink(f"/proc/{_os.getpid()}/exe")))
+    assert mgr.stale_loader_reason() is None
+
+    monkeypatch.setattr(mgr, "_loader_pid", lambda: None)
+    assert mgr.stale_loader_reason() is None
