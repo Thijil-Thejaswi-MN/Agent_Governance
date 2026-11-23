@@ -14,6 +14,7 @@ import datetime
 import os
 import shutil
 import tempfile
+import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -359,3 +360,64 @@ def test_direct_cgroup_lifecycle(temp_dir):
 
     cgroup_ctl.destroy_direct_task_cgroup(task_cg)
     assert not task_cg.exists()
+
+
+def _cache_test_task(storage, ws, task_id, token):
+    storage.save_boundary(TaskBoundary(
+        task_id=task_id, version=1, workspace_root=str(ws), tools=["read_file"],
+        files_read=["allowed.txt"], enforcement_mode=EnforcementMode.ENFORCE,
+    ))
+    storage.save_task(TaskRecord(
+        task_id=task_id, request_text="cache test", request_hash="h", agent_id="agent_s",
+        workspace_root=str(ws), status=TaskLifecycle.ACTIVE,
+        created_at=datetime.datetime.now(datetime.timezone.utc).isoformat(), owner="tester",
+    ))
+    storage.save_token(token, task_id, "agent_s")
+
+
+def test_cached_read_is_reevaluated_when_file_becomes_a_symlink(storage, temp_dir):
+    """A cached allow must not survive the file being swapped for a symlink to a refused file."""
+    ws = temp_dir / "ws_symlink"
+    ws.mkdir()
+    (ws / "allowed.txt").write_text("allowed content")
+    (ws / "secret.txt").write_text("secret content")
+    _cache_test_task(storage, ws, "task_symlink_swap", "gov_tok_symlink")
+    broker = ToolBroker(storage=storage, expansion_service=ExpansionService(storage))
+
+    assert broker.read_file("gov_tok_symlink", "allowed.txt") == "allowed content"
+    assert broker._policy_cache.get("task_symlink_swap")
+
+    (ws / "allowed.txt").unlink()
+    os.symlink(ws / "secret.txt", ws / "allowed.txt")
+    with pytest.raises(PermissionError):
+        broker.read_file("gov_tok_symlink", "allowed.txt")
+
+
+def test_flush_waits_for_a_batch_the_writer_has_already_taken(storage, monkeypatch):
+    """A read right after a write must see it even while the writer is mid-commit."""
+    real_write = storage._write_batch_to_db
+    taken = threading.Event()
+
+    def slow_write(items):
+        taken.set()
+        time.sleep(0.4)
+        real_write(items)
+
+    monkeypatch.setattr(storage, "_write_batch_to_db", slow_write)
+    storage.record_task_step("task_inflight", kind="tool", layer="broker", verdict="ALLOW",
+                             summary="s1", source_label="enforced")
+    assert taken.wait(2.0)
+    # The queue is now empty but the batch is not committed yet.
+    steps = storage.get_task_steps("task_inflight")
+    assert [s["summary"] for s in steps] == ["s1"]
+
+
+def test_failed_batch_write_is_counted_and_logged_not_silent(storage, monkeypatch, caplog):
+    def broken(items):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(storage, "_write_batch_to_db", broken)
+    with caplog.at_level("ERROR"):
+        storage._write_batch_with_retry([("step", {}), ("step", {})])
+    assert storage.dropped_writes == 2
+    assert any("not stored" in r.getMessage() for r in caplog.records)

@@ -97,6 +97,17 @@ class ToolBroker:
         else:
             self._policy_cache.clear()
 
+    @staticmethod
+    def _cached_path_still_valid(eval_res: Any) -> bool:
+        """A cached file decision holds only while its resolved path still resolves to itself."""
+        resolved = getattr(eval_res, "resolved_path", "") or ""
+        if not resolved:
+            return False
+        try:
+            return str(Path(os.path.realpath(resolved))).replace("\\", "/") == resolved.replace("\\", "/")
+        except (OSError, ValueError):
+            return False
+
     def _get_grant_state(self, task_id: str) -> tuple:
         """Returns a stable tuple representing the current grant state of the task."""
         try:
@@ -334,6 +345,11 @@ class ToolBroker:
         grant_state = self._get_grant_state(task_id)
         cache_key = ("read_file", norm_target, boundary.version, grant_state)
         cached = self._policy_cache.get(task_id, {}).get(cache_key)
+        if cached is not None and not self._cached_path_still_valid(cached[1]):
+            # A path component changed since the decision was cached (e.g. the file was
+            # replaced by a symlink): evaluate it again.
+            self._policy_cache.get(task_id, {}).pop(cache_key, None)
+            cached = None
 
         if cached is not None:
             tool_eval, eval_res, action, prevented = cached
@@ -440,6 +456,11 @@ class ToolBroker:
         grant_state = self._get_grant_state(task_id)
         cache_key = ("write_file", norm_target, boundary.version, grant_state)
         cached = self._policy_cache.get(task_id, {}).get(cache_key)
+        if cached is not None and not self._cached_path_still_valid(cached[1]):
+            # A path component changed since the decision was cached (e.g. the file was
+            # replaced by a symlink): evaluate it again.
+            self._policy_cache.get(task_id, {}).pop(cache_key, None)
+            cached = None
 
         if cached is not None:
             tool_eval, eval_res, action, prevented = cached

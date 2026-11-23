@@ -772,9 +772,16 @@ class TaskLauncher:
 
     # --- freeze / kill ---
     def _freeze(self, reason: str, detail: Any = None) -> None:
-        tid = self.live.get("task_id")
-        if tid:
-            self.storage.flush(tid)
+        # Freeze first, then flush queued writes: a flush waits on the database, and the
+        # freeze must not wait for it.
+        try:
+            self._freeze_now(reason, detail)
+        finally:
+            tid = self.live.get("task_id")
+            if tid:
+                self.storage.flush(tid)
+
+    def _freeze_now(self, reason: str, detail: Any = None) -> None:
         with self.status_lock:
             if self._frozen.is_set():
                 self.freeze_events.append({"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -797,9 +804,6 @@ class TaskLauncher:
                                        "frozen_confirmed": bool(cg) and cgroup_ctl.is_frozen(cg)})
 
     def _kill(self, reason: str) -> None:
-        tid = self.live.get("task_id")
-        if tid:
-            self.storage.flush(tid)
         cg = self.live.get("cgroup")
         method = cgroup_ctl.kill_all(cg, self.live.get("unit")) if cg else "no_cgroup"
         proc = self.live.get("proc")
@@ -811,6 +815,9 @@ class TaskLauncher:
         if not self.termination:
             self.termination = {"timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                                 "reason": reason, "method": method}
+        tid = self.live.get("task_id")
+        if tid:
+            self.storage.flush(tid)
 
     def stop(self, reason: str = "operator_stop") -> None:
         """Terminates the task cgroup and marks the termination reason."""

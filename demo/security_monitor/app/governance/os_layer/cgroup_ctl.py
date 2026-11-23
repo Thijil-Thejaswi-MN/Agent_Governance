@@ -196,12 +196,23 @@ def check_direct_cgroup_support() -> tuple[bool, str | None]:
         return False, str(e)
 
 
+_DELEGATED_PARENT: tuple[Path, str] | None = None
+
+
 def ensure_delegated_parent() -> tuple[Path, str]:
-    """Finds or creates ONE delegated parent cgroup at server start.
+    """Finds or creates ONE delegated parent cgroup, once per process (cached).
 
     Returns (absolute_path, relative_cgroup_path).
     Raises RuntimeError if parent cannot be created or delegated.
     """
+    global _DELEGATED_PARENT
+    if _DELEGATED_PARENT is not None and _DELEGATED_PARENT[0].is_dir():
+        return _DELEGATED_PARENT
+    _DELEGATED_PARENT = _find_or_create_delegated_parent()
+    return _DELEGATED_PARENT
+
+
+def _find_or_create_delegated_parent() -> tuple[Path, str]:
     env_parent = os.environ.get("GOVERNANCE_CGROUP_PARENT")
     if env_parent:
         p = Path(env_parent)
@@ -261,10 +272,9 @@ def create_direct_task_cgroup(parent_dir: Path, task_id: str) -> tuple[Path, str
     """Creates a child cgroup for task_id directly under parent_dir."""
     d = parent_dir / f"task_{task_id}"
     d.mkdir(parents=True, exist_ok=True)
-    try:
-        (d / "cgroup.subtree_control").write_text("+memory +pids")
-    except OSError:
-        pass
+    # No controllers in the task cgroup's own subtree_control: the agent process lives in this
+    # cgroup and per-call child cgroups (call_NNN) are created under it, and cgroup v2 refuses
+    # processes in a cgroup that hands domain controllers to its children (EBUSY).
     rel = "/" + str(d.relative_to(CGROUP_ROOT)).lstrip("/")
     return d, rel
 

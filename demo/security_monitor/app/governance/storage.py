@@ -11,9 +11,11 @@ import sqlite3
 import asyncio
 import datetime
 import hashlib
+import logging
 import threading
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .models import (
     TaskRecord,
@@ -66,6 +68,9 @@ class _ClosingConnection:
             self._conn.close()
 
 
+logger = logging.getLogger(__name__)
+
+
 class GovernanceStorage:
     """Persistent storage manager for tasks, dynamic boundaries, tokens, and audit events."""
 
@@ -103,6 +108,10 @@ class GovernanceStorage:
         self._writer_cond = threading.Condition(self._writer_lock)
         self._flush_done_cond = threading.Condition(self._writer_lock)
         self._force_flush = False
+        # Items the writer has taken off the queues but not yet committed. flush() waits for
+        # these too, so a read right after flush() sees every write queued before it.
+        self._inflight = 0
+        self.dropped_writes = 0
         self._writer_stop = threading.Event()
         self._writer_thread = threading.Thread(target=self._writer_loop, daemon=True, name="gov-batch-writer")
         self._writer_thread.start()
@@ -540,18 +549,31 @@ class GovernanceStorage:
                     collected += len(take)
                     if collected >= max_collect:
                         break
+                self._inflight += len(batch_items)
 
             if batch_items:
-                try:
-                    self._write_batch_to_db(batch_items)
-                except Exception:
-                    pass
+                self._write_batch_with_retry(batch_items)
 
             with self._writer_cond:
+                self._inflight -= len(batch_items)
                 total_pending = sum(len(q) for q in self._task_queues.values())
                 if total_pending == 0 and self._force_flush:
                     self._force_flush = False
                 self._flush_done_cond.notify_all()
+
+    def _write_batch_with_retry(self, items: list[tuple[str, Any]]) -> None:
+        """Writes one batch; on failure retries twice, then logs what was lost (never silently)."""
+        for attempt in range(3):
+            try:
+                self._write_batch_to_db(items)
+                return
+            except Exception:
+                if attempt == 2:
+                    self.dropped_writes += len(items)
+                    logger.exception("Batched write failed after 3 attempts; %d step/event rows not stored "
+                                     "(dropped_writes=%d)", len(items), self.dropped_writes)
+                    return
+                time.sleep(0.05 * (attempt + 1))
 
     def _write_batch_to_db(self, items: list[tuple[str, Any]]) -> None:
         steps = [it[1] for it in items if it[0] == "step"]
@@ -616,22 +638,29 @@ class GovernanceStorage:
 
     def flush(self, task_id: str | None = None) -> None:
         """Flushes queued in-memory database writes to disk synchronously."""
+        if threading.current_thread() is getattr(self, "_writer_thread", None):
+            return
         with self._writer_cond:
-            if task_id:
-                if not self._task_queues.get(task_id):
-                    return
-            else:
-                if not any(self._task_queues.values()):
-                    return
+            def _pending() -> bool:
+                if self._inflight:
+                    return True
+                if task_id:
+                    return bool(self._task_queues.get(task_id))
+                return any(self._task_queues.values())
+
+            if not _pending():
+                return
             self._force_flush = True
             self._writer_cond.notify()
-            while self._force_flush or (task_id and self._task_queues.get(task_id)) or (not task_id and any(self._task_queues.values())):
+            while _pending():
                 if not self._writer_thread.is_alive():
                     drain: list[tuple[str, Any]] = []
                     for q in self._task_queues.values():
                         drain.extend(q)
                         q.clear()
-                    self._write_batch_to_db(drain)
+                    if drain:
+                        self._write_batch_with_retry(drain)
+                    self._inflight = 0
                     self._force_flush = False
                     break
                 self._flush_done_cond.wait(timeout=0.05)
@@ -649,7 +678,7 @@ class GovernanceStorage:
     # --- Event Recording ---
     def record_event(self, event: GovernanceEvent) -> None:
         if not event.task_id:
-            self._write_batch_to_db([("event", event)])
+            self._write_batch_with_retry([("event", event)])
             return
         tid = event.task_id
         with self._writer_lock:
@@ -665,7 +694,7 @@ class GovernanceStorage:
             return
         unattributed = [e for e in events if not e.task_id]
         if unattributed:
-            self._write_batch_to_db([("event", e) for e in unattributed])
+            self._write_batch_with_retry([("event", e) for e in unattributed])
         attributed = [e for e in events if e.task_id]
         if not attributed:
             return
