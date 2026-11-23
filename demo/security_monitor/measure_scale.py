@@ -1546,12 +1546,18 @@ def main(argv: list[str] | None = None) -> int:
     if not args.output:
         args.output = "demo/data/scale/scale_real_v1.json" if real_n > 0 else "demo/data/scale/scale_100_v1.json"
 
+    # "auto" uses eBPF when the loader is installed and falls back to ptrace (CI has no eBPF).
+    # Set GOVERNANCE_SENSOR=ebpf to require eBPF; the sensor actually used is in each receipt.
     if "GOVERNANCE_SENSOR" not in os.environ:
-        os.environ["GOVERNANCE_SENSOR"] = "ebpf"
+        os.environ["GOVERNANCE_SENSOR"] = "auto"
 
     from demo.security_monitor.app.governance.os_layer.ebpf_shadow import EBPFShadowManager
     ebpf_mgr = EBPFShadowManager.get_instance()
-    ebpf_mgr.ensure_running()
+    try:
+        ebpf_mgr.ensure_running()
+    except Exception:
+        if os.environ.get("GOVERNANCE_SENSOR") == "ebpf":
+            raise
 
     # Filter available hosted models
     available_real_models: list[str] = []
