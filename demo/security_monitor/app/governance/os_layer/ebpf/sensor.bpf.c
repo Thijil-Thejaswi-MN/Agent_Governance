@@ -369,6 +369,7 @@ int BPF_PROG(raw_tp_sys_enter, struct pt_regs *regs, long id) {
     bpf_fast_zero(ev);
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     ev->cgroup_id = cgid;
+    ev->cur_cgroup_id = bpf_get_current_cgroup_id();
     ev->is_discovery = is_disc;
     ev->pid = get_current_pid();
     ev->tgid = (__u32)pid_tgid;

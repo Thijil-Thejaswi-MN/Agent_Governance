@@ -41,7 +41,8 @@ enum ebpf_syscall_op {
 struct ebpf_event {
     __u64 seq;
     __u64 ts_ns;
-    __u64 cgroup_id;
+    __u64 cgroup_id;      /* the registered (task) cgroup that matched: used for routing */
+    __u64 cur_cgroup_id;  /* the cgroup the process is actually in (task cgroup or a call_NNN child) */
     __u32 pid;
     __u32 tgid;
     __u32 ppid;
