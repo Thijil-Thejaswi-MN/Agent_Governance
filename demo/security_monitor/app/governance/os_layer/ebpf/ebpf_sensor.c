@@ -523,7 +523,8 @@ static int lookup_cgroup_cache(uint64_t cgid, char *path, size_t path_sz, char *
 }
 
 static void walk_cgroup_tree(const char *rel_base, int depth) {
-    if (depth > 6) return;
+    // Direct-mode per-call cgroups sit at depth 7 (.../agent-governance-parent/task_X/call_NNN), deeper under containers.
+    if (depth > 16) return;
     char full[1024];
     snprintf(full, sizeof(full), "/sys/fs/cgroup%s", rel_base);
 

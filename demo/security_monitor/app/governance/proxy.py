@@ -192,6 +192,9 @@ class EgressProxyServer:
         has_no_body = is_head or (status_code in (204, 304)) or (100 <= status_code < 200)
         conn_header = headers.get("connection", "").lower()
 
+        if status_code == 101:
+            # Protocol switch: this connection is no longer HTTP/1.1; never pool or reuse it.
+            return False
         if has_no_body:
             return conn_header != "close"
 
@@ -425,7 +428,7 @@ class EgressProxyServer:
                 # Check Content-Length limits
                 if "content-length" in headers:
                     cl_raw = headers.get("content-length", "").strip()
-                    if not cl_raw.isdigit():
+                    if not (cl_raw.isascii() and cl_raw.isdigit()):
                         self._record_proxy_event(
                             task_id=None,
                             agent_id="UNATTRIBUTED",
@@ -662,7 +665,7 @@ class EgressProxyServer:
                     req_te = headers.get("transfer-encoding", "").lower()
                     is_chunked_req = "chunked" in req_te
                     cl_raw = headers.get("content-length", "").strip()
-                    req_cl = int(cl_raw) if (cl_raw and cl_raw.isdigit()) else 0
+                    req_cl = int(cl_raw) if (cl_raw and cl_raw.isascii() and cl_raw.isdigit()) else 0
 
                     parsed = urlparse(target)
                     upstream_path = parsed.path or "/"
@@ -676,7 +679,8 @@ class EgressProxyServer:
                             headers_bytes.extend(f"{hk.title()}: {hv}\r\n".encode("utf-8"))
                     headers_bytes.extend(b"\r\n")
 
-                    can_retry = (method.upper() in ("GET", "HEAD", "OPTIONS")) or (not is_chunked_req and req_cl == 0)
+                    # Retry only requests without a body: the body was already read from the client.
+                    can_retry = (not is_chunked_req) and req_cl == 0
                     allow_pool = not is_chunked_req
 
                     try:
@@ -722,18 +726,30 @@ class EgressProxyServer:
                             await r_writer.drain()
 
                     can_keep_upstream = False
+                    stage = "send"
                     try:
                         await _send_req_data(remote_writer)
+                        stage = "response"
                         can_keep_upstream = await self._forward_http_response(
                             remote_reader, writer, request_method=method
                         )
-                    except (_EmptyResponseError, ConnectionResetError, BrokenPipeError, OSError):
+                    except (_EmptyResponseError, ConnectionResetError, BrokenPipeError, OSError) as exc:
                         try:
                             remote_writer.close()
                         except Exception:
                             pass
+                        # Nothing reached the client yet only if the failure was while sending,
+                        # or upstream closed before its status line.
+                        nothing_forwarded = stage == "send" or isinstance(exc, _EmptyResponseError)
+                        if not nothing_forwarded:
+                            # Part of a response already went to the client: a retry or a 502
+                            # would corrupt it, so just close.
+                            await self._drain_and_close(writer)
+                            return
 
+                        retried_ok = False
                         if is_pooled and can_retry:
+                            stage = "send"
                             try:
                                 remote_reader, remote_writer, _ = await self._get_upstream_conn(
                                     target_connect_ip, dst_port, allow_pool=False
@@ -741,18 +757,20 @@ class EgressProxyServer:
                                 remote_writer.write(req_line_bytes)
                                 remote_writer.write(headers_bytes)
                                 await remote_writer.drain()
+                                stage = "response"
                                 can_keep_upstream = await self._forward_http_response(
                                     remote_reader, writer, request_method=method
                                 )
-                            except Exception:
+                                retried_ok = True
+                            except Exception as exc2:
                                 try:
                                     remote_writer.close()
                                 except Exception:
                                     pass
-                                writer.write(b"HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nBad Gateway\r\n")
-                                await self._drain_and_close(writer)
-                                return
-                        else:
+                                if not (stage == "send" or isinstance(exc2, _EmptyResponseError)):
+                                    await self._drain_and_close(writer)
+                                    return
+                        if not retried_ok:
                             writer.write(b"HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nBad Gateway\r\n")
                             await self._drain_and_close(writer)
                             return

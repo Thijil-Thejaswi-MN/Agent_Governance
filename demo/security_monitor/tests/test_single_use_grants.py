@@ -124,7 +124,7 @@ def test_the_proxy_uses_up_a_single_use_network_grant(world) -> None:
             await server.wait_closed()
 
     resp_a, resp_b = _run_async(run())
-    assert b"200" in first
-    assert b"403" in second
+    assert b"200" in resp_a
+    assert b"403" in resp_b
     used = [r for r in storage.list_expansion_requests(task_id=task.task_id) if r.resource_type == "network"]
     assert used and used[-1].used_count == 1
