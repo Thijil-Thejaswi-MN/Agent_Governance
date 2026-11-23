@@ -123,6 +123,8 @@ def build_receipt(
     extra: dict[str, Any] | None = None,
     org_id: str = "default",
 ) -> dict[str, Any]:
+    if hasattr(storage, "flush"):
+        storage.flush(task.task_id)
     tool_events = [e for e in storage.get_events_for_task(task.task_id) if e.source != EventSource.OS_SENSOR]
     entries = [_broker_entry(e) for e in tool_events] + [_os_entry(r) for r in os_records]
     entries.sort(key=lambda e: (str(e.get("timestamp")), e.get("seq") or 0))

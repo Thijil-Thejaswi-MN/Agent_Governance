@@ -375,6 +375,7 @@ class ExpansionService:
                 detail=f"Baseline: {baseline_tier.value}, Effective: {effective_tier.value}\nJustification: {justification}",
                 source_label="enforced",
             )
+            self.storage.flush(task_id)
 
         # If auto-approved, create new boundary version N+1 immediately
         if is_auto_approved:
