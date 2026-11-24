@@ -675,6 +675,9 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
     } else if (e->has_target) {
         snprintf(target, sizeof(target), "%s", e->target);
         resolve_abs_path(e->pid, e->dfd, e->target, abs_target, sizeof(abs_target));
+        if (target[0] == '\0' && abs_target[0] != '\0') {
+            snprintf(target, sizeof(target), "%s", abs_target);
+        }
         if (e->op == EBPF_OP_OPEN && e->ret >= 0 && abs_target[0] != '\0') {
             update_dirfd_cache(e->pid, (int32_t)e->ret, abs_target);
         }

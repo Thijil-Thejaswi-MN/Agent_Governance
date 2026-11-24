@@ -375,6 +375,8 @@ int BPF_PROG(raw_tp_sys_enter, struct pt_regs *regs, long id) {
   bpf_fast_zero(ev);
   __u64 pid_tgid = bpf_get_current_pid_tgid();
   ev->cgroup_id = cgid;
+  ev->cur_cgroup_id = bpf_get_current_cgroup_id();
+  ev->user_target_ptr = 0;
   ev->is_discovery = is_disc;
   ev->pid = get_current_pid();
   ev->tgid = (__u32)pid_tgid;
@@ -386,6 +388,7 @@ int BPF_PROG(raw_tp_sys_enter, struct pt_regs *regs, long id) {
 
   if (nr == SYS_OPENAT) {
     ev->dfd = (__s32)args[0];
+    ev->user_target_ptr = args[1];
     copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX,
              &ev->target_status);
     ev->flags = args[2];
@@ -393,6 +396,7 @@ int BPF_PROG(raw_tp_sys_enter, struct pt_regs *regs, long id) {
     ev->has_target = 1;
   } else if (nr == SYS_OPENAT2) {
     ev->dfd = (__s32)args[0];
+    ev->user_target_ptr = args[1];
     copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX,
              &ev->target_status);
     __u64 how_flags = 0;
@@ -401,6 +405,7 @@ int BPF_PROG(raw_tp_sys_enter, struct pt_regs *regs, long id) {
     ev->has_target = 1;
   } else if (nr == SYS_OPEN) {
     ev->dfd = AT_FDCWD_VAL;
+    ev->user_target_ptr = args[0];
     copy_str(ev->target, (const char *)args[0], TARGET_PATH_MAX,
              &ev->target_status);
     ev->flags = args[1];
@@ -408,6 +413,7 @@ int BPF_PROG(raw_tp_sys_enter, struct pt_regs *regs, long id) {
     ev->has_target = 1;
   } else if (nr == SYS_EXECVE) {
     ev->dfd = AT_FDCWD_VAL;
+    ev->user_target_ptr = args[0];
     copy_str(ev->target, (const char *)args[0], TARGET_PATH_MAX,
              &ev->target_status);
     ev->has_target = 1;
@@ -429,6 +435,7 @@ int BPF_PROG(raw_tp_sys_enter, struct pt_regs *regs, long id) {
     }
   } else if (nr == SYS_EXECVEAT) {
     ev->dfd = (__s32)args[0];
+    ev->user_target_ptr = args[1];
     copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX,
              &ev->target_status);
     ev->flags = args[4];
@@ -585,17 +592,20 @@ int BPF_PROG(raw_tp_sys_enter, struct pt_regs *regs, long id) {
     }
   } else if (nr == SYS_UNLINKAT) {
     ev->dfd = (__s32)args[0];
+    ev->user_target_ptr = args[1];
     copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX,
              &ev->target_status);
     ev->flags = args[2];
     ev->has_target = 1;
   } else if (nr == SYS_UNLINK) {
     ev->dfd = AT_FDCWD_VAL;
+    ev->user_target_ptr = args[0];
     copy_str(ev->target, (const char *)args[0], TARGET_PATH_MAX,
              &ev->target_status);
     ev->has_target = 1;
   } else if (nr == SYS_RENAMEAT2 || nr == SYS_RENAMEAT) {
     ev->dfd = (__s32)args[0];
+    ev->user_target_ptr = args[1];
     copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX,
              &ev->target_status);
     ev->dfd2 = (__s32)args[2];
@@ -608,6 +618,7 @@ int BPF_PROG(raw_tp_sys_enter, struct pt_regs *regs, long id) {
     ev->has_target2 = 1;
   } else if (nr == SYS_RENAME) {
     ev->dfd = AT_FDCWD_VAL;
+    ev->user_target_ptr = args[0];
     copy_str(ev->target, (const char *)args[0], TARGET_PATH_MAX,
              &ev->target_status);
     ev->dfd2 = AT_FDCWD_VAL;
@@ -617,12 +628,14 @@ int BPF_PROG(raw_tp_sys_enter, struct pt_regs *regs, long id) {
     ev->has_target2 = 1;
   } else if (nr == SYS_MKDIRAT) {
     ev->dfd = (__s32)args[0];
+    ev->user_target_ptr = args[1];
     copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX,
              &ev->target_status);
     ev->flags = args[2];
     ev->has_target = 1;
   } else if (nr == SYS_MKDIR) {
     ev->dfd = AT_FDCWD_VAL;
+    ev->user_target_ptr = args[0];
     copy_str(ev->target, (const char *)args[0], TARGET_PATH_MAX,
              &ev->target_status);
     ev->flags = args[1];
@@ -724,6 +737,11 @@ int BPF_PROG(raw_tp_sched_process_exec, struct task_struct *p, pid_t old_pid, st
         return 0;
     }
 
+    /* Re-read target if enter-time read failed and user pointer is saved */
+    if (pending->has_target && pending->target_status == TARGET_STATUS_UNREADABLE && pending->user_target_ptr != 0) {
+        copy_str(pending->target, (const char *)pending->user_target_ptr, TARGET_PATH_MAX, &pending->target_status);
+    }
+
     struct ebpf_event *out = bpf_ringbuf_reserve(&events_rb, sizeof(*out), 0);
     if (!out) {
         record_drop();
@@ -732,6 +750,7 @@ int BPF_PROG(raw_tp_sched_process_exec, struct task_struct *p, pid_t old_pid, st
     }
 
     bpf_fast_copy(out, pending);
+    out->cur_cgroup_id = bpf_get_current_cgroup_id();
     out->ret = 0;
     bpf_ringbuf_submit(out, 0);
 
@@ -747,13 +766,18 @@ int BPF_PROG(raw_tp_sys_exit, struct pt_regs *regs, long ret) {
     return 0;
   }
 
-    /* Successful exec is emitted from sched_process_exec instead of sys_exit pairing */
-    if (pending->op == EBPF_OP_EXEC) {
-        if (ret >= 0) {
-            bpf_map_delete_elem(&active_syscalls, &pid_tgid);
-            return 0;
-        }
+  /* Re-read target if enter-time read failed and user pointer is saved */
+  if (pending->has_target && pending->target_status == TARGET_STATUS_UNREADABLE && pending->user_target_ptr != 0) {
+    copy_str(pending->target, (const char *)pending->user_target_ptr, TARGET_PATH_MAX, &pending->target_status);
+  }
+
+  /* Successful exec is emitted from sched_process_exec instead of sys_exit pairing */
+  if (pending->op == EBPF_OP_EXEC) {
+    if (ret >= 0) {
+      bpf_map_delete_elem(&active_syscalls, &pid_tgid);
+      return 0;
     }
+  }
 
   /* In-kernel filtering: drop ONLY successful read-only opens under
    * runtime-profile prefixes */
@@ -788,6 +812,7 @@ int BPF_PROG(raw_tp_sys_exit, struct pt_regs *regs, long ret) {
   }
 
   bpf_fast_copy(out, pending);
+  out->cur_cgroup_id = bpf_get_current_cgroup_id();
   out->ret = ret;
   bpf_ringbuf_submit(out, 0);
 

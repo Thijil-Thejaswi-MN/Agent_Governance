@@ -822,11 +822,7 @@ class TaskLauncher:
         if self._frozen.is_set():
             return {"ok": False, "reason": "task_frozen"}
         try:
-            res_cg = cgroup_ctl.place_in_child(cg, call_id, pid)
-            corr = self.live.get("correlator")
-            if corr and hasattr(corr, "register_call_pid"):
-                corr.register_call_pid(pid, call_id)
-            return {"ok": True, "cgroup": res_cg}
+            return {"ok": True, "cgroup": cgroup_ctl.place_in_child(cg, call_id, pid)}
         except (RuntimeError, OSError) as e:
             return {"ok": False, "reason": str(e)[:300]}
 

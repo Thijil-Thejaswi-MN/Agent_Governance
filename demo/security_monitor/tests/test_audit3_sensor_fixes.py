@@ -43,6 +43,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -201,13 +202,13 @@ def test_unresolved_target_freezes_in_enforce(tmp_path):
     )
     correlator.setup_done = True
 
-    # 1. Empty abs_target on open
+    # 1. Empty target on open: verdict OUTSIDE, stored target empty, never invented
     ev_empty = {
         "source": "ebpf_sensor",
         "type": "syscall",
         "pid": 2000,
         "syscall": "openat",
-        "target": "data.txt",
+        "target": "",
         "abs_target": "",
         "result": "ok",
         "cgroup_path": f"/user.slice/agtask-{task_id}.scope",
@@ -216,8 +217,11 @@ def test_unresolved_target_freezes_in_enforce(tmp_path):
     assert res is not None
     assert res["verdict"] == EventVerdict.OUTSIDE.value
     assert res["action_taken"] == TaskAction.PAUSE_TASK.value
+    # Stored target must not be invented (never defaulted to /proc/sys/vm/overcommit_memory)
+    assert not res.get("target")
+    assert res.get("target") != "/proc/sys/vm/overcommit_memory"
 
-    # 2. Unreadable target
+    # 2. Unreadable target: verdict OUTSIDE, stored target never invented
     ev_unreadable = {
         "source": "ebpf_sensor",
         "type": "syscall",
@@ -233,8 +237,27 @@ def test_unresolved_target_freezes_in_enforce(tmp_path):
     assert res2 is not None
     assert res2["verdict"] == EventVerdict.OUTSIDE.value
     assert res2["action_taken"] == TaskAction.PAUSE_TASK.value
+    assert res2.get("target") != "/proc/sys/vm/overcommit_memory"
 
-    # 3. Empty abs_target on execve
+    # 3. Relative target with AT_FDCWD that loader did not resolve: verdict OUTSIDE, never joined to ws
+    ev_rel = {
+        "source": "ebpf_sensor",
+        "type": "syscall",
+        "pid": 2000,
+        "syscall": "openat",
+        "dfd": -100,
+        "target": "relative/data.txt",
+        "abs_target": "",
+        "result": "ok",
+        "cgroup_path": f"/user.slice/agtask-{task_id}.scope",
+    }
+    res_rel = correlator.handle_line(json.dumps(ev_rel), lambda: boundary)
+    assert res_rel is not None
+    assert res_rel["verdict"] == EventVerdict.OUTSIDE.value
+    assert res_rel["action_taken"] == TaskAction.PAUSE_TASK.value
+    assert res_rel.get("target") != os.path.join(str(ws), "relative/data.txt")
+
+    # 4. Empty abs_target on execve
     ev_exec = {
         "source": "ebpf_sensor",
         "type": "syscall",
@@ -250,7 +273,7 @@ def test_unresolved_target_freezes_in_enforce(tmp_path):
     assert res3["verdict"] == EventVerdict.OUTSIDE.value
     assert res3["action_taken"] == TaskAction.PAUSE_TASK.value
 
-    assert len(violations) == 3
+    assert len(violations) == 4
 
 
 def test_fexecve_target_resolution_unit(tmp_path):
@@ -266,6 +289,112 @@ def test_fexecve_target_resolution_unit(tmp_path):
         assert os.path.realpath(resolved) == os.path.realpath(str(bin_path))
     finally:
         os.close(fd)
+
+
+@pytest.mark.ebpf
+@pytest.mark.skipif(
+    not Path("/sys/kernel/btf/vmlinux").exists(),
+    reason="Kernel BTF not present on this machine",
+)
+def test_python_startup_zero_unreadable_events_ebpf(tmp_path):
+    """Python startup produces zero unreadable events under eBPF sensor."""
+    if not es.EBPF_SENSOR_BIN.exists():
+        pytest.skip("ebpf_sensor binary not built")
+
+    cg_path = None
+    try:
+        with open("/proc/self/cgroup") as f:
+            for line in f:
+                if line.startswith("0::"):
+                    cg_path = line[3:].strip()
+    except OSError:
+        pass
+
+    if not cg_path:
+        pytest.skip("Cannot determine current cgroup")
+
+    cgid = es.get_cgroup_id(cg_path)
+    if not cgid:
+        pytest.skip("Cannot determine cgroup inode id")
+
+    test_sock = tmp_path / f"test_py_start_{uuid.uuid4().hex[:6]}.sock"
+    cmd = [str(es.EBPF_SENSOR_BIN), "--socket", str(test_sock)]
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    except OSError as e:
+        pytest.skip(f"Cannot execute ebpf_sensor: {e}")
+
+    try:
+        for _ in range(20):
+            if proc.poll() is not None:
+                _, err = proc.communicate()
+                pytest.skip(f"ebpf_sensor lacks required privileges: {err.strip()}")
+            if test_sock.exists():
+                break
+            time.sleep(0.05)
+
+        if not test_sock.exists():
+            proc.kill()
+            pytest.skip("ebpf_sensor socket did not appear")
+
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(2.0)
+        connected = False
+        for _ in range(30):
+            try:
+                s.connect(str(test_sock))
+                connected = True
+                break
+            except OSError:
+                time.sleep(0.05)
+        if not connected:
+            s.connect(str(test_sock))
+        s.sendall(f"REGISTER {cgid}\n".encode())
+
+        # Run python child process that starts up, imports sys, and prints
+        py_proc = subprocess.run(
+            [sys.executable, "-c", "import sys; print('startup_ok')"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert "startup_ok" in py_proc.stdout
+
+        events_seen = []
+        sock_file = s.makefile("r", encoding="utf-8", errors="replace")
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            r, _, _ = select.select([s], [], [], 0.2)
+            if not r:
+                if events_seen:
+                    break
+                continue
+            line = sock_file.readline()
+            if not line:
+                break
+            try:
+                ev = json.loads(line.strip())
+                if ev.get("type") == "syscall":
+                    events_seen.append(ev)
+            except json.JSONDecodeError:
+                pass
+
+        sock_file.close()
+        s.close()
+
+        assert len(events_seen) > 0, "No syscall events captured during python startup"
+        unreadable_events = [
+            ev for ev in events_seen
+            if ev.get("target_status") == "unreadable" or ev.get("target") == "unreadable"
+        ]
+        assert len(unreadable_events) == 0, f"Found unreadable events during python startup: {unreadable_events}"
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
 
 
 # ---------------------------------------------------------------------------

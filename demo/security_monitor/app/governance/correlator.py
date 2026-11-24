@@ -124,7 +124,6 @@ class OSEventCorrelator:
         self.sensor_pid: int | None = None
         self.root_pid: int | None = None
         self.harness_pids: set[int] = set(harness_pids or ())
-        self.pid_calls: dict[int, str] = {}
         self.unresolved_relative_paths: int = 0
         self.setup_done = False
         self.exit_trailer: dict[str, Any] | None = None
@@ -255,38 +254,6 @@ class OSEventCorrelator:
         tgt = ev.get("abs_target") or ""
         pid = ev.get("pid")
 
-        # Attempt resolving target from /proc/<pid>/fd if empty or unreadable
-        if (ev.get("target_status") == "unreadable" or ev.get("target") == "unreadable" or not tgt):
-            if sc in ("open", "openat", "openat2") and ev.get("result") == "ok":
-                fd = ev.get("ret")
-                if isinstance(fd, int) and fd >= 0 and pid:
-                    try:
-                        resolved = os.readlink(f"/proc/{pid}/fd/{fd}")
-                        if resolved and os.path.isabs(resolved):
-                            tgt = resolved
-                            ev["abs_target"] = resolved
-                            ev["target"] = resolved
-                            ev["target_status"] = "ok"
-                    except OSError:
-                        pass
-                if not tgt and sc == "open" and ev.get("access") == "read" and not ev.get("creat"):
-                    tgt = "/proc/sys/vm/overcommit_memory"
-                    ev["abs_target"] = tgt
-                    ev["target"] = tgt
-                    ev["target_status"] = "ok"
-            elif sc in ("execve", "execveat"):
-                dfd = ev.get("dfd")
-                if isinstance(dfd, int) and dfd >= 0 and pid:
-                    try:
-                        resolved = os.readlink(f"/proc/{pid}/fd/{dfd}")
-                        if resolved and os.path.isabs(resolved):
-                            tgt = resolved
-                            ev["abs_target"] = resolved
-                            ev["target"] = resolved
-                            ev["target_status"] = "ok"
-                    except OSError:
-                        pass
-
         if ev.get("target_status") == "unreadable" or ev.get("target") == "unreadable":
             is_exec = sc in ("execve", "execveat")
             return EventVerdict.OUTSIDE, RiskTier.HIGH, "unreadable target", "process_exec" if is_exec else "file_read", None
@@ -294,10 +261,6 @@ class OSEventCorrelator:
             flags = int(ev.get("flags", 0) or 0)
             access = ev.get("access", "read")
             is_write = access in ("write", "read_write") or bool(ev.get("creat"))
-            dfd = ev.get("dfd", -100)
-            if tgt and not os.path.isabs(tgt) and (dfd == -100 or dfd is None):
-                tgt = os.path.normpath(os.path.join(self.ws, tgt))
-                ev["abs_target"] = tgt
             if not tgt or not os.path.isabs(tgt):
                 self.unresolved_relative_paths += 1
                 return EventVerdict.OUTSIDE, RiskTier.HIGH, "unresolved relative path", "file_write" if is_write else "file_read", None
@@ -387,10 +350,6 @@ class OSEventCorrelator:
                 return "landlock"
         return "none"
 
-    def register_call_pid(self, pid: int, call_id: str) -> None:
-        with self._lock:
-            self.pid_calls[pid] = call_id
-
     # --- main entry ---
     def handle_line(self, line: str, boundary_provider: Callable[[], Any]) -> dict[str, Any] | None:
         line = line.strip()
@@ -429,29 +388,7 @@ class OSEventCorrelator:
         cg_path = ev.get("cgroup_path") or ev.get("cgroup_id") or ""
         cg_status = ev.get("cgroup_status") or "ok"
         attributed, unattr_reason, task_cg = self._attribute_path(cg_path, cg_status)
-        ppid = ev.get("ppid")
-        if ppid and ppid in self.pid_calls and pid and pid not in self.pid_calls:
-            self.pid_calls[pid] = self.pid_calls[ppid]
-        if pid and pid in self.pid_calls and task_cg:
-            tool_call = self.pid_calls[pid]
-            cg_path = f"{task_cg}/{tool_call}"
-        else:
-            tool_call = tool_call_of(cg_path, task_cg)
-            if (not tool_call or tool_call == "task_root") and pid and pid != self.root_pid and pid not in self.harness_pids:
-                try:
-                    with open(f"/proc/{pid}/cgroup", "r", encoding="utf-8", errors="replace") as _cgf:
-                        for _l in _cgf:
-                            if _l.startswith("0::"):
-                                _p = _l[3:].strip()
-                                if _p and task_cg and _p.startswith(task_cg + "/call_"):
-                                    cg_path = _p
-                                    resolved_call = tool_call_of(cg_path, task_cg)
-                                    if resolved_call:
-                                        tool_call = resolved_call
-                                        self.pid_calls[pid] = resolved_call
-                                break
-                except OSError:
-                    pass
+        tool_call = tool_call_of(cg_path, task_cg)
 
         phase = "agent"
         is_harness = (pid is not None and pid in self.harness_pids)

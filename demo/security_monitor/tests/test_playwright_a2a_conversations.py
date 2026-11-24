@@ -1,6 +1,7 @@
 """Playwright end-to-end tests for the A2A 3-panel conversations page."""
 from __future__ import annotations
 
+import datetime
 import http.server
 import json
 import os
@@ -105,7 +106,7 @@ def test_a2a_conversations_page(page: Page, a2a_console_server, tmp_path: Path):
         agent_id="planner",
         workspace_root=str(ws),
         status=TaskLifecycle.ACTIVE,
-        created_at="2026-11-24T10:00:00Z",
+        created_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
         root_task_id=root_task_id,
         depth=0,
         chain=["planner"],
