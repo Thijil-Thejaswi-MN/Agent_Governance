@@ -326,6 +326,20 @@ static const char *lookup_dirfd_cache(uint32_t pid, int32_t fd) {
 
 static void resolve_abs_path(uint32_t pid, int32_t dfd, const char *rel, char *out_buf, size_t out_len) {
     if (!rel || rel[0] == '\0') {
+        if (dfd >= 0) {
+            char link[64];
+            snprintf(link, sizeof(link), "/proc/%u/fd/%d", (unsigned int)pid, (int)dfd);
+            ssize_t n = readlink(link, out_buf, out_len - 1);
+            if (n > 0) {
+                out_buf[n] = '\0';
+                return;
+            }
+            const char *cached = lookup_dirfd_cache(pid, dfd);
+            if (cached) {
+                snprintf(out_buf, out_len, "%s", cached);
+                return;
+            }
+        }
         out_buf[0] = '\0';
         return;
     }
@@ -595,6 +609,22 @@ static void resolve_cgroup_info(uint64_t cgid, pid_t pid, char *path, size_t pat
     snprintf(path, path_sz, "cgroup:%llu", (unsigned long long)cgid);
 }
 
+static int is_cgroup_owned_by_calling_uid(uint64_t cgid) {
+    char cg_path[PATH_MAX];
+    cg_path[0] = '\0';
+    resolve_cgroup_info(cgid, 0, cg_path, sizeof(cg_path), NULL, 0, NULL, 0);
+    if (!cg_path[0] || strncmp(cg_path, "cgroup:", 7) == 0) {
+        return 0;
+    }
+    char full_path[PATH_MAX];
+    snprintf(full_path, sizeof(full_path), "/sys/fs/cgroup%s", cg_path);
+    struct stat st;
+    if (stat(full_path, &st) != 0) {
+        return 0;
+    }
+    return (st.st_uid == getuid());
+}
+
 static void broadcast_line(const char *line, uint64_t cgid) {
     fputs(line, stdout);
     fputc('\n', stdout);
@@ -605,8 +635,18 @@ static void broadcast_line(const char *line, uint64_t cgid) {
         if (g_clients[i].is_active && g_clients[i].fd >= 0) {
             if (cgid == 0 || g_clients[i].watched_cgroup == cgid || (g_discovery_enabled && g_clients[i].watched_cgroup == 0)) {
                 ssize_t w1 = write(g_clients[i].fd, line, line_len);
-                ssize_t w2 = write(g_clients[i].fd, "\n", 1);
-                (void)w1; (void)w2;
+                ssize_t w2 = 0;
+                if (w1 > 0) {
+                    w2 = write(g_clients[i].fd, "\n", 1);
+                }
+                if (w1 < 0 || w2 < 0) {
+                    if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EPIPE || errno == ECONNRESET) {
+                        close(g_clients[i].fd);
+                        g_clients[i].fd = -1;
+                        g_clients[i].is_active = 0;
+                        g_clients[i].watched_cgroup = 0;
+                    }
+                }
             }
         }
     }
@@ -890,6 +930,11 @@ static void process_cmd(char *cmd, int client_idx) {
         if (arg) {
             uint64_t cgid = strtoull(arg + 1, NULL, 0);
             if (cgid > 0) {
+                if (client_idx < 0 && !is_cgroup_owned_by_calling_uid(cgid)) {
+                    fprintf(stderr, "ebpf_sensor: cgroup %llu directory not owned by caller\n",
+                            (unsigned long long)cgid);
+                    return;
+                }
                 register_cgroup(cgid);
                 if (client_idx >= 0 && client_idx < MAX_CLIENTS) {
                     g_clients[client_idx].watched_cgroup = cgid;
@@ -1089,6 +1134,11 @@ int main(int argc, char **argv) {
     }
 
     if (initial_cgid > 0) {
+        if (!is_cgroup_owned_by_calling_uid(initial_cgid)) {
+            fprintf(stderr, "ebpf_sensor: cgroup %llu directory not owned by caller\n",
+                    (unsigned long long)initial_cgid);
+            return 1;
+        }
         register_cgroup(initial_cgid);
     }
 
@@ -1149,6 +1199,16 @@ int main(int argc, char **argv) {
             if (srv_idx >= 0 && (pfds[srv_idx].revents & POLLIN)) {
                 int cfd = accept(server_fd, NULL, NULL);
                 if (cfd >= 0) {
+                    struct ucred cred;
+                    socklen_t cred_len = sizeof(cred);
+                    if (getsockopt(cfd, SOL_SOCKET, SO_PEERCRED, &cred, &cred_len) != 0 || cred.uid != getuid()) {
+                        close(cfd);
+                        continue;
+                    }
+                    int fl = fcntl(cfd, F_GETFL, 0);
+                    if (fl >= 0) {
+                        fcntl(cfd, F_SETFL, fl | O_NONBLOCK);
+                    }
                     int slot = -1;
                     for (int i = 0; i < MAX_CLIENTS; i++) {
                         if (!g_clients[i].is_active) {
@@ -1160,15 +1220,8 @@ int main(int argc, char **argv) {
                         g_clients[slot].fd = cfd;
                         g_clients[slot].is_active = 1;
                         g_clients[slot].watched_cgroup = 0;
-                        struct ucred cred;
-                        socklen_t cred_len = sizeof(cred);
-                        if (getsockopt(cfd, SOL_SOCKET, SO_PEERCRED, &cred, &cred_len) == 0) {
-                            g_clients[slot].uid = cred.uid;
-                            g_clients[slot].pid = cred.pid;
-                        } else {
-                            g_clients[slot].uid = (uid_t)-1;
-                            g_clients[slot].pid = -1;
-                        }
+                        g_clients[slot].uid = cred.uid;
+                        g_clients[slot].pid = cred.pid;
                     } else {
                         close(cfd);
                     }

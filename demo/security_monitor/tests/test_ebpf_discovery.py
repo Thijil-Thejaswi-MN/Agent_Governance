@@ -255,7 +255,16 @@ class TestLiveEBPFDiscovery:
             # Connect client socket to receive events
             s = py_socket.socket(py_socket.AF_UNIX, py_socket.SOCK_STREAM)
             s.settimeout(2.0)
-            s.connect(str(sock_path))
+            connected = False
+            for _ in range(30):
+                try:
+                    s.connect(str(sock_path))
+                    connected = True
+                    break
+                except OSError:
+                    time.sleep(0.05)
+            if not connected:
+                s.connect(str(sock_path))
             sock_file = s.makefile("r", encoding="utf-8", errors="replace")
 
             # Create and run a short-lived process (<1s) named 'aider'
@@ -342,7 +351,16 @@ class TestLiveEBPFDiscovery:
 
             s = py_socket.socket(py_socket.AF_UNIX, py_socket.SOCK_STREAM)
             s.settimeout(2.0)
-            s.connect(str(sock_path))
+            connected = False
+            for _ in range(30):
+                try:
+                    s.connect(str(sock_path))
+                    connected = True
+                    break
+                except OSError:
+                    time.sleep(0.05)
+            if not connected:
+                s.connect(str(sock_path))
             sock_file = s.makefile("r", encoding="utf-8", errors="replace")
 
             # Ensure client is fully registered in sensor before firing UDP packet

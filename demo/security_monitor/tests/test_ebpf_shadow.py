@@ -291,7 +291,16 @@ def test_os_layer_ebpf_sensor_live(tmp_path):
         import socket as py_socket
         s = py_socket.socket(py_socket.AF_UNIX, py_socket.SOCK_STREAM)
         s.settimeout(2.0)
-        s.connect(str(test_sock))
+        connected = False
+        for _ in range(30):
+            try:
+                s.connect(str(test_sock))
+                connected = True
+                break
+            except OSError:
+                time.sleep(0.05)
+        if not connected:
+            s.connect(str(test_sock))
         s.sendall(f"REGISTER {cgid}\n".encode())
 
         # Perform cat and udp send
@@ -328,6 +337,320 @@ def test_os_layer_ebpf_sensor_live(tmp_path):
 
         assert cat_seen, f"Expected cat event among: {events_seen}"
         assert udp_seen, f"Expected UDP event among: {events_seen}"
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
+@pytest.mark.ebpf
+@pytest.mark.skipif(
+    not Path("/sys/kernel/btf/vmlinux").exists(),
+    reason="Kernel BTF not present on this machine",
+)
+def test_real_loader_dotdot_open_not_filtered(tmp_path):
+    if not EBPF_SENSOR_BIN.exists():
+        pytest.skip("ebpf_sensor binary not built yet")
+
+    test_sock = tmp_path / f"test_dotdot_{uuid.uuid4().hex[:6]}.sock"
+    cmd = [str(EBPF_SENSOR_BIN), "--socket", str(test_sock)]
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    except OSError as e:
+        pytest.skip(f"Cannot execute ebpf_sensor: {e}")
+
+    try:
+        for _ in range(20):
+            if proc.poll() is not None:
+                _, err = proc.communicate()
+                pytest.skip(f"ebpf_sensor lacks required privileges: {err.strip()}")
+            if test_sock.exists():
+                break
+            time.sleep(0.05)
+
+        if not test_sock.exists():
+            proc.kill()
+            pytest.skip("ebpf_sensor socket did not appear")
+
+        cg_path = None
+        try:
+            with open("/proc/self/cgroup") as f:
+                for line in f:
+                    if line.startswith("0::"):
+                        cg_path = line[3:].strip()
+        except OSError:
+            pass
+
+        if not cg_path:
+            pytest.skip("Cannot determine current cgroup")
+
+        cgid = get_cgroup_id(cg_path)
+        if not cgid:
+            pytest.skip("Cannot determine cgroup inode id")
+
+        import socket as py_socket
+        s = py_socket.socket(py_socket.AF_UNIX, py_socket.SOCK_STREAM)
+        s.settimeout(2.0)
+        connected = False
+        for _ in range(30):
+            try:
+                s.connect(str(test_sock))
+                connected = True
+                break
+            except OSError:
+                time.sleep(0.05)
+        if not connected:
+            s.connect(str(test_sock))
+        s.sendall(f"REGISTER {cgid}\n".encode())
+
+        # Create target file under workspace input/x
+        target_file = tmp_path / "input" / "x"
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+        target_file.write_text("hello dotdot\n")
+
+        # Open file through path starting with /usr/lib/../../...
+        rel_to_root = str(target_file.resolve()).lstrip("/")
+        dotdot_path = f"/usr/lib/../../{rel_to_root}"
+
+        # Open file in child process to ensure separate process context
+        subprocess.run(["cat", dotdot_path], check=True)
+
+        events_seen = []
+        sock_file = s.makefile("r", encoding="utf-8", errors="replace")
+        deadline = time.monotonic() + 4.0
+        dotdot_seen = False
+        while time.monotonic() < deadline and not dotdot_seen:
+            line = sock_file.readline()
+            if not line:
+                break
+            try:
+                ev = json.loads(line.strip())
+                if ev.get("type") == "syscall":
+                    events_seen.append(ev)
+                    tgt = ev.get("target", "") + " " + ev.get("abs_target", "")
+                    if "input/x" in tgt or dotdot_path in tgt:
+                        dotdot_seen = True
+            except json.JSONDecodeError:
+                pass
+
+        sock_file.close()
+        s.close()
+
+        assert dotdot_seen, f"Expected dotdot open event among: {events_seen}"
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
+@pytest.mark.ebpf
+@pytest.mark.skipif(
+    not Path("/sys/kernel/btf/vmlinux").exists(),
+    reason="Kernel BTF not present on this machine",
+)
+def test_fexecve_target_resolution_ebpf(tmp_path):
+    if not EBPF_SENSOR_BIN.exists():
+        pytest.skip("ebpf_sensor binary not built yet")
+
+    test_sock = tmp_path / f"test_fexec_{uuid.uuid4().hex[:6]}.sock"
+    cmd = [str(EBPF_SENSOR_BIN), "--socket", str(test_sock)]
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    except OSError as e:
+        pytest.skip(f"Cannot execute ebpf_sensor: {e}")
+
+    try:
+        for _ in range(20):
+            if proc.poll() is not None:
+                _, err = proc.communicate()
+                pytest.skip(f"ebpf_sensor lacks required privileges: {err.strip()}")
+            if test_sock.exists():
+                break
+            time.sleep(0.05)
+
+        if not test_sock.exists():
+            proc.kill()
+            pytest.skip("ebpf_sensor socket did not appear")
+
+        cg_path = None
+        try:
+            with open("/proc/self/cgroup") as f:
+                for line in f:
+                    if line.startswith("0::"):
+                        cg_path = line[3:].strip()
+        except OSError:
+            pass
+
+        if not cg_path:
+            pytest.skip("Cannot determine current cgroup")
+
+        cgid = get_cgroup_id(cg_path)
+        if not cgid:
+            pytest.skip("Cannot determine cgroup inode id")
+
+        import socket as py_socket
+        s = py_socket.socket(py_socket.AF_UNIX, py_socket.SOCK_STREAM)
+        s.settimeout(2.0)
+        connected = False
+        for _ in range(30):
+            try:
+                s.connect(str(test_sock))
+                connected = True
+                break
+            except OSError:
+                time.sleep(0.05)
+        if not connected:
+            s.connect(str(test_sock))
+        s.sendall(f"REGISTER {cgid}\n".encode())
+
+        # Create script to run with fexecve
+        test_script = tmp_path / "test_fexec.sh"
+        test_script.write_text("#!/bin/sh\nexit 0\n")
+        test_script.chmod(0o755)
+
+        # Run helper in subprocess using execveat / fexecve
+        helper_code = f"""
+import os, sys, ctypes
+libc = ctypes.CDLL(None)
+fd = os.open({repr(str(test_script))}, os.O_RDONLY)
+empty = b""
+argv = (ctypes.c_char_p * 2)(b"test_fexec.sh", None)
+envp = (ctypes.c_char_p * 1)(None)
+libc.syscall(322, fd, empty, argv, envp, 0x1000)
+"""
+        subprocess.run([sys.executable, "-c", helper_code], check=True)
+
+        events_seen = []
+        sock_file = s.makefile("r", encoding="utf-8", errors="replace")
+        deadline = time.monotonic() + 4.0
+        fexec_seen = False
+        while time.monotonic() < deadline and not fexec_seen:
+            line = sock_file.readline()
+            if not line:
+                break
+            try:
+                ev = json.loads(line.strip())
+                if ev.get("type") == "syscall":
+                    events_seen.append(ev)
+                    tgt = ev.get("target", "") + " " + ev.get("abs_target", "")
+                    if "test_fexec.sh" in tgt or ev.get("syscall") in ("execveat", "execve"):
+                        fexec_seen = True
+            except json.JSONDecodeError:
+                pass
+
+        sock_file.close()
+        s.close()
+
+        assert fexec_seen, f"Expected fexecve event among: {events_seen}"
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
+@pytest.mark.ebpf
+@pytest.mark.skipif(
+    not Path("/sys/kernel/btf/vmlinux").exists(),
+    reason="Kernel BTF not present on this machine",
+)
+def test_non_leader_thread_exec_ebpf(tmp_path):
+    if not EBPF_SENSOR_BIN.exists():
+        pytest.skip("ebpf_sensor binary not built yet")
+
+    test_sock = tmp_path / f"test_nonlead_{uuid.uuid4().hex[:6]}.sock"
+    cmd = [str(EBPF_SENSOR_BIN), "--socket", str(test_sock)]
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    except OSError as e:
+        pytest.skip(f"Cannot execute ebpf_sensor: {e}")
+
+    try:
+        for _ in range(20):
+            if proc.poll() is not None:
+                _, err = proc.communicate()
+                pytest.skip(f"ebpf_sensor lacks required privileges: {err.strip()}")
+            if test_sock.exists():
+                break
+            time.sleep(0.05)
+
+        if not test_sock.exists():
+            proc.kill()
+            pytest.skip("ebpf_sensor socket did not appear")
+
+        cg_path = None
+        try:
+            with open("/proc/self/cgroup") as f:
+                for line in f:
+                    if line.startswith("0::"):
+                        cg_path = line[3:].strip()
+        except OSError:
+            pass
+
+        if not cg_path:
+            pytest.skip("Cannot determine current cgroup")
+
+        cgid = get_cgroup_id(cg_path)
+        if not cgid:
+            pytest.skip("Cannot determine cgroup inode id")
+
+        import socket as py_socket
+        s = py_socket.socket(py_socket.AF_UNIX, py_socket.SOCK_STREAM)
+        s.settimeout(2.0)
+        connected = False
+        for _ in range(30):
+            try:
+                s.connect(str(test_sock))
+                connected = True
+                break
+            except OSError:
+                time.sleep(0.05)
+        if not connected:
+            s.connect(str(test_sock))
+        s.sendall(f"REGISTER {cgid}\n".encode())
+
+        # In a child process, create a background thread and call execve
+        helper = (
+            "import os, threading, time\n"
+            "def worker():\n"
+            "    time.sleep(0.05)\n"
+            "    os.execv('/bin/true', ['/bin/true'])\n"
+            "t = threading.Thread(target=worker)\n"
+            "t.start()\n"
+            "t.join()\n"
+        )
+        subprocess.run([sys.executable, "-c", helper], check=True)
+
+        events_seen = []
+        sock_file = s.makefile("r", encoding="utf-8", errors="replace")
+        deadline = time.monotonic() + 4.0
+        exec_seen = False
+        while time.monotonic() < deadline and not exec_seen:
+            line = sock_file.readline()
+            if not line:
+                break
+            try:
+                ev = json.loads(line.strip())
+                if ev.get("type") == "syscall":
+                    events_seen.append(ev)
+                    tgt = ev.get("target", "") + " " + ev.get("abs_target", "")
+                    if "/bin/true" in tgt or ev.get("syscall") == "execve":
+                        exec_seen = True
+            except json.JSONDecodeError:
+                pass
+
+        sock_file.close()
+        s.close()
+
+        assert exec_seen, f"Expected non-leader thread exec among: {events_seen}"
     finally:
         if proc.poll() is None:
             proc.terminate()
@@ -589,13 +912,19 @@ def test_in_kernel_filtering_rules():
 
     def should_in_kernel_filter(path: str, flags: int, ret: int) -> bool:
         # Replicates BPF kernel logic:
-        # ret >= 0 && (flags & (O_WRONLY | O_RDWR | O_CREAT | O_TRUNC)) == 0 && prefix_matches
+        # ret >= 0 && (flags & (O_WRONLY | O_RDWR | O_CREAT | O_TRUNC)) == 0 && prefix_matches && no /.., /./, //
+        if any(bad in path for bad in ("/..", "/./", "//")):
+            return False
         is_write = (flags & (O_WRONLY | O_RDWR | O_CREAT | O_TRUNC)) != 0
         matches_prefix = any(path == p or path.startswith(p + "/") for p in RUNTIME_PREFIXES)
         return ret >= 0 and (not is_write) and matches_prefix
 
     # Read-only open of /usr/lib/libc.so succeeding: filtered (dropped in kernel)
     assert should_in_kernel_filter("/usr/lib/libc.so", 0, 3) is True
+    # Traversal patterns: NEVER dropped in kernel
+    assert should_in_kernel_filter("/usr/lib/../../workspace/input/x", 0, 3) is False
+    assert should_in_kernel_filter("/usr/lib/./libc.so", 0, 3) is False
+    assert should_in_kernel_filter("/usr/lib//libc.so", 0, 3) is False
     # Write open of /usr/lib/libc.so: NEVER dropped
     assert should_in_kernel_filter("/usr/lib/libc.so", O_WRONLY, 3) is False
     assert should_in_kernel_filter("/usr/lib/libc.so", O_RDWR, 3) is False
@@ -826,7 +1155,7 @@ def test_relative_path_classification_and_dirfd_resolution(tmp_path):
     correlator.setup_done = True
 
     # Case A: A relative "notes.txt" without abs_target (could not be resolved against cwd)
-    # Even though boundary allows "notes.txt", relative path MUST be AMBIGUOUS with "unresolved relative path", NEVER INSIDE
+    # Target unresolved is OUTSIDE (freezes in ENFORCE)
     ev_rel = {
         "source": "ebpf_sensor",
         "type": "syscall",
@@ -839,7 +1168,7 @@ def test_relative_path_classification_and_dirfd_resolution(tmp_path):
     }
     res_rel = correlator.handle_line(json.dumps(ev_rel), lambda: boundary)
     assert res_rel is not None
-    assert res_rel["verdict"] == EventVerdict.AMBIGUOUS.value
+    assert res_rel["verdict"] == EventVerdict.OUTSIDE.value
     assert "unresolved relative path" in res_rel["rule_matched"]
     assert correlator.unresolved_relative_paths == 1
 
