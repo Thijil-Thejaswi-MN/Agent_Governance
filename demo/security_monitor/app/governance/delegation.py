@@ -500,17 +500,46 @@ class DelegationManager:
         return min(profile_timeout, parent_remaining)
 
     def _extract_forwarded_from(self, child_task_id: str) -> list[str]:
-        """Collects outside hosts or files read by child task from broker and sensor events."""
+        """Collects outside hosts or files read by child task from broker events only."""
         forwarded: set[str] = set()
         events = self.storage.get_events_for_task(child_task_id)
+        child_task = self.storage.get_task(child_task_id)
+        ws_root = Path(child_task.workspace_root).resolve() if child_task and child_task.workspace_root else None
+
         for ev in events:
-            if ev.verdict == EventVerdict.INSIDE and not ev.prevented:
-                if ev.kind in ("file_read", "read_file"):
-                    forwarded.add(ev.target)
-                elif ev.kind in ("network_http", "network"):
-                    host = urllib.parse.urlsplit(ev.target).netloc or ev.target
-                    forwarded.add(f"host:{host}")
-        return sorted(forwarded)
+            # Only the child's own tool calls from the broker, never sensor events
+            source_val = ev.source.value if hasattr(ev.source, "value") else str(ev.source)
+            if source_val not in (EventSource.TOOL_BROKER.value, "tool_broker"):
+                continue
+            if ev.verdict != EventVerdict.INSIDE or ev.prevented:
+                continue
+
+            if ev.kind in ("read_file", "file_read"):
+                tgt = str(ev.target).strip()
+                # Exclude runtime, proc, dev, interpreter, library paths
+                if any(tgt.startswith(p) for p in ("/proc", "/dev", "/usr", "/bin", "/lib", "/etc", "/var", "/tmp/pytest")):
+                    continue
+                if ws_root:
+                    try:
+                        p = Path(tgt)
+                        if not p.is_absolute():
+                            p = (ws_root / p).resolve()
+                        else:
+                            p = p.resolve()
+                        # Must be inside the child workspace
+                        rel = p.relative_to(ws_root).as_posix()
+                        forwarded.add(rel)
+                    except ValueError:
+                        # Outside child workspace
+                        continue
+                else:
+                    if not tgt.startswith("/"):
+                        forwarded.add(tgt)
+            elif ev.kind in ("network_http", "network"):
+                host = urllib.parse.urlsplit(ev.target).netloc or ev.target
+                forwarded.add(f"host:{host}")
+
+        return sorted(forwarded)[:10]
 
     def _has_read_private_files(self, task_id: str, boundary: TaskBoundary) -> bool:
         """Determines if the task read any file matching sensitive patterns, private_files, or a canary."""

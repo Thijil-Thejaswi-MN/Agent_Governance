@@ -33,6 +33,8 @@ export interface TaskRecord {
   benchmark_label?: string | null;
   sensor_kind?: 'ebpf' | 'ptrace' | string | null;
   sensor_reason?: string | null;
+  has_children?: boolean;
+  a2a_messages_count?: number;
 }
 
 export interface TaskBoundary {
@@ -556,3 +558,66 @@ export interface DiscoveryScan {
     [key: string]: any;
   };
 }
+
+export interface A2AAgent {
+  id: string;
+  name: string;
+  colour_index: number;
+}
+
+export interface A2AThread {
+  thread_id: string;
+  title: string;
+  participants: string[];
+  message_count: number;
+  status: string;
+}
+
+export interface A2AMessage {
+  message_id: string;
+  root_task_id: string;
+  parent_task_id: string;
+  child_task_id: string | null;
+  from_agent: string;
+  to_agent: string;
+  kind: 'request' | 'reply' | string;
+  fanout_group: string | null;
+  reply_to: string | null;
+  sent_at: string;
+  text: string;
+  verdict: 'delivered' | 'refused' | string;
+  reason: string | null;
+  integrity: string;
+  forwarded_from: string[];
+  contains_private: boolean;
+}
+
+export interface A2APendingApproval {
+  request_id: string;
+  task_id: string;
+  agent_id?: string;
+  resource_type: string;
+  resource_target: string;
+  justification: string;
+  requested_at?: string;
+  status: string;
+}
+
+export interface A2AJobResponse {
+  root_task_id: string;
+  status: string;
+  task?: {
+    task_id: string;
+    request_text: string;
+    agent_id: string;
+    owner?: string | null;
+    team?: string | null;
+    status: string;
+    created_at: string;
+  };
+  agents: A2AAgent[];
+  threads: A2AThread[];
+  messages: A2AMessage[];
+  pending_approvals: A2APendingApproval[];
+}
+

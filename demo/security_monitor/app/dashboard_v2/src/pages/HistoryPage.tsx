@@ -122,6 +122,17 @@ export const HistoryPage: React.FC = () => {
                       </span>
                     </div>
                   </Link>
+                  {(t.has_children || (t.a2a_messages_count || 0) > 0) && (
+                    <div className="px-4 pb-2 -mt-1">
+                      <Link
+                        to={`/conversations/${t.task_id}`}
+                        id={`conversations-link-${t.task_id}`}
+                        className="inline-flex items-center min-h-[32px] text-[12px] font-medium text-accent hover:underline no-underline"
+                      >
+                        Open agent conversations
+                      </Link>
+                    </div>
+                  )}
                 </li>
               );
             })}

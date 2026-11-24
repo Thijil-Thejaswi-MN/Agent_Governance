@@ -29,6 +29,7 @@ import {
   RecordsSummary,
   DiscoveredAgent,
   DiscoveryScan,
+  A2AJobResponse,
 } from '../types';
 import type { RuleDraft } from '../logic/rules';
 import type { ApprovalScope, ExpansionPreview } from '../logic/approval';
@@ -339,4 +340,9 @@ export const api = {
       body: JSON.stringify(payload || {}),
     }),
 
+  // Agent-to-Agent (A2A) Jobs
+  getA2AJob: (rootTaskId: string) =>
+    request<A2AJobResponse>(`${API_BASE}/a2a/jobs/${encodeURIComponent(rootTaskId)}`),
+  getA2AJobStreamUrl: (rootTaskId: string) =>
+    `${API_BASE}/a2a/jobs/${encodeURIComponent(rootTaskId)}/stream`,
 };

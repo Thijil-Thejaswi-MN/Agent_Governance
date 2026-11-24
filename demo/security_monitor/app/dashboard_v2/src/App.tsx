@@ -32,6 +32,7 @@ const StandingRulesPage = React.lazy(() =>
 const IncidentsPage = React.lazy(() => import('./pages/IncidentsPage').then(m => ({ default: m.IncidentsPage })));
 const InventoryPage = React.lazy(() => import('./pages/InventoryPage').then(m => ({ default: m.InventoryPage })));
 const ReportPage = React.lazy(() => import('./pages/ReportPage').then(m => ({ default: m.ReportPage })));
+const ConversationsPage = React.lazy(() => import('./pages/ConversationsPage').then(m => ({ default: m.ConversationsPage })));
 const SignInPage = React.lazy(() =>
   import('./pages/SignInPage').then(m => ({ default: m.SignInPage }))
 );
@@ -96,6 +97,7 @@ export const App: React.FC = () => {
             <Route path="results" element={page(<ResultsPage />)} />
             <Route path="evidence" element={page(<EvidencePage />)} />
             <Route path="report/:taskId" element={page(<ReportPage />)} />
+            <Route path="conversations/:rootTaskId" element={page(<ConversationsPage />)} />
             <Route path="incidents" element={page(<IncidentsPage />)} />
             <Route path="inventory" element={page(<InventoryPage />)} />
 
