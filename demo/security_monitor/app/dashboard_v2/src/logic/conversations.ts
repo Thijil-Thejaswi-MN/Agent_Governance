@@ -276,6 +276,9 @@ export function formatArrowLabel(m: A2AMessage): string {
   if (m.verdict === 'refused') {
     return 'refused';
   }
+  if (m.verdict === 'failed') {
+    return 'failed';
+  }
   const isForwarded =
     Array.isArray(m.forwarded_from) && m.forwarded_from.length > 0;
   if (m.kind === 'reply') {

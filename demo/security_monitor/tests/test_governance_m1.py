@@ -197,6 +197,8 @@ def test_broker_file_prevention(test_storage: GovernanceStorage, test_workspace:
 def test_broker_network_prevention(test_storage: GovernanceStorage, test_workspace: Path) -> None:
     intake = TaskIntakeService(test_storage)
     task, boundary = intake.submit_task("Analyse report.pdf", "agent_alice", str(test_workspace))
+    boundary.tools.append("http_get")
+    test_storage.save_boundary(boundary)
     token = "gov_tok_test_789"
     test_storage.save_token(token, task.task_id, task.agent_id)
 
@@ -217,6 +219,8 @@ def test_broker_network_prevention(test_storage: GovernanceStorage, test_workspa
 def test_broker_command_restriction(test_storage: GovernanceStorage, test_workspace: Path) -> None:
     intake = TaskIntakeService(test_storage)
     task, boundary = intake.submit_task("Analyse report.pdf", "agent_alice", str(test_workspace))
+    boundary.tools.append("http_get")
+    test_storage.save_boundary(boundary)
     token = "gov_tok_cmd_001"
     test_storage.save_token(token, task.task_id, task.agent_id)
 

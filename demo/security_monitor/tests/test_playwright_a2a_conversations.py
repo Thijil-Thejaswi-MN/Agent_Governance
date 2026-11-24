@@ -116,7 +116,7 @@ def test_a2a_conversations_page(page: Page, a2a_console_server, tmp_path: Path):
 
     planner_boundary = TaskBoundary(
         task_id=root_task_id,
-        tools=["read_file", "call_agent", "call_agents", "http_post"],
+        tools=["read_file", "call_agent", "call_agents", "http_post", "http_get"],
         files_read=["input/*", "input/passport_scan.pdf"],
         files_write=["output/*"],
         network=["127.0.0.1:*", "localhost:*"],

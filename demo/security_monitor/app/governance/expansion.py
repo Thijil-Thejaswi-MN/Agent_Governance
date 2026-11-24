@@ -244,6 +244,8 @@ class ExpansionService:
             raise ValueError("resource_target cannot be empty in expansion request")
         if not resource_type or not str(resource_type).strip():
             raise ValueError("resource_type cannot be empty in expansion request")
+        if str(resource_type).strip().lower() == "flow":
+            raise ValueError("resource_type 'flow' cannot be requested directly by agents")
 
         target_raw = resource_target.strip().replace("\\", "/")
         target_norm = target_raw.lower()
@@ -323,6 +325,8 @@ class ExpansionService:
             raise ValueError("resource_target cannot be empty in expansion request")
         if not resource_type or not str(resource_type).strip():
             raise ValueError("resource_type cannot be empty in expansion request")
+        if str(resource_type).strip().lower() == "flow":
+            raise ValueError("resource_type 'flow' cannot be requested directly by agents")
         if any(c in resource_target for c in ("*", "?", "[", "]")):
             raise ValueError(
                 f"Wildcards are strictly prohibited in expansion requests. "
@@ -544,6 +548,8 @@ class ExpansionService:
             new_boundary.files_write.append(target)
         elif req.resource_type == "network" and target not in new_boundary.network:
             new_boundary.network.append(target)
+            if "http_get" not in new_boundary.tools:
+                new_boundary.tools.append("http_get")
         elif req.resource_type == "peer_agent" and target not in new_boundary.peer_agents:
             new_boundary.peer_agents.append(target)
 

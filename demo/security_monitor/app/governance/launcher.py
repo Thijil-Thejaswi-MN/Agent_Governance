@@ -47,7 +47,7 @@ from .derivation_grounded import GroundedLLMDerivation, ollama_client
 from .correlator import OSEventCorrelator
 from .expansion import ExpansionService
 from .intake import TaskIntakeService
-from .models import EnforcementMode, ExpansionStatus, TaskLifecycle
+from .models import EnforcementMode, ExpansionStatus, TaskLifecycle, TaskRecord, TaskBoundary
 from .os_layer import cgroup_ctl
 from .os_layer.sandbox_spec import (
     BROKER_SOCKET_NAME,
@@ -137,6 +137,8 @@ class TaskSpec:
     depth: int = 0
     chain: list[str] = field(default_factory=list)
     peer_agents: list[str] | None = None
+    private_files: list[dict[str, Any]] | None = None
+    sensitive_patterns: list[str] | None = None
 
     @classmethod
     def from_file(cls, path: str | Path) -> "TaskSpec":
@@ -1039,46 +1041,89 @@ class TaskLauncher:
             )
         elif spec.derivation != "template":
             raise ValueError(f"unknown derivation '{spec.derivation}' (template | llm)")
-        intake = TaskIntakeService(self.storage, derivation=derivation)
-        task, boundary = intake.submit_task(
-            request_text=spec.prompt,
-            agent_id=spec.agent_id,
-            workspace_root=str(ws),
-            enforcement_mode=mode,
-            output_targets=spec.output_targets or None,
-            files_read=spec.files_read,
-            task_id=spec.task_id,
-            owner=spec.owner,
-            team=spec.team,
-        )
-        if spec.files_read is not None:
-            boundary.files_read = list(spec.files_read)
+        if spec.parent_task_id is not None:
+            # For delegated children, build the boundary from narrowed directly.
+            # Do not derive tools, hosts or write paths from the message text.
+            now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            req_hash = hashlib.sha256(spec.prompt.encode("utf-8")).hexdigest()
+            w_root = str(ws.resolve())
+            task = TaskRecord(
+                task_id=spec.task_id or f"task_{uuid.uuid4().hex[:12]}",
+                request_text=spec.prompt,
+                request_hash=req_hash,
+                agent_id=spec.agent_id,
+                workspace_root=w_root,
+                status=TaskLifecycle.PENDING,
+                created_at=now_utc,
+                current_boundary_version=1,
+                owner=spec.owner,
+                team=spec.team,
+                parent_task_id=spec.parent_task_id,
+                root_task_id=spec.root_task_id,
+                depth=spec.depth,
+                chain=list(spec.chain or [spec.agent_id]),
+            )
+            self.storage.save_task(task)
+            boundary = TaskBoundary(
+                boundary_id=f"bnd_{task.task_id}_v1",
+                task_id=task.task_id,
+                version=1,
+                created_at=now_utc,
+                enforcement_mode=mode,
+                workspace_root=w_root,
+                files_read=list(spec.files_read or []),
+                files_write=list(spec.output_targets or []),
+                network=list(spec.network or []),
+                peer_agents=list(spec.peer_agents or []),
+                tools=list(spec.declared_tools or []),
+                derived_by="delegation_narrowed",
+            )
             self.storage.save_boundary(boundary)
-        if spec.reviewed_boundary is not None:
-            rv = spec.reviewed_boundary
-            boundary.files_read = list(rv["files_read"])
-            if rv.get("files_write"):
-                boundary.files_write = sorted(set(rv["files_write"]) | set(spec.output_targets or []))
-            boundary.network = list(rv.get("network") or [])
-            boundary.peer_agents = list(rv.get("peer_agents") or [])
-            boundary.metadata.update(rv.get("metadata") or {})
-            fallback = bool((rv.get("metadata") or {}).get("fallback_used"))
-            boundary.derived_by = "grounded_llm_fallback_template_v1_1" if fallback else "grounded_llm_v1_reviewed"
-            self.storage.save_boundary(boundary)
-        if spec.network:
-            boundary.network = sorted(set(boundary.network) | set(spec.network))
-            self.storage.save_boundary(boundary)
-        if spec.tools_schema:
-            boundary.tools = sorted(t["function"]["name"] for t in spec.tools_schema)
-            boundary.metadata["tools_declared_by_requester"] = list(boundary.tools)
-            self.storage.save_boundary(boundary)
-        elif spec.declared_tools:
-            boundary.tools = sorted(set(boundary.tools) | set(spec.declared_tools))
-            boundary.metadata["tools_declared_by_requester"] = sorted(spec.declared_tools)
-            self.storage.save_boundary(boundary)
+        else:
+            intake = TaskIntakeService(self.storage, derivation=derivation)
+            task, boundary = intake.submit_task(
+                request_text=spec.prompt,
+                agent_id=spec.agent_id,
+                workspace_root=str(ws),
+                enforcement_mode=mode,
+                output_targets=spec.output_targets or None,
+                files_read=spec.files_read,
+                task_id=spec.task_id,
+                owner=spec.owner,
+                team=spec.team,
+            )
+            if spec.files_read is not None:
+                boundary.files_read = list(spec.files_read)
+                self.storage.save_boundary(boundary)
+            if spec.reviewed_boundary is not None:
+                rv = spec.reviewed_boundary
+                boundary.files_read = list(rv["files_read"])
+                if rv.get("files_write"):
+                    boundary.files_write = sorted(set(rv["files_write"]) | set(spec.output_targets or []))
+                boundary.network = list(rv.get("network") or [])
+                boundary.peer_agents = list(rv.get("peer_agents") or [])
+                boundary.metadata.update(rv.get("metadata") or {})
+                fallback = bool((rv.get("metadata") or {}).get("fallback_used"))
+                boundary.derived_by = "grounded_llm_fallback_template_v1_1" if fallback else "grounded_llm_v1_reviewed"
+                self.storage.save_boundary(boundary)
+            if spec.network:
+                boundary.network = sorted(set(boundary.network) | set(spec.network))
+                self.storage.save_boundary(boundary)
+            if spec.tools_schema:
+                boundary.tools = sorted(t["function"]["name"] for t in spec.tools_schema)
+                boundary.metadata["tools_declared_by_requester"] = list(boundary.tools)
+                self.storage.save_boundary(boundary)
+            elif spec.declared_tools:
+                boundary.tools = sorted(set(boundary.tools) | set(spec.declared_tools))
+                boundary.metadata["tools_declared_by_requester"] = sorted(spec.declared_tools)
+                self.storage.save_boundary(boundary)
+
         if spec.canary:
             # Kept so the console can check outputs for the private files' unique code.
             boundary.metadata["canary"] = spec.canary
+        if spec.private_files is not None:
+            boundary.metadata["private_files"] = spec.private_files
+        elif spec.canary:
             # The private files planted for this run, as planted (the console can show them).
             boundary.metadata["private_files"] = [
                 {
@@ -1088,7 +1133,9 @@ class TaskLauncher:
                 for d in spec.decoys
                 if d.get("path")
             ]
-            self.storage.save_boundary(boundary)
+        if spec.sensitive_patterns is not None:
+            boundary.metadata["sensitive_patterns"] = spec.sensitive_patterns
+
         if spec.agent_tools is not None:
             # Checked by the broker before the task boundary: a tool outside the agent's limit is
             # refused whatever the request allows.
@@ -1114,13 +1161,28 @@ class TaskLauncher:
         task.model = "scripted" if llm.get("provider") in ("scripted", "scripted_mock") else (llm.get("model") or llm.get("provider"))
         task.timeout_s = float(spec.timeout_s)
         self.storage.save_task(task)
+
+        # After building child boundary, check that it is a subset of the child token's scope
+        if spec.parent_task_id is not None:
+            token_text = self.storage.get_delegation_token_by_task_id(task.task_id)
+            if token_text:
+                from .delegation_token import decode_delegation_token, is_scope_subset, normalize_scope
+                _, payload, _ = decode_delegation_token(token_text)
+                tok_scope = normalize_scope(payload.get("scope") or {})
+                bnd_scope = normalize_scope(boundary)
+                if not is_scope_subset(bnd_scope, tok_scope):
+                    raise PermissionError("Child boundary is not a subset of child token scope")
+
         return task, boundary
 
     # --- main ---
     def run(self, spec: TaskSpec) -> LaunchResult:
         t0 = time.monotonic()
         self.freeze_events, self.termination, self.live = [], {}, {}
-        self._frozen = threading.Event()
+        if not getattr(self, "_frozen", None):
+            self._frozen = threading.Event()
+        elif not self._frozen.is_set():
+            self._frozen = threading.Event()
         problems = self.check_prerequisites()
         if problems:
             raise RuntimeError("launcher prerequisites failed (fail closed): " + "; ".join(problems))
@@ -1621,6 +1683,19 @@ class TaskLauncher:
                 if self.cancel_event.is_set():
                     self._kill("operator_stop")
                     raise RuntimeError("cancelled_by_operator_before_agent_start")
+                if self._frozen.is_set():
+                    self._kill("frozen_before_agent_start")
+                    raise PermissionError("Task is frozen before agent start")
+                # Re-check is_task_frozen for every task in the chain
+                curr_task = task if task else self.storage.get_task(task_id)
+                anc_id = curr_task.parent_task_id if curr_task else spec.parent_task_id
+                while anc_id:
+                    if hasattr(self.storage, "is_task_frozen") and self.storage.is_task_frozen(anc_id):
+                        self._freeze_now(f"ancestor_frozen:{anc_id}")
+                        self._kill("ancestor_task_frozen")
+                        raise PermissionError(f"Task execution refused: task in chain '{anc_id}' is frozen")
+                    anc_task = self.storage.get_task(anc_id)
+                    anc_id = getattr(anc_task, "parent_task_id", None) if anc_task else None
                 # Release the gate: the agent chain may now exec.
                 os.write(gate_w, b"1")
                 os.close(gate_w)

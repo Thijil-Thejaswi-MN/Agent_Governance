@@ -130,8 +130,10 @@ export const WholeJobTimeline: React.FC<WholeJobTimelineProps> = ({
           {messages.map((m) => {
             const selected = isMessageSelected(m);
             const isRefused = m.verdict === 'refused';
+            const isFailed = m.verdict === 'failed';
+            const isStopped = isRefused || isFailed;
             const label = formatArrowLabel(m);
-            const layout = getArrowLayout(columns, m.from_agent, m.to_agent, isRefused);
+            const layout = getArrowLayout(columns, m.from_agent, m.to_agent, isStopped);
 
             const fanoutGroup = m.fanout_group;
             const showFanoutTag =
@@ -205,7 +207,7 @@ export const WholeJobTimeline: React.FC<WholeJobTimelineProps> = ({
                         {/* Dot at tail (sender) */}
                         <div
                           className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                            isRefused ? 'bg-bad' : 'bg-accent'
+                            isStopped ? 'bg-bad' : 'bg-accent'
                           }`}
                         />
 
@@ -213,14 +215,14 @@ export const WholeJobTimeline: React.FC<WholeJobTimelineProps> = ({
                         <div className="flex-1 relative flex items-center justify-center mx-1">
                           <div
                             className={`w-full h-0.5 ${
-                              isRefused
+                              isStopped
                                 ? 'border-b-2 border-dashed border-bad'
                                 : 'bg-accent'
                             }`}
                           />
                           <span
                             className={`absolute -top-3.5 px-1.5 py-0.2 rounded text-[10px] font-mono tracking-tight whitespace-nowrap bg-surface-1 border ${
-                              isRefused
+                              isStopped
                                 ? 'border-bad/40 text-bad font-semibold'
                                 : 'border-line text-fg-3'
                             }`}
@@ -230,11 +232,11 @@ export const WholeJobTimeline: React.FC<WholeJobTimelineProps> = ({
                         </div>
 
                         {/* Head at receiver: arrowhead or ✕ if refused */}
-                        {isRefused ? (
+                        {isStopped ? (
                           <div
-                            data-testid="refused-x"
+                            data-testid={isFailed ? 'failed-x' : 'refused-x'}
                             className="w-4 h-4 rounded-full bg-bad text-surface-1 font-bold text-[11px] flex items-center justify-center shrink-0"
-                            title="Refused by boundary"
+                            title={isFailed ? 'Failed to start' : 'Refused by boundary'}
                           >
                             ✕
                           </div>

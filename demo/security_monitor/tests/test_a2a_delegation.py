@@ -538,7 +538,7 @@ def test_trip_planner_preset(tmp_path: Path, fixture_server):
 
     planner_boundary = TaskBoundary(
         task_id=root_task_id,
-        tools=["read_file", "call_agent", "call_agents", "http_post"],
+        tools=["read_file", "call_agent", "call_agents", "http_post", "http_get"],
         files_read=["input/*", "input/passport_scan.pdf"],
         files_write=["output/*"],
         network=["127.0.0.1:*", "localhost:*"],
@@ -937,7 +937,7 @@ def test_trip_planner_approval_flow_via_api(tmp_path: Path, fixture_server, monk
 
     planner_boundary = TaskBoundary(
         task_id=root_task_id,
-        tools=["read_file", "call_agent"],
+        tools=["read_file", "call_agent", "http_get"],
         files_read=["input/*"],
         files_write=["output/*"],
         network=["127.0.0.1:*", "localhost:*"],
@@ -1023,7 +1023,7 @@ def test_trip_planner_denial_flow_via_api(tmp_path: Path, fixture_server, monkey
 
     planner_boundary = TaskBoundary(
         task_id=root_task_id,
-        tools=["read_file", "call_agent"],
+        tools=["read_file", "call_agent", "http_get"],
         files_read=["input/*"],
         files_write=["output/*"],
         network=["127.0.0.1:*", "localhost:*"],

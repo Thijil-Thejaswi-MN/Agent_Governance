@@ -9,7 +9,8 @@
       "write_file",
       "call_agent",
       "call_agents",
-      "http_post"
+      "http_post",
+      "http_get"
     ],
     "files_read": [
       "input/*",
