@@ -427,7 +427,7 @@ export const RecordsPage: React.FC = () => {
                 <StatusPill tone="wait" label={`Signature unavailable: ${selectedReceipt?.signature_reason || selectedReceipt?.verification_message?.replace(/^signing unavailable:\s*/, '') || 'unavailable'}`} />
               ) : selectedReceipt?.verified === false ? (
                 <StatusPill tone="bad" label="Verification failed: entry changed or hash mismatch" />
-              ) : selectedReceipt?.verified_scope === 'signature_verified' || selectedReceipt?.verified_scope?.startsWith('sign') ? (
+              ) : selectedReceipt?.verified_scope === 'signed' ? (
                 <StatusPill tone="ok" label={`Record checked: signature verified (key ${selectedReceipt?.key_id || selectedReceipt?.receipt?.signature?.key_id || 'active'})`} />
               ) : selectedReceipt?.verified_scope === 'events_only' ? (
                 <StatusPill tone="info" label="events only" />

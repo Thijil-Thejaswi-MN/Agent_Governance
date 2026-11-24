@@ -115,6 +115,7 @@ export interface ExpansionItem {
 export interface TaskReceipt {
   task_id: string;
   version?: string;
+  dropped_writes?: number;
   events?: TaskEvent[];
   hash_chain?: {
     count: number;
@@ -132,7 +133,9 @@ export interface ReceiptResponse {
   receipt: TaskReceipt | null;
   verified: boolean;
   /** signed (v2), whole_record (v1), events_only (older v0), signing_unavailable, or unsigned_after_signing_enabled. */
-  verified_scope?: 'signed' | 'whole_record' | 'events_only' | 'signing_unavailable' | 'unsigned_after_signing_enabled' | null;
+  verified_scope?: 'signed' | 'whole_record' | 'events_only' | 'signing_unavailable' | 'unsigned_after_signing_enabled' | 'task_id_mismatch' | null;
+  /** Rows this task lost in the database writer; above 0 the record is incomplete. */
+  dropped_writes?: number;
   verification_message: string;
   signature_reason?: string;
   receipt_file?: string | null;

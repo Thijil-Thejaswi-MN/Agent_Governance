@@ -1299,6 +1299,9 @@ async def list_discovered_agents(
         host=host,
         include_retired=include_retired,
     )
+    if not is_admin_or_reviewer:
+        # Host processes are for admins and security reviewers only, whatever filter was asked for.
+        agents = [a for a in agents if getattr(a, "kind", None) != "process"]
     return [a.model_dump() for a in agents]
 
 

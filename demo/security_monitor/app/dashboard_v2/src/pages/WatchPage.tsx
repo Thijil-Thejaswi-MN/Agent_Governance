@@ -518,7 +518,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
                       ? `Does not verify: ${run.receipt.verification_message || 'mismatch'}`
                       : run.receipt.verified_scope === 'events_only'
                         ? 'Verified: event chain only (older record, SHA-256, without signature)'
-                        : run.receipt.verified_scope === 'signature_verified' || run.receipt.verified_scope?.startsWith('sign')
+                        : run.receipt.verified_scope === 'signed'
                           ? `Verified: events chained, whole record hashed, signature verified (key ${run.receipt.key_id || 'active'})`
                           : 'Verified: events chained and whole record hashed (SHA-256)'
                   } id="receipt-verification" />
@@ -538,7 +538,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
                   </>
                 )}
                 <p className="m-0 text-[13px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
-                  Records include an Ed25519 signature verified against organisation public keys. Check a
+                  A record with a signature is checked against the organisation&apos;s public keys. Check a
                   download with <code className="mono">scripts/verify_receipt.py</code>.
                 </p>
               </>

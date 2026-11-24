@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { describe, expect, it } from 'vitest';
 import {
   FIRST_SCREEN_JARGON,
@@ -237,39 +238,45 @@ describe('background reads', () => {
 });
 
 describe('NEVER_SAY banned words scan', () => {
-  it('every .tsx file has no banned words in string literals or JSX text', async () => {
-    const fs = await import('node:fs');
-    const path = await import('node:path');
-    const srcDir = path.resolve(__dirname, '..');
+  // Every page and component's source, read by Vite at test time (no Node APIs, so the build type-checks).
+  const sources = import.meta.glob(['../**/*.tsx', '!../**/*.test.tsx'], {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  }) as Record<string, string>;
 
-    function getTsxFiles(dir: string): string[] {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-      const files: string[] = [];
-      for (const entry of entries) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          if (entry.name !== 'node_modules' && entry.name !== 'dist') {
-            files.push(...getTsxFiles(full));
-          }
-        } else if (entry.name.endsWith('.tsx') && !entry.name.endsWith('.test.tsx')) {
-          files.push(full);
-        }
-      }
-      return files;
-    }
+  // UI copy only: string literals that read as text (they contain a space) and JSX text between tags.
+  // Single-token literals are code values ('signed' as a record scope, 'first' as a key), not copy.
+  const copyIn = (src: string): string[] => {
+    const literals = (src.match(/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g) || [])
+      .filter(m => /\s/.test(m.slice(1, -1)));
+    const jsxText = (src.match(/>([^<>{}]*[A-Za-z][^<>{}]*)</g) || []).map(m => m.slice(1, -1));
+    return [...literals, ...jsxText];
+  };
 
-    const tsxFiles = getTsxFiles(srcDir);
-    expect(tsxFiles.length).toBeGreaterThan(10);
+  it('finds the console sources', () => {
+    expect(Object.keys(sources).length).toBeGreaterThan(10);
+  });
 
-    for (const file of tsxFiles) {
-      const content = fs.readFileSync(file, 'utf-8');
-      const stringMatches = content.match(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g) || [];
-      for (const match of stringMatches) {
+  it('no banned word in any UI copy', () => {
+    const hits: string[] = [];
+    for (const [file, src] of Object.entries(sources)) {
+      for (const text of copyIn(src)) {
         for (const word of NEVER_SAY) {
-          const re = new RegExp(`(?<![a-zA-Z0-9_-])${word}(?![a-zA-Z0-9_-])`, 'i');
-          expect(re.test(match), `File ${path.basename(file)} contains banned word "${word}" in: ${match}`).toBe(false);
+          if (new RegExp(`(?<![A-Za-z0-9_-])${word}(?![A-Za-z0-9_-])`, 'i').test(text)) {
+            hits.push(`${file}: "${word}" in ${text.trim().slice(0, 80)}`);
+          }
         }
       }
     }
+    expect(hits).toEqual([]);
+  });
+
+  it('the scan catches a banned word in copy but not in a code value', () => {
+    const sample = `const s = 'signed'; const t = "This record is signed"; <p>Shown first</p>`;
+    const copy = copyIn(sample);
+    expect(copy.some(c => /signed/.test(c))).toBe(true);
+    expect(copy).not.toContain("'signed'");
+    expect(copy.some(c => /first/.test(c))).toBe(true);
   });
 });
