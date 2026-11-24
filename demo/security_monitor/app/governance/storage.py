@@ -9,6 +9,7 @@ import json
 import os
 import sqlite3
 import asyncio
+import collections
 import datetime
 import hashlib
 import logging
@@ -132,6 +133,7 @@ class GovernanceStorage:
         # these too, so a read right after flush() sees every write queued before it.
         self._inflight = 0
         self.dropped_writes = 0
+        self.task_dropped_writes: dict[str, int] = collections.defaultdict(int)
         self._writer_stop = threading.Event()
         self._writer_thread = threading.Thread(target=self._writer_loop, daemon=True, name="gov-batch-writer")
         self._writer_thread.start()
@@ -699,106 +701,157 @@ class GovernanceStorage:
                     return
                 time.sleep(0.05 * (attempt + 1))
 
+    def get_dropped_writes(self, task_id: str) -> int:
+        """Returns the number of dropped write rows for the given task."""
+        return self.task_dropped_writes.get(task_id, 0)
+
     def _write_batch_to_db(self, items: list[tuple[str, Any]]) -> None:
-        steps = [it[1] for it in items if it[0] == "step"]
-        events = [it[1] for it in items if it[0] == "event"]
-        a2a_msgs = [it[1] for it in items if it[0] == "a2a_msg"]
-        if not steps and not events and not a2a_msgs:
+        if not items:
             return
-        with self._get_raw_connection() as conn:
+
+        # Group items by task_id so each task's rows run in its own transaction
+        tasks_items: dict[str, list[tuple[str, Any]]] = collections.defaultdict(list)
+        for it_type, obj in items:
+            tid = None
+            if it_type == "step":
+                tid = obj.get("task_id") if isinstance(obj, dict) else getattr(obj, "task_id", None)
+            elif it_type == "event":
+                tid = getattr(obj, "task_id", None) or (obj.get("task_id") if isinstance(obj, dict) else None)
+            elif it_type == "a2a_msg":
+                tid = (
+                    obj.get("root_task_id")
+                    or obj.get("parent_task_id")
+                    or obj.get("child_task_id")
+                    if isinstance(obj, dict)
+                    else None
+                )
+            if not tid:
+                tid = "unknown"
+            tasks_items[tid].append((it_type, obj))
+
+        for task_id, task_items in tasks_items.items():
+            steps = [it[1] for it in task_items if it[0] == "step"]
+            events = [it[1] for it in task_items if it[0] == "event"]
+            a2a_msgs = [it[1] for it in task_items if it[0] == "a2a_msg"]
+
+            with self._get_raw_connection() as conn:
                 if steps:
-                    conn.executemany(
-                        """
-                        INSERT INTO task_steps (
-                            task_id, step_number, timestamp, kind, layer, verdict, summary, detail, source_label
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        [
-                            (
-                                s["task_id"],
-                                s["step_number"],
-                                s["timestamp"],
-                                s["kind"],
-                                s["layer"],
-                                s["verdict"],
-                                s["summary"],
-                                s["detail"] or "",
-                                s["source_label"],
+                    for s in steps:
+                        try:
+                            conn.execute(
+                                """
+                                INSERT INTO task_steps (
+                                    task_id, step_number, timestamp, kind, layer, verdict, summary, detail, source_label
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                """,
+                                (
+                                    s["task_id"],
+                                    s["step_number"],
+                                    s["timestamp"],
+                                    s["kind"],
+                                    s["layer"],
+                                    s["verdict"],
+                                    s["summary"],
+                                    s["detail"] or "",
+                                    s["source_label"],
+                                ),
                             )
-                            for s in steps
-                        ],
-                    )
+                        except Exception as e:
+                            self.task_dropped_writes[task_id] += 1
+                            self.dropped_writes += 1
+                            logger.exception(
+                                "Failed to write step row for task %s (dropped=%d): %s",
+                                task_id,
+                                self.task_dropped_writes[task_id],
+                                e,
+                            )
                 if events:
-                    conn.executemany(
-                        """
-                        INSERT INTO governance_events (
-                            event_id, timestamp, source, task_id, agent_id, pid,
-                            kind, target, verdict, risk_tier, action_taken, prevented,
-                            rule_matched, boundary_version, details_json
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(event_id) DO NOTHING
-                        """,
-                        [
-                            (
-                                e.event_id,
-                                e.timestamp,
-                                e.source.value,
-                                e.task_id,
-                                e.agent_id,
-                                e.pid,
-                                e.kind,
-                                e.target,
-                                e.verdict.value,
-                                e.risk_tier.value,
-                                e.action_taken.value,
-                                1 if e.prevented else 0,
-                                e.rule_matched,
-                                e.boundary_version,
-                                json.dumps(e.details),
+                    for e in events:
+                        try:
+                            conn.execute(
+                                """
+                                INSERT INTO governance_events (
+                                    event_id, timestamp, source, task_id, agent_id, pid,
+                                    kind, target, verdict, risk_tier, action_taken, prevented,
+                                    rule_matched, boundary_version, details_json
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                ON CONFLICT(event_id) DO NOTHING
+                                """,
+                                (
+                                    e.event_id,
+                                    e.timestamp,
+                                    e.source.value if hasattr(e.source, "value") else str(e.source),
+                                    e.task_id,
+                                    e.agent_id,
+                                    e.pid,
+                                    e.kind,
+                                    e.target,
+                                    e.verdict.value if hasattr(e.verdict, "value") else str(e.verdict),
+                                    e.risk_tier.value if hasattr(e.risk_tier, "value") else str(e.risk_tier),
+                                    e.action_taken.value if hasattr(e.action_taken, "value") else str(e.action_taken),
+                                    1 if e.prevented else 0,
+                                    e.rule_matched,
+                                    e.boundary_version,
+                                    json.dumps(e.details),
+                                ),
                             )
-                            for e in events
-                        ],
-                    )
+                        except Exception as exc:
+                            self.task_dropped_writes[task_id] += 1
+                            self.dropped_writes += 1
+                            logger.exception(
+                                "Failed to write event row for task %s (dropped=%d): %s",
+                                task_id,
+                                self.task_dropped_writes[task_id],
+                                exc,
+                            )
                 if a2a_msgs:
-                    conn.executemany(
-                        """
-                        INSERT INTO a2a_messages (
-                            message_id, root_task_id, parent_task_id, child_task_id,
-                            from_agent, to_agent, kind, fanout_group, reply_to,
-                            sent_at, text, verdict, reason, integrity, forwarded_from, contains_private,
-                            confidentiality
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT(message_id) DO UPDATE SET
-                            child_task_id=coalesce(excluded.child_task_id, a2a_messages.child_task_id),
-                            verdict=excluded.verdict,
-                            reason=excluded.reason,
-                            forwarded_from=excluded.forwarded_from,
-                            contains_private=excluded.contains_private,
-                            confidentiality=excluded.confidentiality
-                        """,
-                        [
-                            (
-                                m["message_id"],
-                                m["root_task_id"],
-                                m["parent_task_id"],
-                                m.get("child_task_id"),
-                                m["from_agent"],
-                                m["to_agent"],
-                                m["kind"],
-                                m.get("fanout_group"),
-                                m.get("reply_to"),
-                                m["sent_at"],
-                                (m.get("text") or "")[:8192],
-                                m["verdict"],
-                                m.get("reason"),
-                                m.get("integrity", "trusted"),
-                                m["forwarded_from"] if isinstance(m["forwarded_from"], str) else json.dumps(m["forwarded_from"]),
-                                1 if m.get("contains_private") else 0,
-                                m.get("confidentiality", "public"),
+                    for m in a2a_msgs:
+                        try:
+                            conn.execute(
+                                """
+                                INSERT INTO a2a_messages (
+                                    message_id, root_task_id, parent_task_id, child_task_id,
+                                    from_agent, to_agent, kind, fanout_group, reply_to,
+                                    sent_at, text, verdict, reason, integrity, forwarded_from, contains_private,
+                                    confidentiality
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                ON CONFLICT(message_id) DO UPDATE SET
+                                    child_task_id=coalesce(excluded.child_task_id, a2a_messages.child_task_id),
+                                    verdict=excluded.verdict,
+                                    reason=excluded.reason,
+                                    forwarded_from=excluded.forwarded_from,
+                                    contains_private=excluded.contains_private,
+                                    confidentiality=excluded.confidentiality
+                                """,
+                                (
+                                    m["message_id"],
+                                    m["root_task_id"],
+                                    m["parent_task_id"],
+                                    m.get("child_task_id"),
+                                    m["from_agent"],
+                                    m["to_agent"],
+                                    m["kind"],
+                                    m.get("fanout_group"),
+                                    m.get("reply_to"),
+                                    m["sent_at"],
+                                    (m.get("text") or "")[:8192],
+                                    m["verdict"],
+                                    m.get("reason"),
+                                    m.get("integrity", "trusted"),
+                                    m["forwarded_from"] if isinstance(m["forwarded_from"], str) else json.dumps(m["forwarded_from"]),
+                                    1 if m.get("contains_private") else 0,
+                                    m.get("confidentiality", "public"),
+                                ),
                             )
-                            for m in a2a_msgs
-                        ],
-                    )
+                        except Exception as exc:
+                            self.task_dropped_writes[task_id] += 1
+                            self.dropped_writes += 1
+                            logger.exception(
+                                "Failed to write a2a_msg row for task %s (dropped=%d): %s",
+                                task_id,
+                                self.task_dropped_writes[task_id],
+                                exc,
+                            )
                 conn.commit()
 
     def flush(self, task_id: str | None = None) -> None:
@@ -1264,7 +1317,20 @@ class GovernanceStorage:
         llm_endpoints = json.loads(r["llm_endpoints_json"]) if r["llm_endpoints_json"] else []
         key_names = json.loads(r["key_names_json"]) if r["key_names_json"] else []
         raw_evidence = json.loads(r["evidence_json"]) if r["evidence_json"] else []
-        evidence = [EvidenceItem(**ev) if isinstance(ev, dict) else ev for ev in raw_evidence]
+        evidence = []
+        for ev in raw_evidence:
+            item = EvidenceItem(**ev) if isinstance(ev, dict) else ev
+            if getattr(item, "signal", None) == "process_cmdline" and item.detail:
+                # Remove existing full cmdlines on read: keep only argv[0] + frameworks
+                detail = item.detail
+                if detail.startswith("Command line: "):
+                    raw_cmd = detail[len("Command line: "):].strip()
+                    parts = raw_cmd.split()
+                    argv0 = parts[0] if parts else ""
+                    fw_list = [fw for fw in frameworks if fw.lower() in raw_cmd.lower()]
+                    fw_suffix = f" [frameworks: {', '.join(sorted(fw_list))}]" if fw_list else ""
+                    item.detail = f"Command line: {argv0}{fw_suffix}"
+            evidence.append(item)
         return DiscoveredAgent(
             org_id=r["org_id"],
             discovery_id=r["discovery_id"],

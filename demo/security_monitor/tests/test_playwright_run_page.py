@@ -95,7 +95,8 @@ def test_ask_watch_done_preset_1_scripted(page: Page, console_server):
     page.locator("#show-what-happened").click()
     drawer = page.locator("#details-drawer")
     expect(drawer).to_be_visible()
-    expect(drawer.locator("#receipt-verification")).to_have_text("Verified: events chained and whole record hashed (SHA-256, not signed)")
+    # A new run's record carries a signature, so the page says the signature was checked.
+    expect(drawer.locator("#receipt-verification")).to_contain_text("Verified: events chained, whole record hashed, signature verified (key ")
     expect(drawer.locator("#network-marker")).to_have_text("network: none")
     expect(drawer.locator("#boundary-version")).to_have_text("Boundary version 1")
     expect(drawer).to_contain_text("enforced · tool broker")
@@ -162,7 +163,7 @@ def test_model_file_choice_falls_back_plainly_and_still_starts(page: Page, conso
     _open_ask(page, console_server, "summarise_csv")
     page.locator("#model-chooses-toggle").check()
     page.locator("#start-run-btn").click()
-    expect(page.locator("#run-error")).to_contain_text("Check the files first")
+    expect(page.locator("#run-error")).to_contain_text("Check the files beforehand")
     page.locator("#ask-model-btn").click()
     expect(page.locator("#file-review-fallback")).to_be_visible(timeout=30000)
     expect(page.locator("#file-review-fallback")).to_contain_text("could not be asked")

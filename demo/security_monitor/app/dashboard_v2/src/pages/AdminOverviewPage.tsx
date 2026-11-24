@@ -193,7 +193,7 @@ export const AdminOverviewPage: React.FC = () => {
           </div>
         </div>
         {dots.length === 0 ? (
-          <EmptyState id="map-empty" title="No agents yet." body="Agents appear here after their first run." />
+          <EmptyState id="map-empty" title="No agents yet." body="Agents appear here after their initial run." />
         ) : mode === 'individual' ? (
           <div
             id="live-agent-map"

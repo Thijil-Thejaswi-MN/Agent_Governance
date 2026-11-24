@@ -14,7 +14,7 @@ interface AuthContextType {
   isModalOpen: boolean;
   needsSignIn: boolean;
   authEpoch: number;
-  /** The first auth-status request has answered (or failed). */
+  /** The initial auth-status request has answered (or failed). */
   authChecked: boolean;
   saveToken: (token: string) => Promise<{ user?: UserSession; landing_route?: string }>;
   removeToken: () => void;

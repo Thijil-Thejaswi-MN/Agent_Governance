@@ -87,7 +87,7 @@ export const SCOPE_REASON: Record<ApprovalScope, string> = {
   always: 'Allowed for this run; a standing rule now covers it for this agent',
 };
 
-export const ONCE_HOVER = 'The copy is removed after the agent’s first read (detected by the monitor).';
+export const ONCE_HOVER = 'The copy is removed after the agent’s initial read (detected by the monitor).';
 
 /** Why "Allow once" is unavailable, or null when it can be used. */
 export function onceBlockedReason(p: Pick<ExpansionPreview, 'once_possible' | 'once_blocked_by'> | null): string | null {

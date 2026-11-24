@@ -51,6 +51,7 @@ from demo.security_monitor.app.governance.models import (
 )
 from demo.security_monitor.app.governance.receipt import (
     build_receipt,
+    seal,
     verify_delegation_links,
     verify_receipt,
 )
@@ -278,11 +279,12 @@ def test_agent_process_never_holds_delegation_token(tmp_path: Path, monkeypatch)
     assert tok_text is not None
 
     # Inspect child workspace files: token text must NOT appear
-    child_ws = tmp_path / "workspaces" / child_id
-    if child_ws.exists():
-        for f in child_ws.rglob("*"):
-            if f.is_file():
-                assert tok_text not in f.read_text(encoding="utf-8", errors="ignore")
+    child_task = storage.get_task(child_id)
+    child_ws = Path(child_task.workspace_root) if child_task and child_task.workspace_root else tmp_path / "workspaces" / child_id
+    assert child_ws.exists()
+    for f in child_ws.rglob("*"):
+        if f.is_file():
+            assert tok_text not in f.read_text(encoding="utf-8", errors="ignore")
 
     # Inspect a2a messages: token text must NOT appear
     msgs = storage.get_a2a_messages(root_task_id=caller_task_id)
@@ -387,6 +389,7 @@ def test_receipt_verify_and_tampering(tmp_path: Path):
     # Tampering test: tamper token_hash in child receipt
     tampered_child = json.loads(json.dumps(r_child))
     tampered_child["delegation_token"]["token_hash"] = "0" * 64
+    tampered_child = seal(tampered_child, org_id="default")
     v_bad = verify_receipt(tampered_child, storage=storage, parent_receipt=r_parent)
     assert not v_bad["ok"]
 

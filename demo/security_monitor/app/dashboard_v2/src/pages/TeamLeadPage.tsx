@@ -201,7 +201,7 @@ export const TeamLeadPage: React.FC = () => {
         <div className="lg:col-span-2 p-5 rounded-xl bg-surface-1 border border-line flex flex-col gap-3">
           <h2 className="text-[15px] font-bold text-fg">Team agents</h2>
           {rows.length === 0 ? (
-            <EmptyState id="team-agents-empty" title="No agents yet." body="Agents appear here after their first run." />
+            <EmptyState id="team-agents-empty" title="No agents yet." body="Agents appear here after their initial run." />
           ) : (
             <div className="rounded-xl border border-line bg-surface-1 overflow-hidden">
               <table className="w-full text-left text-[13px] border-collapse">

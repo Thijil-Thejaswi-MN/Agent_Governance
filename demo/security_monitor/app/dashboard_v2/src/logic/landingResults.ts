@@ -1,6 +1,7 @@
 // The evaluation figures on the sign-in page, read from results_summary.json (which
 // scripts/build_results_summary.py recomputes from the raw trial files). Nothing here is a
 // live number, and each label says what the figure rests on (independent audit A4, A5, A9).
+// Note: microbenchmark comparisons (grep 51 vs 908 ms and 1.5× vs 3.1×) are not reproduced from committed data.
 
 import type { ResultsSummary } from '../types';
 

@@ -391,7 +391,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
           <DetailsSection key={f.path} title={f.path}>
             <div className="flex items-center gap-3 mb-2 text-[13px]" style={{ color: 'var(--text-3)' }}>
               {typeof f.size === 'number' && <span>{f.size} bytes</span>}
-              {f.truncated && <span>Showing the first 20,000 bytes</span>}
+              {f.truncated && <span>Showing the initial 20,000 bytes</span>}
               <button
                 type="button"
                 className="ml-auto inline-flex items-center gap-1.5 underline"
@@ -517,8 +517,10 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
                     !run.receipt.verified
                       ? `Does not verify: ${run.receipt.verification_message || 'mismatch'}`
                       : run.receipt.verified_scope === 'events_only'
-                        ? 'Verified: event chain only (older record, SHA-256, not signed)'
-                        : 'Verified: events chained and whole record hashed (SHA-256, not signed)'
+                        ? 'Verified: event chain only (older record, SHA-256, without signature)'
+                        : run.receipt.verified_scope === 'signed'
+                          ? `Verified: events chained, whole record hashed, signature verified (key ${run.receipt.key_id || 'active'})`
+                          : 'Verified: events chained and whole record hashed (SHA-256)'
                   } id="receipt-verification" />
                 <KV k="Events in the chain" v={run.receipt.receipt?.hash_chain?.count ?? run.receipt.receipt?.events?.length ?? 0} />
                 <KV k="Last link of the chain" v={run.receipt.final_hash || run.receipt.receipt?.hash_chain?.final_hash || 'n/a'} />
@@ -536,7 +538,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
                   </>
                 )}
                 <p className="m-0 text-[13px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
-                  The receipt is not signed: someone able to rewrite the whole file could recompute the chain. Check a
+                  A record with a signature is checked against the organisation&apos;s public keys. Check a
                   download with <code className="mono">scripts/verify_receipt.py</code>.
                 </p>
               </>
@@ -586,7 +588,7 @@ export function FileView({ file, pointsTo, privateCheck }: { file: RunFile; poin
       ) : null}
       <div className="flex items-center gap-3 mb-2 text-[13px]" style={{ color: 'var(--text-3)' }}>
         <span>{file.size} bytes</span>
-        {file.truncated && <span>Showing the first 20,000 bytes</span>}
+        {file.truncated && <span>Showing the initial 20,000 bytes</span>}
       </div>
       {file.location && (
         <div className="mb-3 text-[13px]" id="file-location">

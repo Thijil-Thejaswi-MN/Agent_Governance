@@ -74,11 +74,23 @@ CODING_AGENT_BINARIES = [
 ]
 
 
-def sanitize_cmdline(cmd: str) -> str:
-    """Caps command line at 300 chars and redacts auth tokens and key values."""
+def sanitize_cmdline(cmd: str | list[str], frameworks: list[str] | set[str] | None = None) -> str:
+    """Stores only argv[0] plus matched framework names in evidence; redacts secrets when frameworks is None."""
     if not cmd:
         return ""
-    redacted = redact_llm_error(cmd, max_chars=300) or ""
+    if isinstance(cmd, (list, tuple)):
+        cmd_str = " ".join(cmd)
+        argv0 = cmd[0] if cmd else ""
+    else:
+        cmd_str = cmd
+        parts = cmd.strip().split()
+        argv0 = parts[0] if parts else ""
+
+    if frameworks is not None:
+        fw_str = f" [frameworks: {', '.join(sorted(frameworks))}]" if frameworks else ""
+        return f"{argv0}{fw_str}"
+
+    redacted = redact_llm_error(cmd_str, max_chars=300) or ""
     redacted = re.sub(r"(--?(?:token|auth_token|auth-token|secret)=)[^\s]+", r"\1[REDACTED_AUTH]", redacted, flags=re.IGNORECASE)
     redacted = re.sub(r"(\btoken=)[^\s]+", r"\1[REDACTED_AUTH]", redacted, flags=re.IGNORECASE)
     redacted = re.sub(r"(--?(?:key|api_key|api-key)=)[^\s]+", r"\1[REDACTED_KEY]", redacted, flags=re.IGNORECASE)
@@ -357,7 +369,7 @@ class HostScanner:
 
             # An agent process is identified if it has framework imports, LLM keys, or LLM connections
             if detected_frameworks or detected_key_names or llm_endpoints:
-                sanitized_cmd = sanitize_cmdline(cmd_str)
+                sanitized_cmd = sanitize_cmdline(cmd_str, detected_frameworks)
                 evidence_list: list[EvidenceItem] = []
 
                 for fw in sorted(detected_frameworks):

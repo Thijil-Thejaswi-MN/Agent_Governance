@@ -98,15 +98,15 @@ export const AskPage: React.FC = () => {
         if (!all.includes('scripted')) all.push('scripted');
         setModels(all);
         setOllamaReachable(ms.ollama_reachable !== false);
-        const first = ps.find(p => p.id === 'summarise_csv') || ps[0];
-        if (first) {
-          setPresetId(first.id);
-          setPrompt(first.prompt);
-          setFiles({ ...first.files });
+        const initialPreset = ps.find(p => p.id === 'summarise_csv') || ps[0];
+        if (initialPreset) {
+          setPresetId(initialPreset.id);
+          setPrompt(initialPreset.prompt);
+          setFiles({ ...initialPreset.files });
         }
         if (ags && ags.length > 0) {
           setAgents(ags);
-          const own = first?.agent && ags.some(a => a.id === first.agent) ? first.agent : null;
+          const own = initialPreset?.agent && ags.some(a => a.id === initialPreset.agent) ? initialPreset.agent : null;
           setAgentId(prev => own || (ags.some(a => a.id === prev) ? prev : ags[0].id));
         }
         if (active.active && active.task_id) {
@@ -139,7 +139,7 @@ export const AskPage: React.FC = () => {
 
   const checkFiles = async () => {
     setReviewError(null);
-    if (!prompt.trim()) return setReviewError('Write what the agent should do first.');
+    if (!prompt.trim()) return setReviewError('Write what the agent should do before proceeding.');
     if (!hasToken) return openAuthModal();
     setReviewing(true);
     try {
@@ -209,7 +209,7 @@ export const AskPage: React.FC = () => {
       return;
     }
     if (modelChooses && !review) {
-      setError("Check the files first: press \"Ask the model\" and review its choice.");
+      setError("Check the files beforehand: press \"Ask the model\" and review its choice.");
       return;
     }
     setStarting(true);
@@ -256,7 +256,7 @@ export const AskPage: React.FC = () => {
 
       {activeCount >= 3 ? (
         <div id="active-run-banner" className="w-full px-4 py-3 rounded-xl text-[15px] text-left text-wait bg-wait/10 border border-wait/45">
-          Maximum concurrent runs reached (3 active runs). Please wait for an active run to complete.
+          Maximum concurrent runs reached (3 active runs). Please wait for an active run to finish.
         </div>
       ) : activeCount > 0 ? (
         <div id="active-run-banner" className="w-full px-4 py-3 rounded-xl text-[15px] text-left text-fg bg-accent/10 border border-accent/45 flex items-center justify-between">

@@ -32,7 +32,7 @@ The web console surfaces this information on the run page with dedicated status 
 
 When running with the eBPF sensor, observation fails closed to prevent unmonitored execution. The task is immediately frozen (`_freeze`) under any of the following conditions:
 
-1. **Lost Heartbeat**: The loader emits a periodic heartbeat every second. If no heartbeat is received for more than 2.0 seconds, the watchdog triggers a task freeze with reason `sensor_unhealthy`.
+1. **Lost Heartbeat**: The loader emits a periodic heartbeat every 500 ms. If no heartbeat is received for more than 2.0 seconds, the watchdog triggers a task freeze with reason `sensor_unhealthy`.
 2. **Event Drops**: The loader tracks kernel ring buffer drops (`BPF_MAP_TYPE_RINGBUF`). If drops are detected for the task's cgroup, the task is frozen with reason `sensor_events_dropped`.
 3. **Loader Process Termination**: If the loader process exits or disconnects the control socket unexpectedly while a task is running, the task is frozen with reason `sensor_unhealthy`.
 

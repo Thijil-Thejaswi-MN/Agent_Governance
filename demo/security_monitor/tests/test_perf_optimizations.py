@@ -344,6 +344,8 @@ def test_proxy_dns_cache_and_outside_address_refusal(storage, temp_dir):
 
 def test_direct_cgroup_lifecycle(temp_dir):
     """Requirement 1: Direct task cgroup creation, child call_NNN cgroup, and cleanup."""
+    if not Path("/sys/fs/cgroup/cgroup.controllers").exists():
+        pytest.skip("cgroup v2 controllers not available")
     try:
         parent_dir, parent_rel = cgroup_ctl.ensure_delegated_parent()
     except RuntimeError as e:

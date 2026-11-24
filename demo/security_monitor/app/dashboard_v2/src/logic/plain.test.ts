@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import { describe, expect, it } from 'vitest';
 import {
   FIRST_SCREEN_JARGON,
@@ -171,6 +172,10 @@ describe('record and labels', () => {
     expect(receiptSentence(null, true).text).toBe('No record was saved for this run.');
     const r = { task_id: 't', receipt: { task_id: 't' }, verified: true, verification_message: 'ok' };
     expect(receiptSentence(r, true)).toEqual({ text: 'Record checked: no entries changed', tone: 'ok' });
+    expect(receiptSentence({ ...r, receipt: { ...r.receipt, dropped_writes: 2 } }, true)).toEqual({
+      text: 'record incomplete',
+      tone: 'bad',
+    });
     expect(receiptSentence({ ...r, verified: false }, true).tone).toBe('bad');
     expect(receiptSentence({ ...r, available: false }, true).text).toBe('No record was saved for this run.');
   });
@@ -220,7 +225,7 @@ describe('finished runs with refused requests', () => {
 
 describe('runs that wrote no result', () => {
   it('says the task was not completed', () => {
-    expect(statusSentence({ state: 'completed', blocked: [], noResult: true })).toBe('Agent run finished (task not completed).');
+    expect(statusSentence({ state: 'completed', blocked: [], noResult: true })).toBe('Agent run finished (task unfinished).');
   });
 });
 
@@ -229,5 +234,54 @@ describe('background reads', () => {
     expect(statusSentence({ state: 'completed', blocked: [], background: 7 })).toBe(
       'Finished. The agent stayed inside its fence. 7 background reads by programs it ran were stopped.',
     );
+  });
+});
+
+describe('NEVER_SAY banned words scan', () => {
+  // Every page and component's source, read by Vite at test time (no Node APIs, so the build type-checks).
+  const sources = import.meta.glob(['../**/*.tsx', '!../**/*.test.tsx'], {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  }) as Record<string, string>;
+
+  // UI copy only: string literals that read as text (they contain a space) and JSX text between tags.
+  // Single-token literals are code values ('signed' as a record scope, 'first' as a key), not copy.
+  const copyIn = (src: string): string[] => {
+    const literals = (src.match(/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g) || [])
+      .filter(m => /\s/.test(m.slice(1, -1)));
+    // Between two tags; a chunk holding code (comparisons, arrows, quotes, ?. or ;) is not text.
+    const jsxText = (src.match(/>([^<>{}]*[A-Za-z][^<>{}]*)</g) || [])
+      .map(m => m.slice(1, -1))
+      .filter(t => !/===|!==|=>|&&|\|\||\?\.|;|['"`]/.test(t));
+    return [...literals, ...jsxText];
+  };
+
+  it('finds the console sources', () => {
+    expect(Object.keys(sources).length).toBeGreaterThan(10);
+  });
+
+  it('no banned word in any UI copy', () => {
+    const hits: string[] = [];
+    for (const [file, src] of Object.entries(sources)) {
+      for (const text of copyIn(src)) {
+        for (const word of NEVER_SAY) {
+          if (new RegExp(`(?<![A-Za-z0-9_-])${word}(?![A-Za-z0-9_-])`, 'i').test(text)) {
+            hits.push(`${file}: "${word}" in ${text.trim().slice(0, 80)}`);
+          }
+        }
+      }
+    }
+    expect(hits).toEqual([]);
+  });
+
+  it('the scan catches a banned word in copy but not in a code value', () => {
+    const sample = `const s = 'signed'; const t = "This record is signed"; <p>Shown first</p>
+      {x ? <A /> : y === 'signed' ? <B /> : null}`;
+    const copy = copyIn(sample);
+    expect(copy.some(c => /signed/.test(c))).toBe(true);
+    expect(copy).not.toContain("'signed'");
+    expect(copy.some(c => c.includes("=== 'signed'"))).toBe(false);
+    expect(copy.some(c => /first/.test(c))).toBe(true);
   });
 });

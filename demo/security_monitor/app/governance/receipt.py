@@ -123,8 +123,10 @@ def build_receipt(
     extra: dict[str, Any] | None = None,
     org_id: str = "default",
 ) -> dict[str, Any]:
+    eff_org = org_id or getattr(task, "org", None) or "default"
     if hasattr(storage, "flush"):
         storage.flush(task.task_id)
+    dropped_writes = storage.get_dropped_writes(task.task_id) if hasattr(storage, "get_dropped_writes") else 0
     tool_events = [e for e in storage.get_events_for_task(task.task_id) if e.source != EventSource.OS_SENSOR]
     entries = [_broker_entry(e) for e in tool_events] + [_os_entry(r) for r in os_records]
     entries.sort(key=lambda e: (str(e.get("timestamp")), e.get("seq") or 0))
@@ -209,6 +211,8 @@ def build_receipt(
         "termination": termination,
         "wall_time_s": round(wall_time_s, 3),
         "events": entries,
+        "dropped_writes": dropped_writes,
+        "org_id": eff_org,
         "hash_chain": {"algorithm": "sha256", "genesis": GENESIS_HASH, "count": len(entries), "final_hash": final_hash},
     }
     # Delegation token record in receipt
@@ -369,6 +373,7 @@ def verify_receipt(
     trusted_org_id: str | None = None,
     storage: Any = None,
     parent_receipt: dict[str, Any] | None = None,
+    expected_task_id: str | None = None,
 ) -> dict[str, Any]:
     """Checks a stored record. Returns {ok, scope, message, final_hash}.
 
@@ -384,6 +389,8 @@ def verify_receipt(
 
     if not isinstance(r, dict):
         return fail("not a record")
+    if expected_task_id is not None and r.get("task_id") != expected_task_id:
+        return fail(f"task_id mismatch: expected {expected_task_id}, got {r.get('task_id')}", scope="task_id_mismatch")
     version = r.get("receipt_version", "v0")
     if version == "v0":
         required = REQUIRED_V0
@@ -460,6 +467,8 @@ def verify_receipt(
             tok_text = storage.get_delegation_token_by_hash(t_hash)
         if not tok_text and storage and hasattr(storage, "get_delegation_token_by_task_id"):
             tok_text = storage.get_delegation_token_by_task_id(r.get("task_id", ""))
+        if storage and hasattr(storage, "get_delegation_token_by_hash") and not tok_text:
+            return fail(f"delegation token hash not found in storage: {t_hash}", final)
 
         if tok_text:
             actual_tok_hash = hashlib.sha256(tok_text.encode("utf-8")).hexdigest()
@@ -532,12 +541,11 @@ def verify_receipt(
     extra = r.get("extra") if isinstance(r, dict) else {}
     signing_extra = str((extra or {}).get("signing") or "")
     if "unavailable" in signing_extra.lower():
-        reason = signing_extra.split("unavailable:", 1)[1].strip() if "unavailable:" in signing_extra else signing_extra
         return {
             "ok": False,
             "scope": "signing_unavailable",
-            "message": f"signing unavailable: {reason}",
-            "signature_reason": reason,
+            "message": "signing unavailable",
+            "signature_reason": "signing unavailable",
             "final_hash": final,
         }
 
@@ -550,27 +558,23 @@ def verify_receipt(
         except Exception:
             enabled_since_str = None
 
-    # Stored task's time wins over record's own fields
-    start_time_str = trusted_started_at or get_record_start_time(r)
-    rec_time_str = r.get("started_at") or r.get("created_at") or r.get("generated_at")
-    time_from_record = (
-        trusted_started_at is None
-        and rec_time_str is not None
-        and _parse_iso_datetime(str(rec_time_str)) is not None
-    )
-
     if enabled_since_str is not None:
-        if start_time_str:
-            start_dt = _parse_iso_datetime(start_time_str)
-            enabled_dt = _parse_iso_datetime(enabled_since_str)
-            if start_dt and enabled_dt and start_dt >= enabled_dt:
-                return fail(
-                    "No signature, but signing was enabled when this record was made",
-                    final,
-                    scope="unsigned_after_signing_enabled",
-                )
+        if trusted_started_at is None:
+            return fail(
+                "No signature, and record has no trusted timestamp from storage while signing is enabled",
+                final,
+                scope="unsigned_after_signing_enabled",
+            )
+        start_dt = _parse_iso_datetime(trusted_started_at)
+        enabled_dt = _parse_iso_datetime(enabled_since_str)
+        if not start_dt or not enabled_dt or start_dt >= enabled_dt:
+            return fail(
+                "No signature, but signing was enabled when this record was made",
+                final,
+                scope="unsigned_after_signing_enabled",
+            )
 
-    suffix = "; time taken from the record itself" if time_from_record else ""
+    suffix = ""
     if doc:
         return {
             "ok": True,
@@ -600,6 +604,11 @@ def verify_delegation_links(
         return False, f"Child receipt {c_tid} parent_task_id ({c_parent_tid}) does not match parent {p_tid}"
 
     p_children = (parent_receipt.get("extra") or {}).get("children", [])
+    if not p_children and parent_receipt.get("delegated_children"):
+        p_children = [
+            {"child_task_id": ch.get("task_id") or ch.get("child_task_id"), "receipt_hash": ch.get("receipt_hash")}
+            for ch in parent_receipt.get("delegated_children", [])
+        ]
     c_doc_hash = (child_receipt.get("hash_chain") or {}).get("document_sha256")
     matched_child = False
     for ch in p_children:
@@ -609,7 +618,7 @@ def verify_delegation_links(
             matched_child = True
             break
 
-    if p_children and not matched_child:
+    if not matched_child:
         return False, f"Child {c_tid} not found in parent {p_tid} children list"
 
     # Check delegation token linkages
@@ -620,9 +629,17 @@ def verify_delegation_links(
             return False, f"Child has delegation token but parent {p_tid} has none"
         if c_dt.get("par_hash") != p_dt.get("token_hash"):
             return False, f"Child par_hash does not match parent token_hash"
-        p_child_hashes = parent_receipt.get("child_token_hashes", [])
-        if p_child_hashes and c_dt.get("token_hash") not in p_child_hashes:
+        p_child_hashes = parent_receipt.get("child_token_hashes") or [
+            ch.get("token_hash") for ch in (parent_receipt.get("delegated_children") or []) if ch.get("token_hash")
+        ]
+        if c_dt.get("token_hash") not in p_child_hashes:
             return False, f"Child token_hash {c_dt.get('token_hash')} not in parent child_token_hashes"
+        if storage and hasattr(storage, "get_delegation_token_by_hash"):
+            c_tok_h = c_dt.get("token_hash")
+            if not storage.get_delegation_token_by_hash(c_tok_h) and not (
+                hasattr(storage, "get_delegation_token_by_task_id") and storage.get_delegation_token_by_task_id(c_tid)
+            ):
+                return False, f"Child token_hash {c_tok_h} not found in delegation_tokens"
         from .delegation_token import is_scope_subset
         c_init = child_receipt.get("initial_boundary", {})
         p_init = parent_receipt.get("initial_boundary", {})

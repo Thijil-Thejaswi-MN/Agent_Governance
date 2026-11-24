@@ -19,7 +19,7 @@ export const FIRST_SCREEN_JARGON = [
 ];
 
 // Never anywhere in the console's own copy.
-export const NEVER_SAY = ['safe', 'secure', 'guaranteed', 'tamper-proof', 'first'];
+export const NEVER_SAY = ['safe', 'secure', 'securely', 'guaranteed', 'tamper-proof', 'first', 'complete', 'signed'];
 
 const n = (count: number, one: string, many: string) => (count === 1 ? one : many);
 
@@ -97,7 +97,7 @@ export function statusSentence(v: SentenceInput): string {
           count ? `${count} ${n(count, 'attempt was', 'attempts were')} ${v.comparison ? 'let through' : 'stopped'}.` : '',
           also.trim(),
         ].filter(Boolean).join(' ');
-        return `Agent run finished (task not completed).${what ? ' ' + what : ''}`;
+        return `Agent run finished (task unfinished).${what ? ' ' + what : ''}`;
       }
       if (count === 0) return `Finished. The agent stayed inside its fence.${also}`;
       if (v.comparison) return `Finished. With the kernel lock off, ${count} ${n(count, 'attempt', 'attempts')} got through.${also}`;
@@ -206,6 +206,9 @@ export function secondsLeft(exp: Pick<ExpansionItem, 'created_at' | 'timeout_sec
 export function receiptSentence(r: ReceiptResponse | null | undefined, loaded: boolean): { text: string; tone: 'ok' | 'bad' | 'none' } {
   if (!loaded) return { text: 'Checking the record…', tone: 'none' };
   if (!r || r.available === false || !r.receipt) return { text: 'No record was saved for this run.', tone: 'none' };
+  if ((r.receipt.dropped_writes && r.receipt.dropped_writes > 0) || (r.dropped_writes && r.dropped_writes > 0)) {
+    return { text: 'record incomplete', tone: 'bad' };
+  }
   if (r.verified && r.verified_scope === 'events_only')
     return { text: 'Record checked: no entries changed (older record: approvals and settings are not covered)', tone: 'ok' };
   if (r.verified) return { text: 'Record checked: no entries changed', tone: 'ok' };

@@ -904,6 +904,7 @@ async def get_records_summary(request: Request = None) -> dict[str, Any]:
     signing_unavailable_ids: list[str] = []
     unsigned_after_signing_enabled_ids: list[str] = []
     signing_unavailable_reasons: dict[str, str] = {}
+    dropped_writes_map: dict[str, int] = {}
 
     for rf in candidate_files:
         try:
@@ -923,16 +924,12 @@ async def get_records_summary(request: Request = None) -> dict[str, Any]:
                 sig_reason = cached[4] if len(cached) > 4 else None
             else:
                 data = json.loads(rf.read_text(encoding="utf-8"))
-                if not task and isinstance(data, dict) and data.get("task_id"):
-                    task = storage.get_task(data["task_id"])
-                    if task:
-                        trusted_started_at = task.created_at
-                        trusted_org_id = getattr(task, "org", None) or getattr(task, "team", None) or "default"
-
                 res = verify_receipt(
                     data,
                     trusted_started_at=trusted_started_at,
                     trusted_org_id=trusted_org_id,
+                    storage=storage,
+                    expected_task_id=task_id,
                 )
                 is_valid, scope = res["ok"], res.get("scope", "")
                 k_id = (data.get("signature") or {}).get("key_id")
@@ -940,13 +937,20 @@ async def get_records_summary(request: Request = None) -> dict[str, Any]:
                 with _records_cache_lock:
                     _records_verification_cache[key] = (mtime, is_valid, scope, k_id, sig_reason)
 
+            task_dropped = 0
+            if isinstance(data, dict):
+                task_dropped = data.get("dropped_writes") or 0
+            if not task_dropped and hasattr(storage, "get_dropped_writes"):
+                task_dropped = storage.get_dropped_writes(rf.stem)
+            if task_dropped:
+                dropped_writes_map[rf.stem] = task_dropped
+
             total += 1
             if scope == "signing_unavailable":
-                # warning: not verified, not failed
+                failed += 1
+                failed_ids.append(rf.stem)
                 signing_unavailable_ids.append(rf.stem)
-                if sig_reason:
-                    clean_reason = sig_reason.split("unavailable:", 1)[-1].strip()
-                    signing_unavailable_reasons[rf.stem] = clean_reason
+                signing_unavailable_reasons[rf.stem] = "signing unavailable"
             elif scope == "unsigned_after_signing_enabled":
                 failed += 1
                 failed_ids.append(rf.stem)
@@ -980,12 +984,13 @@ async def get_records_summary(request: Request = None) -> dict[str, Any]:
         "signing_unavailable_ids": signing_unavailable_ids,
         "unsigned_after_signing_enabled_ids": unsigned_after_signing_enabled_ids,
         "signing_unavailable_reasons": signing_unavailable_reasons,
+        "dropped_writes": dropped_writes_map,
     }
 
 
 @governance_router.get("/tasks/{task_id}/receipt")
 async def get_task_receipt(task_id: str, request: Request = None) -> dict[str, Any]:
-    """Retrieves a stored task receipt and recomputes its SHA-256 hash chain (integrity only; not signed)."""
+    """Retrieves a stored task receipt and verifies its hash chain and signature."""
     user = get_current_user_session(request)
     storage = get_storage()
     task = storage.get_task(task_id)
@@ -1036,15 +1041,38 @@ def _receipt_check(task_id: str) -> dict[str, Any]:
     trusted_started_at = task.created_at if task else None
     trusted_org_id = (getattr(task, "org", None) or getattr(task, "team", None) or "default") if task else None
 
-    from .receipt import verify_receipt
+    from .receipt import verify_receipt, verify_delegation_links
     check = verify_receipt(
         receipt_data,
         trusted_started_at=trusted_started_at,
         trusted_org_id=trusted_org_id,
+        storage=storage,
+        expected_task_id=task_id,
     )
     verified = check["ok"]
     verification_msg = check["message"]
     verified_scope = check["scope"]
+
+    if verified and isinstance(receipt_data, dict):
+        p_tid = receipt_data.get("parent_task_id") or (receipt_data.get("extra") or {}).get("parent_task_id")
+        if p_tid:
+            p_paths = [
+                receipts_dir / f"{p_tid}.json",
+                Path(__file__).resolve().parents[3] / "data" / "evaluation_v3" / "checkpoint1" / "receipts" / f"{p_tid}.json",
+            ]
+            for pp in p_paths:
+                if pp.is_file():
+                    try:
+                        p_rec = json.loads(pp.read_text(encoding="utf-8"))
+                        d_ok, d_msg = verify_delegation_links(p_rec, receipt_data, storage=storage)
+                        if not d_ok:
+                            verified = False
+                            verification_msg = f"delegation link verification failed: {d_msg}"
+                            break
+                    except Exception as e:
+                        verified = False
+                        verification_msg = f"failed reading parent receipt: {e}"
+                        break
 
     file_sha256 = None
     if receipt_file and Path(receipt_file).is_file():
@@ -1258,8 +1286,12 @@ async def list_discovered_agents(
     include_retired: bool = Query(False),
     org_id: str | None = Query(None),
 ) -> list[dict[str, Any]]:
-    get_current_user_session(request)
-    eff_org = _extract_org_id(request, org_id)
+    user = get_current_user_session(request)
+    eff_org = getattr(user, "org", None) or getattr(user, "org_id", None) or "default"
+    is_admin_or_reviewer = user.role in (Role.ADMIN, Role.SECURITY_REVIEWER)
+    if kind == "process" and not is_admin_or_reviewer:
+        raise HTTPException(status_code=403, detail="Forbidden: Admin or Security Reviewer role required to list discovered host processes.")
+
     agents = get_inventory_service().get_discovered_agents(
         org_id=eff_org,
         status=status,
@@ -1267,6 +1299,9 @@ async def list_discovered_agents(
         host=host,
         include_retired=include_retired,
     )
+    if not is_admin_or_reviewer:
+        # Host processes are for admins and security reviewers only, whatever filter was asked for.
+        agents = [a for a in agents if getattr(a, "kind", None) != "process"]
     return [a.model_dump() for a in agents]
 
 

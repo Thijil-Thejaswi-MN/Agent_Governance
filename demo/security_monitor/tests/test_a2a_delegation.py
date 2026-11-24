@@ -323,6 +323,7 @@ def test_deadline_inheritance(tmp_path: Path):
         task_id="task_parent",
         agent_id="planner",
     )
+    parent_task.timeout_s = 60.0
     parent_task.created_at = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=50)).isoformat()
 
     profile = {
@@ -330,10 +331,11 @@ def test_deadline_inheritance(tmp_path: Path):
     }
 
     deadline = mgr._calculate_deadline(parent_task, profile)
-    # Remaining time is approximately 900 - 50 = 850, or bounded by profile timeout
-    assert deadline > 0
+    # Remaining time is approximately 60 - 50 = 10s
+    assert 8.0 <= deadline <= 12.0
 
 
+@pytest.mark.os_layer
 def test_fanout_parallel(tmp_path: Path):
     """Parallel fan-out runs concurrently with matching fanout_group."""
     storage = GovernanceStorage(tmp_path / "test_fanout.db")
@@ -510,6 +512,7 @@ def test_receipt_links_verify(tmp_path: Path):
     assert ok, f"Delegation link verification failed: {reason}"
 
 
+@pytest.mark.os_layer
 def test_trip_planner_preset(tmp_path: Path, fixture_server):
     """Demo preset trip_planner produces exactly: 7 messages, 2 refused, 1 pending approval."""
     storage = GovernanceStorage(tmp_path / "test_trip_preset.db")
@@ -895,6 +898,7 @@ def test_http_post_allowed_and_refused(tmp_path: Path, fixture_server):
     assert r_msg["text"] == "passport_scan.pdf"
 
 
+@pytest.mark.os_layer
 def test_trip_planner_approval_flow_via_api(tmp_path: Path, fixture_server, monkeypatch):
     """An operator approval via API allows Researcher to read the file and conclude."""
     monkeypatch.setenv("GOVERNANCE_OPERATOR_TOKEN", "test_op_token")
@@ -981,6 +985,7 @@ def test_trip_planner_approval_flow_via_api(tmp_path: Path, fixture_server, monk
     assert len(read_evs) >= 1
 
 
+@pytest.mark.os_layer
 def test_trip_planner_denial_flow_via_api(tmp_path: Path, fixture_server, monkeypatch):
     """An operator denial via API records the denial."""
     monkeypatch.setenv("GOVERNANCE_OPERATOR_TOKEN", "test_op_token")

@@ -51,6 +51,8 @@ for real under `landlock_enforcer --mode enforce`.
 | v1.1 (resolved) | 584 | 64,864 | 46,792 | **0** (60 declared residuals: `src/.env` under `src/**`) |
 | v1 (frozen M6, `M7_DIFF_PATH=old`) | 584 | 66,016 | 51,758 | **9,527** |
 
+> Note on committed data: Neither raw differential report JSON exists on disk. The headline figure of 9,527 mismatches was measured across the full set of 584 boundaries, whereas the cause breakdown table below accounts for 9,091 mismatches across 552 boundaries.
+
 About 28% of probes are not compared (indeterminate, runtime-support or residual); the harness is static and cannot observe races.
 
 No weakening: over all probes, the v1.1 broker never allows what the v1 broker or v1

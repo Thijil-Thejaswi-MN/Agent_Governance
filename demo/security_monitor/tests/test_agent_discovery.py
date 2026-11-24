@@ -329,12 +329,22 @@ def test_api_roles_and_endpoints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     )
     storage.save_discovered_agent(seed_agent)
 
-    # 1. Developer: can view agents
-    res = client.get("/api/governance/discovery/agents", headers={"Authorization": "Bearer dev-token"})
+    # 1. A security reviewer sees the discovered host process; a developer may list agents but
+    #    never sees host processes (their command lines describe the whole machine).
+    res = client.get("/api/governance/discovery/agents", headers={"Authorization": "Bearer sec-token"})
     assert res.status_code == 200
     data = res.json()
     assert len(data) == 1
     assert data[0]["discovery_id"] == "disc_api_test"
+    res = client.get("/api/governance/discovery/agents", headers={"Authorization": "Bearer dev-token"})
+    assert res.status_code == 200
+    assert res.json() == []
+
+    # Only ADMIN and SECURITY_REVIEWER can list host processes:
+    res_proc = client.get("/api/governance/discovery/agents?kind=process", headers={"Authorization": "Bearer dev-token"})
+    assert res_proc.status_code == 403
+    res_sec_proc = client.get("/api/governance/discovery/agents?kind=process", headers={"Authorization": "Bearer sec-token"})
+    assert res_sec_proc.status_code == 200
 
     # 2. Developer: cannot trigger scan (403)
     res = client.post("/api/governance/discovery/scan", headers={"Authorization": "Bearer dev-token"})

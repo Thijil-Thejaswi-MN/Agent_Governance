@@ -26,17 +26,12 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(pytest.mark.skip(reason="OS layer unavailable on this host: " + "; ".join(os_layer_problems())))
 
 
-@pytest.fixture(scope="session", autouse=True)
-def isolate_governance_keys(tmp_path_factory):
-    """Sets GOVERNANCE_KEYS_DIR to a temporary directory so tests never touch ~/.agent_governance."""
-    keys_dir = tmp_path_factory.mktemp("gov_keys")
-    orig = os.environ.get("GOVERNANCE_KEYS_DIR")
-    os.environ["GOVERNANCE_KEYS_DIR"] = str(keys_dir)
+@pytest.fixture(autouse=True)
+def isolate_governance_keys(tmp_path, monkeypatch):
+    """Sets GOVERNANCE_KEYS_DIR to a temporary directory per test so tests never touch ~/.agent_governance or leak keys."""
+    keys_dir = tmp_path / "gov_keys"
+    monkeypatch.setenv("GOVERNANCE_KEYS_DIR", str(keys_dir))
     yield keys_dir
-    if orig is None:
-        os.environ.pop("GOVERNANCE_KEYS_DIR", None)
-    else:
-        os.environ["GOVERNANCE_KEYS_DIR"] = orig
 
 
 @pytest.fixture(autouse=True)
