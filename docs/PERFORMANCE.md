@@ -71,6 +71,7 @@ Measures high-frequency tool invocation:
 - Metrics reported: p50, p95, p99 latency in milliseconds.
 
 ### W3: Shell-Heavy / Sensor Cost (Strict Content Checked)
+> Note: Microbenchmark comparisons (such as grep 51 vs 908 ms and 1.5× vs 3.1×) are not reproduced from committed data.
 Stresses the system call interception layer with high-density filesystem operations:
 - `find` across 5,000 files in 50 subdirectories (verified entry count: 5,000).
 - `grep -r` searching for needle patterns across 5,000 files (verified match count: 1).

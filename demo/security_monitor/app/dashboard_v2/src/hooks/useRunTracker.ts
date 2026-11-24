@@ -307,7 +307,7 @@ export function useRunTracker(taskId: string | undefined): RunTracker {
       setDecisionNote(null);
       try {
         const res = await api.approveExpansion(requestId, { decided_by: 'operator', reason: SCOPE_REASON[scope], scope });
-        if (scope === 'once') setDecisionNote('Allowed once. The copy is removed after the agent’s first read (detected by the monitor).');
+        if (scope === 'once') setDecisionNote('Allowed once. The copy is removed after the agent’s initial read (detected by the monitor).');
         if (scope === 'timed') setDecisionNote(`Allowed for ${TIMED_MINUTES} minutes. After that the agent cannot open it again in this run.`);
         if (res.standing_rule) setDecisionNote(`Rule saved: ${ruleSentenceText(res.standing_rule)}`);
         setPending(null);

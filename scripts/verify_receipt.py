@@ -48,14 +48,30 @@ def main(argv: list[str]) -> int:
         parser.print_help()
         return 2
 
-    if args.pubkey and not args.signing_enabled_since:
-        print("downgrade check was skipped")
+    signing_enabled_since = args.signing_enabled_since
+    if args.pubkey and not signing_enabled_since:
+        pk_path = Path(args.pubkey)
+        if pk_path.is_file():
+            try:
+                pk_data = json.loads(pk_path.read_text(encoding="utf-8"))
+                if isinstance(pk_data, list):
+                    cas = [k.get("created_at") for k in pk_data if isinstance(k, dict) and k.get("created_at")]
+                    if cas:
+                        signing_enabled_since = min(cas)
+                elif isinstance(pk_data, dict) and pk_data.get("created_at"):
+                    signing_enabled_since = pk_data["created_at"]
+            except Exception:
+                pass
+            if not signing_enabled_since:
+                import datetime
+                mtime = pk_path.stat().st_mtime
+                signing_enabled_since = datetime.datetime.fromtimestamp(mtime, datetime.timezone.utc).isoformat()
 
     all_ok = True
     for a in args.receipts:
         try:
             r = json.loads(Path(a).read_text(encoding="utf-8"))
-            res = verify_receipt(r, pubkey=args.pubkey, signing_enabled_since=args.signing_enabled_since)
+            res = verify_receipt(r, pubkey=args.pubkey, signing_enabled_since=signing_enabled_since)
             ok = res.get("ok", False)
             msg = res.get("message", "")
             scope = res.get("scope")
@@ -64,9 +80,7 @@ def main(argv: list[str]) -> int:
             msg = f"unreadable: {e}"
             scope = None
 
-        if scope == "signing_unavailable":
-            print(f"WARN {a}: {msg}")
-        elif ok:
+        if ok and scope != "signing_unavailable":
             print(f"PASS {a}: {msg}")
         else:
             print(f"FAIL {a}: {msg}")

@@ -336,6 +336,12 @@ def test_api_roles_and_endpoints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert len(data) == 1
     assert data[0]["discovery_id"] == "disc_api_test"
 
+    # Only ADMIN and SECURITY_REVIEWER can list host processes:
+    res_proc = client.get("/api/governance/discovery/agents?kind=process", headers={"Authorization": "Bearer dev-token"})
+    assert res_proc.status_code == 403
+    res_sec_proc = client.get("/api/governance/discovery/agents?kind=process", headers={"Authorization": "Bearer sec-token"})
+    assert res_sec_proc.status_code == 200
+
     # 2. Developer: cannot trigger scan (403)
     res = client.post("/api/governance/discovery/scan", headers={"Authorization": "Bearer dev-token"})
     assert res.status_code == 403

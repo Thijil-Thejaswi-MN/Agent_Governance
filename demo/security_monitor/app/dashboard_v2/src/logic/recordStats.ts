@@ -87,6 +87,7 @@ export type RecordBadge =
   | 'events_only'
   | 'signing_unavailable'
   | 'unsigned_after_signing_enabled'
+  | 'record_incomplete'
   | 'failed'
   | 'none'
   | 'unknown';
@@ -100,9 +101,11 @@ export function recordBadge(
     signed_ids?: string[];
     signing_unavailable_ids?: string[];
     unsigned_after_signing_enabled_ids?: string[];
+    dropped_writes?: Record<string, number>;
   } | null,
 ): RecordBadge {
   if (!summary) return 'unknown';
+  if ((summary.dropped_writes?.[taskId] ?? 0) > 0) return 'record_incomplete';
   if (summary.signing_unavailable_ids?.includes(taskId)) return 'signing_unavailable';
   if (summary.unsigned_after_signing_enabled_ids?.includes(taskId)) return 'unsigned_after_signing_enabled';
   if (summary.failed_ids?.includes(taskId)) return 'failed';

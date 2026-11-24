@@ -40,16 +40,17 @@ def get_keys_dir() -> Path:
     return DEFAULT_KEYS_DIR.resolve()
 
 
-def get_org_keys_dir(org_id: str = "default") -> Path:
-    """Returns the directory for a specific organisation, ensuring 0700 permissions."""
+def get_org_keys_dir(org_id: str = "default", create: bool = True) -> Path:
+    """Returns the directory for a specific organisation, ensuring 0700 permissions if created."""
     base = get_keys_dir()
     clean_org = os.path.basename((org_id or "default").strip() or "default")
     org_dir = base / clean_org
-    org_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
-    try:
-        org_dir.chmod(0o700)
-    except OSError:
-        pass
+    if create:
+        org_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+        try:
+            org_dir.chmod(0o700)
+        except OSError:
+            pass
     return org_dir
 
 
@@ -84,8 +85,12 @@ def _save_public_keys_registry(org_dir: Path, registry: list[dict[str, Any]]) ->
 
 
 def load_public_keys(org_id: str = "default") -> list[dict[str, Any]]:
-    """Loads the public key history for an organisation. Never includes private keys."""
-    org_dir = get_org_keys_dir(org_id)
+    """Loads the public key history for an organisation. Never includes private keys.
+    Does not create directories on disk if no keys exist.
+    """
+    org_dir = get_org_keys_dir(org_id, create=False)
+    if not org_dir.is_dir():
+        return []
     pub_file = org_dir / "public_keys.json"
     if pub_file.is_file():
         try:
@@ -142,6 +147,12 @@ def _get_or_create_signing_key_locked(org_id: str) -> tuple[ed25519.Ed25519Priva
             registry = []
 
     if key_path.is_file():
+        st_mode = key_path.stat().st_mode
+        if st_mode & 0o077:
+            raise PermissionError(
+                f"Signing key {key_path} has insecure permissions ({oct(st_mode & 0o777)}). "
+                f"Group and other access must be removed. Fix with: chmod 600 {key_path}"
+            )
         pem_data = key_path.read_bytes()
         priv = serialization.load_pem_private_key(pem_data, password=None)
         if not isinstance(priv, ed25519.Ed25519PrivateKey):
@@ -236,7 +247,8 @@ def _rotate_key_locked(org_id: str) -> dict[str, Any]:
         format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=serialization.NoEncryption(),
     )
-    fd = os.open(str(key_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    tmp_key = org_dir / f"signing_key.pem.{os.getpid()}.{threading.get_ident()}.tmp"
+    fd = os.open(str(tmp_key), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(pem_bytes)
@@ -245,11 +257,14 @@ def _rotate_key_locked(org_id: str) -> dict[str, Any]:
             os.close(fd)
         except OSError:
             pass
+        tmp_key.unlink(missing_ok=True)
         raise
     try:
-        os.chmod(str(key_path), 0o600)
-    except OSError:
-        pass
+        os.chmod(str(tmp_key), 0o600)
+        tmp_key.replace(key_path)
+    except Exception:
+        tmp_key.unlink(missing_ok=True)
+        raise
 
     key_id = compute_key_id(priv.public_key())
     new_entry = {

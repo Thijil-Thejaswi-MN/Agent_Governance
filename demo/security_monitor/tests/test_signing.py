@@ -221,7 +221,8 @@ def test_rotation_verifies_old_records_with_retired_key(tmp_path: Path, monkeypa
     assert key_id_2 in v2["message"]
 
 
-def test_existing_v1_and_v0_fixtures_verify_unchanged() -> None:
+def test_existing_v1_and_v0_fixtures_verify_unchanged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GOVERNANCE_KEYS_DIR", str(tmp_path / "empty_keys"))
     # 1. Existing v0 fixture from repository
     fixture_path = Path("demo/security_monitor/tests/fixtures/receipts/task_4793807674a4.json")
     if fixture_path.is_file():
@@ -309,16 +310,17 @@ def test_private_key_never_leaks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 
 def test_landlock_condition_c_blocks_private_key(tmp_path: Path) -> None:
-    from demo.security_monitor.app.governance.os_layer.landlock import LandlockSandbox
+    from demo.security_monitor.app.governance.os_layer.sandbox_spec import compile_landlock_rules
+    from demo.security_monitor.app.governance.models import TaskBoundary
 
-    sandbox = LandlockSandbox()
     workspace = tmp_path / "workspace"
     workspace.mkdir()
 
-    sandbox.build_default_task_profile(workspace)
+    boundary = TaskBoundary(task_id="test_task", workspace_root=str(workspace))
+    compiled = compile_landlock_rules(boundary, workspace, proxy_port=None)
 
     # Ensure $HOME keys directory is not in any allowed paths
-    allowed_paths = [str(Path(p).resolve()) for p, _ in sandbox.path_rules]
+    allowed_paths = [str(Path(r["path"]).resolve()) for r in compiled["rules"]]
     keys_path = str((Path.home() / ".agent_governance" / "keys").resolve())
 
     for ap in allowed_paths:
@@ -350,7 +352,6 @@ def test_downgraded_v2_to_v1_flagged_unsigned_after_signing_enabled(tmp_path: Pa
     res = verify_receipt(forged)
     assert res["ok"] is False
     assert res["scope"] == "unsigned_after_signing_enabled"
-    assert res["message"] == "No signature, but signing was enabled when this record was made"
 
 
 def test_genuine_v1_record_before_initial_key_verifies_whole_record(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -367,7 +368,7 @@ def test_genuine_v1_record_before_initial_key_verifies_whole_record(tmp_path: Pa
     rec["receipt_version"] = "v1"
     sealed = seal(rec, sign=False)
 
-    res = verify_receipt(sealed)
+    res = verify_receipt(sealed, trusted_started_at="2026-10-15T12:00:00Z", trusted_org_id="default")
     assert res["ok"] is True
     assert res["scope"] == "whole_record"
     assert "whole record checked" in res["message"]
@@ -385,11 +386,12 @@ def test_signing_unavailable_shows_signing_unavailable(tmp_path: Path, monkeypat
     res = verify_receipt(sealed)
     assert res["scope"] == "signing_unavailable"
     assert res["ok"] is False
-    assert "permission denied on keys dir" in res["message"]
-    assert res["signature_reason"] == "permission denied on keys dir"
+    assert res["message"] == "signing unavailable"
+    assert res["signature_reason"] == "signing unavailable"
 
 
-def test_all_existing_demo_data_records_verify_as_before() -> None:
+def test_all_existing_demo_data_records_verify_as_before(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GOVERNANCE_KEYS_DIR", str(tmp_path / "empty_keys"))
     # Only verify committed files in demo/data; skip with clear reason if folder does not exist
     committed_dir = Path("demo/data/evaluation_v3/checkpoint1/receipts")
     if not committed_dir.is_dir():
@@ -431,14 +433,14 @@ def test_scripts_verify_receipt_downgrade_flags(tmp_path: Path, monkeypatch: pyt
 
     pub_file = keys_dir / "default" / "public_keys.json"
 
-    # 1. Without --signing-enabled-since, downgrade check is skipped when --pubkey is passed
+    # 1. The CLI's --pubkey mode must still run the downgrade check, using the public key's created_at, and fail
     out_skip = subprocess.run(
         [sys.executable, str(ROOT / "scripts" / "verify_receipt.py"), str(rec_file), "--pubkey", str(pub_file)],
         capture_output=True,
         text=True,
     )
-    assert "downgrade check was skipped" in out_skip.stdout
-    assert "PASS" in out_skip.stdout
+    assert out_skip.returncode == 1
+    assert "FAIL" in out_skip.stdout
 
     # 2. With --signing-enabled-since, downgrade is detected and fails
     out_fail = subprocess.run(
@@ -456,9 +458,9 @@ def test_scripts_verify_receipt_downgrade_flags(tmp_path: Path, monkeypatch: pyt
     )
     assert out_fail.returncode == 1
     assert "FAIL" in out_fail.stdout
-    assert "No signature, but signing was enabled when this record was made" in out_fail.stdout
+    assert "No signature" in out_fail.stdout
 
-    # 3. Signing unavailable record prints WARN and does not exit with code 1
+    # 3. Signing unavailable record prints FAIL and exits with code 1
     unavail = dict(downgraded)
     unavail["extra"] = {"signing": "unavailable: test write failure"}
     unavail["hash_chain"] = dict(unavail["hash_chain"])
@@ -471,8 +473,8 @@ def test_scripts_verify_receipt_downgrade_flags(tmp_path: Path, monkeypatch: pyt
         capture_output=True,
         text=True,
     )
-    assert out_warn.returncode == 0
-    assert "WARN" in out_warn.stdout
+    assert out_warn.returncode == 1
+    assert "FAIL" in out_warn.stdout
     assert "signing unavailable" in out_warn.stdout
 
 
@@ -491,10 +493,10 @@ def test_downgraded_record_backdated_created_at_flagged_using_stored_task_time(t
     rec["receipt_version"] = "v1"
     forged = seal(rec, sign=False)
 
-    # Without trusted time, backdated time makes it appear as pre-signing
+    # Without trusted time, a v0/v1 record FAILS when signing is enabled
     res_untrusted = verify_receipt(forged)
-    assert res_untrusted["ok"] is True
-    assert res_untrusted["scope"] == "whole_record"
+    assert res_untrusted["ok"] is False
+    assert res_untrusted["scope"] == "unsigned_after_signing_enabled"
 
     # With stored task time passed, the stored task's time wins and flags it
     res = verify_receipt(forged, trusted_started_at=trusted_created_at, trusted_org_id="default")
@@ -545,7 +547,7 @@ def test_imported_record_with_no_stored_task_shows_time_taken_from_record_itself
     rec["receipt_version"] = "v1"
     sealed = seal(rec, sign=False)
 
+    # When signing is enabled, a v0/v1 record without trusted time from storage FAILS
     res = verify_receipt(sealed, trusted_started_at=None, trusted_org_id=None)
-    assert res["ok"] is True
-    assert res["scope"] == "whole_record"
-    assert "time taken from the record itself" in res["message"]
+    assert res["ok"] is False
+    assert res["scope"] == "unsigned_after_signing_enabled"

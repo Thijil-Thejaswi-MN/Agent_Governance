@@ -171,6 +171,10 @@ describe('record and labels', () => {
     expect(receiptSentence(null, true).text).toBe('No record was saved for this run.');
     const r = { task_id: 't', receipt: { task_id: 't' }, verified: true, verification_message: 'ok' };
     expect(receiptSentence(r, true)).toEqual({ text: 'Record checked: no entries changed', tone: 'ok' });
+    expect(receiptSentence({ ...r, receipt: { ...r.receipt, dropped_writes: 2 } }, true)).toEqual({
+      text: 'record incomplete',
+      tone: 'bad',
+    });
     expect(receiptSentence({ ...r, verified: false }, true).tone).toBe('bad');
     expect(receiptSentence({ ...r, available: false }, true).text).toBe('No record was saved for this run.');
   });
@@ -220,7 +224,7 @@ describe('finished runs with refused requests', () => {
 
 describe('runs that wrote no result', () => {
   it('says the task was not completed', () => {
-    expect(statusSentence({ state: 'completed', blocked: [], noResult: true })).toBe('Agent run finished (task not completed).');
+    expect(statusSentence({ state: 'completed', blocked: [], noResult: true })).toBe('Agent run finished (task unfinished).');
   });
 });
 
@@ -229,5 +233,43 @@ describe('background reads', () => {
     expect(statusSentence({ state: 'completed', blocked: [], background: 7 })).toBe(
       'Finished. The agent stayed inside its fence. 7 background reads by programs it ran were stopped.',
     );
+  });
+});
+
+describe('NEVER_SAY banned words scan', () => {
+  it('every .tsx file has no banned words in string literals or JSX text', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const srcDir = path.resolve(__dirname, '..');
+
+    function getTsxFiles(dir: string): string[] {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      const files: string[] = [];
+      for (const entry of entries) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name !== 'node_modules' && entry.name !== 'dist') {
+            files.push(...getTsxFiles(full));
+          }
+        } else if (entry.name.endsWith('.tsx') && !entry.name.endsWith('.test.tsx')) {
+          files.push(full);
+        }
+      }
+      return files;
+    }
+
+    const tsxFiles = getTsxFiles(srcDir);
+    expect(tsxFiles.length).toBeGreaterThan(10);
+
+    for (const file of tsxFiles) {
+      const content = fs.readFileSync(file, 'utf-8');
+      const stringMatches = content.match(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`/g) || [];
+      for (const match of stringMatches) {
+        for (const word of NEVER_SAY) {
+          const re = new RegExp(`(?<![a-zA-Z0-9_-])${word}(?![a-zA-Z0-9_-])`, 'i');
+          expect(re.test(match), `File ${path.basename(file)} contains banned word "${word}" in: ${match}`).toBe(false);
+        }
+      }
+    }
   });
 });

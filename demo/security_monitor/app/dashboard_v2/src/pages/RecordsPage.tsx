@@ -340,7 +340,9 @@ export const RecordsPage: React.FC = () => {
                           )}
                         </td>
                         <td className="py-2 px-3">
-                          {badge === 'failed' ? (
+                          {badge === 'record_incomplete' ? (
+                            <StatusPill tone="bad" label="record incomplete" />
+                          ) : badge === 'failed' ? (
                             <StatusPill tone="bad" label="Verification failed" />
                           ) : badge === 'unsigned_after_signing_enabled' ? (
                             <StatusPill tone="bad" label="Missing signature (keys active)" />
@@ -417,13 +419,15 @@ export const RecordsPage: React.FC = () => {
               <div className="text-fg-3">Hash chain verification:</div>
               {selectedReceipt?.available === false ? (
                 <StatusPill tone="neutral" label="No stored record" />
+              ) : (selectedReceipt?.dropped_writes && selectedReceipt.dropped_writes > 0) || (selectedReceipt?.receipt?.dropped_writes && selectedReceipt.receipt.dropped_writes > 0) ? (
+                <StatusPill tone="bad" label="record incomplete" />
               ) : selectedReceipt?.verified_scope === 'unsigned_after_signing_enabled' ? (
                 <StatusPill tone="bad" label="No signature, but signature verification was active when this record was made" />
               ) : selectedReceipt?.verified_scope === 'signing_unavailable' ? (
                 <StatusPill tone="wait" label={`Signature unavailable: ${selectedReceipt?.signature_reason || selectedReceipt?.verification_message?.replace(/^signing unavailable:\s*/, '') || 'unavailable'}`} />
               ) : selectedReceipt?.verified === false ? (
                 <StatusPill tone="bad" label="Verification failed: entry changed or hash mismatch" />
-              ) : selectedReceipt?.verified_scope === 'signed' ? (
+              ) : selectedReceipt?.verified_scope === 'signature_verified' || selectedReceipt?.verified_scope?.startsWith('sign') ? (
                 <StatusPill tone="ok" label={`Record checked: signature verified (key ${selectedReceipt?.key_id || selectedReceipt?.receipt?.signature?.key_id || 'active'})`} />
               ) : selectedReceipt?.verified_scope === 'events_only' ? (
                 <StatusPill tone="info" label="events only" />

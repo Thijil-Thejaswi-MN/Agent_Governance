@@ -53,7 +53,7 @@ describe('request preview', () => {
 
 describe('decision card', () => {
   it('Allow once carries the hover note', () => {
-    expect(card()).toContain('title="The copy is removed after the agent’s first read (detected by the monitor)."');
+    expect(card()).toContain('title="The copy is removed after the agent’s initial read (detected by the monitor)."');
   });
 
   it('offers the decisions in order', () => {

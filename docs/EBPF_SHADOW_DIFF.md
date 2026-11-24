@@ -13,6 +13,8 @@
 | 5 | 30 | 1950 | 0 | 0 | 0 | 0 / 9 / 287 / 11509 / 120 / 179 / 4 / 0 | 0 | OK |
 | 10 | 30 | 1863 | 0 | 0 | 0 | 0 / 7 / 245 / 11125 / 99 / 136 / 3 / 0 | 0 | OK |
 
+Total exact matches across all concurrency levels: **5,763** (1,950 + 1,950 + 1,863).
+
 ## eBPF-Only Event Prefix Breakdown
 
 | Prefix / Category | Operation | Count | Reason & File/Line Reference |

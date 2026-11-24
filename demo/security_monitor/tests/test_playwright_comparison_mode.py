@@ -84,7 +84,7 @@ def test_comparison_mode_playwright(page: Page, comparison_console_server, tmp_p
     # Screenshot 2: Incidents page with comparison warning
     page.goto(f"{console_server.url}/dashboard/incidents")
     expect(page.locator("h1")).to_contain_text("blocked action")
-    incident_item = page.locator(f'li[data-incident*="{task_id}"]')
+    incident_item = page.locator(f'li[data-incident*="{task_id}"]').filter(has_text="private_archive.txt")
     expect(incident_item).to_be_visible(timeout=10000)
     expect(incident_item).to_contain_text("Comparison run: decoy was read (would be blocked by the kernel lock)")
     expect(incident_item).to_contain_text("private_archive.txt")

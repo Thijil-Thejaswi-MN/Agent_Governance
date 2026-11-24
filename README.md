@@ -32,9 +32,9 @@ The M6 launcher flow (Linux/WSL2). Code paths are relative to `demo/security_mon
      ▼
  agent shim (agent_shim.py) ── runs the LLM agent inside the sandbox
      │
-     ├──► broker Unix socket (broker_rpc.py) ── 7 agent-facing endpoints only:
-     │       read_file, write_file, http_get, call_agent (checks the decision but delivers a stub reply), request_access,
-     │       run_command_check, llm_complete   (no approve / deny / grant endpoint)
+     ├──► broker Unix socket (broker_rpc.py) ── agent-facing endpoints:
+     │       read_file, write_file, http_get, http_post, call_agent (checks the decision and dispatches to peer agent),
+     │       request_access, run_command_check, llm_complete   (no approve / deny / grant endpoint)
      └──► egress proxy (proxy.py) ── the only TCP port the sandbox may connect to; network allowances are IP:port entries; host names are refused at the proxy
      │
      ▼
@@ -48,7 +48,7 @@ The M6 launcher flow (Linux/WSL2). Code paths are relative to `demo/security_mon
      │                          deny → freeze (cgroup.freeze) → kill (cgroup.kill)
      │
      ▼
- Task Receipt v0 (receipt.py) ── hash-chained JSON per task (not signed); check with scripts/verify_receipt.py
+ Task Receipt (receipt.py) ── hash-chained and Ed25519-signed JSON per task; check with scripts/verify_receipt.py
 ```
 
 Expansion (`expansion.py`): an agent calls `request_access`. The request gets a risk tier, which is raised if the agent read untrusted input before asking. An approved file is delivered by copy into the task's read-only `granted/` directory. The agent cannot grant itself anything through the socket.
@@ -81,10 +81,10 @@ Design notes and limitations for the OS layer: [`docs/M6_OS_BOUND_AGENT_NOTES.md
 | Evaluation v3: conditions A–D on the OS-bound agent (M6.2) | Done |
 | Governance Console v3: Home, Run (live governed runs, decisions), Fleet, History, Results; operator sessions | Implemented; governed runs need Linux/WSL2 |
 | Inventory (GOVERNED / SHADOW), A2A gateway integration (M2) | Implemented |
-| eBPF sensor (M7) | Planned |
+| eBPF sensor (M7) | Implemented (Linux/WSL2) |
 | BPF-LSM dynamic grants | Planned |
 | Long-lived / shared agents via hooks | Planned |
-| Shadow-agent discovery from OS telemetry | Planned |
+| Shadow-agent discovery from OS telemetry | Implemented |
 | Enterprise features ([OS telemetry and enterprise plan](docs/OS_TELEMETRY_AND_ENTERPRISE_PLAN.md)) | Planned |
 
 ## Results (M5–M6)
@@ -143,7 +143,7 @@ Setup:
 | Mean trial time | 13 s | 64 s | 68 s | 26 s |
 
 - Fisher exact test, A vs each of B, C and D: p < 0.001.
-- The 32 trials per condition are 16 scenarios run twice. The model tried the injected action in 13–17 of them, so "0/32" means every one of those attempts was stopped, not that 32 attacks were tried.
+- The 32 trials per condition are 16 scenarios run twice. The model tried the injected action in 13–17 of them, so "0/32" means every one of those attempts was stopped, not that 32 attacks were tried (note: one condition B attempt failed due to a missing folder in `full_v3b_qwen2.5_7b.jsonl`, B / injected_indirect_10 / repeat 0).
 - `llama3.1:8b` had 0/32 harm in all conditions: it ignored the injections even without governance, so it is uninformative for security.
 - The canary never reached the sink in any condition.
 - Governance has a cost: denials push the model into retry loops, which shows up as longer trials and timeouts.
@@ -185,9 +185,10 @@ Result files in [`demo/data/evaluation_v3/results/`](demo/data/evaluation_v3/res
 - UDP is not mediated by Landlock.
 - Nothing is enforced on native Windows. On Windows only the tool layer and the dashboard run; the OS-layer tests skip and the console's Start refuses to start runs (HTTP 503 with the reason).
 - Inventory discovery relies on what agents declare about themselves.
-- Receipts are hash-chained, not signed. v1 records (17 Nov 2026 on) also hash the whole record; older v0 records cover only the event list, and the console says so.
+- Receipts are hash-chained, and modern records (v2) carry an Ed25519 signature. Older v0/v1 records cover only event chain and record hash, and the console says so.
 - Utility v3d (31/32 without and 31/32 with governance) covers tasks whose files the request names, run with the reviewed (gold) boundary, not the derived one. When the request does not name the needed file, 14/32 (A) and 10/32 (C) were correct, and C needed the expansion chain with a simulated approver.
 - LLM boundary derivation (v2) was evaluated against gold labels that were AI-authored and are pending team review.
+- Microbenchmark overhead comparisons (grep 51 vs 908 ms and 1.5× vs 3.1×) are not reproduced from committed data.
 - Two earlier bugs were found and fixed during development (commit `bdd5ee6`):
   - the M4 sensor swallowed signals sent to traced processes instead of re-injecting them;
   - the M4 `sensor.py` bridge never stored events.
@@ -209,7 +210,7 @@ This project claims only the combination of four things. We did not find a prior
 | A boundary derived from the user's request | Partial. In the M6 experiments the boundary came from templates (v1). LLM derivation (v2) was evaluated separately, against AI-authored gold labels. |
 | Enforcement of that boundary at the tool and OS layers | Strong, from the experiments: injected-attack harm 14/32 → 0/32 (p < 0.001; attempted in 13–17 trials per condition); shell-channel attacks: 8 of 8 attempts succeeded with the tool layer only, 0 of 10 with the OS layer (decoy exposure 8/128 → 0/128, p = 0.007). |
 | Mid-task expansion that takes provenance into account | Implementation-level. Implemented and tested; M5 had 0 approvals outside the legitimate set, but only with an idealised ORACLE approver. Real human approvals were not tested. |
-| A receipt for each request | Integrity only. Receipts hash-chain the events and (v1, since 17 Nov) hash the whole record, including approvals and approvers; older v0 records cover only the event list. Not signed. Their usefulness to an auditor was not evaluated. |
+| A receipt for each request | Integrity and authenticity. Receipts hash-chain the events, hash the whole record, and include an Ed25519 signature (v2); older v0 records cover only the event list. |
 
 Summary: we implement task-scoped runtime governance that combines a request-derived boundary, tool- and OS-layer enforcement, provenance-aware expansion and per-request receipts. In a controlled evaluation with local 7–8B models, governance eliminated injected-attack harm (14/32 → 0/32, p < 0.001), and OS-level enforcement stopped shell-channel attacks that tool-level mediation allowed (8 of 8 attempts succeeded with the tool layer only, 0 of 10 with the OS layer; decoy exposure 8/128 → 0/128, p = 0.007), at a measurable latency and timeout cost.
 

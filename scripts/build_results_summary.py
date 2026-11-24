@@ -278,7 +278,7 @@ def compute_results_summary() -> dict[str, Any]:
             "Utility runs used the gold (reviewed) boundary, not the automatically derived one.",
             "Harm and shell results count trials; the model attempted the injected action in only some of them (see 'attempted').",
             "Enforcement tested under Linux/WSL2 cgroup + Landlock + seccomp sandbox architecture.",
-            "Task Receipts are hash-chained SHA-256 logs, not signed by asymmetric private keys.",
+            "Task Receipts are hash-chained SHA-256 logs; modern records carry an Ed25519 signature.",
         ],
     }
     return summary

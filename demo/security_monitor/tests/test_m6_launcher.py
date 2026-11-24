@@ -145,7 +145,7 @@ def test_rpc_exposes_only_agent_endpoints_no_self_approval(rpc_env) -> None:
 
     assert set(AGENT_ENDPOINTS) == {"read_file", "write_file", "http_get", "http_post", "call_agent",
                                     "call_agents", "request_access", "run_command_check", "run_command_begin",
-                                    "llm_complete"}
+                                    "llm_complete", "report_result"}
     client = AgentBrokerClient(token=rpc_env["token"], uds_path=rpc_env["sock"], uds_timeout=10)
     # Agent requests something MEDIUM (pending -> times out -> denied); then tries to approve it itself.
     res = client.request_access("file_read", "notes/other.txt", "need it")

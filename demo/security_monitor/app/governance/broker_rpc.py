@@ -45,6 +45,7 @@ AGENT_ENDPOINTS = (
     "run_command_check",
     "run_command_begin",
     "llm_complete",
+    "report_result",
 )
 
 MAX_PENDING_CALLS = 64
@@ -158,6 +159,7 @@ class BrokerRPCServer:
             "run_command_check": self._h_run_command_check,
             "run_command_begin": self._h_run_command_begin,
             "llm_complete": self._h_llm_complete,
+            "report_result": self._h_report_result,
         }
         self.task_result: dict[str, Any] | None = None
         assert tuple(self._handlers) == AGENT_ENDPOINTS

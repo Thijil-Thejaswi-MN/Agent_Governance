@@ -42,6 +42,51 @@ KEY_PATTERNS = [
 ]
 
 
+def safe_read_file(repo_root: Path, file_path: Path, max_bytes: int = 1024 * 1024) -> str | None:
+    """Reads a file safely:
+    - verifies with lstat that it is a regular file and NOT a symlink
+    - verifies that the resolved path stays inside repo_root
+    - opens with O_RDONLY | O_NOFOLLOW
+    - caps read at max_bytes (1 MB)
+    """
+    try:
+        resolved_root = repo_root.resolve()
+        st = os.lstat(str(file_path))
+        import stat
+        if not stat.S_ISREG(st.st_mode) or stat.S_ISLNK(st.st_mode):
+            return None
+        resolved_file = file_path.resolve()
+        if not (resolved_file == resolved_root or str(resolved_file).startswith(str(resolved_root) + os.sep)):
+            return None
+        flags = os.O_RDONLY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(str(file_path), flags)
+        try:
+            with open(fd, "rb", closefd=True) as f:
+                content = f.read(max_bytes)
+                return content.decode("utf-8", errors="replace")
+        except Exception:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            return None
+    except Exception as e:
+        logger.debug("safe_read_file failed for %s: %s", file_path, e)
+        return None
+
+
+def safe_read_json(repo_root: Path, file_path: Path, max_bytes: int = 1024 * 1024) -> Any | None:
+    text = safe_read_file(repo_root, file_path, max_bytes=max_bytes)
+    if text is None:
+        return None
+    try:
+        return json.loads(text)
+    except Exception:
+        return None
+
+
 class RepoScanner:
     """Scans repository roots for agent frameworks, agent cards, and MCP configurations."""
 
@@ -143,15 +188,15 @@ class RepoScanner:
         try:
             for req_file in repo.glob("requirements*.txt"):
                 if req_file.is_file():
-                    self._parse_requirements_file(req_file, frameworks, evidence)
+                    self._parse_requirements_file(repo, req_file, frameworks, evidence)
         except (PermissionError, OSError):
             pass
 
         # Check pyproject.toml
         pyproject = repo / "pyproject.toml"
         if pyproject.is_file():
-            try:
-                text = pyproject.read_text(encoding="utf-8", errors="replace")
+            text = safe_read_file(repo, pyproject)
+            if text:
                 matched = self._find_frameworks_in_text(text)
                 if matched:
                     frameworks.update(matched)
@@ -161,15 +206,13 @@ class RepoScanner:
                             detail=f"pyproject.toml includes: {', '.join(sorted(matched))}",
                         )
                     )
-            except Exception as e:
-                logger.debug("Failed reading %s: %s", pyproject, e)
 
         # Check Pipfile / Pipfile.lock / poetry.lock
         for lock_name in ("Pipfile", "poetry.lock", "Pipfile.lock"):
             lock_path = repo / lock_name
             if lock_path.is_file():
-                try:
-                    text = lock_path.read_text(encoding="utf-8", errors="replace")
+                text = safe_read_file(repo, lock_path)
+                if text:
                     matched = self._find_frameworks_in_text(text)
                     if matched:
                         frameworks.update(matched)
@@ -179,37 +222,35 @@ class RepoScanner:
                                 detail=f"{lock_name} references: {', '.join(sorted(matched))}",
                             )
                         )
-                except Exception as e:
-                    logger.debug("Failed reading %s: %s", lock_path, e)
 
     def _parse_requirements_file(
         self,
+        repo: Path,
         req_file: Path,
         frameworks: set[str],
         evidence: list[EvidenceItem],
     ) -> None:
-        try:
-            content = req_file.read_text(encoding="utf-8", errors="replace")
-            matched: set[str] = set()
-            for line in content.splitlines():
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                pkg_name = re.split(r"[=<>!~;@\s]", line)[0].lower().replace("_", "-")
-                for fw in AGENT_FRAMEWORKS:
-                    fw_norm = fw.lower().replace("_", "-")
-                    if pkg_name == fw_norm or pkg_name.startswith(f"{fw_norm}-"):
-                        matched.add(fw)
-            if matched:
-                frameworks.update(matched)
-                evidence.append(
-                    EvidenceItem(
-                        signal="manifest",
-                        detail=f"{req_file.name} specifies: {', '.join(sorted(matched))}",
-                    )
+        content = safe_read_file(repo, req_file)
+        if not content:
+            return
+        matched: set[str] = set()
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            pkg_name = re.split(r"[=<>!~;@\s]", line)[0].lower().replace("_", "-")
+            for fw in AGENT_FRAMEWORKS:
+                fw_norm = fw.lower().replace("_", "-")
+                if pkg_name == fw_norm or pkg_name.startswith(f"{fw_norm}-"):
+                    matched.add(fw)
+        if matched:
+            frameworks.update(matched)
+            evidence.append(
+                EvidenceItem(
+                    signal="manifest",
+                    detail=f"{req_file.name} specifies: {', '.join(sorted(matched))}",
                 )
-        except Exception as e:
-            logger.debug("Failed reading %s: %s", req_file, e)
+            )
 
     def _inspect_node_manifests(
         self,
@@ -219,8 +260,8 @@ class RepoScanner:
     ) -> None:
         pkg_json = repo / "package.json"
         if pkg_json.is_file():
-            try:
-                data = json.loads(pkg_json.read_text(encoding="utf-8", errors="replace"))
+            data = safe_read_json(repo, pkg_json)
+            if isinstance(data, dict):
                 deps: dict[str, Any] = {}
                 deps.update(data.get("dependencies", {}))
                 deps.update(data.get("devDependencies", {}))
@@ -241,8 +282,6 @@ class RepoScanner:
                             detail=f"package.json declares: {', '.join(sorted(matched))}",
                         )
                     )
-            except Exception as e:
-                logger.debug("Failed parsing %s: %s", pkg_json, e)
 
     def _inspect_agent_cards(
         self,
@@ -258,8 +297,8 @@ class RepoScanner:
         ]
         for candidate in card_candidates:
             if candidate.is_file():
-                try:
-                    data = json.loads(candidate.read_text(encoding="utf-8", errors="replace"))
+                data = safe_read_json(repo, candidate)
+                if isinstance(data, dict):
                     card_name = data.get("name", "Unnamed")
                     evidence.append(
                         EvidenceItem(
@@ -267,11 +306,8 @@ class RepoScanner:
                             detail=f"Agent card found at {candidate.name}: {card_name}",
                         )
                     )
-                    # Check skills or frameworks in card
                     if "skills" in data:
                         frameworks.add("a2a_agent")
-                except Exception as e:
-                    logger.debug("Failed reading agent card %s: %s", candidate, e)
 
     def _inspect_mcp_configs(
         self,
@@ -288,8 +324,8 @@ class RepoScanner:
         ]
         for cand in mcp_candidates:
             if cand.is_file():
-                try:
-                    data = json.loads(cand.read_text(encoding="utf-8", errors="replace"))
+                data = safe_read_json(repo, cand)
+                if isinstance(data, dict):
                     frameworks.add("mcp")
                     servers = data.get("mcpServers", {})
                     names = list(servers.keys())
@@ -300,8 +336,6 @@ class RepoScanner:
                         for k in env_vars.keys():
                             if k.upper().endswith("_KEY") or k.upper().endswith("_TOKEN"):
                                 key_names.add(k)
-                except Exception as e:
-                    logger.debug("Failed reading MCP config %s: %s", cand, e)
 
     def _inspect_dockerfiles(
         self,
@@ -313,8 +347,8 @@ class RepoScanner:
         try:
             for item in repo.iterdir():
                 if item.is_file() and ("dockerfile" in item.name.lower()):
-                    try:
-                        text = item.read_text(encoding="utf-8", errors="replace")
+                    text = safe_read_file(repo, item)
+                    if text:
                         matched = self._find_frameworks_in_text(text)
                         if matched:
                             frameworks.update(matched)
@@ -327,8 +361,6 @@ class RepoScanner:
                         for key in KEY_PATTERNS:
                             if key in text:
                                 key_names.add(key)
-                    except Exception:
-                        pass
         except (PermissionError, OSError):
             pass
 

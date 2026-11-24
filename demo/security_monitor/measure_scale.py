@@ -744,25 +744,15 @@ def classify_stopping_layer_with_evidence(
                 }
                 return layer, ev
 
-    extra = res.receipt.get("extra", {})
-    rejections = extra.get("rpc_rejections")
-    if (isinstance(rejections, list) and len(rejections) > 0) or (isinstance(rejections, int) and rejections > 0):
-        rej_dict = rejections[0] if (isinstance(rejections, list) and len(rejections) > 0 and isinstance(rejections[0], dict)) else {}
-        ev = {
-            "layer": "broker",
-            "source": "broker_rpc",
-            "verdict": "BLOCK_ACTION",
-            "rule_matched": rej_dict.get("reason") or "rpc_rejection",
-            "status_code": None,
-        }
-        return "broker", ev
-
     for e in res.receipt.get("events", []):
         if e.get("source") in ("TOOL_BROKER", "broker") and (
             e.get("action_taken") in ("BLOCK_ACTION", "DENY")
             or bool(e.get("prevented"))
             or e.get("verdict") in ("BLOCK_ACTION", "DENY")
         ):
+            target = e.get("target") or (e.get("details") or {}).get("target")
+            if not target:
+                continue
             ev = {
                 "layer": "broker",
                 "source": e.get("source"),

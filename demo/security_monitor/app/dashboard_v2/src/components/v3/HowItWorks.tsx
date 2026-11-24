@@ -107,7 +107,7 @@ export const HowItWorks: React.FC = () => {
           <KV k="Identity" v="one cgroup v2 scope per task (systemd-run --user --scope), created before the agent acts" />
         </DetailsSection>
         <DetailsSection title="Layer 1: tool layer">
-          <KV k="Broker" v="Unix-socket RPC with 8 agent-facing endpoints: read_file, write_file, http_get, call_agent (checks the decision but delivers a stub reply), request_access, run_command_check, run_command_begin, llm_complete; no approve, deny or grant endpoint" />
+          <KV k="Broker" v="Unix-socket RPC with agent-facing endpoints: read_file, write_file, http_get, http_post, call_agent (checks the decision and dispatches to peer agent), request_access, run_command_check, run_command_begin, llm_complete; no approve, deny or grant endpoint" />
           <KV k="Egress proxy" v="the only TCP port the sandbox may connect to; network allowances are IP:port entries; host names are refused at the proxy" />
           <KV k="Expansion" v="request_access gets a risk tier, raised when the agent read untrusted input before asking (provenance); grants are exact resources, wildcards are rejected; an approved file is copied into the read-only granted/ directory; a new output file is written to staged/ and a person reviews that exact content before it is saved" />
           <KV k="Fail closed" v="a request nobody decides before its timeout is denied" />
@@ -121,7 +121,7 @@ export const HowItWorks: React.FC = () => {
           <KV k="Graduated response" v="deny → freeze (cgroup.freeze) → kill (cgroup.kill)" />
         </DetailsSection>
         <DetailsSection title="Record">
-          <KV k="Task Receipt v1" v="a SHA-256 hash-chained log of events plus a SHA-256 hash of the whole record (boundary, grants, deliveries, ending); it detects edits, but it is not signed, so someone able to rewrite the whole file can recompute both (scripts/verify_receipt.py). Older v0 records verify for their events only" />
+          <KV k="Task Receipt" v="a SHA-256 hash-chained log of events plus a SHA-256 hash of the whole record (boundary, grants, deliveries, ending), with an Ed25519 signature verified against public keys (scripts/verify_receipt.py). Older v0 records verify for their events only" />
         </DetailsSection>
         <DetailsSection title="Conditions (M6 evaluation)">
           <KV k="A" v="no governance" />
