@@ -1479,14 +1479,106 @@ def create_app(
                             },
                         )
 
+            # Check if target agent is governed
+            is_governed_target = False
+            try:
+                from ..governance.agent_profiles import load_all_agent_profiles
+                if agent_id in load_all_agent_profiles():
+                    is_governed_target = True
+            except Exception:
+                pass
+            if not is_governed_target and trusted_agent:
+                raw_c = getattr(trusted_agent, "raw_card", {}) or {}
+                if getattr(trusted_agent, "governed", False) or raw_c.get("governed") or "governed" in raw_c.get("tags", []):
+                    is_governed_target = True
+
+            token_hdr = request.headers.get("x-delegation-token")
+            token_payload = None
+            if is_governed_target:
+                if not token_hdr:
+                    return JSONResponse(
+                        status_code=403,
+                        content={
+                            "jsonrpc": "2.0",
+                            "error": {
+                                "code": -32005,
+                                "message": f"Security Violation: Target agent '{agent_id}' is governed but X-Delegation-Token header is missing.",
+                                "action": "QUARANTINE",
+                            },
+                            "id": body_json.get("id") if body_json else None,
+                        },
+                    )
+                from ..governance.delegation_token import verify_delegation_token
+                token_valid, err_msg, token_payload = verify_delegation_token(token_hdr)
+                if not token_valid or not token_payload:
+                    return JSONResponse(
+                        status_code=403,
+                        content={
+                            "jsonrpc": "2.0",
+                            "error": {
+                                "code": -32005,
+                                "message": f"Security Violation: Invalid delegation token for '{agent_id}': {err_msg}",
+                                "action": "QUARANTINE",
+                            },
+                            "id": body_json.get("id") if body_json else None,
+                        },
+                    )
+                # The token is the caller's own: it must allow calling this agent, leave room for
+                # one more hop, and name the caller the request claims to come from.
+                scope_peers = (token_payload.get("scope") or {}).get("peer_agents") or []
+                caller_hdr = request.headers.get("x-agent-id")
+                hop_problem = None
+                if agent_id not in scope_peers:
+                    hop_problem = f"'{agent_id}' is not in the caller's signed scope"
+                elif int(token_payload.get("depth", 0)) + 1 > int(token_payload.get("max_depth", 4)):
+                    hop_problem = "the signed delegation depth limit is reached"
+                elif caller_hdr and caller_hdr != token_payload.get("agent"):
+                    hop_problem = f"the token belongs to '{token_payload.get('agent')}', not '{caller_hdr}'"
+                if hop_problem:
+                    return JSONResponse(
+                        status_code=403,
+                        content={
+                            "jsonrpc": "2.0",
+                            "error": {
+                                "code": -32005,
+                                "message": f"Security Violation: Delegation token refused for '{agent_id}': {hop_problem}.",
+                                "action": "QUARANTINE",
+                            },
+                            "id": body_json.get("id") if body_json else None,
+                        },
+                    )
+            elif token_hdr:
+                from ..governance.delegation_token import verify_delegation_token
+                token_valid, err_msg, token_payload = verify_delegation_token(token_hdr)
+                if not token_valid or not token_payload:
+                    return JSONResponse(
+                        status_code=403,
+                        content={
+                            "jsonrpc": "2.0",
+                            "error": {
+                                "code": -32005,
+                                "message": f"Security Violation: Invalid delegation token for '{agent_id}': {err_msg}",
+                                "action": "QUARANTINE",
+                            },
+                            "id": body_json.get("id") if body_json else None,
+                        },
+                    )
+
             # 5B. Cycle Overflow (CO) across multi-hop delegation contexts
+            explicit_chain_hdr = request.headers.get("x-delegation-chain")
             context_id = (
                 request.headers.get("x-context-id")
-                or body_json.get("context_id")
-                or (body_json.get("params", {}).get("message", {}).get("context_id") if isinstance(body_json.get("params"), dict) and isinstance(body_json.get("params", {}).get("message"), dict) else None)
+                or (body_json.get("context_id") if isinstance(body_json, dict) else None)
+                or (body_json.get("params", {}).get("message", {}).get("context_id") if isinstance(body_json, dict) and isinstance(body_json.get("params"), dict) and isinstance(body_json.get("params", {}).get("message"), dict) else None)
             )
-            explicit_chain_hdr = request.headers.get("x-delegation-chain")
-            explicit_chain = [x.strip() for x in explicit_chain_hdr.split(",") if x.strip()] if explicit_chain_hdr else None
+
+            max_depth_budget = 5
+            if token_payload:
+                explicit_chain = token_payload.get("chain", [])
+                max_depth_budget = token_payload.get("max_depth", 4)
+                context_id = token_payload.get("txn") or context_id or "delegation_token_txn"
+            else:
+                explicit_chain = [x.strip() for x in explicit_chain_hdr.split(",") if x.strip()] if explicit_chain_hdr else None
 
             if context_id or explicit_chain:
                 t_recv = current_time_ns()
@@ -1494,6 +1586,7 @@ def create_app(
                     context_id=context_id or "delegation_adhoc",
                     target_agent_id=agent_id,
                     explicit_chain=explicit_chain,
+                    max_depth=max_depth_budget,
                 )
                 if co_violation:
                     t_detect = current_time_ns()

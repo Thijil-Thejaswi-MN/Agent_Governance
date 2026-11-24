@@ -14,6 +14,7 @@ import hashlib
 import logging
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Callable
 
@@ -67,6 +68,25 @@ class _ClosingConnection:
         finally:
             self._conn.close()
 
+
+class TaskContextLabel(tuple):
+    def __new__(cls, integrity: str, confidentiality: str):
+        return super().__new__(cls, (integrity, confidentiality))
+
+    @property
+    def integrity(self) -> str:
+        return self[0]
+
+    @property
+    def confidentiality(self) -> str:
+        return self[1]
+
+    def __getitem__(self, item):
+        if item == "integrity":
+            return self[0]
+        if item == "confidentiality":
+            return self[1]
+        return super().__getitem__(item)
 
 logger = logging.getLogger(__name__)
 
@@ -378,12 +398,49 @@ class GovernanceStorage:
                     reason TEXT,
                     integrity TEXT NOT NULL,
                     forwarded_from TEXT NOT NULL,
-                    contains_private INTEGER NOT NULL DEFAULT 0
+                    contains_private INTEGER NOT NULL DEFAULT 0,
+                    confidentiality TEXT NOT NULL DEFAULT 'public'
                 )
             """)
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_a2a_root ON a2a_messages(root_task_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_a2a_parent ON a2a_messages(parent_task_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_a2a_sent ON a2a_messages(sent_at)")
+            try:
+                cursor.execute("ALTER TABLE a2a_messages ADD COLUMN confidentiality TEXT DEFAULT 'public'")
+            except Exception:
+                pass
+
+            # 13. Delegation Tokens (A2A tokens held server-side only)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS delegation_tokens (
+                    token_hash TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL,
+                    parent_token_hash TEXT,
+                    token_text TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_delegation_tokens_task ON delegation_tokens(task_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_delegation_tokens_parent ON delegation_tokens(parent_token_hash)")
+
+            # 15. Frozen tasks, for the control-plane check before a child starts
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS task_freezes (
+                    task_id TEXT PRIMARY KEY,
+                    reason TEXT,
+                    frozen_at TEXT NOT NULL
+                )
+            """)
+
+            # 14. Task Context Labels (Integrity and Confidentiality tracking)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS task_context_labels (
+                    task_id TEXT PRIMARY KEY,
+                    integrity TEXT NOT NULL DEFAULT 'trusted',
+                    confidentiality TEXT NOT NULL DEFAULT 'public',
+                    updated_at TEXT NOT NULL
+                )
+            """)
             try:
                 cursor.execute("ALTER TABLE governance_tasks ADD COLUMN owner TEXT")
             except Exception:
@@ -708,14 +765,16 @@ class GovernanceStorage:
                         INSERT INTO a2a_messages (
                             message_id, root_task_id, parent_task_id, child_task_id,
                             from_agent, to_agent, kind, fanout_group, reply_to,
-                            sent_at, text, verdict, reason, integrity, forwarded_from, contains_private
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            sent_at, text, verdict, reason, integrity, forwarded_from, contains_private,
+                            confidentiality
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT(message_id) DO UPDATE SET
                             child_task_id=coalesce(excluded.child_task_id, a2a_messages.child_task_id),
                             verdict=excluded.verdict,
                             reason=excluded.reason,
                             forwarded_from=excluded.forwarded_from,
-                            contains_private=excluded.contains_private
+                            contains_private=excluded.contains_private,
+                            confidentiality=excluded.confidentiality
                         """,
                         [
                             (
@@ -732,9 +791,10 @@ class GovernanceStorage:
                                 (m.get("text") or "")[:8192],
                                 m["verdict"],
                                 m.get("reason"),
-                                m["integrity"],
+                                m.get("integrity", "trusted"),
                                 m["forwarded_from"] if isinstance(m["forwarded_from"], str) else json.dumps(m["forwarded_from"]),
                                 1 if m.get("contains_private") else 0,
+                                m.get("confidentiality", "public"),
                             )
                             for m in a2a_msgs
                         ],
@@ -1541,6 +1601,7 @@ class GovernanceStorage:
                     "integrity": r["integrity"],
                     "forwarded_from": fw_val,
                     "contains_private": bool(r["contains_private"]),
+                    "confidentiality": r["confidentiality"] if "confidentiality" in r.keys() else "public",
                 })
             return out
 
@@ -1572,4 +1633,116 @@ class GovernanceStorage:
                 "integrity": r["integrity"],
                 "forwarded_from": fw_val,
                 "contains_private": bool(r["contains_private"]),
+                "confidentiality": r["confidentiality"] if "confidentiality" in r.keys() else "public",
             }
+
+    # --- Delegation Token Store ---
+    def save_delegation_token(self, task_id: str, token_text: str, parent_token_hash: str | None = None) -> str:
+        token_hash = hashlib.sha256(token_text.encode("utf-8")).hexdigest()
+        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO delegation_tokens (token_hash, task_id, parent_token_hash, token_text, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(token_hash) DO UPDATE SET
+                    task_id=excluded.task_id,
+                    parent_token_hash=excluded.parent_token_hash,
+                    token_text=excluded.token_text
+                """,
+                (token_hash, task_id, parent_token_hash, token_text, now_utc),
+            )
+            conn.commit()
+        return token_hash
+
+    def get_delegation_token_by_task_id(self, task_id: str) -> str | None:
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT token_text FROM delegation_tokens WHERE task_id = ? ORDER BY created_at DESC LIMIT 1",
+                (task_id,),
+            ).fetchone()
+            return row["token_text"] if row else None
+
+    def get_delegation_token_by_hash(self, token_hash: str) -> str | None:
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT token_text FROM delegation_tokens WHERE token_hash = ?",
+                (token_hash,),
+            ).fetchone()
+            return row["token_text"] if row else None
+
+    def get_child_delegation_token_hashes(self, parent_token_hash: str) -> list[str]:
+        with self.get_connection() as conn:
+            rows = conn.execute(
+                "SELECT token_hash FROM delegation_tokens WHERE parent_token_hash = ? ORDER BY created_at ASC",
+                (parent_token_hash,),
+            ).fetchall()
+            return [r["token_hash"] for r in rows]
+
+    # --- Task Context Labels ---
+    def get_task_context_label(self, task_id: str) -> TaskContextLabel:
+        """Returns (integrity, confidentiality) for task_id, default ('trusted', 'public')."""
+        with self.get_connection() as conn:
+            row = conn.execute(
+                "SELECT integrity, confidentiality FROM task_context_labels WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+            if row:
+                return TaskContextLabel(str(row["integrity"]), str(row["confidentiality"]))
+            return TaskContextLabel("trusted", "public")
+
+    def record_task_freeze(self, task_id: str, reason: str = "") -> None:
+        """Marks a task as frozen for the control-plane check made before any child starts.
+
+        Kept in its own table so the task timeline is not given a second freeze step
+        (the launcher already reports freezes in the record)."""
+        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO task_freezes (task_id, reason, frozen_at) VALUES (?, ?, ?)
+                ON CONFLICT(task_id) DO NOTHING
+                """,
+                (task_id, reason or "", now_utc),
+            )
+            conn.commit()
+
+    def is_task_frozen(self, task_id: str) -> bool:
+        with self.get_connection() as conn:
+            r = conn.execute("SELECT 1 FROM task_freezes WHERE task_id = ? LIMIT 1", (task_id,)).fetchone()
+            return r is not None
+
+    def update_task_context_label(
+        self,
+        task_id: str,
+        integrity: str | None = None,
+        confidentiality: str | None = None,
+    ) -> tuple[str, str]:
+        """Raises a task's context label; it never goes back down.
+
+        Integrity: 'trusted' -> 'untrusted'. Confidentiality: 'public' -> 'internal' -> 'secret'.
+        The most restrictive value is chosen inside one SQL statement, so two threads raising
+        the label at the same time can never write a lower value over a higher one.
+        """
+        integ = "untrusted" if integrity == "untrusted" else "trusted"
+        conf_rank = {"public": 0, "internal": 1, "secret": 2}.get(confidentiality or "public", 0)
+        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO task_context_labels (task_id, integrity, confidentiality, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(task_id) DO UPDATE SET
+                    integrity = CASE WHEN task_context_labels.integrity = 'untrusted'
+                                       OR excluded.integrity = 'untrusted'
+                                     THEN 'untrusted' ELSE 'trusted' END,
+                    confidentiality = CASE
+                        WHEN task_context_labels.confidentiality = 'secret' OR excluded.confidentiality = 'secret' THEN 'secret'
+                        WHEN task_context_labels.confidentiality = 'internal' OR excluded.confidentiality = 'internal' THEN 'internal'
+                        ELSE 'public' END,
+                    updated_at = excluded.updated_at
+                """,
+                (task_id, integ, {0: "public", 1: "internal", 2: "secret"}[conf_rank], now_utc),
+            )
+            conn.commit()
+        return self.get_task_context_label(task_id)

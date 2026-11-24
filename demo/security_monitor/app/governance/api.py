@@ -2793,18 +2793,62 @@ async def get_a2a_job(root_task_id: str, request: Request = None) -> dict[str, A
             "status": pair_status,
         })
 
+    # Delegation info per task
+    from .delegation_token import verify_delegation_token
+    delegation_info = None
+    has_delegations = len(all_tasks) > 1 or len(messages) > 0
+    if has_delegations:
+        tok_text = storage.get_delegation_token_by_task_id(root_task.task_id) if hasattr(storage, "get_delegation_token_by_task_id") else None
+        if tok_text:
+            sig_ok, _, payload = verify_delegation_token(tok_text, check_expiry=False)
+            if payload:
+                delegation_info = {
+                    "agents": payload.get("chain", []),
+                    "depth": payload.get("depth", 0),
+                    "scope": payload.get("scope", {}),
+                    "expiry": payload.get("exp"),
+                    "signature_verified": sig_ok,
+                }
+
+    tasks_info = []
+    for t in all_tasks:
+        t_info = None
+        if has_delegations:
+            t_tok = storage.get_delegation_token_by_task_id(t.task_id) if hasattr(storage, "get_delegation_token_by_task_id") else None
+            if t_tok:
+                s_ok, _, pl = verify_delegation_token(t_tok, check_expiry=False)
+                if pl:
+                    t_info = {
+                        "agents": pl.get("chain", []),
+                        "depth": pl.get("depth", 0),
+                        "scope": pl.get("scope", {}),
+                        "expiry": pl.get("exp"),
+                        "signature_verified": s_ok,
+                    }
+        tasks_info.append({
+            "task_id": t.task_id,
+            "agent_id": t.agent_id,
+            "status": t.status.value if hasattr(t.status, "value") else str(t.status),
+            "delegation": t_info,
+        })
+
+    root_task_dict = {
+        "task_id": root_task.task_id,
+        "request_text": root_task.request_text,
+        "agent_id": root_task.agent_id,
+        "owner": root_task.owner,
+        "team": root_task.team,
+        "status": root_task.status.value if hasattr(root_task.status, "value") else str(root_task.status),
+        "created_at": root_task.created_at,
+        "delegation": delegation_info,
+    }
+
     return {
         "root_task_id": root_task_id,
         "status": job_status,
-        "task": {
-            "task_id": root_task.task_id,
-            "request_text": root_task.request_text,
-            "agent_id": root_task.agent_id,
-            "owner": root_task.owner,
-            "team": root_task.team,
-            "status": root_task.status.value if hasattr(root_task.status, "value") else str(root_task.status),
-            "created_at": root_task.created_at,
-        },
+        "task": root_task_dict,
+        "delegation": delegation_info,
+        "tasks": tasks_info,
         "agents": agents,
         "threads": threads,
         "messages": messages,

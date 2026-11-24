@@ -835,6 +835,14 @@ class TaskLauncher:
                                            "reason": reason, "detail": detail, "method": "already_frozen"})
                 return
             self._frozen.set()
+            # Recorded for the control plane: a delegation chain with a frozen task in it can
+            # start no new child (delegation_token.verify_chain_tokens).
+            frozen_tid = self.live.get("task_id")
+            if frozen_tid:
+                try:
+                    self.storage.record_task_freeze(frozen_tid, reason)
+                except Exception:
+                    pass
             cg = self.live.get("cgroup")
             unit = self.live.get("unit")
             ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -1185,6 +1193,33 @@ class TaskLauncher:
 
         token = f"gov_tok_{uuid.uuid4().hex}"
         self.storage.save_token(token, task_id, task.agent_id)
+
+        # Initialize task context label
+        self.storage.update_task_context_label(task_id, integrity="trusted", confidentiality="public")
+
+        # Root delegation token minting (held server-side only; never in agent env or workspace)
+        if not self.storage.get_delegation_token_by_task_id(task_id):
+            if not spec.parent_task_id or spec.depth == 0:
+                from .delegation_token import mint_delegation_token, normalize_scope, compute_intent_hash
+                root_scope = normalize_scope(boundary)
+                intent_hash = compute_intent_hash(spec.prompt, root_scope)
+                now_ts = int(time.time())
+                exp_ts = now_ts + int(spec.timeout_s or 900)
+                root_tok = mint_delegation_token(
+                    org_id=task.org or "default",
+                    sub=spec.requester or spec.owner or "local_user",
+                    txn=task_id,
+                    task_id=task_id,
+                    agent_id=task.agent_id,
+                    chain=[task.agent_id],
+                    depth=0,
+                    scope=root_scope,
+                    par_hash=None,
+                    intent=intent_hash,
+                    iat=now_ts,
+                    exp=exp_ts,
+                )
+                self.storage.save_delegation_token(task_id, root_tok, parent_token_hash=None)
 
         # Sensor selection: GOVERNANCE_SENSOR=auto|ebpf|ptrace (default auto)
         sensor_choice = os.environ.get("GOVERNANCE_SENSOR", "auto").strip().lower()

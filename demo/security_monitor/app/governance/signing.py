@@ -15,6 +15,7 @@ import hashlib
 import json
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,11 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 logger = logging.getLogger(__name__)
 
 DEFAULT_KEYS_DIR = Path.home() / ".agent_governance" / "keys"
+
+# Key files are created on first use, often by several threads at once (a parallel fan-out
+# mints one token per child). One lock per process, plus an atomic create-if-absent on disk
+# for other processes, so two callers can never each write a different key.
+_KEY_LOCK = threading.RLock()
 
 
 def get_keys_dir() -> Path:
@@ -68,7 +74,7 @@ def raw_public_key_b64(public_key: ed25519.Ed25519PublicKey) -> str:
 def _save_public_keys_registry(org_dir: Path, registry: list[dict[str, Any]]) -> None:
     pub_file = org_dir / "public_keys.json"
     content = json.dumps(registry, indent=2, sort_keys=True)
-    tmp = org_dir / "public_keys.json.tmp"
+    tmp = org_dir / f"public_keys.json.{os.getpid()}.{threading.get_ident()}.tmp"
     tmp.write_text(content, encoding="utf-8")
     try:
         tmp.chmod(0o644)
@@ -117,6 +123,11 @@ def get_or_create_signing_key(org_id: str = "default") -> tuple[ed25519.Ed25519P
     Creates signing_key.pem with file mode 0600 on initial use.
     Returns (private_key, key_id).
     """
+    with _KEY_LOCK:
+        return _get_or_create_signing_key_locked(org_id)
+
+
+def _get_or_create_signing_key_locked(org_id: str) -> tuple[ed25519.Ed25519PrivateKey, str]:
     org_dir = get_org_keys_dir(org_id)
     key_path = org_dir / "signing_key.pem"
     pub_file = org_dir / "public_keys.json"
@@ -153,7 +164,10 @@ def get_or_create_signing_key(org_id: str = "default") -> tuple[ed25519.Ed25519P
         format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=serialization.NoEncryption(),
     )
-    fd = os.open(str(key_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    # Write the whole key to a private temp file, then link it into place. link() fails if
+    # another process created the key first; we then use that key instead of overwriting it.
+    tmp_key = org_dir / f"signing_key.pem.{os.getpid()}.{threading.get_ident()}.tmp"
+    fd = os.open(str(tmp_key), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(pem_bytes)
@@ -162,7 +176,14 @@ def get_or_create_signing_key(org_id: str = "default") -> tuple[ed25519.Ed25519P
             os.close(fd)
         except OSError:
             pass
+        tmp_key.unlink(missing_ok=True)
         raise
+    try:
+        os.link(str(tmp_key), str(key_path))
+    except FileExistsError:
+        tmp_key.unlink(missing_ok=True)
+        return _get_or_create_signing_key_locked(org_id)
+    tmp_key.unlink(missing_ok=True)
     try:
         os.chmod(str(key_path), 0o600)
     except OSError:
@@ -186,6 +207,11 @@ def rotate_key(org_id: str = "default") -> dict[str, Any]:
     Old public keys are preserved in public_keys.json and are never deleted.
     Returns the new key metadata dict.
     """
+    with _KEY_LOCK:
+        return _rotate_key_locked(org_id)
+
+
+def _rotate_key_locked(org_id: str) -> dict[str, Any]:
     org_dir = get_org_keys_dir(org_id)
     key_path = org_dir / "signing_key.pem"
     pub_file = org_dir / "public_keys.json"
@@ -235,6 +261,24 @@ def rotate_key(org_id: str = "default") -> dict[str, Any]:
     registry.append(new_entry)
     _save_public_keys_registry(org_dir, registry)
     return new_entry
+
+
+def sign_bytes(data: bytes, org_id: str = "default") -> tuple[bytes, str]:
+    """Applies Ed25519 signature to arbitrary raw bytes using active organisation key.
+    Returns (signature_bytes, key_id).
+    """
+    priv, key_id = get_or_create_signing_key(org_id)
+    sig_bytes = priv.sign(data)
+    return sig_bytes, key_id
+
+
+def verify_bytes(public_key: ed25519.Ed25519PublicKey, signature: bytes, data: bytes) -> bool:
+    """Validates raw signature against raw bytes under given public key."""
+    try:
+        public_key.verify(signature, data)
+        return True
+    except Exception:
+        return False
 
 
 def sign_document_sha256(document_sha256: str, org_id: str = "default") -> dict[str, Any]:

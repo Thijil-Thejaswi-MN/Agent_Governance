@@ -45,7 +45,7 @@ from typing import Any
 from .broker import ToolBroker
 from .evaluator import BoundaryEvaluator
 from .expansion import ExpansionService
-from .models import EventVerdict, ExpansionRequest, ExpansionStatus, RiskTier, TaskAction, TaskBoundary
+from .models import EnforcementMode, EventVerdict, ExpansionRequest, ExpansionStatus, RiskTier, TaskAction, TaskBoundary
 from .policy import TaskPolicyEngine
 from .standing_rules import StandingRule, is_standing_rules_enabled, pick_rule
 
@@ -231,10 +231,49 @@ class PolicySimulator:
                         action, ev.risk_tier, ev.resolved_path, ev.rule_matched)
         return done("allow", "boundary_resource", ev.rule_matched, action, ev.risk_tier, ev.resolved_path)
 
-    def sequence(self, boundary: TaskBoundary, calls: list[tuple[str, str]]) -> list[dict[str, Any]]:
-        """Several calls in order, sharing one violation count, as one task would."""
+    def sequence(self, boundary: TaskBoundary, calls: list[tuple[str, str]],
+                 multi_agent: bool | None = None) -> list[dict[str, Any]]:
+        """Several calls in order, sharing one violation count, as one task would.
+
+        In a multi-agent job (by default: the boundary lists peer agents) the two data-flow
+        rules apply on top of the boundary, from the labels the earlier allowed calls raise:
+        web content and peer replies make the context untrusted, private files make it secret.
+        A call_agent the boundary allows then waits for the owner's OK ("ask")."""
         engine = TaskPolicyEngine()
-        return [self.tool_call(boundary, tool, target, engine=engine) for tool, target in calls]
+        if multi_agent is None:
+            multi_agent = bool(boundary.peer_agents)
+        untrusted, secret = False, False
+        out: list[dict[str, Any]] = []
+        for tool, target in calls:
+            d = self.tool_call(boundary, tool, target, engine=engine)
+            if d["outcome"] == "allow" and multi_agent and tool == "call_agent" and (untrusted or secret):
+                why = "the task holds private data" if secret else "the task read untrusted content"
+                if boundary.enforcement_mode == EnforcementMode.OBSERVE:
+                    d["trace"].append(_step("data_rule", "logged", f"observe mode, logged only: {why}"))
+                else:
+                    d["outcome"] = "ask"
+                    d["trace"].append(_step("data_rule", "ask", f"needs the job owner's OK: {why}"))
+            if d["outcome"] == "allow":
+                if tool in ("http_get", "call_agent"):
+                    untrusted = True
+                elif tool == "read_file" and self._is_private(boundary, d.get("resolved_path") or target):
+                    secret = True
+            out.append(d)
+        return out
+
+    @staticmethod
+    def _is_private(boundary: TaskBoundary, path: str) -> bool:
+        import fnmatch
+        from pathlib import Path
+
+        meta = boundary.metadata or {}
+        name = Path(str(path)).name
+        for pf in meta.get("private_files", []) or []:
+            p = pf.get("path") if isinstance(pf, dict) else str(pf)
+            if p and (str(path).endswith(str(p).lstrip("./")) or name == Path(str(p)).name):
+                return True
+        pats = list(meta.get("sensitive_patterns", []) or []) + list(getattr(boundary, "sensitive_patterns", []) or [])
+        return any(fnmatch.fnmatch(str(path), pat) or fnmatch.fnmatch(name, pat) for pat in pats)
 
     # --- access requests ------------------------------------------------------------------
 

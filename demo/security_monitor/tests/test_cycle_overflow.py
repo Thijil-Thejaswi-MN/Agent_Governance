@@ -146,3 +146,90 @@ def test_co_depth_boundary_semantics_depths_4_5_6():
     assert v_depth_6.details["max_depth_budget"] == 5
     assert len(v_depth_6.details["delegation_path"]) == 6
 
+
+
+def test_gateway_governed_target_stripped_header_refused():
+    """Governed agent calls require valid delegation token; stripped header is refused with 403."""
+    app = create_app()
+    # Mark helloworld as governed
+    hw = app.state.inventory.get_trusted_agent("helloworld")
+    hw.raw_card["governed"] = True
+
+    client = TestClient(app)
+
+    # Stripped delegation token header
+    resp = client.post(
+        "/proxy/helloworld",
+        json={"jsonrpc": "2.0", "id": "co-stripped-1", "method": "echo_bot", "params": {}},
+        headers={
+            "x-agent-id": "caller_agent",
+        },
+    )
+    assert resp.status_code == 403
+    assert "X-Delegation-Token header is missing" in resp.text
+
+
+def test_gateway_governed_target_forged_token_refused():
+    """Governed agent call with forged/tampered delegation token is refused with 403."""
+    app = create_app()
+    hw = app.state.inventory.get_trusted_agent("helloworld")
+    hw.raw_card["governed"] = True
+
+    client = TestClient(app)
+
+    resp = client.post(
+        "/proxy/helloworld",
+        json={"jsonrpc": "2.0", "id": "co-forged-1", "method": "echo_bot", "params": {}},
+        headers={
+            "x-delegation-token": "badheader.badpayload.badsig",
+            "x-agent-id": "caller_agent",
+        },
+    )
+    assert resp.status_code == 403
+    assert "Invalid delegation token" in resp.text
+
+
+def test_gateway_token_header_ignores_caller_chain_header():
+    """Gateway trusts only verified token chain and ignores caller x-delegation-chain header."""
+    from demo.security_monitor.app.governance.delegation_token import mint_delegation_token, compute_intent_hash
+    import time
+
+    app = create_app()
+    hw = app.state.inventory.get_trusted_agent("helloworld")
+    hw.raw_card["governed"] = True
+
+    # Mint a valid token where chain is acyclic (no helloworld in chain)
+    scope = {"tools": ["echo_bot"], "files_read": [], "files_write": [], "network": [], "peer_agents": ["helloworld"]}
+    intent_h = compute_intent_hash("run echo", scope)
+    now_ts = int(time.time())
+    valid_token = mint_delegation_token(
+        org_id="default",
+        sub="operator",
+        txn="task_hw_1",
+        task_id="task_hw_1",
+        agent_id="caller_agent",
+        chain=["caller_agent"],
+        depth=0,
+        scope=scope,
+        par_hash=None,
+        intent=intent_h,
+        iat=now_ts,
+        exp=now_ts + 600,
+    )
+
+    client = TestClient(app)
+
+    # Caller attempts to fake a cycle in x-delegation-chain: "helloworld,caller_agent"
+    # But valid token has chain ["caller_agent"], so x-delegation-chain header is ignored!
+    resp = client.post(
+        "/proxy/helloworld",
+        json={"jsonrpc": "2.0", "id": "co-ignore-hdr-1", "method": "echo_bot", "params": {}},
+        headers={
+            "x-delegation-token": valid_token,
+            "x-delegation-chain": "helloworld,caller_agent",
+            "x-agent-id": "caller_agent",
+        },
+    )
+    # The faked cycle in x-delegation-chain is ignored: the signed chain has no cycle.
+    assert "CO_CYCLE_DETECTED" not in resp.text
+    assert "Delegation token refused" not in resp.text and "Invalid delegation token" not in resp.text

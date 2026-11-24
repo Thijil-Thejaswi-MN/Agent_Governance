@@ -165,27 +165,34 @@ def test_a2a_conversations_page(page: Page, a2a_console_server, tmp_path: Path):
     expect(page.locator("h1")).to_contain_text("conversations", timeout=10000)
     expect(page.locator("#request-text")).to_contain_text("Plan trip with trip planner")
 
-    # 2. Verify fanout tag "sent 3 at once" appears (Item 4 & 9)
+    # 2. Rule 1 (A2A-2): the Planner opened the passport scan, so its fan-out waits for the
+    # owner's OK. The card says why in plain words; pressing Approve lets the three calls go.
+    flow_card = page.locator("[id^=approval-card-]").filter(has_text="Your OK is needed")
+    expect(flow_card).to_be_visible(timeout=10000)
+    expect(flow_card).to_contain_text("Planner wants to message Researcher, Budget, Booking while holding private data")
+    expect(flow_card).to_contain_text("data rule")
+    flow_card.locator("[id^=approve-btn-]").click()
+
+    # 3. Verify fanout tag "sent 3 at once" appears (Item 4 & 9)
     fanout_tag = page.locator('[data-testid="fanout-tag"]')
     expect(fanout_tag).to_be_visible(timeout=10000)
     expect(fanout_tag).to_contain_text("sent 3 at once")
 
-    # 3. Verify Researcher approval card appears with approve button
-    approval_card = page.locator("[id^=approval-card-]")
+    # 4. Verify Researcher approval card appears with approve button
+    approval_card = page.locator("[id^=approval-card-]").filter(has_text="input/travel_history.csv")
     expect(approval_card).to_be_visible(timeout=10000)
-    expect(approval_card).to_contain_text("input/travel_history.csv")
 
-    approve_btn = page.locator("[id^=approve-btn-]")
+    approve_btn = approval_card.locator("[id^=approve-btn-]")
     expect(approve_btn).to_be_visible()
 
-    # 4. Approving it allows run to proceed
+    # 5. Approving it allows run to proceed
     approve_btn.click()
 
     # Wait for background thread to conclude
     runner_thread.join(timeout=15)
     assert not runner_thread.is_alive(), "Planner runner thread did not conclude"
 
-    # 5. Verify exactly 8 messages and 2 refused arrows with ✕
+    # 6. Verify exactly 8 messages and 2 refused arrows with ✕
     rows = page.locator('[data-testid="timeline-row"]')
     expect(rows).to_have_count(8, timeout=10000)
 

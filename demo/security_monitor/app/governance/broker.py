@@ -11,6 +11,7 @@ import datetime
 import fnmatch
 import json
 import os
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,10 @@ from .models import (
     RiskTier,
     TaskAction,
     EventVerdict,
+    ExpansionRequest,
+    ExpansionStatus,
+    EnforcementMode,
+    TaskBoundary,
 )
 from .storage import GovernanceStorage
 from .evaluator import BoundaryEvaluator
@@ -157,6 +162,16 @@ class ToolBroker:
         if not resource_type or not str(resource_type).strip():
             raise ValueError("resource_type cannot be empty in expansion request")
         task_id, agent_id = self._authenticate(token)
+        needs_person_reason = None
+        boundary = self.storage.get_boundary(task_id)
+        if self._flow_rules_apply(task_id, boundary):
+            integ, _ = self.storage.get_task_context_label(task_id)
+            if integ == "untrusted":
+                reason = self._flow_reason(task_id, agent_id, "request_access", resource_target, False)
+                if boundary is not None and boundary.enforcement_mode == EnforcementMode.OBSERVE:
+                    self._record_flow_observed(task_id, agent_id, boundary, resource_target, reason, "Rule 2")
+                else:
+                    needs_person_reason = reason
         return self.expansion_service.request_and_wait(
             task_id=task_id,
             agent_id=agent_id,
@@ -164,6 +179,7 @@ class ToolBroker:
             resource_target=resource_target,
             justification=justification,
             timeout_seconds=timeout_seconds,
+            needs_person_reason=needs_person_reason,
         )
 
     def request_access(
@@ -429,6 +445,33 @@ class ToolBroker:
         with open(target, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
 
+        # Update confidentiality context label
+        meta = boundary.metadata or {}
+        is_secret = False
+        pfiles = meta.get("private_files", [])
+        norm_fp = str(file_path).replace("\\", "/").lstrip("./")
+        fname = Path(file_path).name
+        for pf in pfiles:
+            p = pf.get("path") if isinstance(pf, dict) else str(pf)
+            if p and (norm_fp == str(p).lstrip("./") or fnmatch.fnmatch(norm_fp, str(p).lstrip("./")) or fname == Path(str(p)).name):
+                is_secret = True
+                break
+        canary = meta.get("canary")
+        if canary and canary in content:
+            is_secret = True
+        spats = list(meta.get("sensitive_patterns", []))
+        if hasattr(boundary, "sensitive_patterns") and boundary.sensitive_patterns:
+            spats.extend(boundary.sensitive_patterns)
+        for pat in spats:
+            if fnmatch.fnmatch(file_path, pat) or fnmatch.fnmatch(fname, pat):
+                is_secret = True
+                break
+
+        if is_secret:
+            self.storage.update_task_context_label(task_id, confidentiality="secret")
+        else:
+            self.storage.update_task_context_label(task_id, confidentiality="internal")
+
         # Record untrusted read in provenance tracker
         if self.expansion_service:
             self.expansion_service.record_untrusted_read(
@@ -623,6 +666,7 @@ class ToolBroker:
                     source_target=url,
                     content=body_content,
                 )
+            self.storage.update_task_context_label(task_id, integrity="untrusted")
             self._check_and_consume_single_use(boundary, "network", url)
             return {"status": fetched.get("status", 0), "url": url, "body": body_content}
 
@@ -635,6 +679,7 @@ class ToolBroker:
                 source_target=url,
                 content=body_content,
             )
+        self.storage.update_task_context_label(task_id, integrity="untrusted")
         self._check_and_consume_single_use(boundary, "network", url)
         return {"status": 200, "url": url, "body": body_content}
 
@@ -717,6 +762,9 @@ class ToolBroker:
             self.storage.save_a2a_message(refused_msg)
             raise PermissionError(f"Outbound network request to '{url}' denied by boundary: {eval_res.rule_matched}")
 
+        # Check flow rules: Rule 1 (Secret data) and Rule 2 (Untrusted content)
+        self._check_flow_approval(task_id, agent_id, boundary, "http_post", url)
+
         # When file_path is given, the broker reads it through the same checks as read_file (boundary + realpath)
         post_data = data
         if file_path:
@@ -725,8 +773,10 @@ class ToolBroker:
         fetcher = getattr(self, "http_fetcher", None)
         if fetcher is not None:
             fetched = fetcher(token=token, task_id=task_id, url=url, method="POST", data=post_data)
+            self.storage.update_task_context_label(task_id, integrity="untrusted")
             return {"status": fetched.get("status", 200), "url": url, "body": fetched.get("body", "")}
 
+        self.storage.update_task_context_label(task_id, integrity="untrusted")
         return {"status": 200, "url": url, "body": "Mock POST response from authorized endpoint"}
 
     def handle_http_redirect(self, token: str, original_url: str, redirect_target: str) -> str:
@@ -913,6 +963,177 @@ class ToolBroker:
             raise PermissionError(f"Command execution denied: {eval_res.rule_matched}")
         return {"allowed": True, "rule_matched": eval_res.rule_matched}
 
+    def _flow_rules_apply(self, task_id: str, boundary: TaskBoundary | None) -> bool:
+        """The two data-flow rules apply to multi-agent jobs only: a task that was delegated
+        (it has a parent) or one that may call other agents. Single-agent tasks behave as before."""
+        task_rec = self.storage.get_task(task_id)
+        if task_rec is not None and getattr(task_rec, "parent_task_id", None):
+            return True
+        return bool(boundary is not None and (boundary.peer_agents or []))
+
+    @staticmethod
+    def _display_name(agent_id: str) -> str:
+        try:
+            from .agent_profiles import load_agent_profile
+
+            name = str(load_agent_profile(agent_id).get("name") or "").strip()
+        except Exception:
+            name = ""
+        if name.endswith(" Agent"):
+            name = name[: -len(" Agent")]
+        return name or agent_id.replace("_", " ").title()
+
+    def _flow_reason(self, task_id: str, agent_id: str, action_type: str, target: str, is_secret: bool) -> str:
+        who = self._display_name(agent_id)
+        if action_type in ("call_agent", "call_agents"):
+            names = ", ".join(self._display_name(t.strip()) for t in target.split(",") if t.strip())
+            action = f"message {names}"
+        elif action_type == "http_post":
+            action = f"send data to {target}"
+        else:
+            action = f"ask for access to {target}"
+        if is_secret:
+            return f"{who} wants to {action} while holding private data"
+        sources = {getattr(p, "source_type", "") for p in self.storage.get_provenance_for_task(task_id)}
+        if "peer_message" in sources and "http_get" not in sources:
+            seen = "a reply from another agent"
+        elif "http_get" in sources and "peer_message" not in sources:
+            seen = "content from a website"
+        else:
+            seen = "content from a website or another agent"
+        return f"{who} wants to {action} after reading {seen}"
+
+    def _record_flow_observed(self, task_id: str, agent_id: str, boundary: TaskBoundary, target: str, reason: str, rule: str) -> None:
+        """Observe mode: the data-flow rule is recorded, not enforced."""
+        ev = GovernanceEvent(
+            event_id=self._generate_event_id(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            source=EventSource.TOOL_BROKER,
+            task_id=task_id,
+            agent_id=agent_id,
+            pid=os.getpid(),
+            kind="flow_policy_observed",
+            target=target,
+            details={"reason": reason, "rule": rule},
+            verdict=EventVerdict.INSIDE,
+            risk_tier=RiskTier.HIGH,
+            action_taken=TaskAction.ALERT,
+            prevented=False,
+            rule_matched=reason,
+            boundary_version=boundary.version,
+        )
+        self._record(ev)
+
+    def _check_flow_approval(
+        self,
+        task_id: str,
+        agent_id: str,
+        boundary: TaskBoundary,
+        action_type: str,
+        target: str,
+    ) -> None:
+        """Enforces Rule 1 (Secret data) and Rule 2 (Untrusted content)."""
+        if not self._flow_rules_apply(task_id, boundary):
+            return
+
+        integ, conf = self.storage.get_task_context_label(task_id)
+        is_secret = (conf == "secret")
+        is_untrusted = (integ == "untrusted")
+
+        if not is_secret and not is_untrusted:
+            return
+
+        reason = self._flow_reason(task_id, agent_id, action_type, target, is_secret)
+
+        reqs = self.storage.list_expansion_requests(task_id=task_id)
+        for r in reqs:
+            # An earlier OK counts only for this same action on this same target, once.
+            if (
+                r.resource_type == "flow"
+                and r.resource_target == target
+                and r.justification == reason
+                and r.status == ExpansionStatus.APPROVED
+                and (r.used_count or 0) == 0
+            ):
+                r.used_count = (r.used_count or 0) + 1
+                self.storage.save_expansion_request(r)
+                return
+
+        if boundary.enforcement_mode == EnforcementMode.OBSERVE:
+            self._record_flow_observed(task_id, agent_id, boundary, target, reason, "Rule 1" if is_secret else "Rule 2")
+            return
+
+        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        req_id = f"exp_req_flow_{uuid.uuid4().hex[:12]}"
+        timeout_s = getattr(self, "default_approval_timeout", 2.0)
+        req = ExpansionRequest(
+            request_id=req_id,
+            task_id=task_id,
+            agent_id=agent_id,
+            resource_type="flow",
+            resource_target=target,
+            justification=reason,
+            baseline_risk_tier=RiskTier.HIGH,
+            effective_risk_tier=RiskTier.HIGH,
+            escalated_by_provenance=is_untrusted,
+            status=ExpansionStatus.PENDING,
+            created_at=now_utc,
+            resolved_at=None,
+            resolved_by=None,
+            single_use=True,
+            used_count=0,
+            timeout_seconds=timeout_s,
+            reason=reason,
+        )
+        self.storage.save_expansion_request(req)
+        self.storage.record_task_step(
+            task_id,
+            kind="expansion",
+            layer="broker",
+            verdict="PENDING",
+            summary=f"Flow approval requested: {reason}",
+            detail=reason,
+            source_label="broker",
+        )
+
+        if self.expansion_service and self.expansion_service.user_approval_hook is not None:
+            if self.expansion_service.user_approval_hook(req):
+                self.expansion_service.approve_request(req.request_id, approved_by="simulated_user")
+                req.used_count = 1
+                self.storage.save_expansion_request(req)
+                return
+            else:
+                self.expansion_service.deny_request(req.request_id, denied_by="simulated_user", reason="Denied by user hook")
+                raise PermissionError(f"Flow denied: {reason}")
+
+        start_time = time.time()
+        poll_interval = 0.05
+        approved = False
+        while (time.time() - start_time) < timeout_s:
+            time.sleep(poll_interval)
+            cur = self.storage.get_expansion_request(req.request_id)
+            if not cur:
+                break
+            if cur.status == ExpansionStatus.APPROVED:
+                cur.used_count = (cur.used_count or 0) + 1
+                self.storage.save_expansion_request(cur)
+                approved = True
+                break
+            if cur.status == ExpansionStatus.DENIED:
+                approved = False
+                break
+
+        if not approved:
+            if self.expansion_service:
+                self.expansion_service.deny_request(req.request_id, denied_by="timeout_fail_closed", reason="Flow approval timed out")
+            else:
+                req.status = ExpansionStatus.DENIED
+                req.resolved_by = "timeout_fail_closed"
+                req.resolved_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                req.reason = "Flow approval timed out"
+                self.storage.save_expansion_request(req)
+            raise PermissionError(f"Flow denied by policy: {reason}")
+
     def call_agent(self, token: str, target_agent: str, message: dict[str, Any] | str) -> dict[str, Any]:
         """
         Tool: call_agent
@@ -983,6 +1204,9 @@ class ToolBroker:
             self.storage.save_a2a_message(refused_msg)
             raise PermissionError(f"Communication with agent '{target_agent}' denied by boundary: {eval_res.rule_matched}")
 
+        # Check flow rules: Rule 1 (Secret data) and Rule 2 (Untrusted content)
+        self._check_flow_approval(task_id, agent_id, boundary, "call_agent", target_agent)
+
         dm = getattr(self, "delegation_manager", None)
         if dm is None:
             from .delegation import DelegationManager
@@ -993,6 +1217,8 @@ class ToolBroker:
         self._check_and_consume_single_use(boundary, "peer_agent", target_agent)
 
         reply_content = res.get("reply", "") if isinstance(res, dict) else str(res)
+        reply_conf = res.get("confidentiality", "public") if isinstance(res, dict) else "public"
+        self.storage.update_task_context_label(task_id, integrity="untrusted", confidentiality=reply_conf)
         if self.expansion_service:
             self.expansion_service.record_untrusted_read(
                 task_id=task_id,
@@ -1090,6 +1316,9 @@ class ToolBroker:
                 allowed_calls.append((idx, call_dict))
 
         if allowed_calls:
+            targets_str = ", ".join(c.get("target") or c.get("target_agent", "") for _, c in allowed_calls)
+            self._check_flow_approval(task_id, agent_id, boundary, "call_agents", targets_str)
+
             dm = getattr(self, "delegation_manager", None)
             if dm is None:
                 from .delegation import DelegationManager
@@ -1118,6 +1347,8 @@ class ToolBroker:
                     tgt_name = res_dict.get("target", "")
                     self._check_and_consume_single_use(boundary, "peer_agent", tgt_name)
                     reply_str = res_dict.get("reply", "") if isinstance(res_dict, dict) else ""
+                    reply_conf = res_dict.get("confidentiality", "public") if isinstance(res_dict, dict) else "public"
+                    self.storage.update_task_context_label(task_id, integrity="untrusted", confidentiality=reply_conf)
                     if self.expansion_service:
                         self.expansion_service.record_untrusted_read(
                             task_id=task_id,
