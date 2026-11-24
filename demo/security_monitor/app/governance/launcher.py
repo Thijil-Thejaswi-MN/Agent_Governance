@@ -835,6 +835,14 @@ class TaskLauncher:
                                            "reason": reason, "detail": detail, "method": "already_frozen"})
                 return
             self._frozen.set()
+            # Recorded for the control plane: a delegation chain with a frozen task in it can
+            # start no new child (delegation_token.verify_chain_tokens).
+            frozen_tid = self.live.get("task_id")
+            if frozen_tid:
+                try:
+                    self.storage.record_task_freeze(frozen_tid, reason)
+                except Exception:
+                    pass
             cg = self.live.get("cgroup")
             unit = self.live.get("unit")
             ts = datetime.datetime.now(datetime.timezone.utc).isoformat()

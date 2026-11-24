@@ -308,6 +308,7 @@ class ExpansionService:
         provenance_enabled: bool | None = None,
         provenance_mode: str | None = None,  # "off", "any", "content_linked"
         timeout_seconds: float = 5.0,
+        needs_person_reason: str | None = None,
     ) -> ExpansionRequest:
         """
         Creates and evaluates a dynamic expansion request.
@@ -341,6 +342,15 @@ class ExpansionService:
         baseline_tier, effective_tier, escalated = a["baseline_tier"], a["effective_tier"], a["escalated"]
         status = a["status"]
         resolved_by = a["resolved_by"]
+        # Data-flow Rule 2 (multi-agent jobs): after reading untrusted content, an access request
+        # needs a person even when the risk policy would approve it. It stays this one request,
+        # so the owner is asked once. A request the policy denies stays denied.
+        if needs_person_reason and status == ExpansionStatus.APPROVED:
+            status, resolved_by = ExpansionStatus.PENDING, None
+            if effective_tier == RiskTier.LOW:
+                effective_tier = RiskTier.MEDIUM
+            escalated = True
+            justification = f"{justification} ({needs_person_reason})" if justification else needs_person_reason
         resolved_at = now_utc if status != ExpansionStatus.PENDING else None
         is_auto_approved = status == ExpansionStatus.APPROVED
 
@@ -420,6 +430,9 @@ class ExpansionService:
             source_label="enforced",
         )
 
+        if req.resource_type == "flow":
+            # A data-flow OK lets one action through; it adds nothing to the boundary.
+            return self.storage.get_boundary(req.task_id)
         return self._apply_boundary_expansion(req)
 
     def deny_request(self, request_id: str, denied_by: str, reason: str = "") -> None:
@@ -553,6 +566,7 @@ class ExpansionService:
         justification: str,
         timeout_seconds: float = 2.0,
         provenance_enabled: bool | None = None,
+        needs_person_reason: str | None = None,
     ) -> tuple[bool, str]:
         """
         Synchronous request and wait loop.
@@ -566,6 +580,7 @@ class ExpansionService:
             justification=justification,
             provenance_enabled=provenance_enabled,
             timeout_seconds=timeout_seconds,
+            needs_person_reason=needs_person_reason,
         )
 
         if req.status == ExpansionStatus.APPROVED:

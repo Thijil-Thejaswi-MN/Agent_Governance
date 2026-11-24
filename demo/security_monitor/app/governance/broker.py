@@ -162,6 +162,16 @@ class ToolBroker:
         if not resource_type or not str(resource_type).strip():
             raise ValueError("resource_type cannot be empty in expansion request")
         task_id, agent_id = self._authenticate(token)
+        needs_person_reason = None
+        boundary = self.storage.get_boundary(task_id)
+        if self._flow_rules_apply(task_id, boundary):
+            integ, _ = self.storage.get_task_context_label(task_id)
+            if integ == "untrusted":
+                reason = self._flow_reason(task_id, agent_id, "request_access", resource_target, False)
+                if boundary is not None and boundary.enforcement_mode == EnforcementMode.OBSERVE:
+                    self._record_flow_observed(task_id, agent_id, boundary, resource_target, reason, "Rule 2")
+                else:
+                    needs_person_reason = reason
         return self.expansion_service.request_and_wait(
             task_id=task_id,
             agent_id=agent_id,
@@ -169,6 +179,7 @@ class ToolBroker:
             resource_target=resource_target,
             justification=justification,
             timeout_seconds=timeout_seconds,
+            needs_person_reason=needs_person_reason,
         )
 
     def request_access(
@@ -952,6 +963,67 @@ class ToolBroker:
             raise PermissionError(f"Command execution denied: {eval_res.rule_matched}")
         return {"allowed": True, "rule_matched": eval_res.rule_matched}
 
+    def _flow_rules_apply(self, task_id: str, boundary: TaskBoundary | None) -> bool:
+        """The two data-flow rules apply to multi-agent jobs only: a task that was delegated
+        (it has a parent) or one that may call other agents. Single-agent tasks behave as before."""
+        task_rec = self.storage.get_task(task_id)
+        if task_rec is not None and getattr(task_rec, "parent_task_id", None):
+            return True
+        return bool(boundary is not None and (boundary.peer_agents or []))
+
+    @staticmethod
+    def _display_name(agent_id: str) -> str:
+        try:
+            from .agent_profiles import load_agent_profile
+
+            name = str(load_agent_profile(agent_id).get("name") or "").strip()
+        except Exception:
+            name = ""
+        if name.endswith(" Agent"):
+            name = name[: -len(" Agent")]
+        return name or agent_id.replace("_", " ").title()
+
+    def _flow_reason(self, task_id: str, agent_id: str, action_type: str, target: str, is_secret: bool) -> str:
+        who = self._display_name(agent_id)
+        if action_type in ("call_agent", "call_agents"):
+            names = ", ".join(self._display_name(t.strip()) for t in target.split(",") if t.strip())
+            action = f"message {names}"
+        elif action_type == "http_post":
+            action = f"send data to {target}"
+        else:
+            action = f"ask for access to {target}"
+        if is_secret:
+            return f"{who} wants to {action} while holding private data"
+        sources = {getattr(p, "source_type", "") for p in self.storage.get_provenance_for_task(task_id)}
+        if "peer_message" in sources and "http_get" not in sources:
+            seen = "a reply from another agent"
+        elif "http_get" in sources and "peer_message" not in sources:
+            seen = "content from a website"
+        else:
+            seen = "content from a website or another agent"
+        return f"{who} wants to {action} after reading {seen}"
+
+    def _record_flow_observed(self, task_id: str, agent_id: str, boundary: TaskBoundary, target: str, reason: str, rule: str) -> None:
+        """Observe mode: the data-flow rule is recorded, not enforced."""
+        ev = GovernanceEvent(
+            event_id=self._generate_event_id(),
+            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            source=EventSource.TOOL_BROKER,
+            task_id=task_id,
+            agent_id=agent_id,
+            pid=os.getpid(),
+            kind="flow_policy_observed",
+            target=target,
+            details={"reason": reason, "rule": rule},
+            verdict=EventVerdict.INSIDE,
+            risk_tier=RiskTier.HIGH,
+            action_taken=TaskAction.ALERT,
+            prevented=False,
+            rule_matched=reason,
+            boundary_version=boundary.version,
+        )
+        self._record(ev)
+
     def _check_flow_approval(
         self,
         task_id: str,
@@ -961,13 +1033,8 @@ class ToolBroker:
         target: str,
     ) -> None:
         """Enforces Rule 1 (Secret data) and Rule 2 (Untrusted content)."""
-        # Single-agent tasks without delegation tokens behave exactly as before
-        if hasattr(self.storage, "get_delegation_token_by_task_id"):
-            tok = self.storage.get_delegation_token_by_task_id(task_id)
-            if not tok:
-                task_rec = self.storage.get_task(task_id)
-                if not task_rec or ((not getattr(task_rec, "parent_task_id", None)) and (getattr(task_rec, "depth", 0) or 0) == 0 and len(getattr(task_rec, "chain", []) or []) <= 1):
-                    return
+        if not self._flow_rules_apply(task_id, boundary):
+            return
 
         integ, conf = self.storage.get_task_context_label(task_id)
         is_secret = (conf == "secret")
@@ -976,27 +1043,15 @@ class ToolBroker:
         if not is_secret and not is_untrusted:
             return
 
-        agent_name = agent_id.capitalize()
-        target_display = target
-        if action_type in ("call_agent", "call_agents"):
-            if is_secret:
-                reason = f"{agent_name} wants to message {target_display} while holding confidential data"
-            else:
-                reason = f"{agent_name} wants to message {target_display} after reading content from another agent"
-        elif action_type == "http_post":
-            if is_secret:
-                reason = f"{agent_name} wants to post to {target_display} while holding confidential data"
-            else:
-                reason = f"{agent_name} wants to post to {target_display} after reading untrusted content"
-        else:
-            reason = f"{agent_name} requested {action_type} for {target_display}"
+        reason = self._flow_reason(task_id, agent_id, action_type, target, is_secret)
 
-        flow_target = f"flow:{action_type}:{target}"
         reqs = self.storage.list_expansion_requests(task_id=task_id)
         for r in reqs:
+            # An earlier OK counts only for this same action on this same target, once.
             if (
                 r.resource_type == "flow"
-                and (r.resource_target == target or r.resource_target == flow_target)
+                and r.resource_target == target
+                and r.justification == reason
                 and r.status == ExpansionStatus.APPROVED
                 and (r.used_count or 0) == 0
             ):
@@ -1005,24 +1060,7 @@ class ToolBroker:
                 return
 
         if boundary.enforcement_mode == EnforcementMode.OBSERVE:
-            ev = GovernanceEvent(
-                event_id=self._generate_event_id(),
-                timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                source=EventSource.TOOL_BROKER,
-                task_id=task_id,
-                agent_id=agent_id,
-                pid=os.getpid(),
-                kind="flow_policy_observed",
-                target=target,
-                details={"reason": reason, "rule": "Rule 1" if is_secret else "Rule 2"},
-                verdict=EventVerdict.INSIDE,
-                risk_tier=RiskTier.HIGH,
-                action_taken=TaskAction.ALERT,
-                prevented=False,
-                rule_matched=reason,
-                boundary_version=boundary.version,
-            )
-            self._record(ev)
+            self._record_flow_observed(task_id, agent_id, boundary, target, reason, "Rule 1" if is_secret else "Rule 2")
             return
 
         now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()

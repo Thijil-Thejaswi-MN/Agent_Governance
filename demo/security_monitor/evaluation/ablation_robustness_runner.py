@@ -570,7 +570,7 @@ class CORobustnessRunner:
             "headers_present": False,
             "is_adversarial": True,
             "expected_detected": False,  # unobservable without headers!
-            "header_limitation_note": "Threat to validity: uncooperative or missing context headers evade cycle detection.",
+            "header_limitation_note": "Threat to validity: uncooperative or missing context headers evade cycle detection. Since A2A-2 the gateway refuses calls to governed agents without a signed delegation token, so this applies to ungoverned agents only.",
         })
 
         return cases

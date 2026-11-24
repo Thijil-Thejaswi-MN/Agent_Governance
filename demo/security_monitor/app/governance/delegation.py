@@ -175,26 +175,15 @@ class DelegationManager:
             is_scope_subset,
             verify_chain_tokens,
         )
-        parent_token_text = self.storage.get_delegation_token_by_task_id(caller_task_id)
-        if not parent_token_text:
-            caller_scope = normalize_scope(caller_boundary)
-            intent_hash = compute_intent_hash(caller_task.request_text, caller_scope)
-            now_ts = int(time.time())
-            parent_token_text = mint_delegation_token(
-                org_id=caller_task.org or "default",
-                sub=caller_task.requested_by or caller_task.owner or "local_user",
-                txn=root_task_id,
-                task_id=caller_task_id,
-                agent_id=caller_agent_id,
-                chain=chain,
-                depth=depth,
-                scope=caller_scope,
-                par_hash=None,
-                intent=intent_hash,
-                iat=now_ts,
-                exp=now_ts + int(caller_task.timeout_s or 900),
-            )
-            self.storage.save_delegation_token(caller_task_id, parent_token_text, parent_token_hash=None)
+        with self._lock:
+            parent_token_text = self.storage.get_delegation_token_by_task_id(caller_task_id)
+            if not parent_token_text and (depth != 0 or caller_task.parent_task_id):
+                reason = f"No delegation token on record for {caller_task_id}"
+                self._record_refusal(root_task_id, caller_task_id, caller_agent_id, target_agent, fanout_group, text_content, reason)
+                raise PermissionError(reason)
+            if not parent_token_text:
+                # A root task started outside the launcher (no token yet): mint its root token now.
+                parent_token_text = self._mint_root_token(caller_task, caller_boundary, caller_task_id, caller_agent_id, root_task_id, chain, depth)
 
         curr_tok = parent_token_text
         chain_tokens = [curr_tok]
@@ -210,6 +199,20 @@ class DelegationManager:
             curr_tok = prev_tok
 
         chain_ok, chain_err = verify_chain_tokens(chain_tokens, storage=self.storage)
+        if chain_ok:
+            # The verified token must be the caller's own, and the signed chain must agree with
+            # the task record (the record-based cycle and depth checks above).
+            _, leaf, _ = decode_delegation_token(chain_tokens[-1])
+            if leaf.get("task") != caller_task_id or leaf.get("agent") != caller_agent_id:
+                chain_ok, chain_err = False, f"Delegation token belongs to task {leaf.get('task')}, not {caller_task_id}"
+            elif list(leaf.get("chain") or []) != chain or int(leaf.get("depth", -1)) != depth:
+                chain_ok, chain_err = False, "Delegation token chain does not match the task record"
+            elif target_agent in (leaf.get("chain") or []):
+                chain_ok, chain_err = False, f"Cycle detected in signed chain: '{target_agent}' already in {leaf.get('chain')}"
+            elif int(leaf.get("depth", 0)) + 1 > int(leaf.get("max_depth", MAX_DELEGATION_DEPTH)):
+                chain_ok, chain_err = False, f"Maximum delegation depth {leaf.get('max_depth')} in the signed token reached"
+            elif target_agent not in ((leaf.get("scope") or {}).get("peer_agents") or []):
+                chain_ok, chain_err = False, f"Target agent '{target_agent}' is not in the caller's signed scope"
         if not chain_ok:
             self._record_refusal(root_task_id, caller_task_id, caller_agent_id, target_agent, fanout_group, text_content, chain_err)
             raise PermissionError(chain_err)
@@ -280,7 +283,10 @@ class DelegationManager:
                 exp=child_exp,
             )
             self.storage.save_delegation_token(child_task_id, child_tok, parent_token_hash=par_hash)
-            self.storage.update_task_context_label(child_task_id, integrity="trusted", confidentiality="public")
+            # The child starts with the label of what it is given: the caller's context at the
+            # moment of sending (a message from a task that read secret or untrusted data may carry it).
+            sent_integ, sent_conf = self.storage.get_task_context_label(caller_task_id)
+            self.storage.update_task_context_label(child_task_id, integrity=sent_integ, confidentiality=sent_conf)
 
             # 8. Launch child task via TaskLauncher
             from .launcher import TaskLauncher, TaskSpec
@@ -431,6 +437,29 @@ class DelegationManager:
             for f in futures:
                 results.append(f.result())
         return results
+
+    def _mint_root_token(self, caller_task, caller_boundary, caller_task_id, caller_agent_id, root_task_id, chain, depth) -> str:
+        from .delegation_token import compute_intent_hash, mint_delegation_token, normalize_scope
+
+        caller_scope = normalize_scope(caller_boundary)
+        intent_hash = compute_intent_hash(caller_task.request_text, caller_scope)
+        now_ts = int(time.time())
+        tok = mint_delegation_token(
+            org_id=caller_task.org or "default",
+            sub=caller_task.requested_by or caller_task.owner or "local_user",
+            txn=root_task_id,
+            task_id=caller_task_id,
+            agent_id=caller_agent_id,
+            chain=chain,
+            depth=depth,
+            scope=caller_scope,
+            par_hash=None,
+            intent=intent_hash,
+            iat=now_ts,
+            exp=now_ts + int(caller_task.timeout_s or 900),
+        )
+        self.storage.save_delegation_token(caller_task_id, tok, parent_token_hash=None)
+        return tok
 
     def _record_refusal(
         self,

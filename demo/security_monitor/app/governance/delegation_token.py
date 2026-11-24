@@ -160,23 +160,22 @@ def mint_delegation_token(
     payload_canon = canonical_json(payload_obj)
     payload_b64 = b64url_encode(payload_canon.encode("utf-8"))
 
-    # Produce signature over payload and key header
-    signing_input_prefix = payload_b64.encode("ascii")
-    # Generate signature using org Ed25519 key
-    raw_sig, key_id = sign_bytes(signing_input_prefix, org_id=org_id)
+    from .signing import get_or_create_signing_key
 
+    _, key_id = get_or_create_signing_key(org_id)
     header_obj = {
         "alg": "EdDSA",
         "kid": key_id,
         "typ": "agd+jwt",
     }
-    header_canon = canonical_json(header_obj)
-    header_b64 = b64url_encode(header_canon.encode("utf-8"))
+    header_b64 = b64url_encode(canonical_json(header_obj).encode("utf-8"))
 
-    # Real standard JWS signing input: ASCII(header_b64url + "." + payload_b64url)
+    # JWS signing input: ASCII(header_b64url + "." + payload_b64url)
     signing_input = f"{header_b64}.{payload_b64}".encode("ascii")
-    real_sig, _ = sign_bytes(signing_input, org_id=org_id)
-    sig_b64 = b64url_encode(real_sig)
+    sig, signed_kid = sign_bytes(signing_input, org_id=org_id)
+    if signed_kid != key_id:
+        raise RuntimeError("Organisation key changed while the token was being signed")
+    sig_b64 = b64url_encode(sig)
 
     return f"{header_b64}.{payload_b64}.{sig_b64}"
 
@@ -200,12 +199,14 @@ def verify_delegation_token(
     pubkey: Any = None,
     current_time: int | None = None,
     org_id: str | None = None,
+    check_expiry: bool = True,
 ) -> tuple[bool, str, dict[str, Any]]:
     """Verifies a single delegation token offline.
 
     Checks:
     - structure and algorithms
-    - expiry against current timestamp
+    - expiry against current timestamp (skipped with check_expiry=False, for looking at a
+      finished job later: its tokens have expired, but their signatures still verify)
     - Ed25519 signature verification against public key for kid
     """
     try:
@@ -249,7 +250,7 @@ def verify_delegation_token(
 
     now_ts = int(time.time()) if current_time is None else int(current_time)
     exp = payload.get("exp", 0)
-    if now_ts > exp:
+    if check_expiry and now_ts > exp:
         return False, f"Token expired: expiry {exp} < current {now_ts}", payload
 
     return True, "Valid delegation token", payload
@@ -291,6 +292,10 @@ def verify_chain_tokens(
         return False, "Root token must have par_hash null"
     if root_payload.get("depth") != 0:
         return False, f"Root token depth must be 0, got {root_payload.get('depth')}"
+    if root_payload.get("chain") != [root_payload.get("agent")]:
+        return False, "Root token chain must hold only the root agent"
+    if root_payload.get("txn") != root_payload.get("task"):
+        return False, "Root token txn must be the root task id"
 
     root_sub = root_payload.get("sub")
     root_txn = root_payload.get("txn")
@@ -355,15 +360,12 @@ def verify_chain_tokens(
             if rec is not None:
                 st = getattr(rec, "status", None)
                 st_val = st.value if hasattr(st, "value") else str(st or "")
-                st_ended = getattr(TaskLifecycle, "COMP" + "LETED", None)
-                if st == st_ended or st_val.upper() in ("STOPPED", "CANCELLED", "KILLED", "FINISHED"):
+                # Only a task that is waiting to start or running may sit in a live chain.
+                # Finished, failed, stopped (TERMINATED) and expired tasks may start nothing.
+                if st_val.upper() not in (TaskLifecycle.PENDING.value, TaskLifecycle.ACTIVE.value):
                     return False, f"Task {tid} in delegation chain is {st_val}"
 
-            # Verify not frozen in storage or runtime status
             if hasattr(storage, "is_task_frozen") and storage.is_task_frozen(tid):
                 return False, f"Task {tid} in delegation chain is frozen"
-            if hasattr(storage, "get_task_freeze_status"):
-                if storage.get_task_freeze_status(tid):
-                    return False, f"Task {tid} in delegation chain is frozen"
 
     return True, "Chain validation successful"

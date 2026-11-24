@@ -20,10 +20,13 @@ export const InlineApprovalCard: React.FC<InlineApprovalCardProps> = ({
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // A data-flow request (resource_type "flow") asks to let one action through after the
+  // agent took in private or untrusted data; its reason says what and why in plain words.
+  const isFlow = approval.resource_type === 'flow';
   const kind =
     approval.resource_type === 'network'
       ? 'address'
-      : approval.resource_type === 'peer_agent'
+      : approval.resource_type === 'peer_agent' || isFlow
       ? 'agent'
       : 'file';
   const Icon = kind === 'address' ? Globe : kind === 'agent' ? Bot : FileText;
@@ -60,10 +63,10 @@ export const InlineApprovalCard: React.FC<InlineApprovalCardProps> = ({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[14px] font-semibold text-fg">
-              Permission requested
+              {isFlow ? 'Your OK is needed' : 'Permission requested'}
             </span>
             <span className="text-[12px] font-mono px-2 py-0.5 rounded-full bg-wait/15 text-wait-text border border-wait/30">
-              {approval.resource_type}
+              {isFlow ? 'data rule' : approval.resource_type}
             </span>
           </div>
           <div className="font-mono text-[13px] text-fg mt-1 [overflow-wrap:anywhere]">

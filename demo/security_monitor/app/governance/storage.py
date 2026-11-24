@@ -423,6 +423,15 @@ class GovernanceStorage:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_delegation_tokens_task ON delegation_tokens(task_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_delegation_tokens_parent ON delegation_tokens(parent_token_hash)")
 
+            # 15. Frozen tasks, for the control-plane check before a child starts
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS task_freezes (
+                    task_id TEXT PRIMARY KEY,
+                    reason TEXT,
+                    frozen_at TEXT NOT NULL
+                )
+            """)
+
             # 14. Task Context Labels (Integrity and Confidentiality tracking)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS task_context_labels (
@@ -1683,19 +1692,24 @@ class GovernanceStorage:
             return TaskContextLabel("trusted", "public")
 
     def record_task_freeze(self, task_id: str, reason: str = "") -> None:
-        self.record_task_step(
-            task_id=task_id,
-            kind="freeze",
-            layer="os",
-            verdict="FROZEN",
-            summary=f"Frozen: {reason}",
-            detail=reason,
-            source_label="os",
-        )
+        """Marks a task as frozen for the control-plane check made before any child starts.
+
+        Kept in its own table so the task timeline is not given a second freeze step
+        (the launcher already reports freezes in the record)."""
+        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO task_freezes (task_id, reason, frozen_at) VALUES (?, ?, ?)
+                ON CONFLICT(task_id) DO NOTHING
+                """,
+                (task_id, reason or "", now_utc),
+            )
+            conn.commit()
 
     def is_task_frozen(self, task_id: str) -> bool:
         with self.get_connection() as conn:
-            r = conn.execute("SELECT 1 FROM task_steps WHERE task_id = ? AND kind = 'freeze' LIMIT 1", (task_id,)).fetchone()
+            r = conn.execute("SELECT 1 FROM task_freezes WHERE task_id = ? LIMIT 1", (task_id,)).fetchone()
             return r is not None
 
     def update_task_context_label(
@@ -1704,22 +1718,14 @@ class GovernanceStorage:
         integrity: str | None = None,
         confidentiality: str | None = None,
     ) -> tuple[str, str]:
-        """Monotonically raises task context labels.
-        Integrity: 'trusted' -> 'untrusted' (never goes back down)
-        Confidentiality: 'public' -> 'internal' -> 'secret' (never goes back down)
+        """Raises a task's context label; it never goes back down.
+
+        Integrity: 'trusted' -> 'untrusted'. Confidentiality: 'public' -> 'internal' -> 'secret'.
+        The most restrictive value is chosen inside one SQL statement, so two threads raising
+        the label at the same time can never write a lower value over a higher one.
         """
-        curr_integ, curr_conf = self.get_task_context_label(task_id)
-        # Monotonic integrity: untrusted wins
-        new_integ = "untrusted" if (curr_integ == "untrusted" or integrity == "untrusted") else curr_integ
-
-        # Monotonic confidentiality: secret > internal > public
-        conf_ranks = {"public": 0, "internal": 1, "secret": 2}
-        curr_rank = conf_ranks.get(curr_conf, 0)
-        req_rank = conf_ranks.get(confidentiality or "public", 0)
-        final_rank = max(curr_rank, req_rank)
-        inv_ranks = {0: "public", 1: "internal", 2: "secret"}
-        new_conf = inv_ranks.get(final_rank, "public")
-
+        integ = "untrusted" if integrity == "untrusted" else "trusted"
+        conf_rank = {"public": 0, "internal": 1, "secret": 2}.get(confidentiality or "public", 0)
         now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
         with self.get_connection() as conn:
             conn.execute(
@@ -1727,11 +1733,16 @@ class GovernanceStorage:
                 INSERT INTO task_context_labels (task_id, integrity, confidentiality, updated_at)
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT(task_id) DO UPDATE SET
-                    integrity=excluded.integrity,
-                    confidentiality=excluded.confidentiality,
-                    updated_at=excluded.updated_at
+                    integrity = CASE WHEN task_context_labels.integrity = 'untrusted'
+                                       OR excluded.integrity = 'untrusted'
+                                     THEN 'untrusted' ELSE 'trusted' END,
+                    confidentiality = CASE
+                        WHEN task_context_labels.confidentiality = 'secret' OR excluded.confidentiality = 'secret' THEN 'secret'
+                        WHEN task_context_labels.confidentiality = 'internal' OR excluded.confidentiality = 'internal' THEN 'internal'
+                        ELSE 'public' END,
+                    updated_at = excluded.updated_at
                 """,
-                (task_id, new_integ, new_conf, now_utc),
+                (task_id, integ, {0: "public", 1: "internal", 2: "secret"}[conf_rank], now_utc),
             )
             conn.commit()
-        return new_integ, new_conf
+        return self.get_task_context_label(task_id)

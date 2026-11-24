@@ -199,17 +199,17 @@ def test_gateway_token_header_ignores_caller_chain_header():
     hw.raw_card["governed"] = True
 
     # Mint a valid token where chain is acyclic (no helloworld in chain)
-    scope = {"tools": ["echo_bot"], "files_read": [], "files_write": [], "network": [], "peer_agents": []}
+    scope = {"tools": ["echo_bot"], "files_read": [], "files_write": [], "network": [], "peer_agents": ["helloworld"]}
     intent_h = compute_intent_hash("run echo", scope)
     now_ts = int(time.time())
     valid_token = mint_delegation_token(
         org_id="default",
         sub="operator",
-        txn="txn_123",
+        txn="task_hw_1",
         task_id="task_hw_1",
         agent_id="caller_agent",
         chain=["caller_agent"],
-        depth=1,
+        depth=0,
         scope=scope,
         par_hash=None,
         intent=intent_h,
@@ -230,5 +230,6 @@ def test_gateway_token_header_ignores_caller_chain_header():
             "x-agent-id": "caller_agent",
         },
     )
-    # Should not be 403 CO_CYCLE_DETECTED
-    assert resp.status_code != 403 or "CO_CYCLE_DETECTED" not in resp.text
+    # The faked cycle in x-delegation-chain is ignored: the signed chain has no cycle.
+    assert "CO_CYCLE_DETECTED" not in resp.text
+    assert "Delegation token refused" not in resp.text and "Invalid delegation token" not in resp.text

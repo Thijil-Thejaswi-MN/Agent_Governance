@@ -2800,7 +2800,7 @@ async def get_a2a_job(root_task_id: str, request: Request = None) -> dict[str, A
     if has_delegations:
         tok_text = storage.get_delegation_token_by_task_id(root_task.task_id) if hasattr(storage, "get_delegation_token_by_task_id") else None
         if tok_text:
-            sig_ok, _, payload = verify_delegation_token(tok_text)
+            sig_ok, _, payload = verify_delegation_token(tok_text, check_expiry=False)
             if payload:
                 delegation_info = {
                     "agents": payload.get("chain", []),
@@ -2816,7 +2816,7 @@ async def get_a2a_job(root_task_id: str, request: Request = None) -> dict[str, A
         if has_delegations:
             t_tok = storage.get_delegation_token_by_task_id(t.task_id) if hasattr(storage, "get_delegation_token_by_task_id") else None
             if t_tok:
-                s_ok, _, pl = verify_delegation_token(t_tok)
+                s_ok, _, pl = verify_delegation_token(t_tok, check_expiry=False)
                 if pl:
                     t_info = {
                         "agents": pl.get("chain", []),

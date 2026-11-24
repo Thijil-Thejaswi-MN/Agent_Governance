@@ -1523,6 +1523,30 @@ def create_app(
                             "id": body_json.get("id") if body_json else None,
                         },
                     )
+                # The token is the caller's own: it must allow calling this agent, leave room for
+                # one more hop, and name the caller the request claims to come from.
+                scope_peers = (token_payload.get("scope") or {}).get("peer_agents") or []
+                caller_hdr = request.headers.get("x-agent-id")
+                hop_problem = None
+                if agent_id not in scope_peers:
+                    hop_problem = f"'{agent_id}' is not in the caller's signed scope"
+                elif int(token_payload.get("depth", 0)) + 1 > int(token_payload.get("max_depth", 4)):
+                    hop_problem = "the signed delegation depth limit is reached"
+                elif caller_hdr and caller_hdr != token_payload.get("agent"):
+                    hop_problem = f"the token belongs to '{token_payload.get('agent')}', not '{caller_hdr}'"
+                if hop_problem:
+                    return JSONResponse(
+                        status_code=403,
+                        content={
+                            "jsonrpc": "2.0",
+                            "error": {
+                                "code": -32005,
+                                "message": f"Security Violation: Delegation token refused for '{agent_id}': {hop_problem}.",
+                                "action": "QUARANTINE",
+                            },
+                            "id": body_json.get("id") if body_json else None,
+                        },
+                    )
             elif token_hdr:
                 from ..governance.delegation_token import verify_delegation_token
                 token_valid, err_msg, token_payload = verify_delegation_token(token_hdr)

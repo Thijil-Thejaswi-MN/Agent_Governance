@@ -117,10 +117,13 @@ def test_the_simulator_agrees_with_the_live_broker(tmp_path: Path, variant: str,
             return [{"status": "ok", "reply": "stub", "target": c.get("target")} for c in calls]
 
     broker.delegation_manager = StubDelegationManager()
+    broker.default_approval_timeout = 0.1  # a data-rule ask nobody answers is denied (fail-closed)
     for (tool, target), predicted in zip(CALLS, sim):
         seen = {e.event_id for e in storage.get_events_for_task(task.task_id)}
         allowed = _live(broker, f"tok_{variant}", tool, target)
-        new = [e for e in storage.get_events_for_task(task.task_id) if e.event_id not in seen]
+        # One boundary decision per call; an observe-mode data-rule note may sit beside it.
+        new = [e for e in storage.get_events_for_task(task.task_id)
+               if e.event_id not in seen and e.kind != "flow_policy_observed"]
         assert len(new) == 1, (tool, target, [e.kind for e in new])  # one decision per call
         decision_event = new[0]
         where = f"{variant}/{tool} {target}"

@@ -467,7 +467,7 @@ def verify_receipt(
                 return fail("delegation token hash mismatch with stored token", final)
             from .delegation_token import verify_delegation_token, decode_delegation_token
             org_id = trusted_org_id or (r.get("signature") or {}).get("org_id", "default")
-            is_tok_ok, tok_err, tok_payload = verify_delegation_token(tok_text, org_id=org_id)
+            is_tok_ok, tok_err, tok_payload = verify_delegation_token(tok_text, org_id=org_id, check_expiry=False)
             if not is_tok_ok or not tok_payload:
                 return fail(f"delegation token verification failed: {tok_err}", final)
             hdr, _, _ = decode_delegation_token(tok_text)
