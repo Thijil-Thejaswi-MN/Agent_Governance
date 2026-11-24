@@ -250,7 +250,10 @@ describe('NEVER_SAY banned words scan', () => {
   const copyIn = (src: string): string[] => {
     const literals = (src.match(/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'|`(?:[^`\\]|\\.)*`/g) || [])
       .filter(m => /\s/.test(m.slice(1, -1)));
-    const jsxText = (src.match(/>([^<>{}]*[A-Za-z][^<>{}]*)</g) || []).map(m => m.slice(1, -1));
+    // Between two tags; a chunk holding code (comparisons, arrows, quotes, ?. or ;) is not text.
+    const jsxText = (src.match(/>([^<>{}]*[A-Za-z][^<>{}]*)</g) || [])
+      .map(m => m.slice(1, -1))
+      .filter(t => !/===|!==|=>|&&|\|\||\?\.|;|['"`]/.test(t));
     return [...literals, ...jsxText];
   };
 
@@ -273,10 +276,12 @@ describe('NEVER_SAY banned words scan', () => {
   });
 
   it('the scan catches a banned word in copy but not in a code value', () => {
-    const sample = `const s = 'signed'; const t = "This record is signed"; <p>Shown first</p>`;
+    const sample = `const s = 'signed'; const t = "This record is signed"; <p>Shown first</p>
+      {x ? <A /> : y === 'signed' ? <B /> : null}`;
     const copy = copyIn(sample);
     expect(copy.some(c => /signed/.test(c))).toBe(true);
     expect(copy).not.toContain("'signed'");
+    expect(copy.some(c => c.includes("=== 'signed'"))).toBe(false);
     expect(copy.some(c => /first/.test(c))).toBe(true);
   });
 });
