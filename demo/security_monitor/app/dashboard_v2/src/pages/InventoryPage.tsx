@@ -270,7 +270,8 @@ export const InventoryPage: React.FC = () => {
       api.getRunAgents().catch(() => [] as ConfiguredAgent[]),
     ])
       .then(([ts, rs, inv, cfg]) => {
-        setConfigured(cfg);
+        // The inventory is the organisation's own agents; an example's starter (the Planner) is not one.
+        setConfigured(cfg.filter(a => !a.multi_agent));
         setTasks(ts);
         setRequests(rs);
         setInventory(inv);

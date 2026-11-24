@@ -132,8 +132,8 @@ export const DecisionCard: React.FC<{
           .split(name)
           .flatMap((part, i) => (i === 0 ? [part] : [<strong key={i} style={{ color: 'var(--wait-lighter)' }}>{name}</strong>, part]))}
       </p>
-      <RequestPreview exp={exp} preview={preview} />
-      <StagedContent staged={preview?.staged} />
+      {exp.resource_type !== 'flow' && <RequestPreview exp={exp} preview={preview} />}
+      {exp.resource_type !== 'flow' && <StagedContent staged={preview?.staged} />}
       {warning && (
         <div
           id="decision-warning"

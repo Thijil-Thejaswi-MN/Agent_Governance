@@ -125,7 +125,12 @@ export function resourceVerb(resourceType?: string): string {
 }
 
 // The sentence under "The agent wants one more file."
-export function decisionLead(exp: Pick<ExpansionItem, 'resource_type' | 'resource_target'>, triedBefore: boolean): string {
+export function decisionLead(
+  exp: Pick<ExpansionItem, 'resource_type' | 'resource_target'> & { justification?: string },
+  triedBefore: boolean,
+): string {
+  // A data-rule request (A2A-2) is not for a file: the server's reason says what and why.
+  if (exp.resource_type === 'flow') return exp.justification || 'An agent in this job is waiting for your OK.';
   const name = fileName(exp.resource_target);
   const verb = resourceVerb(exp.resource_type);
   const what = exp.resource_type === 'network' ? 'website' : exp.resource_type === 'peer_agent' ? 'agent' : 'file';
@@ -158,7 +163,8 @@ export function decisionWarning(
 }
 
 // Fleet "Needs you" line: what it wants, and why it needs a person.
-export function needsYouTitle(agent: string, exp: { resource_type: string; resource_target: string }): string {
+export function needsYouTitle(agent: string, exp: { resource_type: string; resource_target: string; justification?: string }): string {
+  if (exp.resource_type === 'flow') return exp.justification || `${agent} is waiting for your OK`;
   const name = fileName(exp.resource_target);
   if (exp.resource_type === 'network') return `${agent} wants to reach ${name}`;
   if (exp.resource_type === 'file_write') return `${agent} wants to write ${name}`;

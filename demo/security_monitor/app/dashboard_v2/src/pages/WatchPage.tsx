@@ -363,7 +363,7 @@ export const WatchPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }
             <button id="show-what-happened" className="link-btn" onClick={() => setDetailsOpen(true)}>
               Show what happened ({run.steps.length} {run.steps.length === 1 ? 'step' : 'steps'})
             </button>
-            {taskId && (run.task?.has_children || (run.task?.a2a_messages_count || 0) > 0) && (
+            {taskId && (run.task?.has_children || run.task?.can_call_agents || (run.task?.a2a_messages_count || 0) > 0) && (
               <Link
                 id="agent-conversations-link"
                 to={`/conversations/${taskId}`}
