@@ -237,6 +237,24 @@ def rotate_key(org_id: str = "default") -> dict[str, Any]:
     return new_entry
 
 
+def sign_bytes(data: bytes, org_id: str = "default") -> tuple[bytes, str]:
+    """Applies Ed25519 signature to arbitrary raw bytes using active organisation key.
+    Returns (signature_bytes, key_id).
+    """
+    priv, key_id = get_or_create_signing_key(org_id)
+    sig_bytes = priv.sign(data)
+    return sig_bytes, key_id
+
+
+def verify_bytes(public_key: ed25519.Ed25519PublicKey, signature: bytes, data: bytes) -> bool:
+    """Validates raw signature against raw bytes under given public key."""
+    try:
+        public_key.verify(signature, data)
+        return True
+    except Exception:
+        return False
+
+
 def sign_document_sha256(document_sha256: str, org_id: str = "default") -> dict[str, Any]:
     """Signs the raw bytes of a document SHA-256 hash using the organisation's active key.
 

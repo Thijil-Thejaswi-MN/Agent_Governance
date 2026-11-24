@@ -211,6 +211,26 @@ def build_receipt(
         "events": entries,
         "hash_chain": {"algorithm": "sha256", "genesis": GENESIS_HASH, "count": len(entries), "final_hash": final_hash},
     }
+    # Delegation token record in receipt
+    if hasattr(storage, "get_delegation_token_by_task_id"):
+        tok_text = storage.get_delegation_token_by_task_id(task.task_id)
+        if tok_text:
+            tok_hash = hashlib.sha256(tok_text.encode("utf-8")).hexdigest()
+            try:
+                from .delegation_token import decode_delegation_token
+                hdr, payload, _ = decode_delegation_token(tok_text)
+                receipt["delegation_token"] = {
+                    "token_hash": tok_hash,
+                    "par_hash": payload.get("par_hash"),
+                    "key_id": hdr.get("kid"),
+                }
+            except Exception:
+                pass
+            if hasattr(storage, "get_child_delegation_token_hashes"):
+                child_hashes = storage.get_child_delegation_token_hashes(tok_hash)
+                if child_hashes:
+                    receipt["child_token_hashes"] = child_hashes
+
     # A2A delegation links and messages
     sent_messages = storage.get_a2a_messages(parent_task_id=task.task_id) if hasattr(storage, "get_a2a_messages") else []
     a2a_hashes = []
@@ -347,6 +367,8 @@ def verify_receipt(
     signing_enabled_since: str | None = None,
     trusted_started_at: str | None = None,
     trusted_org_id: str | None = None,
+    storage: Any = None,
+    parent_receipt: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Checks a stored record. Returns {ok, scope, message, final_hash}.
 
@@ -424,6 +446,45 @@ def verify_receipt(
                 final,
                 scope="record_fields_mismatch",
             )
+
+    # Verify delegation token if present
+    dt_info = r.get("delegation_token")
+    if dt_info and isinstance(dt_info, dict):
+        t_hash = dt_info.get("token_hash")
+        par_hash = dt_info.get("par_hash")
+        kid = dt_info.get("key_id")
+        if not t_hash:
+            return fail("delegation_token missing token_hash", final)
+        tok_text = None
+        if storage and hasattr(storage, "get_delegation_token_by_hash"):
+            tok_text = storage.get_delegation_token_by_hash(t_hash)
+        if not tok_text and storage and hasattr(storage, "get_delegation_token_by_task_id"):
+            tok_text = storage.get_delegation_token_by_task_id(r.get("task_id", ""))
+
+        if tok_text:
+            actual_tok_hash = hashlib.sha256(tok_text.encode("utf-8")).hexdigest()
+            if actual_tok_hash != t_hash:
+                return fail("delegation token hash mismatch with stored token", final)
+            from .delegation_token import verify_delegation_token, decode_delegation_token
+            org_id = trusted_org_id or (r.get("signature") or {}).get("org_id", "default")
+            is_tok_ok, tok_err, tok_payload = verify_delegation_token(tok_text, org_id=org_id)
+            if not is_tok_ok or not tok_payload:
+                return fail(f"delegation token verification failed: {tok_err}", final)
+            hdr, _, _ = decode_delegation_token(tok_text)
+            if par_hash != tok_payload.get("par_hash"):
+                return fail("delegation token par_hash mismatch", final)
+            if kid and hdr.get("kid") != kid:
+                return fail("delegation token key_id mismatch", final)
+
+    # Verify scope narrowing if parent_receipt is provided
+    if parent_receipt and isinstance(parent_receipt, dict):
+        from .delegation_token import is_scope_subset
+        child_init = r.get("initial_boundary", {})
+        parent_init = parent_receipt.get("initial_boundary", {})
+        child_scope = {k: child_init.get(k, []) for k in ("tools", "files_read", "files_write", "network", "peer_agents")}
+        parent_scope = {k: parent_init.get(k, []) for k in ("tools", "files_read", "files_write", "network", "peer_agents")}
+        if not is_scope_subset(child_scope, parent_scope):
+            return fail("child scope is wider than parent scope", final)
 
     # Check signature if present and non-empty
     if sig is not None and isinstance(sig, dict) and (sig.get("value") or sig.get("key_id")):
@@ -550,6 +611,25 @@ def verify_delegation_links(
 
     if p_children and not matched_child:
         return False, f"Child {c_tid} not found in parent {p_tid} children list"
+
+    # Check delegation token linkages
+    c_dt = child_receipt.get("delegation_token")
+    p_dt = parent_receipt.get("delegation_token")
+    if c_dt:
+        if not p_dt:
+            return False, f"Child has delegation token but parent {p_tid} has none"
+        if c_dt.get("par_hash") != p_dt.get("token_hash"):
+            return False, f"Child par_hash does not match parent token_hash"
+        p_child_hashes = parent_receipt.get("child_token_hashes", [])
+        if p_child_hashes and c_dt.get("token_hash") not in p_child_hashes:
+            return False, f"Child token_hash {c_dt.get('token_hash')} not in parent child_token_hashes"
+        from .delegation_token import is_scope_subset
+        c_init = child_receipt.get("initial_boundary", {})
+        p_init = parent_receipt.get("initial_boundary", {})
+        c_scope = {k: c_init.get(k, []) for k in ("tools", "files_read", "files_write", "network", "peer_agents")}
+        p_scope = {k: p_init.get(k, []) for k in ("tools", "files_read", "files_write", "network", "peer_agents")}
+        if not is_scope_subset(c_scope, p_scope):
+            return False, "Child scope is not a subset of parent scope"
 
     if storage and hasattr(storage, "get_a2a_messages"):
         stored_msgs = storage.get_a2a_messages(parent_task_id=p_tid)

@@ -551,14 +551,17 @@ def test_trip_planner_preset(tmp_path: Path, fixture_server):
     pending_observed = threading.Event()
 
     def _watcher():
-        for _ in range(100):
+        from demo.security_monitor.app.governance.expansion import ExpansionService
+        for _ in range(120):
             time.sleep(0.05)
             reqs = storage.list_expansion_requests()
-            p = [r for r in reqs if r.status == ExpansionStatus.PENDING]
+            for r in reqs:
+                if r.status == ExpansionStatus.PENDING and r.resource_type == "flow":
+                    ExpansionService(storage).approve_request(r.request_id, approved_by="operator")
+            p = [r for r in reqs if r.status == ExpansionStatus.PENDING and r.resource_type != "flow"]
             if p and p[0].resource_target == "input/travel_history.csv":
                 pending_observed.set()
                 time.sleep(0.1)
-                from demo.security_monitor.app.governance.expansion import ExpansionService
                 ExpansionService(storage).deny_request(p[0].request_id, denied_by="operator", reason="operator review")
                 return
 

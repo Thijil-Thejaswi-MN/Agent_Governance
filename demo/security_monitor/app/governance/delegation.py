@@ -132,6 +132,11 @@ class DelegationManager:
         if not text_content and isinstance(message, dict):
             text_content = json.dumps(message)
 
+        if hasattr(self.storage, "is_task_frozen") and self.storage.is_task_frozen(caller_task_id):
+            reason = f"Caller task {caller_task_id} is frozen"
+            self._record_refusal(root_task_id, caller_task_id, caller_agent_id, target_agent, fanout_group, text_content, reason)
+            raise PermissionError(reason)
+
         # 2. Refusal checks in strict order:
         # Check 1: Target in caller's peer_agents boundary
         if target_agent not in caller_boundary.peer_agents:
@@ -159,6 +164,55 @@ class DelegationManager:
             reason = f"Maximum delegation depth {MAX_DELEGATION_DEPTH} exceeded: requested depth {next_depth}"
             self._record_refusal(root_task_id, caller_task_id, caller_agent_id, target_agent, fanout_group, text_content, reason)
             raise PermissionError(reason)
+
+        # Check 5: Delegation token verification and chain validation
+        from .delegation_token import (
+            decode_delegation_token,
+            mint_delegation_token,
+            normalize_scope,
+            compute_intent_hash,
+            compute_token_hash,
+            is_scope_subset,
+            verify_chain_tokens,
+        )
+        parent_token_text = self.storage.get_delegation_token_by_task_id(caller_task_id)
+        if not parent_token_text:
+            caller_scope = normalize_scope(caller_boundary)
+            intent_hash = compute_intent_hash(caller_task.request_text, caller_scope)
+            now_ts = int(time.time())
+            parent_token_text = mint_delegation_token(
+                org_id=caller_task.org or "default",
+                sub=caller_task.requested_by or caller_task.owner or "local_user",
+                txn=root_task_id,
+                task_id=caller_task_id,
+                agent_id=caller_agent_id,
+                chain=chain,
+                depth=depth,
+                scope=caller_scope,
+                par_hash=None,
+                intent=intent_hash,
+                iat=now_ts,
+                exp=now_ts + int(caller_task.timeout_s or 900),
+            )
+            self.storage.save_delegation_token(caller_task_id, parent_token_text, parent_token_hash=None)
+
+        curr_tok = parent_token_text
+        chain_tokens = [curr_tok]
+        while True:
+            _, p_obj, _ = decode_delegation_token(curr_tok)
+            p_hash = p_obj.get("par_hash")
+            if not p_hash:
+                break
+            prev_tok = self.storage.get_delegation_token_by_hash(p_hash)
+            if not prev_tok:
+                break
+            chain_tokens.insert(0, prev_tok)
+            curr_tok = prev_tok
+
+        chain_ok, chain_err = verify_chain_tokens(chain_tokens, storage=self.storage)
+        if not chain_ok:
+            self._record_refusal(root_task_id, caller_task_id, caller_agent_id, target_agent, fanout_group, text_content, chain_err)
+            raise PermissionError(chain_err)
 
         # 3. Check per-root concurrency cap
         child_task_id = f"{caller_task_id}_c{uuid.uuid4().hex[:6]}"
@@ -190,6 +244,12 @@ class DelegationManager:
         try:
             # 5. Derive child boundary: ceiling ∩ caller's current boundary
             narrowed = intersect_boundaries(profile["ceiling"], caller_boundary)
+            child_scope = normalize_scope(narrowed)
+            parent_scope = normalize_scope(caller_boundary)
+            if not is_scope_subset(child_scope, parent_scope):
+                reason = "Child scope widens caller scope"
+                self._record_refusal(root_task_id, caller_task_id, caller_agent_id, target_agent, fanout_group, text_content, reason)
+                raise PermissionError(reason)
 
             # 6. Prepare child workspace & copy authorized files from parent
             child_ws = self.workspace_base / child_task_id
@@ -199,6 +259,28 @@ class DelegationManager:
 
             # 7. Deadline inheritance: child deadline <= parent remaining time
             deadline_s = self._calculate_deadline(caller_task, profile)
+
+            # Mint child delegation token server-side (agent never holds token)
+            _, parent_payload, _ = decode_delegation_token(parent_token_text)
+            now_ts = int(time.time())
+            child_exp = min(int(parent_payload.get("exp", now_ts + 900)), now_ts + int(deadline_s))
+            par_hash = compute_token_hash(parent_token_text)
+            child_tok = mint_delegation_token(
+                org_id=parent_payload.get("iss", "default"),
+                sub=parent_payload.get("sub", "local_user"),
+                txn=parent_payload.get("txn", root_task_id),
+                task_id=child_task_id,
+                agent_id=target_agent,
+                chain=parent_payload.get("chain", []) + [target_agent],
+                depth=parent_payload.get("depth", 0) + 1,
+                scope=child_scope,
+                par_hash=par_hash,
+                intent=parent_payload.get("intent", ""),
+                iat=now_ts,
+                exp=child_exp,
+            )
+            self.storage.save_delegation_token(child_task_id, child_tok, parent_token_hash=par_hash)
+            self.storage.update_task_context_label(child_task_id, integrity="trusted", confidentiality="public")
 
             # 8. Launch child task via TaskLauncher
             from .launcher import TaskLauncher, TaskSpec
@@ -275,6 +357,7 @@ class DelegationManager:
             contains_private = self._has_read_private_files(child_task_id, child_boundary)
 
             # Record reply message
+            child_integ, child_conf = self.storage.get_task_context_label(child_task_id)
             reply_msg_id = f"msg_{uuid.uuid4().hex[:16]}"
             reply_row = {
                 "message_id": reply_msg_id,
@@ -290,11 +373,15 @@ class DelegationManager:
                 "text": reply_text,
                 "verdict": "delivered" if status == "ok" else "failed",
                 "reason": failure_reason,
-                "integrity": "untrusted",
+                "integrity": child_integ,
+                "confidentiality": child_conf,
                 "forwarded_from": forwarded_from,
                 "contains_private": contains_private,
             }
             self.storage.save_a2a_message(reply_row)
+
+            # Receiving child reply raises parent's labels
+            self.storage.update_task_context_label(caller_task_id, integrity="untrusted", confidentiality=child_conf)
 
             # Track in parent launcher receipts
             if self.parent_launcher is not None:
@@ -308,6 +395,8 @@ class DelegationManager:
                 "status": status,
                 "reply": reply_text,
                 "child_task_id": child_task_id,
+                "confidentiality": child_conf,
+                "integrity": child_integ,
             }
 
         finally:
