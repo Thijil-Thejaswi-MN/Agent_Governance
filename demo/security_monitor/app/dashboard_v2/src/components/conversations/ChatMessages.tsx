@@ -17,6 +17,27 @@ interface ChatMessagesProps {
   onDeny: (requestId: string, reason: string) => Promise<void>;
 }
 
+const PrivateText: React.FC<{ text: string }> = ({ text }) => {
+  const [shown, setShown] = React.useState(false);
+  if (shown) {
+    return (
+      <p className="m-0 text-[14px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">{text}</p>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2 text-[13px] text-fg-3">
+      <span className="italic">Message hidden because it may include private data.</span>
+      <button
+        type="button"
+        onClick={() => setShown(true)}
+        className="text-accent font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
+      >
+        Show message
+      </button>
+    </div>
+  );
+};
+
 export const ChatMessages: React.FC<ChatMessagesProps> = ({
   threadId,
   messages,
@@ -113,14 +134,15 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
                 </div>
               )}
 
-              {/* Private File chip: contains_private shows file name, content never */}
+              {/* Private data: the sender had opened a private file before writing this.
+                  The message is hidden until someone asks to see it; file contents are never shown. */}
               {m.contains_private && (
                 <div
                   data-testid="private-file-chip"
-                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 mb-2 rounded-md text-[12px] font-mono bg-wait/15 text-wait-text border border-wait/30"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-0.5 mb-2 rounded-md text-[12px] bg-role-team_lead/10 text-role-team_lead border border-role-team_lead/30"
                 >
                   <FileText className="w-3.5 h-3.5 shrink-0" />
-                  <span>Private file: {m.text || 'Protected resource'}</span>
+                  <span>Sender had opened a private file</span>
                 </div>
               )}
 
@@ -130,9 +152,7 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
                   {m.text}
                 </p>
               ) : (
-                <p className="m-0 text-[13px] text-fg-3 italic">
-                  Content suppressed by boundary protection.
-                </p>
+                <PrivateText text={m.text} />
               )}
 
               {/* Status / Verdict footer */}

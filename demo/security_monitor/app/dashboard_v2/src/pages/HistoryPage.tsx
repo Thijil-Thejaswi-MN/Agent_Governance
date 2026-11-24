@@ -65,7 +65,7 @@ export const HistoryPage: React.FC = () => {
 
       <div className="overflow-x-auto rounded-xl border border-line bg-surface-1">
         <div className="min-w-[760px]">
-          <div className="bg-surface-2 px-4 py-2.5 text-[12px] uppercase tracking-wider text-fg-3 font-semibold grid grid-cols-[130px_130px_1fr_130px_90px_160px] gap-3 border-b border-line items-center">
+          <div className="bg-surface-2 px-4 py-2.5 text-[12px] uppercase tracking-wider text-fg-3 font-semibold grid grid-cols-[130px_130px_1fr_130px_90px_70px] gap-3 border-b border-line items-center">
             <span>When</span>
             <span>Agent</span>
             <span>Task</span>
@@ -78,10 +78,13 @@ export const HistoryPage: React.FC = () => {
               const o = outcomeLabel(t.status);
               const stopped = stoppedCount(t);
               const tone = getTone(t.status);
-              const hasA2A = !!(t.has_children || (t.a2a_messages_count || 0) > 0);
               return (
-                <li key={t.task_id} className="hover:bg-surface-2/50 transition-colors">
-                  <div className="min-h-[44px] px-4 py-2 grid grid-cols-[130px_130px_1fr_130px_90px_160px] gap-3 items-center text-[13px] text-fg group">
+                <li key={t.task_id}>
+                  <Link
+                    to={`/history/${t.task_id}`}
+                    data-task-id={t.task_id}
+                    className="min-h-[44px] px-4 py-2 grid grid-cols-[130px_130px_1fr_130px_90px_70px] gap-3 items-center hover:bg-surface-2/50 transition-colors text-[13px] no-underline text-fg group"
+                  >
                     <span className="text-fg-3 whitespace-nowrap text-[12px]">
                       {relativeTime(t.created_at, now)}
                     </span>
@@ -113,26 +116,23 @@ export const HistoryPage: React.FC = () => {
                     <span className={`font-medium ${stopped > 0 ? 'text-bad font-semibold' : 'text-fg-3'}`}>
                       {stopped > 0 ? `${stopped} ${stopped === 1 ? 'refusal' : 'refusals'}` : '—'}
                     </span>
-                    <div className="text-right flex items-center justify-end gap-2">
-                      {hasA2A && (
-                        <Link
-                          to={`/conversations/${t.task_id}`}
-                          id={`conversations-link-${t.task_id}`}
-                          title="Open agent conversations"
-                          className="inline-flex items-center justify-center h-8 px-2 text-[12px] font-medium rounded-lg text-accent hover:bg-surface-2 transition-colors no-underline whitespace-nowrap"
-                        >
-                          Conversations
-                        </Link>
-                      )}
-                      <Link
-                        to={`/history/${t.task_id}`}
-                        data-task-id={t.task_id}
-                        className="inline-flex items-center justify-center h-8 px-2.5 text-[12px] font-medium rounded-lg text-fg-2 group-hover:text-fg group-hover:bg-surface-2 transition-colors no-underline"
-                      >
+                    <div className="text-right">
+                      <span className="inline-flex items-center justify-center h-8 px-2.5 text-[12px] font-medium rounded-lg text-fg-2 group-hover:text-fg group-hover:bg-surface-2 transition-colors">
                         Open
+                      </span>
+                    </div>
+                  </Link>
+                  {(t.has_children || (t.a2a_messages_count || 0) > 0) && (
+                    <div className="px-4 pb-2 -mt-1">
+                      <Link
+                        to={`/conversations/${t.task_id}`}
+                        id={`conversations-link-${t.task_id}`}
+                        className="inline-flex items-center min-h-[32px] text-[12px] font-medium text-accent hover:underline no-underline"
+                      >
+                        Open agent conversations
                       </Link>
                     </div>
-                  </div>
+                  )}
                 </li>
               );
             })}
