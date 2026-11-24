@@ -107,7 +107,7 @@ export const HowItWorks: React.FC = () => {
           <KV k="Identity" v="one cgroup v2 scope per task (systemd-run --user --scope), created before the agent acts" />
         </DetailsSection>
         <DetailsSection title="Layer 1: tool layer">
-          <KV k="Broker" v="Unix-socket RPC with agent-facing endpoints: read_file, write_file, http_get, http_post, call_agent (checks the decision and dispatches to peer agent), request_access, run_command_check, run_command_begin, llm_complete; no approve, deny or grant endpoint" />
+          <KV k="Broker" v="Unix-socket RPC with 11 agent-facing endpoints: read_file, write_file, http_get, http_post, call_agent and call_agents (the peer runs as its own governed child task), request_access, run_command_check, run_command_begin, llm_complete, report_result; no approve, deny or grant endpoint" />
           <KV k="Egress proxy" v="the only TCP port the sandbox may connect to; network allowances are IP:port entries; host names are refused at the proxy" />
           <KV k="Expansion" v="request_access gets a risk tier, raised when the agent read untrusted input before asking (provenance); grants are exact resources, wildcards are rejected; an approved file is copied into the read-only granted/ directory; a new output file is written to staged/ and a person reviews that exact content before it is saved" />
           <KV k="Fail closed" v="a request nobody decides before its timeout is denied" />

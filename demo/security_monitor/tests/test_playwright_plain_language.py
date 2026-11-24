@@ -122,6 +122,10 @@ def test_results_how_it_works_is_plain_with_details(page: Page, console_server, 
     section.locator("#how-it-works-details-btn").click()
     drawer = page.locator("#how-it-works-drawer")
     expect(drawer).to_contain_text("Landlock")
-    expect(drawer).to_contain_text("8 agent-facing endpoints")
+    # The count and the list come from the broker's own endpoint table, so they cannot drift.
+    from demo.security_monitor.app.governance.broker_rpc import AGENT_ENDPOINTS
+    expect(drawer).to_contain_text(f"{len(AGENT_ENDPOINTS)} agent-facing endpoints")
+    for name in AGENT_ENDPOINTS:
+        expect(drawer).to_contain_text(name)
     expect(drawer).to_contain_text("observation only, it does not block")
-    expect(drawer).to_contain_text("not signed")
+    expect(drawer).to_contain_text("Ed25519 signature")
