@@ -11,6 +11,7 @@ import datetime
 import fnmatch
 import json
 import os
+import stat
 import time
 import uuid
 from pathlib import Path
@@ -66,6 +67,11 @@ def _recover_tool_use_failed(body: str) -> dict[str, Any] | None:
         "type": "function",
         "function": {"name": call["name"], "arguments": args},
     }
+
+# One read_file returns at most 1 MB; a call_agents request carries at most 8 calls.
+MAX_READ_BYTES = 1_048_576
+MAX_CALLS_PER_FANOUT = 8
+
 
 class ToolBroker:
     """Tool execution broker that intercepts and enforces task boundaries prior to execution."""
@@ -446,22 +452,25 @@ class ToolBroker:
                 raise PermissionError("denied (observe: host path not executed)")
             raise PermissionError(f"Access to file '{target_display}' denied: path is outside task workspace")
 
-        flags = os.O_RDONLY
+        # O_NONBLOCK: opening a FIFO the agent made must not block the shared server.
+        flags = os.O_RDONLY | os.O_NONBLOCK
         if hasattr(os, "O_NOFOLLOW"):
             flags |= os.O_NOFOLLOW
         fd = os.open(str(target), flags)
+        f = None
         try:
             st = os.fstat(fd)
-            if st.st_size > 1048576:
+            if not stat.S_ISREG(st.st_mode):
+                raise PermissionError(f"Access to file '{target_display}' denied: not a regular file")
+            if st.st_size > MAX_READ_BYTES:
                 raise PermissionError(f"Access to file '{target_display}' denied: file size ({st.st_size} bytes) exceeds 1 MB limit")
-            with open(fd, "r", encoding="utf-8", errors="replace", closefd=True) as f:
-                content = f.read()
-        except Exception:
-            try:
+            f = open(fd, "r", encoding="utf-8", errors="replace", closefd=True)  # f now owns fd
+            content = f.read(MAX_READ_BYTES + 1)[: MAX_READ_BYTES]
+        finally:
+            if f is not None:
+                f.close()
+            else:
                 os.close(fd)
-            except OSError:
-                pass
-            raise
 
         # Update confidentiality context label
         meta = boundary.metadata or {}
@@ -1376,8 +1385,10 @@ class ToolBroker:
             self._record(event)
             raise PermissionError(f"Tool call_agents not granted, denied by boundary: {tool_eval.rule_matched}")
 
-        if len(calls) > 8:
-            calls = calls[:8]
+        if len(calls) > MAX_CALLS_PER_FANOUT:
+            raise PermissionError(
+                f"call_agents accepts at most {MAX_CALLS_PER_FANOUT} calls per request; {len(calls)} were sent"
+            )
 
         grant_state = self._get_grant_state(task_id)
         task = self.storage.get_task(task_id)

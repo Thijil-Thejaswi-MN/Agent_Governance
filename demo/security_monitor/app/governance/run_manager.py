@@ -591,6 +591,9 @@ PRESETS: dict[str, dict[str, Any]] = {
         "id": "trip_planner",
         "agent": "planner",
         "name": "Trip planner multi-agent delegation",
+        # The Planner's tools (its profile ceiling). A called agent gets at most what its caller
+        # holds, so the Planner needs http_get for the Researcher to read the travel page.
+        "tools": ["read_file", "write_file", "call_agent", "call_agents", "http_post", "http_get"],
         "description": "Planner coordinates Researcher, Budget and Booking with boundary enforcement.",
         "prompt": "Read input/passport_scan.pdf, coordinate with researcher, budget and booking agents to plan trip, and submit booking.",
         "files": {

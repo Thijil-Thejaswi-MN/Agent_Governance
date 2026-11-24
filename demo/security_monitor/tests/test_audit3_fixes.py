@@ -487,10 +487,73 @@ def test_item8_per_root_concurrency_cap_shared_across_managers(tmp_path: Path):
     with _GLOBAL_ROOT_CHILDREN_LOCK:
         _GLOBAL_RUNNING_CHILDREN_BY_ROOT.pop(root_id, None)
 
-    # call_agents caps calls at 8
+    # More than 8 calls in one call_agents request are refused, not quietly cut to 8.
     calls = [{"target": f"a{i}", "message": "hi"} for i in range(12)]
-    truncated = mgr1.delegate_parallel.__doc__
-    assert "8" in str(truncated) or True
+    with pytest.raises(PermissionError, match="at most 8 calls"):
+        mgr1.delegate_parallel("tok_none", calls)
+
+
+def test_item8_broker_refuses_more_than_8_calls(tmp_path: Path):
+    from demo.security_monitor.app.governance.broker import ToolBroker
+    from demo.security_monitor.app.governance.models import TaskBoundary
+
+    storage = GovernanceStorage(tmp_path / "item8b.db")
+    ws = tmp_path / "ws8"
+    ws.mkdir()
+    storage.save_boundary(TaskBoundary(task_id="t8", tools=["call_agents"], files_read=[], files_write=[],
+                                       network=[], peer_agents=[f"a{i}" for i in range(12)], workspace_root=str(ws)))
+    storage.save_token("tok8", "t8", "planner")
+    calls = [{"target": f"a{i}", "message": "hi"} for i in range(9)]
+    with pytest.raises(PermissionError, match="at most 8 calls per request; 9 were sent"):
+        ToolBroker(storage).call_agents("tok8", calls)
+
+
+def test_item13_read_file_does_not_hang_on_a_fifo(tmp_path: Path):
+    """A FIFO the agent made in its workspace is refused at once instead of blocking the server."""
+    import os
+    import threading
+
+    from demo.security_monitor.app.governance.broker import ToolBroker
+    from demo.security_monitor.app.governance.models import TaskBoundary
+
+    storage = GovernanceStorage(tmp_path / "fifo.db")
+    ws = tmp_path / "wsf"
+    (ws / "input").mkdir(parents=True)
+    os.mkfifo(ws / "input" / "pipe.txt")
+    storage.save_boundary(TaskBoundary(task_id="tf", tools=["read_file"], files_read=["input/*"], files_write=[],
+                                       network=[], peer_agents=[], workspace_root=str(ws)))
+    storage.save_token("tokf", "tf", "notes_bot")
+    out: dict = {}
+
+    def _read():
+        try:
+            ToolBroker(storage).read_file("tokf", "input/pipe.txt")
+        except Exception as e:  # noqa: BLE001
+            out["err"] = e
+
+    th = threading.Thread(target=_read, daemon=True)
+    th.start()
+    th.join(5)
+    assert not th.is_alive(), "read_file blocked on a FIFO"
+    assert isinstance(out.get("err"), PermissionError)
+
+
+def test_item7_input_copy_skips_a_fifo_without_blocking(tmp_path: Path):
+    import os
+    import threading
+
+    parent = tmp_path / "parent_ws"
+    (parent / "input").mkdir(parents=True)
+    (parent / "input" / "a.txt").write_text("hello", encoding="utf-8")
+    os.mkfifo(parent / "input" / "b.txt")
+    mgr = DelegationManager(GovernanceStorage(tmp_path / "copy.db"), workspace_base=tmp_path / "workspaces")
+    out: dict = {}
+    th = threading.Thread(target=lambda: out.setdefault("copied", mgr._copy_authorized_inputs(parent, None, ["input/*"])),
+                          daemon=True)
+    th.start()
+    th.join(5)
+    assert not th.is_alive(), "input copy blocked on a FIFO"
+    assert out["copied"] == {"input/a.txt": "hello"}
 
 
 # ---------------------------------------------------------------------------

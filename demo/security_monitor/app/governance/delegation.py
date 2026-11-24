@@ -460,7 +460,7 @@ class DelegationManager:
     ) -> list[dict[str, Any]]:
         """Starts several child tasks concurrently and returns all replies."""
         if len(calls) > 8:
-            calls = calls[:8]
+            raise PermissionError(f"call_agents accepts at most 8 calls per request; {len(calls)} were sent")
         group_id = f"fanout_{uuid.uuid4().hex[:12]}"
         results: list[dict[str, Any]] = []
 
@@ -611,7 +611,8 @@ class DelegationManager:
                     cur_fd = None
                     try:
                         cur_fd = os.dup(parent_fd)
-                        flags = os.O_RDONLY
+                        # O_NONBLOCK: a FIFO or device in the workspace must not block the server.
+                        flags = os.O_RDONLY | os.O_NONBLOCK
                         if hasattr(os, "O_NOFOLLOW"):
                             flags |= os.O_NOFOLLOW
 

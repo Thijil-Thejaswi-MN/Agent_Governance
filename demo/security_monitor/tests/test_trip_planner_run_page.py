@@ -75,6 +75,10 @@ def test_trip_planner_starts_as_the_planner_with_its_peers(monkeypatch, tmp_path
     assert any(s.get("tool") == "call_agents" for s in spec.llm["steps"])
     assert set(spec.peer_agents) == {"researcher", "budget", "booking"}
     assert "call_agents" in spec.agent_tools
+    # The boundary's tools come from the preset: the Planner may call agents, and holds http_get
+    # so the Researcher it calls may read the travel page (a child gets at most its caller's tools).
+    offered = {t["function"]["name"] for t in spec.tools_schema}
+    assert {"call_agents", "call_agent", "http_get", "http_post", "read_file"} <= offered
     assert spec.owner == "Travel Desk"
     assert seen["site"]["port"] == 8765
 
