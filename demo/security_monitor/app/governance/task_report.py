@@ -13,7 +13,7 @@ from .fleet import event_layer, is_blocked
 def _agent_name(agent_id: str) -> str | None:
     """The configured display name for an agent id (None for agents not in the list)."""
     try:
-        from .run_manager import load_agents_config
+        from .run_manager import load_run_agents_config as load_agents_config
 
         return (load_agents_config().get(agent_id) or {}).get("name")
     except Exception:  # noqa: BLE001 - a report must not fail over a display name

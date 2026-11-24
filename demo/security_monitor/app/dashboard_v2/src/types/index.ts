@@ -35,6 +35,7 @@ export interface TaskRecord {
   sensor_reason?: string | null;
   has_children?: boolean;
   a2a_messages_count?: number;
+  can_call_agents?: boolean; // its boundary lists peer agents: it may start agent conversations
 }
 
 export interface TaskBoundary {
@@ -279,6 +280,7 @@ export interface ConfiguredAgent {
   description: string;
   model?: string; // the model this agent runs on
   tools?: string[]; // the tools its agent loop offers; each call is checked by the broker
+  multi_agent?: boolean; // an example's starter agent that calls other agents (e.g. the Planner)
 }
 
 export interface ActiveRunTask {

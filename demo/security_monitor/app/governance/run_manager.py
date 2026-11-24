@@ -90,6 +90,51 @@ def _governed_tool_names() -> list[str]:
     return [t["function"]["name"] for t in GOVERNED_TOOLS_SCHEMA]
 
 
+def _starter_profiles() -> dict[str, dict[str, Any]]:
+    """Callable agent profiles (agents/*.json) that an example starts from, such as the Planner
+    of the trip_planner example. They are not inventory agents, so they come from their
+    profile: the admin-set ceiling is their tool limit, and they say they call other agents."""
+    from .agent_profiles import load_all_agent_profiles
+
+    wanted = {p.get("agent") for p in PRESETS.values() if p.get("agent")}
+    inventory = load_agents_config()
+    out: dict[str, dict[str, Any]] = {}
+    try:
+        profiles = load_all_agent_profiles()
+    except Exception as e:  # a broken profile file must not hide the inventory agents
+        logger.warning("Could not load agent profiles: %s", e)
+        return out
+    for pid, prof in profiles.items():
+        if pid not in wanted or pid in inventory:
+            continue
+        runner = prof.get("runner") or {}
+        out[pid] = {
+            "name": prof.get("name", pid),
+            "owner": prof.get("owner") or "Engineering",
+            "team": prof.get("team") or "travel",
+            "description": prof.get("description", ""),
+            # A profile with fixed steps runs them unless the person picks a model.
+            "model": "scripted" if runner.get("provider") == "scripted" else DEFAULT_AGENT_MODEL,
+            "tools": list((prof.get("ceiling") or {}).get("tools") or []),
+            "multi_agent": True,
+        }
+    return out
+
+
+def load_run_agents_config() -> dict[str, dict[str, Any]]:
+    """Every agent a run can start as: the inventory agents plus the example starter profiles."""
+    return {**load_agents_config(), **_starter_profiles()}
+
+
+def get_run_agents() -> list[dict[str, Any]]:
+    """The agents offered on the Run page (get_configured_agents plus starter profiles)."""
+    out = get_configured_agents()
+    for aid, info in _starter_profiles().items():
+        out.append({"id": aid, **{k: info[k] for k in ("name", "owner", "team", "description", "model", "tools")},
+                    "multi_agent": True})
+    return out
+
+
 def get_configured_agents() -> list[dict[str, Any]]:
     cfg = load_agents_config()
     out = []
@@ -582,6 +627,9 @@ PRESETS: dict[str, dict[str, Any]] = {
         ],
         "peer_agents": ["researcher", "budget", "booking"],
         "network": ["127.0.0.1:*", "localhost:*"],
+        # The Researcher reads a travel page; the console serves a local practice copy of it.
+        "practice_site": {"host": "127.0.0.1", "port": 8765,
+                          "body": {"attractions": ["Kinkaku-ji", "Fushimi Inari-taisha", "Kiyomizu-dera"]}},
     },
     "custom": {
         "id": "custom",
@@ -593,6 +641,52 @@ PRESETS: dict[str, dict[str, Any]] = {
         "decoys": [],
     },
 }
+
+
+_PRACTICE_SITES: dict[tuple[str, int], Any] = {}
+_PRACTICE_LOCK = threading.Lock()
+
+
+def ensure_practice_site(site: dict[str, Any]) -> None:
+    """Serves an example's small local web page (GET returns the JSON body, POST returns ok) on
+    127.0.0.1, started once per console process. If the port is taken, whatever is there is used."""
+    import http.server
+
+    host, port = str(site.get("host", "127.0.0.1")), int(site["port"])
+    if host not in ("127.0.0.1", "localhost"):
+        raise ValueError("A practice site is served on this machine only.")
+    body = json.dumps(site.get("body") or {}).encode("utf-8")
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def _send(self, payload: bytes) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def do_GET(self) -> None:  # noqa: N802
+            self._send(body)
+
+        def do_POST(self) -> None:  # noqa: N802
+            length = int(self.headers.get("Content-Length") or 0)
+            if 0 < length <= 1_000_000:
+                self.rfile.read(length)
+            self._send(b'{"status":"ok"}')
+
+        def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
+            pass
+
+    with _PRACTICE_LOCK:
+        if (host, port) in _PRACTICE_SITES:
+            return
+        try:
+            server = http.server.ThreadingHTTPServer((host, port), _Handler)
+        except OSError as e:
+            logger.info("Practice site %s:%s not started (%s); using what is already there", host, port, e)
+            return
+        threading.Thread(target=server.serve_forever, name=f"practice-site-{port}", daemon=True).start()
+        _PRACTICE_SITES[(host, port)] = server
 
 
 def sanitize_input_files(files: dict[str, str]) -> dict[str, str]:
@@ -813,7 +907,7 @@ def derive_files_for_review(
     passes the review id, and only files from this review can be enforced."""
     if not prompt.strip():
         raise ValueError("Write what the agent should do first.")
-    cfg = load_agents_config().get(agent_id or "finance_bot") or {}
+    cfg = load_run_agents_config().get(agent_id or "finance_bot") or {}
     chosen = model if model and model != "scripted" else (cfg.get("model") or DEFAULT_AGENT_MODEL)
     inputs = _run_inputs(preset_id, files)
     client = llm_client
@@ -1087,7 +1181,7 @@ class ActiveRunManager:
         if agent_default:
             # No override: the agent's own model.
             effective_agent_id = agent_id or (preset.get("agent") if preset else None) or "finance_bot"
-            cfg_agent = load_agents_config().get(effective_agent_id) or {}
+            cfg_agent = load_run_agents_config().get(effective_agent_id) or {}
             model = cfg_agent.get("model") or DEFAULT_AGENT_MODEL
         try:
             model = validate_model(model)  # outside the lock: may query Ollama
@@ -1095,7 +1189,7 @@ class ActiveRunManager:
             if not agent_default:
                 raise
             effective_agent_id = agent_id or (preset.get("agent") if preset else None) or "finance_bot"
-            agent_name = (load_agents_config().get(effective_agent_id) or {}).get("name", effective_agent_id)
+            agent_name = (load_run_agents_config().get(effective_agent_id) or {}).get("name", effective_agent_id)
             raise ValueError(f"{agent_name} runs on '{model}', which is not available here. {err}") from err
         with self._lock:
             self._prune_dead_runs()
@@ -1107,7 +1201,7 @@ class ActiveRunManager:
                 )
 
             # Determine agent, owner, team
-            agents_cfg = load_agents_config()
+            agents_cfg = load_run_agents_config()
             chosen_agent_id = agent_id or (preset.get("agent") if preset else None) or "finance_bot"
             if chosen_agent_id not in agents_cfg:
                 raise ValueError(
@@ -1130,6 +1224,9 @@ class ActiveRunManager:
             problems = TaskLauncher.check_condition_c_support()
             if problems:
                 raise RunPrerequisitesError(problems)
+
+            if preset and preset.get("practice_site"):
+                ensure_practice_site(preset["practice_site"])
 
             task_id = f"task_{uuid.uuid4().hex[:12]}"
 

@@ -36,7 +36,9 @@ from .run_manager import (
     RunPrerequisitesError,
     fetch_available_models,
     get_configured_agents,
+    get_run_agents,
     load_agents_config,
+    load_run_agents_config,
     get_run_manager,
     preview_run_boundary,
     derive_files_for_review,
@@ -816,6 +818,8 @@ async def get_task_detail(task_id: str, request: Request = None) -> dict[str, An
     a2a_msgs = storage.get_a2a_messages(root_task_id=task_id)
     task_dict["has_children"] = len(children) > 0
     task_dict["a2a_messages_count"] = len(a2a_msgs)
+    # A task that may call other agents: the console offers its conversations page from the start.
+    task_dict["can_call_agents"] = bool(boundary and boundary.peer_agents)
 
     return {
         "task": task_dict,
@@ -2314,8 +2318,9 @@ async def get_evidence_attack(dataset: str, scenario: str, request: Request = No
 
 @governance_router.get("/run/agents")
 async def get_run_agents() -> list[dict[str, Any]]:
-    """Returns the list of selectable named agents for running tasks."""
-    return get_configured_agents()
+    """Returns the agents a run can start as: inventory agents plus the example starter
+    profiles (e.g. the Planner, which calls other agents)."""
+    return get_run_agents()
 
 
 @governance_router.get("/run/models")
@@ -2378,7 +2383,7 @@ async def derive_run_files(
         raise HTTPException(status_code=401, detail="Invalid token.")
     if not PermissionMatrix.can_start_run(user):
         raise HTTPException(status_code=403, detail="Forbidden: Role not authorized to start a run.")
-    if req.agent_id is not None and req.agent_id not in load_agents_config():
+    if req.agent_id is not None and req.agent_id not in load_run_agents_config():
         raise HTTPException(status_code=422, detail=f"Invalid agent_id '{req.agent_id}'.")
     try:
         sanitize_input_files(req.files)
@@ -2425,7 +2430,7 @@ async def start_governed_task_run(
                 )
 
     if req.agent_id is not None:
-        valid_agents = load_agents_config()
+        valid_agents = load_run_agents_config()
         if req.agent_id not in valid_agents:
             raise HTTPException(
                 status_code=422,

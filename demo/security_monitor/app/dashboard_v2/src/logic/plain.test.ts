@@ -106,6 +106,16 @@ describe('decision card copy', () => {
     expect(decisionLead(exp, false)).toBe("It's asking to open target_metrics.csv. Your request doesn't include it.");
   });
 
+  it('a data-rule request shows the server reason, not a file sentence', () => {
+    const flow = {
+      resource_type: 'flow',
+      resource_target: 'researcher, budget, booking',
+      justification: 'Planner wants to message Researcher, Budget, Booking while holding private data',
+    };
+    expect(decisionLead(flow, false)).toBe(flow.justification);
+    expect(decisionLead({ ...flow, justification: '' }, true)).toBe('An agent in this job is waiting for your OK.');
+  });
+
   it('warning names the file it learned from', () => {
     expect(
       decisionWarning({
