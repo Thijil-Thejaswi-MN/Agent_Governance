@@ -36,18 +36,20 @@ MAX_DELEGATION_DEPTH = 4
 MAX_RUNNING_CHILDREN_PER_ROOT = 8
 
 
+_GLOBAL_ROOT_CHILDREN_LOCK = threading.Lock()
+_GLOBAL_RUNNING_CHILDREN_BY_ROOT: dict[str, set[str]] = {}
+
+
 def intersect_patterns(ceiling_patterns: list[str], parent_patterns: list[str]) -> list[str]:
     """Computes field-by-field pattern intersection ensuring rights only shrink."""
+    from .delegation_token import is_single_pattern_subset
+
     result: set[str] = set()
     for cp in ceiling_patterns:
         for pp in parent_patterns:
-            if cp == pp:
+            if is_single_pattern_subset(cp, pp):
                 result.add(cp)
-            elif fnmatch.fnmatch(cp, pp):
-                # Ceiling pattern is narrower than parent pattern
-                result.add(cp)
-            elif fnmatch.fnmatch(pp, cp):
-                # Parent pattern is narrower than ceiling pattern: only grant parent's subset
+            elif is_single_pattern_subset(pp, cp):
                 result.add(pp)
     return sorted(result)
 
@@ -85,11 +87,10 @@ class DelegationManager:
         self.parent_launcher = parent_launcher
         self.test_hooks = test_hooks or {}
         self._lock = threading.Lock()
-        self._active_children_by_root: dict[str, set[str]] = {}
 
     def _track_child_start(self, root_task_id: str, child_task_id: str) -> None:
-        with self._lock:
-            active = self._active_children_by_root.setdefault(root_task_id, set())
+        with _GLOBAL_ROOT_CHILDREN_LOCK:
+            active = _GLOBAL_RUNNING_CHILDREN_BY_ROOT.setdefault(root_task_id, set())
             if len(active) >= MAX_RUNNING_CHILDREN_PER_ROOT:
                 raise RuntimeError(
                     f"Per-root cap of {MAX_RUNNING_CHILDREN_PER_ROOT} running child tasks reached for root {root_task_id}"
@@ -97,8 +98,8 @@ class DelegationManager:
             active.add(child_task_id)
 
     def _track_child_finish(self, root_task_id: str, child_task_id: str) -> None:
-        with self._lock:
-            active = self._active_children_by_root.get(root_task_id)
+        with _GLOBAL_ROOT_CHILDREN_LOCK:
+            active = _GLOBAL_RUNNING_CHILDREN_BY_ROOT.get(root_task_id)
             if active:
                 active.discard(child_task_id)
 
@@ -221,7 +222,7 @@ class DelegationManager:
         child_task_id = f"{caller_task_id}_c{uuid.uuid4().hex[:6]}"
         self._track_child_start(root_task_id, child_task_id)
 
-        # 4. Record request message in a2a_messages
+        # 4. Record request message in a2a_messages as pending
         req_msg_id = f"msg_{uuid.uuid4().hex[:16]}"
         caller_has_private = self._has_read_private_files(caller_task_id, caller_boundary)
         req_row = {
@@ -236,7 +237,7 @@ class DelegationManager:
             "reply_to": None,
             "sent_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "text": text_content,
-            "verdict": "delivered",
+            "verdict": "pending",
             "reason": None,
             "integrity": "trusted",
             "forwarded_from": [],
@@ -252,13 +253,50 @@ class DelegationManager:
             if not is_scope_subset(child_scope, parent_scope):
                 reason = "Child scope widens caller scope"
                 self._record_refusal(root_task_id, caller_task_id, caller_agent_id, target_agent, fanout_group, text_content, reason)
+                req_row["verdict"] = "failed"
+                req_row["reason"] = reason
+                self.storage.save_a2a_message(req_row)
                 raise PermissionError(reason)
 
-            # 6. Prepare child workspace & copy authorized files from parent
-            child_ws = self.workspace_base / child_task_id
-            child_ws.mkdir(parents=True, exist_ok=True)
+            # 6. Register child launcher before copying inputs
+            from .launcher import TaskLauncher, TaskSpec
+
+            child_launcher = TaskLauncher(
+                storage=self.storage,
+                workspace_base=self.workspace_base,
+                receipts_dir=self.receipts_dir,
+                test_hooks=self.test_hooks,
+            )
+
+            # Register with parent launcher for freeze / stop cascading
+            if self.parent_launcher is not None:
+                self.parent_launcher.register_child_launcher(child_launcher)
+                if getattr(self.parent_launcher, "_frozen", None) and self.parent_launcher._frozen.is_set():
+                    child_launcher._freeze_now("parent_already_frozen")
+
+            if hasattr(self.storage, "is_task_frozen") and self.storage.is_task_frozen(caller_task_id):
+                child_launcher._freeze_now(f"parent_frozen:{caller_task_id}")
+                reason = f"Task {caller_task_id} in delegation chain is frozen"
+                req_row["verdict"] = "failed"
+                req_row["reason"] = reason
+                self.storage.save_a2a_message(req_row)
+                raise PermissionError(reason)
+
+            # Copy authorized files from parent workspace
             parent_ws = Path(caller_boundary.workspace_root).resolve()
-            copied_inputs = self._copy_authorized_inputs(parent_ws, child_ws, narrowed["files_read"])
+            copied_inputs = self._copy_authorized_inputs(
+                parent_ws,
+                None,
+                narrowed["files_read"],
+                child_launcher=child_launcher,
+            )
+
+            if getattr(child_launcher, "_frozen", None) and child_launcher._frozen.is_set():
+                reason = "Child launcher was frozen during input copy"
+                req_row["verdict"] = "failed"
+                req_row["reason"] = reason
+                self.storage.save_a2a_message(req_row)
+                raise PermissionError(reason)
 
             # 7. Deadline inheritance: child deadline <= parent remaining time
             deadline_s = self._calculate_deadline(caller_task, profile)
@@ -289,19 +327,7 @@ class DelegationManager:
             self.storage.update_task_context_label(child_task_id, integrity=sent_integ, confidentiality=sent_conf)
 
             # 8. Launch child task via TaskLauncher
-            from .launcher import TaskLauncher, TaskSpec
-
-            child_launcher = TaskLauncher(
-                storage=self.storage,
-                workspace_base=self.workspace_base,
-                receipts_dir=self.receipts_dir,
-                test_hooks=self.test_hooks,
-            )
-
-            # Register with parent launcher for freeze / stop cascading
-            if self.parent_launcher is not None:
-                self.parent_launcher.register_child_launcher(child_launcher)
-
+            parent_meta = caller_boundary.metadata or {}
             child_spec = TaskSpec(
                 prompt=text_content,
                 task_id=child_task_id,
@@ -313,6 +339,11 @@ class DelegationManager:
                 declared_tools=narrowed["tools"],
                 network=narrowed["network"],
                 peer_agents=narrowed["peer_agents"],
+                agent_tools=profile["ceiling"].get("tools"),
+                boundary_model=parent_meta.get("boundary_model", "v1.1"),
+                canary=parent_meta.get("canary") or "",
+                private_files=parent_meta.get("private_files"),
+                sensitive_patterns=parent_meta.get("sensitive_patterns") or getattr(caller_boundary, "sensitive_patterns", None),
                 llm=dict(profile["runner"]),
                 timeout_s=deadline_s,
                 condition=caller_task.condition,
@@ -357,10 +388,18 @@ class DelegationManager:
             if not reply_text and status == "ok":
                 reply_text = "Task executed successfully."
 
+            # Update request message to delivered or failed
+            req_row["verdict"] = "delivered" if status == "ok" else "failed"
+            req_row["reason"] = failure_reason
+            self.storage.save_a2a_message(req_row)
+
             # Collect forwarded_from and contains_private
             child_boundary = self.storage.get_boundary(child_task_id) or caller_boundary
             forwarded_from = self._extract_forwarded_from(child_task_id)
             contains_private = self._has_read_private_files(child_task_id, child_boundary)
+            canary_val = parent_meta.get("canary") or ""
+            if canary_val and canary_val in reply_text:
+                contains_private = True
 
             # Record reply message
             child_integ, child_conf = self.storage.get_task_context_label(child_task_id)
@@ -405,6 +444,12 @@ class DelegationManager:
                 "integrity": child_integ,
             }
 
+        except Exception as e:
+            req_row["verdict"] = "failed"
+            req_row["reason"] = str(e)
+            self.storage.save_a2a_message(req_row)
+            raise
+
         finally:
             self._track_child_finish(root_task_id, child_task_id)
 
@@ -414,6 +459,8 @@ class DelegationManager:
         calls: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         """Starts several child tasks concurrently and returns all replies."""
+        if len(calls) > 8:
+            calls = calls[:8]
         group_id = f"fanout_{uuid.uuid4().hex[:12]}"
         results: list[dict[str, Any]] = []
 
@@ -513,87 +560,111 @@ class DelegationManager:
     def _copy_authorized_inputs(
         self,
         parent_ws: Path,
-        child_ws: Path,
+        child_ws: Path | None,
         authorized_patterns: list[str],
+        child_launcher: Any = None,
     ) -> dict[str, str]:
-        """Copies files matching authorized_patterns from parent workspace into child workspace."""
+        """Copies files matching authorized_patterns from parent workspace using openat(dir_fd, name, O_NOFOLLOW).
+        Caps each file at 1 MB and 50 files total.
+        Never leaves a folder on disk."""
         import stat
         copied: dict[str, str] = {}
         if not parent_ws.is_dir():
             return copied
 
-        parent_real = os.path.realpath(str(parent_ws))
-        for root, dirs, files in os.walk(str(parent_ws), followlinks=False):
-            # Don't descend into symlinked directories
-            dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(root, d))]
-            for fname in files:
-                fpath_str = os.path.join(root, fname)
-                try:
-                    st = os.lstat(fpath_str)
-                except OSError:
-                    continue
+        copy_hook = (self.test_hooks or {}).get("during_input_copy")
 
-                # Skip anything that is not a regular file (symlinks, devices, FIFOs)
-                if not stat.S_ISREG(st.st_mode):
-                    continue
+        try:
+            parent_fd = os.open(str(parent_ws), os.O_RDONLY | os.O_DIRECTORY)
+        except OSError:
+            return copied
 
-                # Skip files with st_nlink > 1
-                if st.st_nlink > 1:
-                    continue
+        try:
+            for root, dirs, files in os.walk(str(parent_ws), followlinks=False):
+                if copy_hook:
+                    copy_hook()
+                if child_launcher and getattr(child_launcher, "_frozen", None) and child_launcher._frozen.is_set():
+                    break
 
-                # Require os.path.realpath(f) to be inside realpath(parent_ws)
-                file_real = os.path.realpath(fpath_str)
-                try:
-                    rel_to_parent_real = os.path.relpath(file_real, parent_real)
-                    if rel_to_parent_real.startswith("..") or os.path.isabs(rel_to_parent_real):
-                        continue
-                except ValueError:
-                    continue
-
-                try:
-                    rel = Path(fpath_str).relative_to(parent_ws).as_posix()
-                except ValueError:
-                    continue
-
-                if rel.startswith(".control") or rel.startswith("receipts"):
-                    continue
-
-                # Check if rel matches any authorized read pattern
-                matched = any(fnmatch.fnmatch(rel, pat) for pat in authorized_patterns)
-                if not matched:
-                    continue
-
-                # Open with O_NOFOLLOW and copy from that fd (no shutil.copy2 on a path)
-                flags = os.O_RDONLY
-                if hasattr(os, "O_NOFOLLOW"):
-                    flags |= os.O_NOFOLLOW
-                try:
-                    fd = os.open(fpath_str, flags)
-                except OSError:
-                    continue
-                # The opened file must be the one checked above: a directory on the path could
-                # have been swapped for a symlink between lstat/realpath and open.
-                try:
-                    fst = os.fstat(fd)
-                except OSError:
-                    os.close(fd)
-                    continue
-                if (fst.st_dev, fst.st_ino) != (st.st_dev, st.st_ino) or not stat.S_ISREG(fst.st_mode) or fst.st_nlink > 1:
-                    os.close(fd)
-                    continue
-
-                dst = child_ws / rel
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                try:
-                    with open(fd, "rb", closefd=True) as src_f, open(dst, "wb") as dst_f:
-                        content_bytes = src_f.read()
-                        dst_f.write(content_bytes)
+                dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(root, d))]
+                for fname in sorted(files):
+                    if len(copied) >= 50:
+                        break
+                    fpath_str = os.path.join(root, fname)
                     try:
-                        copied[rel] = content_bytes.decode("utf-8")
+                        rel = Path(fpath_str).relative_to(parent_ws).as_posix()
+                    except ValueError:
+                        continue
+
+                    if rel.startswith(".control") or rel.startswith("receipts") or rel.startswith("granted"):
+                        continue
+
+                    matched = any(fnmatch.fnmatch(rel, pat) for pat in authorized_patterns)
+                    if not matched:
+                        continue
+
+                    # Open each path one component at a time with openat(dir_fd, name, O_NOFOLLOW)
+                    parts = [p for p in rel.split("/") if p and p != "."]
+                    if any(p == ".." for p in parts):
+                        continue
+
+                    cur_fd = None
+                    try:
+                        cur_fd = os.dup(parent_fd)
+                        flags = os.O_RDONLY
+                        if hasattr(os, "O_NOFOLLOW"):
+                            flags |= os.O_NOFOLLOW
+
+                        failed = False
+                        for idx, part in enumerate(parts):
+                            is_last = (idx == len(parts) - 1)
+                            comp_flags = flags if is_last else (flags | os.O_DIRECTORY)
+                            try:
+                                next_fd = os.open(part, comp_flags, dir_fd=cur_fd)
+                            except OSError:
+                                failed = True
+                                break
+                            os.close(cur_fd)
+                            cur_fd = next_fd
+
+                        if failed or cur_fd is None:
+                            continue
+
+                        fst = os.fstat(cur_fd)
+                        if not stat.S_ISREG(fst.st_mode) or fst.st_nlink > 1:
+                            continue
+                        if fst.st_size > 1048576:  # 1 MB cap
+                            continue
+
+                        with open(cur_fd, "rb", closefd=True) as src_f:
+                            cur_fd = None  # open took ownership
+                            content_bytes = src_f.read(1048576)
+
+                        try:
+                            copied[rel] = content_bytes.decode("utf-8")
+                        except Exception:
+                            copied[rel] = f"[binary file: {fname}]"
+
+                        if child_ws is not None:
+                            dst = child_ws / rel
+                            dst.parent.mkdir(parents=True, exist_ok=True)
+                            with open(dst, "wb") as dst_f:
+                                dst_f.write(content_bytes)
+
                     except Exception:
-                        copied[rel] = f"[binary file: {fname}]"
-                except Exception:
-                    continue
+                        continue
+                    finally:
+                        if cur_fd is not None:
+                            try:
+                                os.close(cur_fd)
+                            except OSError:
+                                pass
+        finally:
+            try:
+                os.close(parent_fd)
+            except OSError:
+                pass
+
         return copied
 
     def _calculate_deadline(self, parent_task: TaskRecord, profile: dict[str, Any]) -> float:

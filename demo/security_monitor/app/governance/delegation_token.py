@@ -93,12 +93,81 @@ def normalize_scope(boundary: Any) -> dict[str, list[str]]:
     }
 
 
+def is_single_pattern_subset(cp: str, pp: str) -> bool:
+    """Treats as a subset only:
+    - identical patterns
+    - a literal path the parent pattern matches
+    - dir/* or dir/** inside the same or a wider parent directory pattern
+    Refuses anything with ?, [...] or [!..] on either side, .. or absolute paths.
+    """
+    for p in (cp, pp):
+        if "?" in p or "[" in p or "]" in p or ".." in p:
+            return False
+        if p.startswith("/") or p.startswith("\\"):
+            return False
+
+    if cp == pp:
+        return True
+
+    # 2. A literal path the parent pattern matches
+    if "*" not in cp:
+        if pp == "*":
+            return "/" not in cp
+        if pp == "**":
+            return True
+        if pp.endswith("/**"):
+            prefix = pp[:-3]
+            return cp.startswith(prefix + "/")
+        if pp.endswith("/*"):
+            prefix = pp[:-2]
+            if cp.startswith(prefix + "/"):
+                rest = cp[len(prefix) + 1 :]
+                return "/" not in rest
+            return False
+        return fnmatch.fnmatch(cp, pp)
+
+    # 3. dir/* or dir/** inside the same or a wider parent directory pattern
+    if cp == "**":
+        return pp == "**"
+
+    if cp == "*":
+        return pp in ("*", "**")
+
+    cp_is_deep = cp.endswith("/**")
+    cp_is_shallow = cp.endswith("/*")
+    if not (cp_is_deep or cp_is_shallow):
+        return False
+
+    cp_dir = cp[:-3] if cp_is_deep else cp[:-2]
+    if "*" in cp_dir:
+        return False
+
+    if pp == "**":
+        return True
+
+    if pp.endswith("/**"):
+        pp_dir = pp[:-3]
+        if "*" in pp_dir:
+            return False
+        return cp_dir == pp_dir or cp_dir.startswith(pp_dir + "/")
+
+    if pp.endswith("/*"):
+        pp_dir = pp[:-2]
+        if not pp_dir or "*" in pp_dir:
+            return False
+        if cp_is_shallow:
+            return cp_dir == pp_dir or cp_dir.startswith(pp_dir + "/")
+        return False
+
+    return False
+
+
 def is_pattern_subset(child_patterns: list[str], parent_patterns: list[str]) -> bool:
     """Checks that every pattern in child_patterns is covered by at least one parent pattern."""
     for cp in child_patterns:
         matched = False
         for pp in parent_patterns:
-            if cp == pp or fnmatch.fnmatch(cp, pp):
+            if is_single_pattern_subset(cp, pp):
                 matched = True
                 break
         if not matched:

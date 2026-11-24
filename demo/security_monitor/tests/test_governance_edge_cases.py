@@ -156,6 +156,7 @@ def test_url_userinfo_evasion(edge_storage: GovernanceStorage, edge_workspace: P
     task, boundary = intake.submit_task("Analyse report.pdf", "agent_alice", str(edge_workspace))
     # Grant allowed.host:80 to boundary
     boundary.network = ["allowed.host:80", "allowed.host:443"]
+    boundary.tools.append("http_get")
     edge_storage.save_boundary(boundary)
 
     token = "tok_edge_006"
@@ -175,6 +176,7 @@ def test_raw_ip_literals_and_ipv6(edge_storage: GovernanceStorage, edge_workspac
     intake = TaskIntakeService(edge_storage)
     task, boundary = intake.submit_task("Analyse report.pdf", "agent_alice", str(edge_workspace))
     boundary.network = ["127.0.0.1:8080"]
+    boundary.tools.append("http_get")
     edge_storage.save_boundary(boundary)
 
     token = "tok_edge_007"
@@ -198,6 +200,7 @@ def test_uppercase_host_and_port_differentiation(edge_storage: GovernanceStorage
     intake = TaskIntakeService(edge_storage)
     task, boundary = intake.submit_task("Analyse report.pdf", "agent_alice", str(edge_workspace))
     boundary.network = ["allowed.host:443"]
+    boundary.tools.append("http_get")
     edge_storage.save_boundary(boundary)
 
     token = "tok_edge_008"
@@ -217,6 +220,7 @@ def test_http_redirect_to_non_allowed_host(edge_storage: GovernanceStorage, edge
     intake = TaskIntakeService(edge_storage)
     task, boundary = intake.submit_task("Analyse report.pdf", "agent_alice", str(edge_workspace))
     boundary.network = ["allowed.host:443"]
+    boundary.tools.append("http_get")
     edge_storage.save_boundary(boundary)
 
     token = "tok_edge_009"

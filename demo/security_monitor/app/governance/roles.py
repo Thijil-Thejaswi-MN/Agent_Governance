@@ -180,8 +180,12 @@ class PermissionMatrix:
         user: UserSession,
         task_team: str | None,
         escalated_by_provenance: bool = False,
+        resource_type: str | None = None,
+        job_owner: str | None = None,
     ) -> bool:
         if user.role in (Role.ADMIN, Role.SECURITY_REVIEWER):
+            return True
+        if resource_type == "flow" and job_owner and user.name == job_owner:
             return True
         if user.role == Role.TEAM_LEAD:
             if escalated_by_provenance:

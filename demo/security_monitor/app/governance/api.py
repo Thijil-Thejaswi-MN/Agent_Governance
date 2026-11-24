@@ -1695,8 +1695,17 @@ async def approve_expansion(
         raise HTTPException(status_code=404, detail=f"Expansion request '{request_id}' not found.")
     task = storage.get_task(req.task_id)
     task_team = task.team if task else None
+    root_task_id = getattr(task, "root_task_id", None) or req.task_id
+    root_task = storage.get_task(root_task_id) if root_task_id else task
+    job_owner = getattr(root_task, "requested_by", None) or getattr(root_task, "owner", None)
 
-    if not PermissionMatrix.can_decide_request(user, task_team, req.escalated_by_provenance):
+    if not PermissionMatrix.can_decide_request(
+        user,
+        task_team,
+        req.escalated_by_provenance,
+        resource_type=req.resource_type,
+        job_owner=job_owner,
+    ):
         raise HTTPException(status_code=403, detail="Forbidden: Role not authorized to approve this expansion.")
 
     scope = (payload.scope or "run").strip().lower()
@@ -1709,7 +1718,7 @@ async def approve_expansion(
                                                         "an approved write is saved once.")
         if not (1 <= minutes <= TIMED_MINUTES_MAX):
             raise HTTPException(status_code=422, detail=f"Minutes must be between 1 and {TIMED_MINUTES_MAX}.")
-    if scope != "run" and req.status != ExpansionStatus.PENDING:
+    if req.status != ExpansionStatus.PENDING:
         raise HTTPException(status_code=409, detail="This request has already been decided.")
     if scope == "once":
         other = _unused_single_use_grant(storage, req.task_id, exclude=request_id)
@@ -1805,9 +1814,21 @@ async def deny_expansion(
         raise HTTPException(status_code=404, detail=f"Expansion request '{request_id}' not found.")
     task = storage.get_task(req.task_id)
     task_team = task.team if task else None
+    root_task_id = getattr(task, "root_task_id", None) or req.task_id
+    root_task = storage.get_task(root_task_id) if root_task_id else task
+    job_owner = getattr(root_task, "requested_by", None) or getattr(root_task, "owner", None)
 
-    if not PermissionMatrix.can_decide_request(user, task_team, req.escalated_by_provenance):
+    if not PermissionMatrix.can_decide_request(
+        user,
+        task_team,
+        req.escalated_by_provenance,
+        resource_type=req.resource_type,
+        job_owner=job_owner,
+    ):
         raise HTTPException(status_code=403, detail="Forbidden: Role not authorized to deny this expansion.")
+
+    if req.status != ExpansionStatus.PENDING:
+        raise HTTPException(status_code=409, detail="This request has already been decided.")
 
     try:
         if user.role == Role.ADMIN or user.name == os.getenv("GOVERNANCE_OPERATOR_NAME", "operator"):
@@ -2532,6 +2553,7 @@ async def stream_task_steps(task_id: str, request: Request) -> StreamingResponse
     depend on the launcher sharing this storage instance's subscriber queue.
     """
     storage = get_storage()
+    _require_view(request, storage, task_id)
     queue = storage.subscribe_task_steps(task_id)
 
     async def event_generator():

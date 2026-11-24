@@ -161,6 +161,8 @@ class ToolBroker:
             raise ValueError("resource_target cannot be empty in expansion request")
         if not resource_type or not str(resource_type).strip():
             raise ValueError("resource_type cannot be empty in expansion request")
+        if str(resource_type).strip().lower() == "flow":
+            raise PermissionError("resource_type 'flow' is reserved for data-flow rules and cannot be requested by agents")
         task_id, agent_id = self._authenticate(token)
         needs_person_reason = None
         boundary = self.storage.get_boundary(task_id)
@@ -200,6 +202,8 @@ class ToolBroker:
             raise ValueError("resource_target cannot be empty in expansion request")
         if not resource_type or not str(resource_type).strip():
             raise ValueError("resource_type cannot be empty in expansion request")
+        if str(resource_type).strip().lower() == "flow":
+            raise PermissionError("resource_type 'flow' is reserved for data-flow rules and cannot be requested by agents")
 
         granted, status_or_reason = self.request_expansion(
             token=token,
@@ -442,8 +446,22 @@ class ToolBroker:
                 raise PermissionError("denied (observe: host path not executed)")
             raise PermissionError(f"Access to file '{target_display}' denied: path is outside task workspace")
 
-        with open(target, "r", encoding="utf-8", errors="replace") as f:
-            content = f.read()
+        flags = os.O_RDONLY
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        fd = os.open(str(target), flags)
+        try:
+            st = os.fstat(fd)
+            if st.st_size > 1048576:
+                raise PermissionError(f"Access to file '{target_display}' denied: file size ({st.st_size} bytes) exceeds 1 MB limit")
+            with open(fd, "r", encoding="utf-8", errors="replace", closefd=True) as f:
+                content = f.read()
+        except Exception:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            raise
 
         # Update confidentiality context label
         meta = boundary.metadata or {}
@@ -594,6 +612,29 @@ class ToolBroker:
             raise RuntimeError(f"Active boundary not found for task {task_id}")
         self._check_agent_tool(task_id, agent_id, boundary, "http_get")
 
+        # Check tool granted
+        tool_eval = self.evaluator.evaluate_tool(boundary, "http_get")
+        if tool_eval.verdict != EventVerdict.INSIDE:
+            action, prevented = self.policy_engine.decide(boundary, tool_eval)
+            event = GovernanceEvent(
+                event_id=self._generate_event_id(),
+                timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                source=EventSource.TOOL_BROKER,
+                task_id=task_id,
+                agent_id=agent_id,
+                pid=os.getpid(),
+                kind="tool_invocation",
+                target="http_get",
+                verdict=tool_eval.verdict,
+                risk_tier=tool_eval.risk_tier,
+                action_taken=action,
+                prevented=prevented,
+                rule_matched=tool_eval.rule_matched,
+                boundary_version=boundary.version,
+            )
+            self._record(event)
+            raise PermissionError(f"Tool http_get not granted, denied by boundary: {tool_eval.rule_matched}")
+
         norm_target = str(url).strip()
         grant_state = self._get_grant_state(task_id)
         cache_key = ("http_get", norm_target, boundary.version, grant_state)
@@ -653,6 +694,13 @@ class ToolBroker:
             self.storage.save_a2a_message(refused_msg)
             raise PermissionError(f"Outbound network request to '{url}' denied by boundary: {eval_res.rule_matched}")
 
+        # Check flow rules: while a multi-agent task is secret, an http_get whose URL has a query string needs the OK
+        parsed_url = urllib.parse.urlsplit(url)
+        if self._flow_rules_apply(task_id, boundary) and parsed_url.query:
+            integ, conf = self.storage.get_task_context_label(task_id)
+            if conf == "secret":
+                self._check_flow_approval(task_id, agent_id, boundary, "http_get", url)
+
         # M6: when a fetcher is attached (launcher routes it through the per-task
         # egress proxy), perform the real GET; otherwise keep the M5 stub.
         fetcher = getattr(self, "http_fetcher", None)
@@ -699,6 +747,29 @@ class ToolBroker:
         if not boundary:
             raise RuntimeError(f"Active boundary not found for task {task_id}")
         self._check_agent_tool(task_id, agent_id, boundary, "http_post")
+
+        # Check tool granted
+        tool_eval = self.evaluator.evaluate_tool(boundary, "http_post")
+        if tool_eval.verdict != EventVerdict.INSIDE:
+            action, prevented = self.policy_engine.decide(boundary, tool_eval)
+            event = GovernanceEvent(
+                event_id=self._generate_event_id(),
+                timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                source=EventSource.TOOL_BROKER,
+                task_id=task_id,
+                agent_id=agent_id,
+                pid=os.getpid(),
+                kind="tool_invocation",
+                target="http_post",
+                verdict=tool_eval.verdict,
+                risk_tier=tool_eval.risk_tier,
+                action_taken=action,
+                prevented=prevented,
+                rule_matched=tool_eval.rule_matched,
+                boundary_version=boundary.version,
+            )
+            self._record(event)
+            raise PermissionError(f"Tool http_post not granted, denied by boundary: {tool_eval.rule_matched}")
 
         eval_res = self.evaluator.evaluate_network(boundary, url)
         action, prevented = self.policy_engine.decide(boundary, eval_res)
@@ -762,13 +833,14 @@ class ToolBroker:
             self.storage.save_a2a_message(refused_msg)
             raise PermissionError(f"Outbound network request to '{url}' denied by boundary: {eval_res.rule_matched}")
 
-        # Check flow rules: Rule 1 (Secret data) and Rule 2 (Untrusted content)
-        self._check_flow_approval(task_id, agent_id, boundary, "http_post", url)
-
         # When file_path is given, the broker reads it through the same checks as read_file (boundary + realpath)
+        # Reading raises the confidentiality context label before checking flow approval.
         post_data = data
         if file_path:
             post_data = self.read_file(token, file_path)
+
+        # Check flow rules: Rule 1 (Secret data) and Rule 2 (Untrusted content)
+        self._check_flow_approval(task_id, agent_id, boundary, "http_post", url)
 
         fetcher = getattr(self, "http_fetcher", None)
         if fetcher is not None:
@@ -1145,6 +1217,29 @@ class ToolBroker:
             raise RuntimeError(f"Active boundary not found for task {task_id}")
         self._check_agent_tool(task_id, agent_id, boundary, "call_agent")
 
+        # Check tool granted
+        tool_eval = self.evaluator.evaluate_tool(boundary, "call_agent")
+        if tool_eval.verdict != EventVerdict.INSIDE:
+            action, prevented = self.policy_engine.decide(boundary, tool_eval)
+            event = GovernanceEvent(
+                event_id=self._generate_event_id(),
+                timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                source=EventSource.TOOL_BROKER,
+                task_id=task_id,
+                agent_id=agent_id,
+                pid=os.getpid(),
+                kind="tool_invocation",
+                target="call_agent",
+                verdict=tool_eval.verdict,
+                risk_tier=tool_eval.risk_tier,
+                action_taken=action,
+                prevented=prevented,
+                rule_matched=tool_eval.rule_matched,
+                boundary_version=boundary.version,
+            )
+            self._record(event)
+            raise PermissionError(f"Tool call_agent not granted, denied by boundary: {tool_eval.rule_matched}")
+
         norm_target = str(target_agent).strip().lower()
         grant_state = self._get_grant_state(task_id)
         cache_key = ("call_agent", norm_target, boundary.version, grant_state)
@@ -1204,6 +1299,23 @@ class ToolBroker:
             self.storage.save_a2a_message(refused_msg)
             raise PermissionError(f"Communication with agent '{target_agent}' denied by boundary: {eval_res.rule_matched}")
 
+        # Delegation pre-checks: profile exists, cycle, depth before flow check
+        if getattr(boundary, "enforcement_mode", None) != EnforcementMode.OBSERVE:
+            from .agent_profiles import load_agent_profile
+            try:
+                profile = load_agent_profile(target_agent)
+            except Exception:
+                raise PermissionError(f"Agent profile not found for '{target_agent}'")
+
+            task = self.storage.get_task(task_id)
+            chain = getattr(task, "chain", []) or [agent_id]
+            if target_agent in chain:
+                raise PermissionError(f"Cycle detected: agent '{target_agent}' already exists in delegation chain: {chain}")
+
+            depth = getattr(task, "depth", 0)
+            if depth + 1 > 4:
+                raise PermissionError(f"Maximum delegation depth 4 exceeded: requested depth {depth + 1}")
+
         # Check flow rules: Rule 1 (Secret data) and Rule 2 (Untrusted content)
         self._check_flow_approval(task_id, agent_id, boundary, "call_agent", target_agent)
 
@@ -1241,10 +1353,40 @@ class ToolBroker:
             raise RuntimeError(f"Active boundary not found for task {task_id}")
         self._check_agent_tool(task_id, agent_id, boundary, "call_agent")
 
+        # Check tool granted
+        tool_eval = self.evaluator.evaluate_tool(boundary, "call_agents")
+        if tool_eval.verdict != EventVerdict.INSIDE:
+            action, prevented = self.policy_engine.decide(boundary, tool_eval)
+            event = GovernanceEvent(
+                event_id=self._generate_event_id(),
+                timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                source=EventSource.TOOL_BROKER,
+                task_id=task_id,
+                agent_id=agent_id,
+                pid=os.getpid(),
+                kind="tool_invocation",
+                target="call_agents",
+                verdict=tool_eval.verdict,
+                risk_tier=tool_eval.risk_tier,
+                action_taken=action,
+                prevented=prevented,
+                rule_matched=tool_eval.rule_matched,
+                boundary_version=boundary.version,
+            )
+            self._record(event)
+            raise PermissionError(f"Tool call_agents not granted, denied by boundary: {tool_eval.rule_matched}")
+
+        if len(calls) > 8:
+            calls = calls[:8]
+
         grant_state = self._get_grant_state(task_id)
         task = self.storage.get_task(task_id)
         root_id = task.root_task_id or task_id if task else task_id
         group_id = f"fanout_{uuid.uuid4().hex[:12]}"
+
+        from .agent_profiles import load_agent_profile
+        chain = getattr(task, "chain", []) or [agent_id]
+        depth = getattr(task, "depth", 0)
 
         allowed_calls: list[tuple[int, dict[str, Any]]] = []
         indexed_results: dict[int, dict[str, Any]] = {}
@@ -1285,7 +1427,22 @@ class ToolBroker:
             )
             self._record(event)
 
+            refused_reason = None
             if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
+                refused_reason = f"Communication with agent '{tgt}' denied by boundary: {eval_res.rule_matched}"
+            else:
+                try:
+                    profile = load_agent_profile(tgt)
+                except Exception:
+                    refused_reason = f"Agent profile not found for '{tgt}'"
+
+                if not refused_reason and tgt in chain:
+                    refused_reason = f"Cycle detected: agent '{tgt}' already exists in delegation chain: {chain}"
+
+                if not refused_reason and depth + 1 > 4:
+                    refused_reason = f"Maximum delegation depth 4 exceeded: requested depth {depth + 1}"
+
+            if refused_reason:
                 msg_text = msg.get("text", "") if isinstance(msg, dict) else str(msg)
                 refused_msg = {
                     "message_id": f"msg_{uuid.uuid4().hex[:16]}",
@@ -1300,7 +1457,7 @@ class ToolBroker:
                     "sent_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                     "text": msg_text[:8192],
                     "verdict": "refused",
-                    "reason": eval_res.rule_matched,
+                    "reason": refused_reason,
                     "integrity": "trusted",
                     "forwarded_from": [],
                     "contains_private": False,
@@ -1308,7 +1465,7 @@ class ToolBroker:
                 self.storage.save_a2a_message(refused_msg)
                 indexed_results[idx] = {
                     "status": "refused",
-                    "reply": f"Communication with agent '{tgt}' denied by boundary: {eval_res.rule_matched}",
+                    "reply": refused_reason,
                     "child_task_id": None,
                     "target": tgt,
                 }

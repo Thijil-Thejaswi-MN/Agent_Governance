@@ -60,5 +60,6 @@ an OUTSIDE OS access succeeds under ENFORCE. Each has a test.
 - The ptrace sensor is observation only (Phase 0); eBPF is planned for M7.
 - One task per cgroup; shared long-lived agents are M9. Windows-native is not enforced.
 - Receipts are hash-chained, not signed.
+- Shell egress through the proxy does not check labels.
 - Write targets outside `output/`/`scratch/` are pre-created empty (Landlock rules attach
   to existing inodes).

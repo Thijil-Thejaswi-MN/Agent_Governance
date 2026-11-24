@@ -66,7 +66,9 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
         const senderName = getAgentDisplayName(m.from_agent, agentNames);
         const receiverName = getAgentDisplayName(m.to_agent, agentNames);
         const isRefused = m.verdict === 'refused';
+        const isFailed = m.verdict === 'failed';
         const isDelivered = m.verdict === 'delivered';
+        const isPending = m.verdict === 'pending';
         const hasForwarded =
           Array.isArray(m.forwarded_from) && m.forwarded_from.length > 0;
 
@@ -102,7 +104,7 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
                 isRight
                   ? 'bg-accent/10 border-accent/25 text-fg'
                   : 'bg-surface-2 border-line text-fg'
-              } ${isRefused ? 'border-dashed border-bad/50 bg-bad/10' : ''}`}
+              } ${isRefused || isFailed ? 'border-dashed border-bad/50 bg-bad/10' : ''}`}
             >
               {/* Forwarded from source chip: rounded-md, max 3 sources +N more, full list in title */}
               {hasForwarded && (
@@ -167,9 +169,23 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
                     ✕
                   </span>
                 )}
-                <span className={isRefused ? 'text-bad' : 'text-fg-3'}>
+                {isFailed && (
+                  <span className="text-bad font-semibold" title="Failed">
+                    ✕
+                  </span>
+                )}
+                {isPending && (
+                  <span className="text-fg-3 font-semibold" title="Pending">
+                    ...
+                  </span>
+                )}
+                <span className={isRefused || isFailed ? 'text-bad' : 'text-fg-3'}>
                   {isRefused
                     ? m.reason || 'Refused by task boundary'
+                    : isFailed
+                    ? m.reason || 'Failed to start'
+                    : isPending
+                    ? 'Pending'
                     : 'Delivered'}
                 </span>
               </div>
