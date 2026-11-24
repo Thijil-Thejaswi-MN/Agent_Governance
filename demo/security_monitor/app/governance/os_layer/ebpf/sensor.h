@@ -43,6 +43,7 @@ struct ebpf_event {
     __u64 ts_ns;
     __u64 cgroup_id;      /* the registered (task) cgroup that matched: used for routing */
     __u64 cur_cgroup_id;  /* the cgroup the process is actually in (task cgroup or a call_NNN child) */
+    __u64 user_target_ptr; /* user pointer for path re-read at exit if enter read fails */
     __u32 pid;
     __u32 tgid;
     __u32 ppid;

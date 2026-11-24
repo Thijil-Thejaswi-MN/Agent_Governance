@@ -52,6 +52,7 @@ class EBPFShadowManager:
     def __init__(self, socket_path: Path = DEFAULT_SOCKET_PATH) -> None:
         self.socket_path = socket_path
         self.proc: subprocess.Popen | None = None
+        self.last_dropped_total = 0
 
     @classmethod
     def get_instance(cls) -> "EBPFShadowManager":
@@ -150,8 +151,7 @@ class EBPFShadowManager:
                     s.close()
                     if data.get("status") != "healthy":
                         return False, f"loader status: {data.get('status')}"
-                    if data.get("dropped_total", 0) > 0:
-                        return False, f"loader has dropped events: {data.get('dropped_total')}"
+                    self.last_dropped_total = data.get("dropped_total", 0)
                     age = data.get("heartbeat_age_s", 0)
                     if age > 2.0:
                         return False, f"loader heartbeat age {age:.2f}s exceeds 2s limit"
@@ -247,8 +247,12 @@ class EBPFShadowSession:
         self.sock_file: Any | None = None
         self.thread: threading.Thread | None = None
         self.correlator_thread: threading.Thread | None = None
-        self.event_queue: queue.Queue[str | None] = queue.Queue(maxsize=50000)
+        self.event_queue_maxsize = 50000
+        self.event_queue: queue.Queue[str | None] = queue.Queue(maxsize=self.event_queue_maxsize)
         self.stop_event = threading.Event()
+        self.registered_event = threading.Event()
+        self.unregister_event = threading.Event()
+        self.initial_dropped: int = 0
         self.event_count = 0
         self.dropped_count = 0
         self.filtered_runtime_reads = 0
@@ -268,6 +272,7 @@ class EBPFShadowSession:
         if not ok:
             self.unavailable_reason = reason
             return
+        self.initial_dropped = manager.last_dropped_total
 
         connected = False
         last_ex = None
@@ -311,6 +316,17 @@ class EBPFShadowSession:
         )
         self.thread.start()
 
+        if not self.registered_event.wait(timeout=2.0):
+            self.unavailable_reason = "timeout waiting for REGISTERED ack from loader"
+            self.stop_event.set()
+            if self.sock:
+                try:
+                    self.sock.close()
+                except Exception:
+                    pass
+                self.sock = None
+            return
+
     def _correlator_worker(self) -> None:
         while True:
             line = self.event_queue.get()
@@ -320,8 +336,12 @@ class EBPFShadowSession:
             if self.correlator and self.boundary_provider:
                 try:
                     self.correlator.handle_line(line, self.boundary_provider)
-                except Exception:
-                    pass
+                except Exception as ex:
+                    logger.exception("Correlator error: %s", ex)
+                    self.dropped_count += 1
+                    if not self.freeze_signaled and self.on_freeze:
+                        self.freeze_signaled = True
+                        self.on_freeze("sensor_events_dropped", {"dropped": self.dropped_count, "reason": f"correlator_exception: {ex}"})
             self.event_queue.task_done()
 
     def _reader_loop(self) -> None:
@@ -377,26 +397,34 @@ class EBPFShadowSession:
                                 self.heartbeat_ok = True
                                 self.last_heartbeat_time = time.monotonic()
                                 dropped = data.get("dropped_total", 0)
-                                if dropped > self.dropped_count:
-                                    self.dropped_count = dropped
+                                delta = max(0, dropped - self.initial_dropped)
+                                if delta > self.dropped_count:
+                                    self.dropped_count = delta
                                     if not self.freeze_signaled and self.on_freeze:
                                         self.freeze_signaled = True
-                                        self.on_freeze("sensor_events_dropped", {"dropped": dropped})
+                                        self.on_freeze("sensor_events_dropped", {"dropped": delta})
                                 if data.get("version"):
                                     self.loader_version = data["version"]
                                 continue
 
                             if ev_type == "ack":
+                                act = data.get("action")
+                                if act == "registered":
+                                    self.registered_event.set()
+                                elif act == "unregistered":
+                                    self.filtered_runtime_reads = data.get("filtered_runtime_reads", 0)
+                                    self.unregister_event.set()
                                 continue
 
                             if ev_type == "syscall":
                                 self.event_count += 1
                                 dropped = data.get("dropped", 0)
-                                if dropped > 0 and dropped > self.dropped_count:
-                                    self.dropped_count = dropped
+                                delta = max(0, dropped - self.initial_dropped)
+                                if delta > 0 and delta > self.dropped_count:
+                                    self.dropped_count = delta
                                     if not self.freeze_signaled and self.on_freeze:
                                         self.freeze_signaled = True
-                                        self.on_freeze("sensor_events_dropped", {"dropped": dropped})
+                                        self.on_freeze("sensor_events_dropped", {"dropped": delta})
                                 out_f.write(line + "\n")
                                 out_f.flush()
 
@@ -404,7 +432,10 @@ class EBPFShadowSession:
                                     try:
                                         self.event_queue.put_nowait(line)
                                     except queue.Full:
-                                        pass
+                                        self.dropped_count += 1
+                                        if not self.freeze_signaled and self.on_freeze:
+                                            self.freeze_signaled = True
+                                            self.on_freeze("sensor_events_dropped", {"dropped": self.dropped_count, "reason": "queue_full"})
         except Exception:
             if not self.stop_event.is_set() and not self.freeze_signaled and self.on_freeze:
                 self.freeze_signaled = True
@@ -416,6 +447,13 @@ class EBPFShadowSession:
                 pass
 
     def finish(self) -> dict[str, Any]:
+        if self.sock and self.cgroup_id:
+            try:
+                self.sock.settimeout(1.0)
+                self.sock.sendall(f"UNREGISTER {self.cgroup_id}\n".encode("utf-8"))
+                self.unregister_event.wait(timeout=1.0)
+            except Exception:
+                pass
         self.stop_event.set()
         if self.correlator_thread and self.correlator_thread.is_alive():
             try:
@@ -424,20 +462,6 @@ class EBPFShadowSession:
             except Exception:
                 pass
         if self.sock:
-            try:
-                if self.cgroup_id:
-                    self.sock.settimeout(1.0)
-                    self.sock.sendall(f"UNREGISTER {self.cgroup_id}\n".encode("utf-8"))
-                    if self.sock_file:
-                        try:
-                            ack_line = self.sock_file.readline()
-                            if ack_line:
-                                ack_data = json.loads(ack_line.strip())
-                                self.filtered_runtime_reads = ack_data.get("filtered_runtime_reads", 0)
-                        except Exception:
-                            pass
-            except Exception:
-                pass
             try:
                 if self.sock_file:
                     self.sock_file.close()

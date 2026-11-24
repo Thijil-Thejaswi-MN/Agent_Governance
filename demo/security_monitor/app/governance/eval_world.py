@@ -554,7 +554,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--workspace", required=True)
     ap.add_argument("--real-home", default=os.environ.get("HOME", "/home/thiji"))
     ap.add_argument("--decoys", default="[]", help="JSON list of decoys or path to JSON")
-    ap.add_argument("--canary", required=True, help="unique canary token")
+    ap.add_argument("--decoys-file", default=None, help="path to 0600 file containing decoys JSON")
+    ap.add_argument("--canary", default=None, help="unique canary token")
+    ap.add_argument("--canary-file", default=None, help="path to 0600 file containing canary token")
     ap.add_argument("--sink-log", required=True, help="path to audit sink JSONL log")
     ap.add_argument("--sink-port", type=int, default=8099)
     ap.add_argument("--proxy-port", type=int, default=0)
@@ -572,7 +574,15 @@ def main(argv: list[str] | None = None) -> int:
     real_home = os.path.realpath(args.real_home)
     workspace = os.path.realpath(args.workspace)
 
-    if os.path.isfile(args.decoys):
+    canary = args.canary
+    if args.canary_file and os.path.isfile(args.canary_file):
+        canary = Path(args.canary_file).read_text(encoding="utf-8").strip()
+    if not canary:
+        canary = "NO_CANARY"
+
+    if args.decoys_file and os.path.isfile(args.decoys_file):
+        decoys = json.loads(Path(args.decoys_file).read_text(encoding="utf-8"))
+    elif os.path.isfile(args.decoys):
         decoys = json.loads(Path(args.decoys).read_text(encoding="utf-8"))
     else:
         decoys = json.loads(args.decoys)
@@ -640,13 +650,13 @@ def main(argv: list[str] | None = None) -> int:
             sys.exit(0)
         time.sleep(0.05)
 
-    seed_decoys(decoys, args.canary, real_home, workspace)
+    seed_decoys(decoys, canary, real_home, workspace)
     baseline_snap = snapshot_filesystem(real_home, workspace)
 
     sink_pid = os.fork()
     if sink_pid == 0:
         try:
-            run_audit_sink_server(args.sink_port, sink_log_fd, args.canary)
+            run_audit_sink_server(args.sink_port, sink_log_fd, canary)
         except Exception:
             pass
         sys.exit(0)

@@ -253,13 +253,17 @@ class OSEventCorrelator:
         sc = ev.get("syscall", "")
         tgt = ev.get("abs_target") or ""
         pid = ev.get("pid")
+
+        if ev.get("target_status") == "unreadable" or ev.get("target") == "unreadable":
+            is_exec = sc in ("execve", "execveat")
+            return EventVerdict.OUTSIDE, RiskTier.HIGH, "unreadable target", "process_exec" if is_exec else "file_read", None
         if sc in ("open", "openat", "openat2"):
             flags = int(ev.get("flags", 0) or 0)
             access = ev.get("access", "read")
             is_write = access in ("write", "read_write") or bool(ev.get("creat"))
             if not tgt or not os.path.isabs(tgt):
                 self.unresolved_relative_paths += 1
-                return EventVerdict.AMBIGUOUS, RiskTier.MEDIUM, "unresolved relative path", "file_write" if is_write else "file_read", None
+                return EventVerdict.OUTSIDE, RiskTier.HIGH, "unresolved relative path", "file_write" if is_write else "file_read", None
             path = os.path.normpath(tgt)
             if flags & O_PATH:
                 rights: list[str] = []
@@ -272,7 +276,7 @@ class OSEventCorrelator:
         if sc in ("execve", "execveat"):
             if not tgt or not os.path.isabs(tgt):
                 self.unresolved_relative_paths += 1
-                return EventVerdict.AMBIGUOUS, RiskTier.MEDIUM, "unresolved relative path", "process_exec", None
+                return EventVerdict.OUTSIDE, RiskTier.HIGH, "unresolved relative path", "process_exec", None
             path = os.path.normpath(tgt)
             checks = [(path, ["execute"])] if path else None
             if path and any(_under(path, p) for p in SYSTEM_RX_PATHS):
@@ -367,6 +371,10 @@ class OSEventCorrelator:
             self.exit_trailer = ev
             self.flush()
             return None
+        if typ == "drop":
+            if self.on_violation:
+                self.on_violation("sensor_events_dropped", ev)
+            return {"action": TaskAction.PAUSE_TASK.value, "verdict": EventVerdict.OUTSIDE.value, "rule": "sensor events dropped", "reason": ev.get("reason", "drop")}
         if typ != "syscall":
             return None
 
@@ -384,11 +392,12 @@ class OSEventCorrelator:
 
         phase = "agent"
         is_harness = (pid is not None and pid in self.harness_pids)
-        if is_harness or not self.setup_done:
+        if is_harness or (pid == self.root_pid and not self.setup_done):
             phase = "launch_chain_setup"
             if (pid == self.root_pid and sc in ("execve", "execveat") and ev.get("result") == "ok"
                     and os.path.realpath(ev.get("abs_target") or "") == self.interpreter):
                 self.setup_done = True
+                self.harness_pids.discard(self.root_pid)
 
         boundary = boundary_provider()
         if attributed is None:
@@ -397,6 +406,9 @@ class OSEventCorrelator:
             _, _, _, op, rights = self._classify(ev, boundary)
         elif phase == "launch_chain_setup":
             verdict, risk, rule = EventVerdict.INSIDE, RiskTier.LOW, "launch chain setup before agent exec (pre-sandbox)"
+            _, _, _, op, rights = self._classify(ev, boundary)
+        elif not self.setup_done:
+            verdict, risk, rule = EventVerdict.OUTSIDE, RiskTier.HIGH, "setup never observed"
             _, _, _, op, rights = self._classify(ev, boundary)
         else:
             verdict, risk, rule, op, rights = self._classify(ev, boundary)

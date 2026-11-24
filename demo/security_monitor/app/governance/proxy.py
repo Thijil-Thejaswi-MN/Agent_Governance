@@ -62,6 +62,34 @@ class EgressProxyServer:
         self.max_content_length: int = 1024 * 1024
         self._dns_cache: dict[str, tuple[list[str], float]] = {}
         self._upstream_pool: dict[tuple[str, int], list[tuple[asyncio.StreamReader, asyncio.StreamWriter, float]]] = {}
+        self._active_tunnels: dict[str, list[dict[str, Any]]] = {}
+
+    def close_tunnels(self, task_id: str, target: str | None = None) -> int:
+        """Closes active CONNECT tunnels for task_id, optionally matching target."""
+        closed = 0
+        tunnels = self._active_tunnels.get(task_id, [])
+        remaining = []
+        for tun in tunnels:
+            t_match = (
+                target is None
+                or tun["target"] == target
+                or tun["target"].startswith(target)
+                or target in tun["target"]
+            )
+            if t_match:
+                closed += 1
+                for w in tun.get("writers", []):
+                    try:
+                        w.close()
+                    except Exception:
+                        pass
+            else:
+                remaining.append(tun)
+        if remaining:
+            self._active_tunnels[task_id] = remaining
+        else:
+            self._active_tunnels.pop(task_id, None)
+        return closed
 
     def cache_dns(self, host: str, ips: list[str], ttl: int = 60) -> None:
         """Explicitly caches DNS resolution with TTL clamped between 5 s and 300 s."""
@@ -639,11 +667,18 @@ class EgressProxyServer:
                     writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
                     await writer.drain()
 
+                    tun_entry = {"target": target_formatted, "writers": [writer, remote_writer], "token": task_token}
+                    if task_id not in self._active_tunnels:
+                        self._active_tunnels[task_id] = []
+                    self._active_tunnels[task_id].append(tun_entry)
+
                     async def forward(src: asyncio.StreamReader, dst: asyncio.StreamWriter) -> None:
                         try:
                             while True:
                                 data = await src.read(4096)
                                 if not data:
+                                    break
+                                if not self.storage.lookup_task_by_token(task_token):
                                     break
                                 dst.write(data)
                                 await dst.drain()
@@ -655,11 +690,18 @@ class EgressProxyServer:
                             except Exception:
                                 pass
 
-                    await asyncio.gather(
-                        forward(reader, remote_writer),
-                        forward(remote_reader, writer),
-                        return_exceptions=True,
-                    )
+                    try:
+                        await asyncio.gather(
+                            forward(reader, remote_writer),
+                            forward(remote_reader, writer),
+                            return_exceptions=True,
+                        )
+                    finally:
+                        tuns = self._active_tunnels.get(task_id, [])
+                        if tun_entry in tuns:
+                            tuns.remove(tun_entry)
+                        if not tuns:
+                            self._active_tunnels.pop(task_id, None)
                     return
                 else:
                     req_te = headers.get("transfer-encoding", "").lower()

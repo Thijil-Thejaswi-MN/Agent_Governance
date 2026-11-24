@@ -804,6 +804,10 @@ int main(int argc, char **argv) {
                 /* Resume to the syscall-exit stop to read the return value. */
                 ptrace(PTRACE_SYSCALL, pid, 0, 0);
             } else {
+                if (!p) {
+                    fprintf(out, "{\"source\":\"os_sensor\",\"type\":\"drop\",\"reason\":\"pid_table_overflow\",\"pid\":%d}\n", (int)pid);
+                    fflush(out);
+                }
                 ptrace(PTRACE_CONT, pid, 0, 0);
             }
             continue;

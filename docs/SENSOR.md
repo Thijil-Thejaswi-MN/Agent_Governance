@@ -67,11 +67,14 @@ To minimize ring buffer traffic and CPU consumption, the eBPF program includes a
 
 ## Capabilities and Host Setup
 
-The sensor loader executes as an unprivileged process. It requires specific Linux capabilities granted via file attributes:
+The sensor loader executes as an unprivileged process. After building with `make`, restrict permissions and set file capabilities:
 
 ```bash
-sudo setcap cap_perfmon,cap_bpf+ep demo/security_monitor/app/governance/os_layer/ebpf/ebpf_sensor
+chmod 0750 demo/security_monitor/app/governance/os_layer/ebpf/ebpf_sensor
+sudo setcap cap_bpf,cap_perfmon+ep demo/security_monitor/app/governance/os_layer/ebpf/ebpf_sensor
 ```
+
+The binary should be owned by the user (or a dedicated operator group, e.g. `chgrp <group> ebpf_sensor`) with mode `0750` so only authorized accounts execute it.
 
 - `CAP_BPF`: Grants permission to load BPF bytecode and allocate BPF maps.
 - `CAP_PERFMON`: Grants permission to attach BPF programs to raw tracepoints.

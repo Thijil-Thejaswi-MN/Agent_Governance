@@ -689,6 +689,12 @@ class TaskLauncher:
             except (RuntimeError, ValueError):
                 continue  # already ended (a repeat of the same grant)
             delivery.revoke(req.resource_type, req.resource_target, "time_limit")
+            proxy = self.live.get("proxy")
+            if proxy and req.resource_type == "network":
+                try:
+                    proxy.close_tunnels(task_id, req.resource_target)
+                except Exception:
+                    pass
             ended.append(req.request_id)
         return ended
 
@@ -713,6 +719,12 @@ class TaskLauncher:
             raise ValueError(f"Expansion request '{request_id}' is not part of this run.")
         boundary = expansion.revoke_request(request_id, revoked_by, reason)
         removed = delivery.revoke(req.resource_type, req.resource_target, revoked_by)
+        proxy = self.live.get("proxy")
+        if proxy and req.resource_type == "network":
+            try:
+                proxy.close_tunnels(req.task_id, req.resource_target)
+            except Exception:
+                pass
         return {"request_id": request_id, "status": "REVOKED", "boundary_version": boundary.version,
                 "removed": removed}
 
@@ -1290,10 +1302,12 @@ class TaskLauncher:
 
         ebpf_manager = EBPFShadowManager.get_instance()
         if sensor_choice == "ebpf":
-            ebpf_manager.ensure_running()
-        is_ebpf_healthy, ebpf_health_reason = ebpf_manager.check_health()
-
-        if sensor_choice == "ebpf":
+            ok, reason = ebpf_manager.ensure_running()
+            if not ok:
+                raise RuntimeError(
+                    f"eBPF sensor forced (GOVERNANCE_SENSOR=ebpf) but loader is unavailable or unhealthy: {reason}"
+                )
+            is_ebpf_healthy, ebpf_health_reason = ebpf_manager.check_health()
             if not is_ebpf_healthy:
                 raise RuntimeError(
                     f"eBPF sensor forced (GOVERNANCE_SENSOR=ebpf) but loader is unavailable or unhealthy: {ebpf_health_reason}"
@@ -1304,12 +1318,18 @@ class TaskLauncher:
             selected_sensor_kind = "ptrace"
             selected_sensor_reason = "forced by GOVERNANCE_SENSOR=ptrace"
         else:  # auto
-            if is_ebpf_healthy:
-                selected_sensor_kind = "ebpf"
-                selected_sensor_reason = "auto: ebpf_sensor running and healthy"
+            ok, reason = ebpf_manager.ensure_running()
+            if ok:
+                is_ebpf_healthy, ebpf_health_reason = ebpf_manager.check_health()
+                if is_ebpf_healthy:
+                    selected_sensor_kind = "ebpf"
+                    selected_sensor_reason = "auto: ebpf_sensor running and healthy"
+                else:
+                    selected_sensor_kind = "ptrace"
+                    selected_sensor_reason = f"auto fallback: ebpf_sensor unavailable ({ebpf_health_reason})"
             else:
                 selected_sensor_kind = "ptrace"
-                selected_sensor_reason = f"auto fallback: ebpf_sensor unavailable ({ebpf_health_reason})"
+                selected_sensor_reason = f"auto fallback: ebpf_sensor unavailable ({reason})"
 
         # Benchmark-only switch: disable ptrace sensor
         bench_mode = os.environ.get("GOVERNANCE_BENCH_MODE") == "1"
@@ -1326,6 +1346,7 @@ class TaskLauncher:
         aloop = _AsyncLoopThread()
         proxy = EgressProxyServer(self.storage, host="127.0.0.1", port=0)
         proxy_port = aloop.run(proxy.start())
+        self.live["proxy"] = proxy
         t_proxy_end = time.monotonic()
 
         if spec.approval_policy == "operator":
@@ -1493,12 +1514,18 @@ class TaskLauncher:
         world_cmd = []
         if spec.use_eval_world or bool(spec.decoys) or cond in ("A", "B", "C", "D", "W"):
             real_user_home = str(Path.home())
+            canary_file = control / ".canary"
+            canary_file.write_text(spec.canary or "NO_CANARY", encoding="utf-8")
+            os.chmod(canary_file, 0o600)
+            decoys_file = control / ".decoys.json"
+            decoys_file.write_text(json.dumps(spec.decoys), encoding="utf-8")
+            os.chmod(decoys_file, 0o600)
             world_cmd = [
                 interpreter, "-E", "-s", "-B", str(EVAL_WORLD_PY),
                 "--workspace", str(ws),
                 "--real-home", real_user_home,
-                "--canary", spec.canary or "NO_CANARY",
-                "--decoys", json.dumps(spec.decoys),
+                "--canary-file", str(canary_file),
+                "--decoys-file", str(decoys_file),
                 "--sink-log", str(control / "audit_sink.jsonl"),
                 "--fs-diff-out", str(control / "fs_diff.json"),
                 "--condition", cond or "C",
@@ -1650,7 +1677,7 @@ class TaskLauncher:
                     aborted = "sensor_child_not_in_task_cgroup"
                 raise RuntimeError(aborted)
             self.storage.save_task_cgroup(task_id, cg, unit, proc.pid)
-            self.live.update({"cgroup": cg, "sensor_pid": correlator.sensor_pid, "root_pid": correlator.root_pid})
+            self.live.update({"cgroup": cg, "sensor_pid": correlator.sensor_pid, "root_pid": correlator.root_pid, "correlator": correlator})
             t_cg_end = time.monotonic()
             rpc.expected_cgroup = cg
             if (selected_sensor_kind == "ebpf" or is_ebpf_shadow_enabled()) and not bench_sensor_disabled:
@@ -1664,6 +1691,9 @@ class TaskLauncher:
                     on_freeze=(lambda r, d: self._freeze(r, d)) if selected_sensor_kind == "ebpf" else None,
                 )
                 ebpf_session.start()
+                if selected_sensor_kind == "ebpf" and ebpf_session.unavailable_reason:
+                    self._kill("sensor_unavailable")
+                    raise RuntimeError(f"eBPF sensor failed to start or register: {ebpf_session.unavailable_reason}")
             self.storage.record_task_step(
                 task_id,
                 kind="phase",
@@ -1878,6 +1908,7 @@ class TaskLauncher:
             if (selected_sensor_kind == "ebpf" or is_ebpf_shadow_enabled()) and not bench_sensor_disabled:
                 if ebpf_session is not None:
                     ebpf_summary = ebpf_session.finish()
+                    correlator.flush()
                 else:
                     ebpf_summary = {"status": "unavailable", "reason": "task cgroup not established", "filtered_runtime_reads": 0}
 
@@ -1948,6 +1979,7 @@ class TaskLauncher:
             "unattributed_reasons": correlator.unattributed_reasons,
             "syscalls_observed": [] if bench_sensor_disabled else (["open", "openat", "openat2", "execve", "execveat", "connect", "bind", "sendto", "sendmsg"] if selected_sensor_kind == "ebpf" else ([] if disable_ptrace_sensor else ["open", "openat", "openat2", "execve", "execveat", "connect"])),
             "filtered_runtime_reads": ebpf_summary.get("filtered_runtime_reads", 0) if ebpf_summary else 0,
+            "dropped": ebpf_summary.get("dropped", 0) if (ebpf_summary and selected_sensor_kind == "ebpf") else 0,
             "unresolved_relative_paths": correlator.unresolved_relative_paths,
             **({"disabled": True} if bench_sensor_disabled else {}),
         }

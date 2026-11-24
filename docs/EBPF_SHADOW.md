@@ -39,7 +39,15 @@ By attaching via `SEC("raw_tp/sys_enter")` and `SEC("raw_tp/sys_exit")` and read
 - `CAP_BPF`: load BPF programs and create BPF maps.
 - `CAP_PERFMON`: attach BPF programs to raw tracepoints.
 
-### Setting File Capabilities
+### Setting File Permissions and Capabilities
+
+After compiling with `make`, restrict permissions so only the owner (or dedicated group) can execute it:
+
+```bash
+chmod 0750 demo/security_monitor/app/governance/os_layer/ebpf/ebpf_sensor
+```
+
+If multiple accounts need access, assign the binary to a dedicated operator group (`chgrp <group> ...`) with mode `0750`.
 
 Grant file capabilities directly to the compiled loader binary:
 
