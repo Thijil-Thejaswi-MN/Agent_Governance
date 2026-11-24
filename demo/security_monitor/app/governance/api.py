@@ -36,7 +36,7 @@ from .run_manager import (
     RunPrerequisitesError,
     fetch_available_models,
     get_configured_agents,
-    get_run_agents,
+    get_run_agents as run_agents_for_run_page,
     load_agents_config,
     load_run_agents_config,
     get_run_manager,
@@ -2320,7 +2320,7 @@ async def get_evidence_attack(dataset: str, scenario: str, request: Request = No
 async def get_run_agents() -> list[dict[str, Any]]:
     """Returns the agents a run can start as: inventory agents plus the example starter
     profiles (e.g. the Planner, which calls other agents)."""
-    return get_run_agents()
+    return run_agents_for_run_page()
 
 
 @governance_router.get("/run/models")
