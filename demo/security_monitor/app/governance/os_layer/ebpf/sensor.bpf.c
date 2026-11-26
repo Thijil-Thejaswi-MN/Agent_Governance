@@ -66,6 +66,21 @@ struct {
   __type(value, struct ebpf_event);
 } scratch_map SEC(".maps");
 
+#define MAX_DENTRY_DEPTH 24
+#define DENTRY_NAME_MAX 64
+
+struct path_scratch {
+  char comps[MAX_DENTRY_DEPTH][DENTRY_NAME_MAX];
+  char out[TARGET_PATH_MAX + DENTRY_NAME_MAX];
+};
+
+struct {
+  __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+  __uint(max_entries, 1);
+  __type(key, __u32);
+  __type(value, struct path_scratch);
+} path_scratch_map SEC(".maps");
+
 /* Per-CPU counter tracking ring buffer reserve drops */
 struct {
   __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
@@ -240,582 +255,826 @@ static __always_inline void copy_str(char *dst, const char *src, __u32 max_len,
   }
 }
 
-SEC("raw_tp/sys_enter")
-int BPF_PROG(raw_tp_sys_enter, struct pt_regs *regs, long id) {
-  if (!regs) {
+struct dentry_walk_ctx {
+  struct path_scratch *ps;
+  struct ebpf_event *ev;
+  struct dentry *dentry;
+  struct vfsmount *vfsmnt;
+  struct dentry *mnt_root;
+  struct path root_path;
+  int depth;
+  int truncated;
+  int reached_root;
+  __u32 out_pos;
+};
+
+static long walk_dentry_cb(__u32 index, void *data) {
+  struct dentry_walk_ctx *ctx = (struct dentry_walk_ctx *)data;
+  if (ctx->dentry == ctx->root_path.dentry &&
+      ctx->vfsmnt == ctx->root_path.mnt) {
+    ctx->reached_root = 1;
+    return 1;
+  }
+  if (ctx->dentry == ctx->mnt_root) {
+    struct mount *mnt = container_of(ctx->vfsmnt, struct mount, mnt);
+    struct mount *parent_mnt = BPF_CORE_READ(mnt, mnt_parent);
+    if (!parent_mnt || parent_mnt == mnt) {
+      ctx->reached_root = 1;
+      return 1;
+    }
+    struct dentry *mp = BPF_CORE_READ(mnt, mnt_mountpoint);
+    if (!mp) {
+      ctx->truncated = 1;
+      return 1;
+    }
+    ctx->dentry = mp;
+    struct vfsmount *new_v = &parent_mnt->mnt;
+    ctx->vfsmnt = new_v;
+    ctx->mnt_root = BPF_CORE_READ(new_v, mnt_root);
     return 0;
   }
-  __u64 cgid = get_monitored_cgroup_id();
-  __u8 is_disc = 0;
+  struct dentry *cur_d = ctx->dentry;
+  struct dentry *parent = BPF_CORE_READ(cur_d, d_parent);
+  if (!parent || parent == cur_d) {
+    ctx->truncated = 1;
+    return 1;
+  }
+  const unsigned char *name_ptr = BPF_CORE_READ(cur_d, d_name.name);
+  if (!name_ptr) {
+    ctx->truncated = 1;
+    return 1;
+  }
+  int d = ctx->depth;
+  if (d < 0 || d >= MAX_DENTRY_DEPTH) {
+    ctx->truncated = 1;
+    return 1;
+  }
+  long r =
+      bpf_probe_read_kernel_str(ctx->ps->comps[d], DENTRY_NAME_MAX, name_ptr);
+  if (r <= 1 || r >= DENTRY_NAME_MAX) {
+    ctx->truncated = 1;
+    return 1;
+  }
+  ctx->depth = d + 1;
+  ctx->dentry = parent;
+  return 0;
+}
 
-  if (!cgid) {
-    /* Check if host-wide discovery mode is active */
-    __u32 cfg_k = 0;
-    __u32 *en = bpf_map_lookup_elem(&discovery_cfg, &cfg_k);
-    if (!en || *en == 0) {
-      return 0;
+static long assemble_path_cb(__u32 step, void *data) {
+  struct dentry_walk_ctx *ctx = (struct dentry_walk_ctx *)data;
+  int idx = ctx->depth - 1 - (int)step;
+  if (idx < 0 || idx >= MAX_DENTRY_DEPTH) {
+    return 1;
+  }
+  __u32 pos = ctx->out_pos;
+  if (pos >= TARGET_PATH_MAX - 1) {
+    ctx->truncated = 1;
+    return 1;
+  }
+  ctx->ps->out[pos & (TARGET_PATH_MAX - 1)] = '/';
+  pos++;
+  long copied =
+      bpf_probe_read_kernel_str(&ctx->ps->out[pos & (TARGET_PATH_MAX - 1)],
+                                DENTRY_NAME_MAX, ctx->ps->comps[idx]);
+  if (copied <= 1) {
+    ctx->truncated = 1;
+    return 1;
+  }
+  pos += (__u32)(copied - 1);
+  if (pos >= TARGET_PATH_MAX) {
+    ctx->truncated = 1;
+    return 1;
+  }
+  ctx->out_pos = pos;
+  return 0;
+}
+
+static __always_inline void resolve_dentry_path(struct task_struct *task,
+                                                struct path *target_path,
+                                                struct ebpf_event *ev) {
+  __u32 zero = 0;
+  struct path_scratch *ps = bpf_map_lookup_elem(&path_scratch_map, &zero);
+  if (!ps) {
+    ev->base_status = BASE_STATUS_TRUNCATED;
+    return;
+  }
+
+  struct fs_struct *fs = BPF_CORE_READ(task, fs);
+  if (!fs) {
+    ev->base_status = BASE_STATUS_TRUNCATED;
+    return;
+  }
+
+  struct path root_path = {};
+  BPF_CORE_READ_INTO(&root_path, fs, root);
+
+  struct dentry *dentry = BPF_CORE_READ(target_path, dentry);
+  struct vfsmount *vfsmnt = BPF_CORE_READ(target_path, mnt);
+  if (!dentry || !vfsmnt) {
+    ev->base_status = BASE_STATUS_TRUNCATED;
+    return;
+  }
+
+  struct dentry *mnt_root = BPF_CORE_READ(vfsmnt, mnt_root);
+
+    struct dentry_walk_ctx ctx = {};
+    ctx.ps = ps;
+    ctx.ev = ev;
+    ctx.dentry = dentry;
+    ctx.vfsmnt = vfsmnt;
+    ctx.mnt_root = mnt_root;
+    ctx.root_path = root_path;
+
+    bpf_loop(MAX_DENTRY_DEPTH, walk_dentry_cb, &ctx, 0);
+
+    if (!ctx.reached_root && !ctx.truncated) {
+      ctx.truncated = 1;
     }
 
-    /* In discovery mode, only monitor execve/execveat, connect, and
-     * sendto/sendmsg */
-    long s_nr = id;
-    if (s_nr != SYS_EXECVE && s_nr != SYS_EXECVEAT && s_nr != SYS_CONNECT &&
-        s_nr != SYS_SENDTO && s_nr != SYS_SENDMSG) {
-      return 0;
-    }
+      if (ctx.truncated) {
+        ev->base_status = BASE_STATUS_TRUNCATED;
+        ev->base_dir[0] = '\0';
+        return;
+      }
 
-    /* Check per-cgroup rate limit */
-    __u64 curr_cgid = bpf_get_current_cgroup_id();
-    __u64 now = bpf_ktime_get_ns();
-    __u32 limit = 200;
-    __u32 limit_k = 1;
-    __u32 *limit_ptr = bpf_map_lookup_elem(&discovery_cfg, &limit_k);
-    if (limit_ptr && *limit_ptr > 0) {
-      limit = *limit_ptr;
-    }
+        if (ctx.depth == 0) {
+          ev->base_dir[0] = '/';
+          ev->base_dir[1] = '\0';
+          ev->base_status = BASE_STATUS_OK;
+          return;
+        }
 
-    struct cgroup_rate_limit *rl =
-        bpf_map_lookup_elem(&cgroup_rates, &curr_cgid);
-    if (!rl) {
-      struct cgroup_rate_limit init_rl = {};
-      init_rl.window_start_ns = now;
-      init_rl.count = 1;
-      bpf_map_update_elem(&cgroup_rates, &curr_cgid, &init_rl, BPF_ANY);
-    } else {
-      if (now - rl->window_start_ns >= 1000000000ULL) {
-        rl->window_start_ns = now;
-        rl->count = 1;
-      } else {
-        if (rl->count >= limit) {
-          __u32 rk = 0;
-          __u64 *rcnt = bpf_map_lookup_elem(&rate_limited_events, &rk);
-          if (rcnt) {
-            *rcnt += 1;
+          bpf_loop(MAX_DENTRY_DEPTH, assemble_path_cb, &ctx, 0);
+
+          if (ctx.truncated) {
+            ev->base_status = BASE_STATUS_TRUNCATED;
+            ev->base_dir[0] = '\0';
+            return;
+          }
+          ctx.ps->out[ctx.out_pos & (TARGET_PATH_MAX - 1)] = '\0';
+          bpf_probe_read_kernel_str(ev->base_dir, TARGET_PATH_MAX, ctx.ps->out);
+          ev->base_status = BASE_STATUS_OK;
+        }
+
+        static __always_inline void resolve_event_base_dir(struct ebpf_event *
+                                                           ev) {
+          if (!ev->has_target) {
+            return;
+          }
+          if (ev->target_status != TARGET_STATUS_UNREADABLE &&
+              ev->target[0] == '/') {
+            return;
+          }
+          struct task_struct *task =
+              (struct task_struct *)bpf_get_current_task_btf();
+          if (!task) {
+            ev->base_status = BASE_STATUS_TRUNCATED;
+            return;
+          }
+          struct path base_path = {};
+          if (ev->dfd == AT_FDCWD_VAL) {
+            struct fs_struct *fs = BPF_CORE_READ(task, fs);
+            if (!fs) {
+              ev->base_status = BASE_STATUS_TRUNCATED;
+              return;
+            }
+            BPF_CORE_READ_INTO(&base_path, fs, pwd);
+          } else if (ev->dfd >= 0) {
+            struct files_struct *files = BPF_CORE_READ(task, files);
+            if (!files) {
+              ev->base_status = BASE_STATUS_TRUNCATED;
+              return;
+            }
+            struct fdtable *fdt = BPF_CORE_READ(files, fdt);
+            if (!fdt) {
+              ev->base_status = BASE_STATUS_TRUNCATED;
+              return;
+            }
+            unsigned int max_fds = BPF_CORE_READ(fdt, max_fds);
+            if ((unsigned int)ev->dfd >= max_fds) {
+              return;
+            }
+            struct file **fd_arr = BPF_CORE_READ(fdt, fd);
+            if (!fd_arr) {
+              ev->base_status = BASE_STATUS_TRUNCATED;
+              return;
+            }
+            struct file *f = NULL;
+            if (bpf_probe_read_kernel(&f, sizeof(f),
+                                      fd_arr + (unsigned int)ev->dfd) < 0) {
+              ev->base_status = BASE_STATUS_TRUNCATED;
+              return;
+            }
+            if (!f) {
+              return;
+            }
+            BPF_CORE_READ_INTO(&base_path, f, f_path);
+          } else {
+            return;
+          }
+          resolve_dentry_path(task, &base_path, ev);
+        }
+
+        SEC("raw_tp/sys_enter")
+        int BPF_PROG(raw_tp_sys_enter, struct pt_regs * regs, long id) {
+          if (!regs) {
+            return 0;
+          }
+          __u64 cgid = get_monitored_cgroup_id();
+          __u8 is_disc = 0;
+
+          if (!cgid) {
+            /* Check if host-wide discovery mode is active */
+            __u32 cfg_k = 0;
+            __u32 *en = bpf_map_lookup_elem(&discovery_cfg, &cfg_k);
+            if (!en || *en == 0) {
+              return 0;
+            }
+
+            /* In discovery mode, only monitor execve/execveat, connect, and
+             * sendto/sendmsg */
+            long s_nr = id;
+            if (s_nr != SYS_EXECVE && s_nr != SYS_EXECVEAT &&
+                s_nr != SYS_CONNECT && s_nr != SYS_SENDTO &&
+                s_nr != SYS_SENDMSG) {
+              return 0;
+            }
+
+            /* Check per-cgroup rate limit */
+            __u64 curr_cgid = bpf_get_current_cgroup_id();
+            __u64 now = bpf_ktime_get_ns();
+            __u32 limit = 200;
+            __u32 limit_k = 1;
+            __u32 *limit_ptr = bpf_map_lookup_elem(&discovery_cfg, &limit_k);
+            if (limit_ptr && *limit_ptr > 0) {
+              limit = *limit_ptr;
+            }
+
+            struct cgroup_rate_limit *rl =
+                bpf_map_lookup_elem(&cgroup_rates, &curr_cgid);
+            if (!rl) {
+              struct cgroup_rate_limit init_rl = {};
+              init_rl.window_start_ns = now;
+              init_rl.count = 1;
+              bpf_map_update_elem(&cgroup_rates, &curr_cgid, &init_rl, BPF_ANY);
+            } else {
+              if (now - rl->window_start_ns >= 1000000000ULL) {
+                rl->window_start_ns = now;
+                rl->count = 1;
+              } else {
+                if (rl->count >= limit) {
+                  __u32 rk = 0;
+                  __u64 *rcnt = bpf_map_lookup_elem(&rate_limited_events, &rk);
+                  if (rcnt) {
+                    *rcnt += 1;
+                  }
+                  return 0;
+                }
+                rl->count += 1;
+              }
+            }
+
+            cgid = curr_cgid;
+            is_disc = 1;
+          }
+
+          long nr = id;
+          unsigned long args[6];
+          args[0] = (unsigned long)PT_REGS_PARM1_CORE_SYSCALL(regs);
+          args[1] = (unsigned long)PT_REGS_PARM2_CORE_SYSCALL(regs);
+          args[2] = (unsigned long)PT_REGS_PARM3_CORE_SYSCALL(regs);
+          args[3] = (unsigned long)PT_REGS_PARM4_CORE_SYSCALL(regs);
+          args[4] = (unsigned long)PT_REGS_PARM5_CORE_SYSCALL(regs);
+          args[5] = (unsigned long)PT_REGS_PARM6_CORE_SYSCALL(regs);
+          __u32 op = EBPF_OP_UNKNOWN;
+
+          switch (nr) {
+          case SYS_OPENAT:
+          case SYS_OPENAT2:
+          case SYS_OPEN:
+            op = EBPF_OP_OPEN;
+            break;
+          case SYS_EXECVE:
+          case SYS_EXECVEAT:
+            op = EBPF_OP_EXEC;
+            break;
+          case SYS_CONNECT:
+            op = EBPF_OP_CONNECT;
+            break;
+          case SYS_BIND:
+            op = EBPF_OP_BIND;
+            break;
+          case SYS_LISTEN:
+            op = EBPF_OP_LISTEN;
+            break;
+          case SYS_ACCEPT:
+          case SYS_ACCEPT4:
+            op = EBPF_OP_ACCEPT;
+            break;
+          case SYS_SENDTO:
+          case SYS_SENDMSG:
+            op = EBPF_OP_SEND;
+            break;
+          case SYS_UNLINK:
+          case SYS_UNLINKAT:
+            op = EBPF_OP_UNLINK;
+            break;
+          case SYS_RENAME:
+          case SYS_RENAMEAT:
+          case SYS_RENAMEAT2:
+            op = EBPF_OP_RENAME;
+            break;
+          case SYS_MKDIR:
+          case SYS_MKDIRAT:
+            op = EBPF_OP_MKDIR;
+            break;
+          case SYS_CLONE:
+          case SYS_CLONE3:
+          case SYS_FORK:
+          case SYS_VFORK:
+            op = EBPF_OP_CLONE;
+            break;
+          case SYS_EXIT_GROUP:
+          case SYS_EXIT:
+            op = EBPF_OP_EXIT;
+            break;
+          default:
+            return 0;
+          }
+
+          __u32 zero = 0;
+          struct ebpf_event *ev = bpf_map_lookup_elem(&scratch_map, &zero);
+          if (!ev) {
+            return 0;
+          }
+
+          bpf_fast_zero(ev);
+          __u64 pid_tgid = bpf_get_current_pid_tgid();
+          ev->cgroup_id = cgid;
+          ev->cur_cgroup_id = bpf_get_current_cgroup_id();
+          ev->user_target_ptr = 0;
+          ev->is_discovery = is_disc;
+          ev->pid = get_current_pid();
+          ev->tgid = (__u32)pid_tgid;
+          ev->ppid = get_parent_pid();
+          ev->syscall_nr = (__s32)nr;
+          ev->op = op;
+          ev->ts_ns = bpf_ktime_get_ns();
+          ev->target_status = TARGET_STATUS_NONE;
+
+          if (nr == SYS_OPENAT) {
+            ev->dfd = (__s32)args[0];
+            ev->user_target_ptr = args[1];
+            copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX,
+                     &ev->target_status);
+            ev->flags = args[2];
+            ev->aux = args[3];
+            ev->has_target = 1;
+          } else if (nr == SYS_OPENAT2) {
+            ev->dfd = (__s32)args[0];
+            ev->user_target_ptr = args[1];
+            copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX,
+                     &ev->target_status);
+            __u64 how_flags = 0;
+            bpf_probe_read_user(&how_flags, sizeof(how_flags), (void *)args[2]);
+            ev->flags = how_flags;
+            ev->has_target = 1;
+          } else if (nr == SYS_OPEN) {
+            ev->dfd = AT_FDCWD_VAL;
+            ev->user_target_ptr = args[0];
+            copy_str(ev->target, (const char *)args[0], TARGET_PATH_MAX,
+                     &ev->target_status);
+            ev->flags = args[1];
+            ev->aux = args[2];
+            ev->has_target = 1;
+          } else if (nr == SYS_EXECVE) {
+            ev->dfd = AT_FDCWD_VAL;
+            ev->user_target_ptr = args[0];
+            copy_str(ev->target, (const char *)args[0], TARGET_PATH_MAX,
+                     &ev->target_status);
+            ev->has_target = 1;
+            if (is_disc) {
+              void *argv_user = (void *)args[1];
+              if (argv_user) {
+#pragma unroll
+                for (int i = 0; i < ARGV_MAX_COUNT; i++) {
+                  const char *arg_p = NULL;
+                  long r = bpf_probe_read_user(&arg_p, sizeof(arg_p),
+                                               (char **)argv_user + i);
+                  if (r < 0 || !arg_p) {
+                    break;
+                  }
+                  bpf_probe_read_user_str(ev->argv[i], ARGV_ITEM_MAX, arg_p);
+                  ev->argv_count++;
+                }
+              }
+            }
+          } else if (nr == SYS_EXECVEAT) {
+            ev->dfd = (__s32)args[0];
+            ev->user_target_ptr = args[1];
+            copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX,
+                     &ev->target_status);
+            ev->flags = args[4];
+            ev->has_target = 1;
+            if (is_disc) {
+              void *argv_user = (void *)args[2];
+              if (argv_user) {
+#pragma unroll
+                for (int i = 0; i < ARGV_MAX_COUNT; i++) {
+                  const char *arg_p = NULL;
+                  long r = bpf_probe_read_user(&arg_p, sizeof(arg_p),
+                                               (char **)argv_user + i);
+                  if (r < 0 || !arg_p) {
+                    break;
+                  }
+                  bpf_probe_read_user_str(ev->argv[i], ARGV_ITEM_MAX, arg_p);
+                  ev->argv_count++;
+                }
+              }
+            }
+          } else if (nr == SYS_CONNECT || nr == SYS_BIND) {
+            ev->dfd = (__s32)args[0];
+            void *sock_ptr = (void *)args[1];
+            __u32 sock_len = (__u32)args[2];
+            if (sock_len > SOCK_ADDR_MAX) {
+              sock_len = SOCK_ADDR_MAX;
+            }
+            if (sock_ptr && sock_len > 0) {
+              bpf_probe_read_user(ev->sock_addr, sock_len, sock_ptr);
+              ev->sock_len = sock_len;
+              ev->has_sock = 1;
+            }
+          } else if (nr == SYS_LISTEN) {
+            ev->dfd = (__s32)args[0];
+            ev->flags = args[1];
+          } else if (nr == SYS_ACCEPT || nr == SYS_ACCEPT4) {
+            ev->dfd = (__s32)args[0];
+            if (nr == SYS_ACCEPT4) {
+              ev->flags = args[3];
+            }
+          } else if (nr == SYS_SENDTO) {
+            ev->dfd = (__s32)args[0];
+            void *dest_ptr = (void *)args[4];
+            __u32 dest_len = (__u32)args[5];
+            if (!dest_ptr || dest_len == 0) {
+              return 0;
+            }
+            if (dest_len > SOCK_ADDR_MAX) {
+              dest_len = SOCK_ADDR_MAX;
+            }
+            bpf_probe_read_user(ev->sock_addr, dest_len, dest_ptr);
+            ev->sock_len = dest_len;
+            ev->has_sock = 1;
+
+            if (is_disc) {
+              __u16 dport = 0;
+              sa_family_t fam = 0;
+              bpf_probe_read_user(&fam, sizeof(fam), dest_ptr);
+              if (fam == AF_INET) {
+                struct sockaddr_in sin = {};
+                bpf_probe_read_user(&sin, sizeof(sin), dest_ptr);
+                dport = __builtin_bswap16(sin.sin_port);
+              } else if (fam == AF_INET6) {
+                struct sockaddr_in6 sin6 = {};
+                bpf_probe_read_user(&sin6, sizeof(sin6), dest_ptr);
+                dport = __builtin_bswap16(sin6.sin6_port);
+              }
+
+              __u32 target_port = 53;
+              __u32 pk = 2;
+              __u32 *p_val = bpf_map_lookup_elem(&discovery_cfg, &pk);
+              if (p_val && *p_val > 0) {
+                target_port = *p_val;
+              }
+
+              if (dport != target_port) {
+                return 0;
+              }
+
+              void *buf_ptr = (void *)args[1];
+              size_t buf_len = (size_t)args[2];
+              if (buf_ptr && buf_len > 0) {
+                __u16 copy_len = buf_len > DNS_PAYLOAD_MAX ? DNS_PAYLOAD_MAX
+                                                           : (__u16)buf_len;
+                bpf_probe_read_user(ev->dns_payload, copy_len, buf_ptr);
+                ev->dns_payload_len = copy_len;
+              }
+            }
+          } else if (nr == SYS_SENDMSG) {
+            ev->dfd = (__s32)args[0];
+            void *msg_ptr = (void *)args[1];
+            if (!msg_ptr) {
+              return 0;
+            }
+            void *name_ptr = NULL;
+            int name_len = 0;
+            bpf_probe_read_user(&name_ptr, sizeof(name_ptr), msg_ptr);
+            bpf_probe_read_user(&name_len, sizeof(name_len),
+                                (char *)msg_ptr + sizeof(void *));
+            if (!name_ptr || name_len <= 0) {
+              return 0;
+            }
+            __u32 rlen = (__u32)name_len;
+            if (rlen > SOCK_ADDR_MAX) {
+              rlen = SOCK_ADDR_MAX;
+            }
+            bpf_probe_read_user(ev->sock_addr, rlen, name_ptr);
+            ev->sock_len = rlen;
+            ev->has_sock = 1;
+
+            if (is_disc) {
+              __u16 dport = 0;
+              sa_family_t fam = 0;
+              bpf_probe_read_user(&fam, sizeof(fam), name_ptr);
+              if (fam == AF_INET) {
+                struct sockaddr_in sin = {};
+                bpf_probe_read_user(&sin, sizeof(sin), name_ptr);
+                dport = __builtin_bswap16(sin.sin_port);
+              } else if (fam == AF_INET6) {
+                struct sockaddr_in6 sin6 = {};
+                bpf_probe_read_user(&sin6, sizeof(sin6), name_ptr);
+                dport = __builtin_bswap16(sin6.sin6_port);
+              }
+
+              __u32 target_port = 53;
+              __u32 pk = 2;
+              __u32 *p_val = bpf_map_lookup_elem(&discovery_cfg, &pk);
+              if (p_val && *p_val > 0) {
+                target_port = *p_val;
+              }
+
+              if (dport != target_port) {
+                return 0;
+              }
+
+              struct iovec *iov = NULL;
+              size_t iovlen = 0;
+              bpf_probe_read_user(&iov, sizeof(iov), (char *)msg_ptr + 16);
+              bpf_probe_read_user(&iovlen, sizeof(iovlen),
+                                  (char *)msg_ptr + 16 + sizeof(void *));
+              if (iov && iovlen > 0) {
+                void *iov_base = NULL;
+                size_t iov_len = 0;
+                bpf_probe_read_user(&iov_base, sizeof(iov_base), iov);
+                bpf_probe_read_user(&iov_len, sizeof(iov_len),
+                                    (char *)iov + sizeof(void *));
+                if (iov_base && iov_len > 0) {
+                  __u16 copy_len = iov_len > DNS_PAYLOAD_MAX ? DNS_PAYLOAD_MAX
+                                                             : (__u16)iov_len;
+                  bpf_probe_read_user(ev->dns_payload, copy_len, iov_base);
+                  ev->dns_payload_len = copy_len;
+                }
+              }
+            }
+          } else if (nr == SYS_UNLINKAT) {
+            ev->dfd = (__s32)args[0];
+            ev->user_target_ptr = args[1];
+            copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX,
+                     &ev->target_status);
+            ev->flags = args[2];
+            ev->has_target = 1;
+          } else if (nr == SYS_UNLINK) {
+            ev->dfd = AT_FDCWD_VAL;
+            ev->user_target_ptr = args[0];
+            copy_str(ev->target, (const char *)args[0], TARGET_PATH_MAX,
+                     &ev->target_status);
+            ev->has_target = 1;
+          } else if (nr == SYS_RENAMEAT2 || nr == SYS_RENAMEAT) {
+            ev->dfd = (__s32)args[0];
+            ev->user_target_ptr = args[1];
+            copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX,
+                     &ev->target_status);
+            ev->dfd2 = (__s32)args[2];
+            __u8 status2 = TARGET_STATUS_NONE;
+            copy_str(ev->target2, (const char *)args[3], TARGET_PATH_MAX,
+                     &status2);
+            if (nr == SYS_RENAMEAT2) {
+              ev->flags = args[4];
+            }
+            ev->has_target = 1;
+            ev->has_target2 = 1;
+          } else if (nr == SYS_RENAME) {
+            ev->dfd = AT_FDCWD_VAL;
+            ev->user_target_ptr = args[0];
+            copy_str(ev->target, (const char *)args[0], TARGET_PATH_MAX,
+                     &ev->target_status);
+            ev->dfd2 = AT_FDCWD_VAL;
+            __u8 status2 = TARGET_STATUS_NONE;
+            copy_str(ev->target2, (const char *)args[1], TARGET_PATH_MAX,
+                     &status2);
+            ev->has_target = 1;
+            ev->has_target2 = 1;
+          } else if (nr == SYS_MKDIRAT) {
+            ev->dfd = (__s32)args[0];
+            ev->user_target_ptr = args[1];
+            copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX,
+                     &ev->target_status);
+            ev->flags = args[2];
+            ev->has_target = 1;
+          } else if (nr == SYS_MKDIR) {
+            ev->dfd = AT_FDCWD_VAL;
+            ev->user_target_ptr = args[0];
+            copy_str(ev->target, (const char *)args[0], TARGET_PATH_MAX,
+                     &ev->target_status);
+            ev->flags = args[1];
+            ev->has_target = 1;
+          } else if (nr == SYS_CLONE || nr == SYS_CLONE3 || nr == SYS_FORK ||
+                     nr == SYS_VFORK) {
+            ev->flags = args[0];
+          } else if (nr == SYS_EXIT_GROUP || nr == SYS_EXIT) {
+            ev->ret = args[0];
+            struct ebpf_event *out =
+                bpf_ringbuf_reserve(&events_rb, sizeof(*out), 0);
+            if (!out) {
+              record_drop();
+              return 0;
+            }
+            bpf_fast_copy(out, ev);
+            bpf_ringbuf_submit(out, 0);
+            return 0;
+          }
+
+          resolve_event_base_dir(ev);
+
+          if (bpf_map_update_elem(&active_syscalls, &pid_tgid, ev, BPF_ANY) !=
+              0) {
+            record_drop();
           }
           return 0;
         }
-        rl->count += 1;
-      }
-    }
 
-    cgid = curr_cgid;
-    is_disc = 1;
-  }
-
-  long nr = id;
-  unsigned long args[6];
-  args[0] = (unsigned long)PT_REGS_PARM1_CORE_SYSCALL(regs);
-  args[1] = (unsigned long)PT_REGS_PARM2_CORE_SYSCALL(regs);
-  args[2] = (unsigned long)PT_REGS_PARM3_CORE_SYSCALL(regs);
-  args[3] = (unsigned long)PT_REGS_PARM4_CORE_SYSCALL(regs);
-  args[4] = (unsigned long)PT_REGS_PARM5_CORE_SYSCALL(regs);
-  args[5] = (unsigned long)PT_REGS_PARM6_CORE_SYSCALL(regs);
-  __u32 op = EBPF_OP_UNKNOWN;
-
-  switch (nr) {
-  case SYS_OPENAT:
-  case SYS_OPENAT2:
-  case SYS_OPEN:
-    op = EBPF_OP_OPEN;
-    break;
-  case SYS_EXECVE:
-  case SYS_EXECVEAT:
-    op = EBPF_OP_EXEC;
-    break;
-  case SYS_CONNECT:
-    op = EBPF_OP_CONNECT;
-    break;
-  case SYS_BIND:
-    op = EBPF_OP_BIND;
-    break;
-  case SYS_LISTEN:
-    op = EBPF_OP_LISTEN;
-    break;
-  case SYS_ACCEPT:
-  case SYS_ACCEPT4:
-    op = EBPF_OP_ACCEPT;
-    break;
-  case SYS_SENDTO:
-  case SYS_SENDMSG:
-    op = EBPF_OP_SEND;
-    break;
-  case SYS_UNLINK:
-  case SYS_UNLINKAT:
-    op = EBPF_OP_UNLINK;
-    break;
-  case SYS_RENAME:
-  case SYS_RENAMEAT:
-  case SYS_RENAMEAT2:
-    op = EBPF_OP_RENAME;
-    break;
-  case SYS_MKDIR:
-  case SYS_MKDIRAT:
-    op = EBPF_OP_MKDIR;
-    break;
-  case SYS_CLONE:
-  case SYS_CLONE3:
-  case SYS_FORK:
-  case SYS_VFORK:
-    op = EBPF_OP_CLONE;
-    break;
-  case SYS_EXIT_GROUP:
-  case SYS_EXIT:
-    op = EBPF_OP_EXIT;
-    break;
-  default:
-    return 0;
-  }
-
-  __u32 zero = 0;
-  struct ebpf_event *ev = bpf_map_lookup_elem(&scratch_map, &zero);
-  if (!ev) {
-    return 0;
-  }
-
-  bpf_fast_zero(ev);
-  __u64 pid_tgid = bpf_get_current_pid_tgid();
-  ev->cgroup_id = cgid;
-  ev->cur_cgroup_id = bpf_get_current_cgroup_id();
-  ev->user_target_ptr = 0;
-  ev->is_discovery = is_disc;
-  ev->pid = get_current_pid();
-  ev->tgid = (__u32)pid_tgid;
-  ev->ppid = get_parent_pid();
-  ev->syscall_nr = (__s32)nr;
-  ev->op = op;
-  ev->ts_ns = bpf_ktime_get_ns();
-  ev->target_status = TARGET_STATUS_NONE;
-
-  if (nr == SYS_OPENAT) {
-    ev->dfd = (__s32)args[0];
-    ev->user_target_ptr = args[1];
-    copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX,
-             &ev->target_status);
-    ev->flags = args[2];
-    ev->aux = args[3];
-    ev->has_target = 1;
-  } else if (nr == SYS_OPENAT2) {
-    ev->dfd = (__s32)args[0];
-    ev->user_target_ptr = args[1];
-    copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX,
-             &ev->target_status);
-    __u64 how_flags = 0;
-    bpf_probe_read_user(&how_flags, sizeof(how_flags), (void *)args[2]);
-    ev->flags = how_flags;
-    ev->has_target = 1;
-  } else if (nr == SYS_OPEN) {
-    ev->dfd = AT_FDCWD_VAL;
-    ev->user_target_ptr = args[0];
-    copy_str(ev->target, (const char *)args[0], TARGET_PATH_MAX,
-             &ev->target_status);
-    ev->flags = args[1];
-    ev->aux = args[2];
-    ev->has_target = 1;
-  } else if (nr == SYS_EXECVE) {
-    ev->dfd = AT_FDCWD_VAL;
-    ev->user_target_ptr = args[0];
-    copy_str(ev->target, (const char *)args[0], TARGET_PATH_MAX,
-             &ev->target_status);
-    ev->has_target = 1;
-    if (is_disc) {
-      void *argv_user = (void *)args[1];
-      if (argv_user) {
+        static __always_inline int has_runtime_prefix(const char *path) {
+/* Never filter paths containing traversal or suspicious segments */
 #pragma unroll
-        for (int i = 0; i < ARGV_MAX_COUNT; i++) {
-          const char *arg_p = NULL;
-          long r = bpf_probe_read_user(&arg_p, sizeof(arg_p),
-                                       (char **)argv_user + i);
-          if (r < 0 || !arg_p) {
-            break;
-          }
-          bpf_probe_read_user_str(ev->argv[i], ARGV_ITEM_MAX, arg_p);
-          ev->argv_count++;
-        }
-      }
-    }
-  } else if (nr == SYS_EXECVEAT) {
-    ev->dfd = (__s32)args[0];
-    ev->user_target_ptr = args[1];
-    copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX,
-             &ev->target_status);
-    ev->flags = args[4];
-    ev->has_target = 1;
-    if (is_disc) {
-      void *argv_user = (void *)args[2];
-      if (argv_user) {
-#pragma unroll
-        for (int i = 0; i < ARGV_MAX_COUNT; i++) {
-          const char *arg_p = NULL;
-          long r = bpf_probe_read_user(&arg_p, sizeof(arg_p),
-                                       (char **)argv_user + i);
-          if (r < 0 || !arg_p) {
-            break;
-          }
-          bpf_probe_read_user_str(ev->argv[i], ARGV_ITEM_MAX, arg_p);
-          ev->argv_count++;
-        }
-      }
-    }
-  } else if (nr == SYS_CONNECT || nr == SYS_BIND) {
-    ev->dfd = (__s32)args[0];
-    void *sock_ptr = (void *)args[1];
-    __u32 sock_len = (__u32)args[2];
-    if (sock_len > SOCK_ADDR_MAX) {
-      sock_len = SOCK_ADDR_MAX;
-    }
-    if (sock_ptr && sock_len > 0) {
-      bpf_probe_read_user(ev->sock_addr, sock_len, sock_ptr);
-      ev->sock_len = sock_len;
-      ev->has_sock = 1;
-    }
-  } else if (nr == SYS_LISTEN) {
-    ev->dfd = (__s32)args[0];
-    ev->flags = args[1];
-  } else if (nr == SYS_ACCEPT || nr == SYS_ACCEPT4) {
-    ev->dfd = (__s32)args[0];
-    if (nr == SYS_ACCEPT4) {
-      ev->flags = args[3];
-    }
-  } else if (nr == SYS_SENDTO) {
-    ev->dfd = (__s32)args[0];
-    void *dest_ptr = (void *)args[4];
-    __u32 dest_len = (__u32)args[5];
-    if (!dest_ptr || dest_len == 0) {
-      return 0;
-    }
-    if (dest_len > SOCK_ADDR_MAX) {
-      dest_len = SOCK_ADDR_MAX;
-    }
-    bpf_probe_read_user(ev->sock_addr, dest_len, dest_ptr);
-    ev->sock_len = dest_len;
-    ev->has_sock = 1;
-
-    if (is_disc) {
-      __u16 dport = 0;
-      sa_family_t fam = 0;
-      bpf_probe_read_user(&fam, sizeof(fam), dest_ptr);
-      if (fam == AF_INET) {
-        struct sockaddr_in sin = {};
-        bpf_probe_read_user(&sin, sizeof(sin), dest_ptr);
-        dport = __builtin_bswap16(sin.sin_port);
-      } else if (fam == AF_INET6) {
-        struct sockaddr_in6 sin6 = {};
-        bpf_probe_read_user(&sin6, sizeof(sin6), dest_ptr);
-        dport = __builtin_bswap16(sin6.sin6_port);
-      }
-
-      __u32 target_port = 53;
-      __u32 pk = 2;
-      __u32 *p_val = bpf_map_lookup_elem(&discovery_cfg, &pk);
-      if (p_val && *p_val > 0) {
-        target_port = *p_val;
-      }
-
-      if (dport != target_port) {
-        return 0;
-      }
-
-      void *buf_ptr = (void *)args[1];
-      size_t buf_len = (size_t)args[2];
-      if (buf_ptr && buf_len > 0) {
-        __u16 copy_len =
-            buf_len > DNS_PAYLOAD_MAX ? DNS_PAYLOAD_MAX : (__u16)buf_len;
-        bpf_probe_read_user(ev->dns_payload, copy_len, buf_ptr);
-        ev->dns_payload_len = copy_len;
-      }
-    }
-  } else if (nr == SYS_SENDMSG) {
-    ev->dfd = (__s32)args[0];
-    void *msg_ptr = (void *)args[1];
-    if (!msg_ptr) {
-      return 0;
-    }
-    void *name_ptr = NULL;
-    int name_len = 0;
-    bpf_probe_read_user(&name_ptr, sizeof(name_ptr), msg_ptr);
-    bpf_probe_read_user(&name_len, sizeof(name_len),
-                        (char *)msg_ptr + sizeof(void *));
-    if (!name_ptr || name_len <= 0) {
-      return 0;
-    }
-    __u32 rlen = (__u32)name_len;
-    if (rlen > SOCK_ADDR_MAX) {
-      rlen = SOCK_ADDR_MAX;
-    }
-    bpf_probe_read_user(ev->sock_addr, rlen, name_ptr);
-    ev->sock_len = rlen;
-    ev->has_sock = 1;
-
-    if (is_disc) {
-      __u16 dport = 0;
-      sa_family_t fam = 0;
-      bpf_probe_read_user(&fam, sizeof(fam), name_ptr);
-      if (fam == AF_INET) {
-        struct sockaddr_in sin = {};
-        bpf_probe_read_user(&sin, sizeof(sin), name_ptr);
-        dport = __builtin_bswap16(sin.sin_port);
-      } else if (fam == AF_INET6) {
-        struct sockaddr_in6 sin6 = {};
-        bpf_probe_read_user(&sin6, sizeof(sin6), name_ptr);
-        dport = __builtin_bswap16(sin6.sin6_port);
-      }
-
-      __u32 target_port = 53;
-      __u32 pk = 2;
-      __u32 *p_val = bpf_map_lookup_elem(&discovery_cfg, &pk);
-      if (p_val && *p_val > 0) {
-        target_port = *p_val;
-      }
-
-      if (dport != target_port) {
-        return 0;
-      }
-
-      struct iovec *iov = NULL;
-      size_t iovlen = 0;
-      bpf_probe_read_user(&iov, sizeof(iov), (char *)msg_ptr + 16);
-      bpf_probe_read_user(&iovlen, sizeof(iovlen),
-                          (char *)msg_ptr + 16 + sizeof(void *));
-      if (iov && iovlen > 0) {
-        void *iov_base = NULL;
-        size_t iov_len = 0;
-        bpf_probe_read_user(&iov_base, sizeof(iov_base), iov);
-        bpf_probe_read_user(&iov_len, sizeof(iov_len),
-                            (char *)iov + sizeof(void *));
-        if (iov_base && iov_len > 0) {
-          __u16 copy_len =
-              iov_len > DNS_PAYLOAD_MAX ? DNS_PAYLOAD_MAX : (__u16)iov_len;
-          bpf_probe_read_user(ev->dns_payload, copy_len, iov_base);
-          ev->dns_payload_len = copy_len;
-        }
-      }
-    }
-  } else if (nr == SYS_UNLINKAT) {
-    ev->dfd = (__s32)args[0];
-    ev->user_target_ptr = args[1];
-    copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX,
-             &ev->target_status);
-    ev->flags = args[2];
-    ev->has_target = 1;
-  } else if (nr == SYS_UNLINK) {
-    ev->dfd = AT_FDCWD_VAL;
-    ev->user_target_ptr = args[0];
-    copy_str(ev->target, (const char *)args[0], TARGET_PATH_MAX,
-             &ev->target_status);
-    ev->has_target = 1;
-  } else if (nr == SYS_RENAMEAT2 || nr == SYS_RENAMEAT) {
-    ev->dfd = (__s32)args[0];
-    ev->user_target_ptr = args[1];
-    copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX,
-             &ev->target_status);
-    ev->dfd2 = (__s32)args[2];
-    __u8 status2 = TARGET_STATUS_NONE;
-    copy_str(ev->target2, (const char *)args[3], TARGET_PATH_MAX, &status2);
-    if (nr == SYS_RENAMEAT2) {
-      ev->flags = args[4];
-    }
-    ev->has_target = 1;
-    ev->has_target2 = 1;
-  } else if (nr == SYS_RENAME) {
-    ev->dfd = AT_FDCWD_VAL;
-    ev->user_target_ptr = args[0];
-    copy_str(ev->target, (const char *)args[0], TARGET_PATH_MAX,
-             &ev->target_status);
-    ev->dfd2 = AT_FDCWD_VAL;
-    __u8 status2 = TARGET_STATUS_NONE;
-    copy_str(ev->target2, (const char *)args[1], TARGET_PATH_MAX, &status2);
-    ev->has_target = 1;
-    ev->has_target2 = 1;
-  } else if (nr == SYS_MKDIRAT) {
-    ev->dfd = (__s32)args[0];
-    ev->user_target_ptr = args[1];
-    copy_str(ev->target, (const char *)args[1], TARGET_PATH_MAX,
-             &ev->target_status);
-    ev->flags = args[2];
-    ev->has_target = 1;
-  } else if (nr == SYS_MKDIR) {
-    ev->dfd = AT_FDCWD_VAL;
-    ev->user_target_ptr = args[0];
-    copy_str(ev->target, (const char *)args[0], TARGET_PATH_MAX,
-             &ev->target_status);
-    ev->flags = args[1];
-    ev->has_target = 1;
-  } else if (nr == SYS_CLONE || nr == SYS_CLONE3 || nr == SYS_FORK ||
-             nr == SYS_VFORK) {
-    ev->flags = args[0];
-  } else if (nr == SYS_EXIT_GROUP || nr == SYS_EXIT) {
-    ev->ret = args[0];
-    struct ebpf_event *out = bpf_ringbuf_reserve(&events_rb, sizeof(*out), 0);
-    if (!out) {
-      record_drop();
-      return 0;
-    }
-    bpf_fast_copy(out, ev);
-    bpf_ringbuf_submit(out, 0);
-    return 0;
-  }
-
-    if (bpf_map_update_elem(&active_syscalls, &pid_tgid, ev, BPF_ANY) != 0) {
-        record_drop();
-    }
-    return 0;
-}
-
-static __always_inline int has_runtime_prefix(const char *path) {
-    /* Never filter paths containing traversal or suspicious segments */
-    #pragma unroll
-    for (int i = 0; i < 64; i++) {
-        char c0 = path[i & (TARGET_PATH_MAX - 1)];
-        if (c0 == '\0') {
-            break;
-        }
-        if (c0 == '/') {
-            char c1 = path[(i + 1) & (TARGET_PATH_MAX - 1)];
-            if (c1 == '/') {
-                return 0; /* "//" */
+          for (int i = 0; i < 64; i++) {
+            char c0 = path[i & (TARGET_PATH_MAX - 1)];
+            if (c0 == '\0') {
+              break;
             }
-            if (c1 == '.') {
+            if (c0 == '/') {
+              char c1 = path[(i + 1) & (TARGET_PATH_MAX - 1)];
+              if (c1 == '/') {
+                return 0; /* "//" */
+              }
+              if (c1 == '.') {
                 char c2 = path[(i + 2) & (TARGET_PATH_MAX - 1)];
                 if (c2 == '/' || c2 == '\0') {
-                    return 0; /* "/./" or "/." */
+                  return 0; /* "/./" or "/." */
                 }
                 if (c2 == '.') {
-                    char c3 = path[(i + 3) & (TARGET_PATH_MAX - 1)];
-                    if (c3 == '/' || c3 == '\0') {
-                        return 0; /* "/../" or "/.." */
-                    }
+                  char c3 = path[(i + 3) & (TARGET_PATH_MAX - 1)];
+                  if (c3 == '/' || c3 == '\0') {
+                    return 0; /* "/../" or "/.." */
+                  }
                 }
+              }
             }
-        }
-    }
+          }
 
-    #pragma unroll
-    for (__u32 i = 0; i < 8; i++) {
-        __u32 idx = i;
-        struct prefix_entry *p = bpf_map_lookup_elem(&runtime_prefixes, &idx);
-        if (!p) {
-            continue;
-        }
-        __u32 len = p->len;
-        if (len == 0 || len > RUNTIME_PREFIX_MAX) {
-            continue;
-        }
-        int match = 1;
-        for (int j = 0; j < 32; j++) {
-            if (j >= len) {
-                break;
+#pragma unroll
+          for (__u32 i = 0; i < 8; i++) {
+            __u32 idx = i;
+            struct prefix_entry *p =
+                bpf_map_lookup_elem(&runtime_prefixes, &idx);
+            if (!p) {
+              continue;
             }
-            if (path[j & (TARGET_PATH_MAX - 1)] != p->prefix[j & (RUNTIME_PREFIX_MAX - 1)]) {
+            __u32 len = p->len;
+            if (len == 0 || len > RUNTIME_PREFIX_MAX) {
+              continue;
+            }
+            int match = 1;
+            for (int j = 0; j < 32; j++) {
+              if (j >= len) {
+                break;
+              }
+              if (path[j & (TARGET_PATH_MAX - 1)] !=
+                  p->prefix[j & (RUNTIME_PREFIX_MAX - 1)]) {
                 match = 0;
                 break;
+              }
             }
-        }
-        if (match) {
-            char end_c = p->prefix[(len - 1) & (RUNTIME_PREFIX_MAX - 1)];
-            char next_c = path[len & (TARGET_PATH_MAX - 1)];
-            if (end_c == '/' || next_c == '/' || next_c == '\0') {
+            if (match) {
+              char end_c = p->prefix[(len - 1) & (RUNTIME_PREFIX_MAX - 1)];
+              char next_c = path[len & (TARGET_PATH_MAX - 1)];
+              if (end_c == '/' || next_c == '/' || next_c == '\0') {
                 return 1;
+              }
             }
+          }
+          return 0;
         }
-    }
-    return 0;
-}
 
-SEC("raw_tp/sched_process_exec")
-int BPF_PROG(raw_tp_sched_process_exec, struct task_struct *p, pid_t old_pid, struct linux_binprm *bprm) {
-    __u32 tgid = (__u32)(bpf_get_current_pid_tgid() >> 32);
-    __u64 old_pid_tgid = ((__u64)tgid << 32) | (__u32)old_pid;
-    struct ebpf_event *pending = bpf_map_lookup_elem(&active_syscalls, &old_pid_tgid);
-    if (!pending) {
-        __u64 cur = bpf_get_current_pid_tgid();
-        pending = bpf_map_lookup_elem(&active_syscalls, &cur);
-        if (pending) {
-            old_pid_tgid = cur;
+        SEC("raw_tp/sched_process_exec")
+        int BPF_PROG(raw_tp_sched_process_exec, struct task_struct * p,
+                     pid_t old_pid, struct linux_binprm * bprm) {
+          __u32 tgid = (__u32)(bpf_get_current_pid_tgid() >> 32);
+          __u64 old_pid_tgid = ((__u64)tgid << 32) | (__u32)old_pid;
+          struct ebpf_event *pending =
+              bpf_map_lookup_elem(&active_syscalls, &old_pid_tgid);
+          if (!pending) {
+            __u64 cur = bpf_get_current_pid_tgid();
+            pending = bpf_map_lookup_elem(&active_syscalls, &cur);
+            if (pending) {
+              old_pid_tgid = cur;
+            }
+          }
+          if (!pending) {
+            return 0;
+          }
+
+          /* Re-read target if enter-time read failed and user pointer is saved
+           */
+          if (pending->has_target &&
+              pending->target_status == TARGET_STATUS_UNREADABLE &&
+              pending->user_target_ptr != 0) {
+            copy_str(pending->target, (const char *)pending->user_target_ptr,
+                     TARGET_PATH_MAX, &pending->target_status);
+          }
+
+          struct ebpf_event *out =
+              bpf_ringbuf_reserve(&events_rb, sizeof(*out), 0);
+          if (!out) {
+            record_drop();
+            bpf_map_delete_elem(&active_syscalls, &old_pid_tgid);
+            return 0;
+          }
+
+          bpf_fast_copy(out, pending);
+          out->cur_cgroup_id = bpf_get_current_cgroup_id();
+          out->ret = 0;
+          bpf_ringbuf_submit(out, 0);
+
+          bpf_map_delete_elem(&active_syscalls, &old_pid_tgid);
+          return 0;
         }
-    }
-    if (!pending) {
-        return 0;
-    }
 
-    /* Re-read target if enter-time read failed and user pointer is saved */
-    if (pending->has_target && pending->target_status == TARGET_STATUS_UNREADABLE && pending->user_target_ptr != 0) {
-        copy_str(pending->target, (const char *)pending->user_target_ptr, TARGET_PATH_MAX, &pending->target_status);
-    }
+        SEC("raw_tp/sys_exit")
+        int BPF_PROG(raw_tp_sys_exit, struct pt_regs * regs, long ret) {
+          __u64 pid_tgid = bpf_get_current_pid_tgid();
+          struct ebpf_event *pending =
+              bpf_map_lookup_elem(&active_syscalls, &pid_tgid);
+          if (!pending) {
+            return 0;
+          }
 
-    struct ebpf_event *out = bpf_ringbuf_reserve(&events_rb, sizeof(*out), 0);
-    if (!out) {
-        record_drop();
-        bpf_map_delete_elem(&active_syscalls, &old_pid_tgid);
-        return 0;
-    }
+          /* Re-read target if enter-time read failed and user pointer is saved
+           */
+          if (pending->has_target &&
+              pending->target_status == TARGET_STATUS_UNREADABLE &&
+              pending->user_target_ptr != 0) {
+            copy_str(pending->target, (const char *)pending->user_target_ptr,
+                     TARGET_PATH_MAX, &pending->target_status);
+          }
 
-    bpf_fast_copy(out, pending);
-    out->cur_cgroup_id = bpf_get_current_cgroup_id();
-    out->ret = 0;
-    bpf_ringbuf_submit(out, 0);
+          /* Successful exec is emitted from sched_process_exec instead of
+           * sys_exit pairing */
+          if (pending->op == EBPF_OP_EXEC) {
+            if (ret >= 0) {
+              bpf_map_delete_elem(&active_syscalls, &pid_tgid);
+              return 0;
+            }
+          }
 
-    bpf_map_delete_elem(&active_syscalls, &old_pid_tgid);
-    return 0;
-}
+          /* In-kernel filtering: drop ONLY successful read-only opens under
+           * runtime-profile prefixes */
+          if (pending->op == EBPF_OP_OPEN && ret >= 0) {
+            __u64 wr_flags =
+                0x3ULL | 0x40ULL | 0x200ULL | 0x400ULL | 0x410000ULL;
+            if ((pending->flags & wr_flags) == 0 &&
+                has_runtime_prefix(pending->target)) {
+              __u64 *fc = bpf_map_lookup_elem(&cgroup_filtered_reads,
+                                              &pending->cgroup_id);
+              if (fc) {
+                *fc += 1;
+              } else {
+                __u64 init_cnt = 1;
+                bpf_map_update_elem(&cgroup_filtered_reads, &pending->cgroup_id,
+                                    &init_cnt, BPF_ANY);
+              }
+              __u32 zero = 0;
+              __u64 *tot_fc = bpf_map_lookup_elem(&filtered_events, &zero);
+              if (tot_fc) {
+                *tot_fc += 1;
+              }
+              bpf_map_delete_elem(&active_syscalls, &pid_tgid);
+              return 0;
+            }
+          }
 
-SEC("raw_tp/sys_exit")
-int BPF_PROG(raw_tp_sys_exit, struct pt_regs *regs, long ret) {
-  __u64 pid_tgid = bpf_get_current_pid_tgid();
-  struct ebpf_event *pending = bpf_map_lookup_elem(&active_syscalls, &pid_tgid);
-  if (!pending) {
-    return 0;
-  }
+          struct ebpf_event *out =
+              bpf_ringbuf_reserve(&events_rb, sizeof(*out), 0);
+          if (!out) {
+            record_drop();
+            bpf_map_delete_elem(&active_syscalls, &pid_tgid);
+            return 0;
+          }
 
-  /* Re-read target if enter-time read failed and user pointer is saved */
-  if (pending->has_target && pending->target_status == TARGET_STATUS_UNREADABLE && pending->user_target_ptr != 0) {
-    copy_str(pending->target, (const char *)pending->user_target_ptr, TARGET_PATH_MAX, &pending->target_status);
-  }
+          bpf_fast_copy(out, pending);
+          out->cur_cgroup_id = bpf_get_current_cgroup_id();
+          out->ret = ret;
+          bpf_ringbuf_submit(out, 0);
 
-  /* Successful exec is emitted from sched_process_exec instead of sys_exit pairing */
-  if (pending->op == EBPF_OP_EXEC) {
-    if (ret >= 0) {
-      bpf_map_delete_elem(&active_syscalls, &pid_tgid);
-      return 0;
-    }
-  }
-
-  /* In-kernel filtering: drop ONLY successful read-only opens under
-   * runtime-profile prefixes */
-  if (pending->op == EBPF_OP_OPEN && ret >= 0) {
-    __u64 wr_flags = 0x3ULL | 0x40ULL | 0x200ULL | 0x400ULL | 0x410000ULL;
-    if ((pending->flags & wr_flags) == 0 &&
-        has_runtime_prefix(pending->target)) {
-      __u64 *fc =
-          bpf_map_lookup_elem(&cgroup_filtered_reads, &pending->cgroup_id);
-      if (fc) {
-        *fc += 1;
-      } else {
-        __u64 init_cnt = 1;
-        bpf_map_update_elem(&cgroup_filtered_reads, &pending->cgroup_id,
-                            &init_cnt, BPF_ANY);
-      }
-      __u32 zero = 0;
-      __u64 *tot_fc = bpf_map_lookup_elem(&filtered_events, &zero);
-      if (tot_fc) {
-        *tot_fc += 1;
-      }
-      bpf_map_delete_elem(&active_syscalls, &pid_tgid);
-      return 0;
-    }
-  }
-
-  struct ebpf_event *out = bpf_ringbuf_reserve(&events_rb, sizeof(*out), 0);
-  if (!out) {
-    record_drop();
-    bpf_map_delete_elem(&active_syscalls, &pid_tgid);
-    return 0;
-  }
-
-  bpf_fast_copy(out, pending);
-  out->cur_cgroup_id = bpf_get_current_cgroup_id();
-  out->ret = ret;
-  bpf_ringbuf_submit(out, 0);
-
-  bpf_map_delete_elem(&active_syscalls, &pid_tgid);
-  return 0;
-}
+          bpf_map_delete_elem(&active_syscalls, &pid_tgid);
+          return 0;
+        }
