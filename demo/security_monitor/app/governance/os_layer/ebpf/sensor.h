@@ -22,6 +22,12 @@ enum {
     TARGET_STATUS_NONE = 3,
 };
 
+enum {
+    BASE_STATUS_NONE = 0,
+    BASE_STATUS_OK = 1,
+    BASE_STATUS_TRUNCATED = 2,
+};
+
 enum ebpf_syscall_op {
     EBPF_OP_UNKNOWN = 0,
     EBPF_OP_OPEN = 1,
@@ -58,9 +64,12 @@ struct ebpf_event {
     __u8 target_status;
     __u8 has_target2;
     __u8 has_sock;
+    __u8 base_status;
+    __u8 _pad_b[3];
     __u32 sock_len;
     char target[TARGET_PATH_MAX];
     char target2[TARGET_PATH_MAX];
+    char base_dir[TARGET_PATH_MAX];
     char sock_addr[SOCK_ADDR_MAX];
 
     /* Discovery Mode additions */

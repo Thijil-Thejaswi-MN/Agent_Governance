@@ -261,7 +261,7 @@ class OSEventCorrelator:
             flags = int(ev.get("flags", 0) or 0)
             access = ev.get("access", "read")
             is_write = access in ("write", "read_write") or bool(ev.get("creat"))
-            if not tgt or not os.path.isabs(tgt):
+            if ev.get("base_truncated") or not tgt or not os.path.isabs(tgt):
                 self.unresolved_relative_paths += 1
                 return EventVerdict.OUTSIDE, RiskTier.HIGH, "unresolved relative path", "file_write" if is_write else "file_read", None
             path = os.path.normpath(tgt)
@@ -274,7 +274,7 @@ class OSEventCorrelator:
             v, r, rule = self._classify_path(boundary, path, is_write, pid)
             return v, r, rule, "file_write" if is_write else "file_read", [(path, rights)]
         if sc in ("execve", "execveat"):
-            if not tgt or not os.path.isabs(tgt):
+            if ev.get("base_truncated") or not tgt or not os.path.isabs(tgt):
                 self.unresolved_relative_paths += 1
                 return EventVerdict.OUTSIDE, RiskTier.HIGH, "unresolved relative path", "process_exec", None
             path = os.path.normpath(tgt)
@@ -295,6 +295,9 @@ class OSEventCorrelator:
                 paths = [p1, p2]
             else:
                 paths = [p1]
+            if ev.get("base_truncated"):
+                self.unresolved_relative_paths += 1
+                return EventVerdict.OUTSIDE, RiskTier.HIGH, "unresolved relative path", op, None
             if not all(paths) or any(not os.path.isabs(x) for x in paths):
                 self.unresolved_relative_paths += 1
                 return EventVerdict.AMBIGUOUS, RiskTier.MEDIUM, "unresolved relative path", op, None

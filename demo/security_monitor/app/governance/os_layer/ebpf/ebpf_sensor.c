@@ -324,8 +324,18 @@ static const char *lookup_dirfd_cache(uint32_t pid, int32_t fd) {
     return NULL;
 }
 
-static void resolve_abs_path(uint32_t pid, int32_t dfd, const char *rel, char *out_buf, size_t out_len) {
+static void resolve_abs_path(uint32_t pid, int32_t dfd, const char *rel,
+                             const char *base_dir, uint8_t base_status,
+                             char *out_buf, size_t out_len) {
     if (!rel || rel[0] == '\0') {
+        if (base_status == BASE_STATUS_TRUNCATED) {
+            out_buf[0] = '\0';
+            return;
+        }
+        if (base_status == BASE_STATUS_OK && base_dir && base_dir[0] != '\0') {
+            snprintf(out_buf, out_len, "%s", base_dir);
+            return;
+        }
         if (dfd >= 0) {
             char link[64];
             snprintf(link, sizeof(link), "/proc/%u/fd/%d", (unsigned int)pid, (int)dfd);
@@ -345,6 +355,22 @@ static void resolve_abs_path(uint32_t pid, int32_t dfd, const char *rel, char *o
     }
     if (rel[0] == '/') {
         snprintf(out_buf, out_len, "%s", rel);
+        return;
+    }
+    if (base_status == BASE_STATUS_TRUNCATED) {
+        out_buf[0] = '\0';
+        return;
+    }
+    if (base_status == BASE_STATUS_OK && base_dir && base_dir[0] != '\0') {
+        int w;
+        if (strcmp(base_dir, "/") == 0) {
+            w = snprintf(out_buf, out_len, "/%s", rel);
+        } else {
+            w = snprintf(out_buf, out_len, "%s/%s", base_dir, rel);
+        }
+        if (w < 0 || (size_t)w >= out_len) {
+            out_buf[0] = '\0';
+        }
         return;
     }
     char link[64];
@@ -674,7 +700,7 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
         snprintf(abs_target, sizeof(abs_target), "%s", target);
     } else if (e->has_target) {
         snprintf(target, sizeof(target), "%s", e->target);
-        resolve_abs_path(e->pid, e->dfd, e->target, abs_target, sizeof(abs_target));
+        resolve_abs_path(e->pid, e->dfd, e->target, e->base_dir, e->base_status, abs_target, sizeof(abs_target));
         if (target[0] == '\0' && abs_target[0] != '\0') {
             snprintf(target, sizeof(target), "%s", abs_target);
         }
@@ -692,7 +718,9 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
     abs_target2[0] = '\0';
     if (e->has_target2) {
         snprintf(target2, sizeof(target2), "%s", e->target2);
-        resolve_abs_path(e->pid, e->dfd2, e->target2, abs_target2, sizeof(abs_target2));
+        const char *b2 = (e->dfd2 == e->dfd) ? e->base_dir : NULL;
+        uint8_t bs2 = (e->dfd2 == e->dfd) ? e->base_status : BASE_STATUS_NONE;
+        resolve_abs_path(e->pid, e->dfd2, e->target2, b2, bs2, abs_target2, sizeof(abs_target2));
     }
 
     const char *result_str = "ok";
@@ -760,6 +788,13 @@ static int handle_event(void *ctx, void *data, size_t data_sz) {
     fputs(",\"abs_target\":", mem);
     json_escape(mem, abs_target);
     fprintf(mem, ",\"target_status\":\"%s\"", target_status_str);
+    if (e->base_dir[0] != '\0') {
+        fputs(",\"base_dir\":", mem);
+        json_escape(mem, e->base_dir);
+    }
+    if (e->base_status == BASE_STATUS_TRUNCATED && e->has_target && e->target[0] != '/') {
+        fputs(",\"base_truncated\":true", mem);
+    }
 
     if (e->op == EBPF_OP_OPEN) {
         const char *acc = "read";
