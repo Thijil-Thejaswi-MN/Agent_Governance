@@ -852,6 +852,91 @@ _VIOLATION_FIELDS = ("event_id", "timestamp", "source", "kind", "target", "resul
                      "risk_tier", "action_taken", "pid", "tool_call", "attributed_task_id")
 
 
+# Where to keep the full record of a run that needs explaining (set in main; None keeps nothing).
+# The scale run deletes each task's database rows, workspace and record when it ends, so without
+# this a "not stopped" attack can't be explained afterwards.
+KEPT_RECORDS_DIR: Path | None = None
+
+_NOTABLE_ACTIONS = ("BLOCK_ACTION", "DENY", "PAUSE_TASK", "FREEZE", "KILL_TASK")
+
+
+def _short(v: Any, n: int = 300) -> Any:
+    if isinstance(v, str) and len(v) > n:
+        return v[:n] + "..."
+    return v
+
+
+def build_run_diagnostics(res: Any, storage: Any, task_id: str, shim_result: dict[str, Any]) -> dict[str, Any]:
+    """Why a run ended, from what was recorded: the abort reason, the agent's status, freezes,
+    access requests, RPC rejections, and the events that were outside, ambiguous, refused or paused."""
+    receipt = getattr(res, "receipt", {}) or {}
+    extra = receipt.get("extra") or {}
+    out: dict[str, Any] = {
+        "aborted": getattr(res, "aborted", None),
+        "shim_status": shim_result.get("status"),
+        "shim_error": _short(str(shim_result.get("error"))) if shim_result.get("error") else None,
+        "shim_iterations": shim_result.get("iterations"),
+        "freeze_events": [
+            {k: _short(v) for k, v in fe.items()} if isinstance(fe, dict) else _short(str(fe))
+            for fe in (receipt.get("freeze_events") or [])[:10]
+        ],
+        "rpc_rejections": [
+            {k: _short(v) for k, v in r.items()} if isinstance(r, dict) else _short(str(r))
+            for r in (extra.get("rpc_rejections") or [])[:10]
+        ] if isinstance(extra.get("rpc_rejections"), list) else extra.get("rpc_rejections"),
+        "rpc_call_counts": extra.get("rpc_call_counts"),
+    }
+    try:
+        reqs = storage.list_expansion_requests(task_id=task_id)
+        out["access_requests"] = [
+            {
+                "resource": _short(str(getattr(r, "resource", "") or getattr(r, "path", ""))),
+                "resource_type": str(getattr(r, "resource_type", "") or ""),
+                "status": str(getattr(getattr(r, "status", None), "value", getattr(r, "status", ""))),
+                "justification": _short(str(getattr(r, "justification", "") or "")),
+            }
+            for r in reqs[:10]
+        ]
+    except Exception as exc:  # the storage may already be closed; say so rather than guess
+        out["access_requests"] = f"unavailable: {type(exc).__name__}"
+    notable = []
+    for e in receipt.get("events", []):
+        if (e.get("verdict") in ("OUTSIDE", "AMBIGUOUS") or e.get("prevented")
+                or e.get("action_taken") in _NOTABLE_ACTIONS):
+            item = {k: e.get(k) for k in _VIOLATION_FIELDS + ("verdict", "prevented", "prevented_by", "phase")
+                    if e.get(k) is not None}
+            notable.append({k: _short(v) for k, v in item.items()})
+            if len(notable) >= 30:
+                break
+    out["notable_events"] = notable
+    out["events_total"] = len(receipt.get("events", []))
+    diff = getattr(res, "fs_diff", None) or {}
+    out["writes_outside_output"] = [
+        str(f) for f in (diff.get("created", []) + diff.get("modified", []))
+        if not str(f).replace("\\", "/").startswith(("output/", "."))
+    ][:10]
+    out["blocked_egress"] = [
+        {k: _short(v) for k, v in req.items()}
+        for req in getattr(res, "audit_sink_requests", [])
+        if isinstance(req, dict) and (req.get("status_code") in (403, 407) or req.get("blocked"))
+    ][:5]
+    return sanitize_secret_text(out)
+
+
+def keep_run_record(task_id: str, receipt: dict[str, Any], diagnostics: dict[str, Any]) -> str | None:
+    """Saves the run's full record next to the scale output, so it can be read after the run."""
+    if KEPT_RECORDS_DIR is None:
+        return None
+    try:
+        KEPT_RECORDS_DIR.mkdir(parents=True, exist_ok=True)
+        dest = KEPT_RECORDS_DIR / f"{task_id}.json"
+        dest.write_text(json.dumps(sanitize_secret_text({"diagnostics": diagnostics, "receipt": receipt}),
+                                   indent=1, default=str), encoding="utf-8")
+        return str(dest)
+    except Exception as exc:
+        return f"not kept: {type(exc).__name__}: {exc}"
+
+
 def _is_unresolved_path_rule(rule: str) -> bool:
     r = (rule or "").lower()
     return "unresolved" in r or "unreadable" in r
@@ -1268,6 +1353,14 @@ def extract_task_metrics(task_output: dict[str, Any], storage: GovernanceStorage
 
     cleanup_info = check_task_cleanup(receipt)
 
+    # Explain a run that needs it before its records are deleted below: an attack that was not
+    # stopped, or any task in which the agent made no tool call at all.
+    diagnostics = None
+    kept_record = None
+    if (is_attack and outcome != "stopped") or tool_calls == 0 or outcome == "failed":
+        diagnostics = build_run_diagnostics(res, storage, task_output["task_id"], shim_result)
+        kept_record = keep_run_record(task_output["task_id"], receipt, diagnostics)
+
     if hasattr(res, "workspace") and isinstance(res.workspace, Path):
         shutil.rmtree(res.workspace, ignore_errors=True)
     if hasattr(res, "control_dir") and isinstance(res.control_dir, Path):
@@ -1317,6 +1410,8 @@ def extract_task_metrics(task_output: dict[str, Any], storage: GovernanceStorage
         "boundary_violations": boundary_violations,
         "outside_failed_other": outside_failed_other,
         "violation_events": sanitize_secret_text(bv.details),
+        "diagnostics": diagnostics,
+        "kept_record": kept_record,
         "verified": record_verified,
         "phase_timings": extra.get("phase_timings") or getattr(res, "phase_timings", {}) or {},
         "enforcement": enforcement_dict,
@@ -1576,6 +1671,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.output:
         args.output = "demo/data/scale/scale_real_v1.json" if real_n > 0 else "demo/data/scale/scale_100_v1.json"
+
+    global KEPT_RECORDS_DIR
+    _out = Path(args.output).resolve()
+    KEPT_RECORDS_DIR = _out.parent / f"{_out.stem}_kept"
 
     # "auto" uses eBPF when the loader is installed and falls back to ptrace (CI has no eBPF).
     # Set GOVERNANCE_SENSOR=ebpf to require eBPF; the sensor actually used is in each receipt.
@@ -1889,6 +1988,8 @@ def main(argv: list[str] | None = None) -> int:
                                 "boundary_violations": m["enforcement"]["boundary_violations"],
                                 "outside_failed_other": m["enforcement"].get("outside_failed_other", 0),
                                 "violation_events": m.get("violation_events") or [],
+                                "diagnostics": m.get("diagnostics"),
+                                "kept_record": m.get("kept_record"),
                                 "verified": m["records"]["verified"],
                             }
                             for m in round_metrics
