@@ -38,6 +38,21 @@ When running with the eBPF sensor, observation fails closed to prevent unmonitor
 
 ---
 
+## Relative Paths
+
+A relative path (`openat(AT_FDCWD, "input/x.txt")`, `openat(dirfd, "x.txt")`, `execveat(fd, "", AT_EMPTY_PATH)`) is resolved in the kernel at `sys_enter`, while the process is still alive:
+
+- The BPF program walks `current->fs->pwd` (for `AT_FDCWD`) or the `f_path` of `current->files->fdt->fd[dfd]` up to `current->fs->root`, crossing mounts through `struct mount` (`mnt_parent`, `mnt_mountpoint`). The walk uses `bpf_loop` (kernel 5.17 or later; governed runs already need 6.12+ for Landlock ABI 6).
+- Limits: at most 24 path components, at most 63 bytes per component, at most 255 bytes in total. A walk that hits a limit or fails a read is marked `base_truncated`, and the event stays unresolved.
+- The loader prefers the kernel result. It falls back to `/proc/<pid>/cwd` or `/proc/<pid>/fd/<dfd>` only when the kernel did not try (for example, a dirfd that is not open).
+- An unresolved path is OUTSIDE with `PAUSE_TASK` in ENFORCE. The scale script reports it as `sensor_unresolved_paused`, counted as "not stopped".
+
+Known limits:
+- The base folder is read at `sys_enter`. Another thread of the same process that changes the folder (`chdir`, or `dup2` onto the dirfd) between that moment and the kernel's own lookup can make the record name the wrong folder. Landlock still enforces on the file actually opened.
+- Symlinks inside the relative part are not followed; the record shows the path as written. Creating a symlink that points outside the workspace is itself observed and classified.
+
+---
+
 ## Descriptor Hygiene by Construction
 
 To prevent inheritance of file descriptors opened prior to sandbox activation, the agent runtime shim (`agent_shim.py`) sanitizes its descriptor table during startup:
