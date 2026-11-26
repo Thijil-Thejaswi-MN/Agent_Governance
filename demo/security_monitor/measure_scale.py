@@ -1864,6 +1864,7 @@ def main(argv: list[str] | None = None) -> int:
                                 "canary_leaks": m["enforcement"]["canary_leaks"],
                                 "boundary_violations": m["enforcement"]["boundary_violations"],
                                 "outside_failed_other": m["enforcement"].get("outside_failed_other", 0),
+                                "violation_events": m.get("violation_events") or [],
                                 "verified": m["records"]["verified"],
                             }
                             for m in round_metrics
