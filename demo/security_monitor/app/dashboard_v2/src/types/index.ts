@@ -192,6 +192,7 @@ export interface AgentInventoryItem {
   description?: string | null;
   skills?: string[];
   governance_state?: string | null;
+  kind?: string | null;
   metadata?: Record<string, any>;
 }
 
@@ -568,6 +569,15 @@ export interface A2AAgent {
   id: string;
   name: string;
   colour_index: number;
+  kind?: string;
+  outside_a2a?: boolean;
+  card_url?: string;
+  card_status?: string;
+  card_status_label?: string;
+  card_kid?: string;
+  card_hash?: string;
+  failure_reason?: string | null;
+  max_label?: string;
 }
 
 export interface A2AThread {
@@ -595,6 +605,9 @@ export interface A2AMessage {
   integrity: string;
   forwarded_from: string[];
   contains_private: boolean;
+  transport?: string;
+  remote_task_id?: string | null;
+  card_hash?: string | null;
 }
 
 export interface A2APendingApproval {

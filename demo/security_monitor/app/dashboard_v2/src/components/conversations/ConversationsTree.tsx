@@ -3,12 +3,15 @@ import { ConversationTreeNode, getAgentDisplayName } from '../../logic/conversat
 import { AgentRingAvatar } from './AgentAvatar';
 import { ChevronDown, ChevronRight, MessageSquare } from 'lucide-react';
 
+import { A2AAgent } from '../../types';
+
 interface ConversationsTreeProps {
   tree: ConversationTreeNode;
   selectedId: string;
   onSelect: (id: string) => void;
   agentNames: Record<string, string>;
   agentColourIndexes: Record<string, number>;
+  outsideAgents?: Record<string, A2AAgent>;
 }
 
 const statusConfig: Record<
@@ -27,6 +30,7 @@ export const ConversationsTree: React.FC<ConversationsTreeProps> = ({
   onSelect,
   agentNames,
   agentColourIndexes,
+  outsideAgents = {},
 }) => {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
@@ -44,6 +48,7 @@ export const ConversationsTree: React.FC<ConversationsTreeProps> = ({
 
     const nameA = getAgentDisplayName(node.agentA, agentNames);
     const nameB = getAgentDisplayName(node.agentB, agentNames);
+    const outsidePeer = !isJob ? (outsideAgents[node.agentB] || outsideAgents[node.agentA]) : undefined;
 
     return (
       <div key={node.id} className="flex flex-col">
@@ -106,9 +111,17 @@ export const ConversationsTree: React.FC<ConversationsTreeProps> = ({
                 {node.messageCount}
               </span>
             </div>
-            <div className="flex items-center gap-1.5 mt-0.5">
+            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
               <span className={`w-2 h-2 rounded-full shrink-0 ${cfg.dot}`} />
               <span className="text-[12px] text-fg-3 capitalize">{cfg.label}</span>
+              {outsidePeer && (
+                <span
+                  className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-surface-2 border border-line text-info"
+                  data-badge="outside-a2a"
+                >
+                  outside agent (A2A)
+                </span>
+              )}
             </div>
           </div>
         </button>

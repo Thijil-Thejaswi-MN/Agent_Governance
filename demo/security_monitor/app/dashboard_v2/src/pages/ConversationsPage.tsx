@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import {
+  A2AAgent,
   A2AJobResponse,
   A2AMessage,
   A2APendingApproval,
@@ -121,6 +122,20 @@ export const ConversationsPage: React.FC = () => {
     }
     return res;
   }, [job?.agents]);
+
+  const outsideAgentsMap = useMemo(() => {
+    const res: Record<string, A2AAgent> = {};
+    if (job?.agents) {
+      for (const a of job.agents) {
+        if (a.kind === 'outside_a2a' || a.outside_a2a) {
+          res[a.id] = a;
+        }
+      }
+    }
+    return res;
+  }, [job?.agents]);
+
+  const outsideAgentsList = useMemo(() => Object.values(outsideAgentsMap), [outsideAgentsMap]);
 
   // Counts for the header
   const counts = useMemo(() => {
@@ -328,6 +343,42 @@ export const ConversationsPage: React.FC = () => {
         </div>
       </header>
 
+      {outsideAgentsList.length > 0 && (
+        <div
+          id="outside-agents-strip"
+          className="px-6 py-2.5 border-b border-line bg-surface-2 shrink-0 flex items-center gap-3 flex-wrap"
+        >
+          {outsideAgentsList.map((oa) => {
+            const isVerified = oa.card_status === 'verified';
+            const statusText =
+              oa.card_status_label ||
+              oa.failure_reason ||
+              (oa.card_kid ? `signature verified (key ${oa.card_kid})` : oa.card_status || 'unverified');
+            return (
+              <div
+                key={oa.id}
+                data-outside-agent={oa.id}
+                className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg border border-line bg-surface-1 text-[12px] flex-wrap"
+              >
+                <span className="font-semibold text-fg">{oa.name}</span>
+                <span
+                  className="px-1.5 py-0.5 rounded text-[11px] font-medium bg-surface-2 border border-line text-info"
+                  data-badge="outside-a2a"
+                >
+                  outside agent (A2A)
+                </span>
+                <span
+                  data-card-status={oa.card_status || 'unverified'}
+                  className={`font-mono text-[11px] ${isVerified ? 'text-ok' : 'text-bad'}`}
+                >
+                  {statusText}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {stopMessage && (
         <div className="px-6 py-2 bg-bad/15 border-b border-bad/30 text-bad text-[13px]">
           {stopMessage}
@@ -390,6 +441,7 @@ export const ConversationsPage: React.FC = () => {
               }}
               agentNames={agentNames}
               agentColourIndexes={agentColourIndexes}
+              outsideAgents={outsideAgentsMap}
             />
           )}
         </section>
@@ -422,6 +474,7 @@ export const ConversationsPage: React.FC = () => {
             pendingApprovals={currentApprovals}
             agentNames={agentNames}
             agentColourIndexes={agentColourIndexes}
+            outsideAgents={outsideAgentsMap}
             canDecide={canDecide}
             onApprove={handleApprove}
             onDeny={handleDeny}
