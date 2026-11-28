@@ -411,6 +411,46 @@ class GovernanceStorage:
                 cursor.execute("ALTER TABLE a2a_messages ADD COLUMN confidentiality TEXT DEFAULT 'public'")
             except Exception:
                 pass
+            try:
+                cursor.execute("ALTER TABLE a2a_messages ADD COLUMN transport TEXT DEFAULT 'local'")
+            except Exception:
+                pass
+            try:
+                cursor.execute("ALTER TABLE a2a_messages ADD COLUMN remote_task_id TEXT")
+            except Exception:
+                pass
+            try:
+                cursor.execute("ALTER TABLE a2a_messages ADD COLUMN card_hash TEXT")
+            except Exception:
+                pass
+
+            # 16. Outside A2A Agents Registry (admin-registered with pinned JWK anchors and ceilings)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS outside_agents (
+                    agent_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL DEFAULT '',
+                    description TEXT NOT NULL DEFAULT '',
+                    card_url TEXT NOT NULL,
+                    interface_url TEXT,
+                    jwk_anchor_json TEXT NOT NULL,
+                    allowed_callers_json TEXT NOT NULL DEFAULT '[]',
+                    allowed_skills_json TEXT NOT NULL DEFAULT '[]',
+                    max_label TEXT NOT NULL DEFAULT 'internal',
+                    auth_type TEXT NOT NULL DEFAULT 'none',
+                    auth_token_path TEXT,
+                    card_json TEXT,
+                    card_hash TEXT,
+                    card_kid TEXT,
+                    card_skills_json TEXT NOT NULL DEFAULT '[]',
+                    extra_skills_json TEXT NOT NULL DEFAULT '[]',
+                    status TEXT NOT NULL DEFAULT 'unverified',
+                    failure_reason TEXT,
+                    verified_at TEXT,
+                    disabled INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
 
             # 13. Delegation Tokens (A2A tokens held server-side only)
             cursor.execute("""
@@ -813,15 +853,18 @@ class GovernanceStorage:
                                     message_id, root_task_id, parent_task_id, child_task_id,
                                     from_agent, to_agent, kind, fanout_group, reply_to,
                                     sent_at, text, verdict, reason, integrity, forwarded_from, contains_private,
-                                    confidentiality
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    confidentiality, transport, remote_task_id, card_hash
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                                 ON CONFLICT(message_id) DO UPDATE SET
                                     child_task_id=coalesce(excluded.child_task_id, a2a_messages.child_task_id),
                                     verdict=excluded.verdict,
                                     reason=excluded.reason,
                                     forwarded_from=excluded.forwarded_from,
                                     contains_private=excluded.contains_private,
-                                    confidentiality=excluded.confidentiality
+                                    confidentiality=excluded.confidentiality,
+                                    transport=coalesce(excluded.transport, a2a_messages.transport),
+                                    remote_task_id=coalesce(excluded.remote_task_id, a2a_messages.remote_task_id),
+                                    card_hash=coalesce(excluded.card_hash, a2a_messages.card_hash)
                                 """,
                                 (
                                     m["message_id"],
@@ -841,6 +884,9 @@ class GovernanceStorage:
                                     m["forwarded_from"] if isinstance(m["forwarded_from"], str) else json.dumps(m["forwarded_from"]),
                                     1 if m.get("contains_private") else 0,
                                     m.get("confidentiality", "public"),
+                                    m.get("transport") or "local",
+                                    m.get("remote_task_id"),
+                                    m.get("card_hash"),
                                 ),
                             )
                         except Exception as exc:
@@ -1668,6 +1714,9 @@ class GovernanceStorage:
                     "forwarded_from": fw_val,
                     "contains_private": bool(r["contains_private"]),
                     "confidentiality": r["confidentiality"] if "confidentiality" in r.keys() else "public",
+                    "transport": (r["transport"] if "transport" in r.keys() and r["transport"] else "local"),
+                    "remote_task_id": r["remote_task_id"] if "remote_task_id" in r.keys() else None,
+                    "card_hash": r["card_hash"] if "card_hash" in r.keys() else None,
                 })
             return out
 
@@ -1700,7 +1749,150 @@ class GovernanceStorage:
                 "forwarded_from": fw_val,
                 "contains_private": bool(r["contains_private"]),
                 "confidentiality": r["confidentiality"] if "confidentiality" in r.keys() else "public",
+                "transport": (r["transport"] if "transport" in r.keys() and r["transport"] else "local"),
+                "remote_task_id": r["remote_task_id"] if "remote_task_id" in r.keys() else None,
+                "card_hash": r["card_hash"] if "card_hash" in r.keys() else None,
             }
+
+    # --- Outside A2A Agents Store ---
+    @staticmethod
+    def _row_to_outside_agent(r: sqlite3.Row) -> dict[str, Any]:
+        def _loads(val: Any, default: Any) -> Any:
+            if val is None or val == "":
+                return default
+            if isinstance(val, (dict, list)):
+                return val
+            try:
+                return json.loads(val)
+            except Exception:
+                return default
+
+        return {
+            "agent_id": r["agent_id"],
+            "name": r["name"],
+            "description": r["description"],
+            "card_url": r["card_url"],
+            "interface_url": r["interface_url"],
+            "jwk_anchor": _loads(r["jwk_anchor_json"], {}),
+            "allowed_callers": _loads(r["allowed_callers_json"], []),
+            "allowed_skills": _loads(r["allowed_skills_json"], []),
+            "max_label": r["max_label"],
+            "auth_type": r["auth_type"],
+            "auth_token_path": r["auth_token_path"],
+            "card": _loads(r["card_json"], None),
+            "card_hash": r["card_hash"],
+            "card_kid": r["card_kid"],
+            "card_skills": _loads(r["card_skills_json"], []),
+            "extra_skills": _loads(r["extra_skills_json"], []),
+            "status": r["status"],
+            "failure_reason": r["failure_reason"],
+            "verified_at": r["verified_at"],
+            "disabled": bool(r["disabled"]),
+            "created_at": r["created_at"],
+            "updated_at": r["updated_at"],
+        }
+
+    def save_outside_agent(self, rec: dict[str, Any]) -> None:
+        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        created_at = rec.get("created_at") or now_utc
+        updated_at = rec.get("updated_at") or now_utc
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO outside_agents (
+                    agent_id, name, description, card_url, interface_url,
+                    jwk_anchor_json, allowed_callers_json, allowed_skills_json,
+                    max_label, auth_type, auth_token_path, card_json, card_hash,
+                    card_kid, card_skills_json, extra_skills_json, status,
+                    failure_reason, verified_at, disabled, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(agent_id) DO UPDATE SET
+                    name=excluded.name,
+                    description=excluded.description,
+                    card_url=excluded.card_url,
+                    interface_url=excluded.interface_url,
+                    jwk_anchor_json=excluded.jwk_anchor_json,
+                    allowed_callers_json=excluded.allowed_callers_json,
+                    allowed_skills_json=excluded.allowed_skills_json,
+                    max_label=excluded.max_label,
+                    auth_type=excluded.auth_type,
+                    auth_token_path=excluded.auth_token_path,
+                    card_json=excluded.card_json,
+                    card_hash=excluded.card_hash,
+                    card_kid=excluded.card_kid,
+                    card_skills_json=excluded.card_skills_json,
+                    extra_skills_json=excluded.extra_skills_json,
+                    status=excluded.status,
+                    failure_reason=excluded.failure_reason,
+                    verified_at=excluded.verified_at,
+                    disabled=excluded.disabled,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    rec["agent_id"],
+                    rec.get("name") or rec["agent_id"],
+                    rec.get("description") or "",
+                    rec["card_url"],
+                    rec.get("interface_url"),
+                    json.dumps(rec.get("jwk_anchor") or {}),
+                    json.dumps(list(rec.get("allowed_callers") or [])),
+                    json.dumps(list(rec.get("allowed_skills") or [])),
+                    rec.get("max_label") or "internal",
+                    rec.get("auth_type") or "none",
+                    rec.get("auth_token_path"),
+                    json.dumps(rec["card"]) if rec.get("card") is not None else None,
+                    rec.get("card_hash"),
+                    rec.get("card_kid"),
+                    json.dumps(list(rec.get("card_skills") or [])),
+                    json.dumps(list(rec.get("extra_skills") or [])),
+                    rec.get("status") or "unverified",
+                    rec.get("failure_reason"),
+                    rec.get("verified_at"),
+                    1 if rec.get("disabled") else 0,
+                    created_at,
+                    updated_at,
+                ),
+            )
+            conn.commit()
+
+    def get_outside_agent(self, agent_id: str) -> dict[str, Any] | None:
+        with self.get_connection() as conn:
+            r = conn.execute("SELECT * FROM outside_agents WHERE agent_id = ?", (agent_id,)).fetchone()
+            return self._row_to_outside_agent(r) if r else None
+
+    def list_outside_agents(self, include_disabled: bool = True) -> list[dict[str, Any]]:
+        query = "SELECT * FROM outside_agents"
+        if not include_disabled:
+            query += " WHERE disabled = 0"
+        query += " ORDER BY agent_id ASC"
+        with self.get_connection() as conn:
+            rows = conn.execute(query).fetchall()
+            return [self._row_to_outside_agent(r) for r in rows]
+
+    def set_outside_agent_disabled(
+        self, agent_id: str, disabled: bool = True, reason: str | None = None
+    ) -> dict[str, Any] | None:
+        existing = self.get_outside_agent(agent_id)
+        if not existing:
+            return None
+        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            conn.execute(
+                """
+                UPDATE outside_agents
+                SET disabled = ?, status = ?, failure_reason = ?, updated_at = ?
+                WHERE agent_id = ?
+                """,
+                (
+                    1 if disabled else 0,
+                    "disabled" if disabled else existing.get("status", "unverified"),
+                    reason if disabled else existing.get("failure_reason"),
+                    now_utc,
+                    agent_id,
+                ),
+            )
+            conn.commit()
+        return self.get_outside_agent(agent_id)
 
     # --- Delegation Token Store ---
     def save_delegation_token(self, task_id: str, token_text: str, parent_token_hash: str | None = None) -> str:

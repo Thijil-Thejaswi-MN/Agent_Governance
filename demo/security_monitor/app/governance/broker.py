@@ -1052,8 +1052,14 @@ class ToolBroker:
             return True
         return bool(boundary is not None and (boundary.peer_agents or []))
 
-    @staticmethod
-    def _display_name(agent_id: str) -> str:
+    def _display_name(self, agent_id: str) -> str:
+        try:
+            if hasattr(self.storage, "get_outside_agent"):
+                oa = self.storage.get_outside_agent(agent_id)
+                if oa and oa.get("name"):
+                    return str(oa["name"]).strip()
+        except Exception:
+            pass
         try:
             from .agent_profiles import load_agent_profile
 
@@ -1215,6 +1221,174 @@ class ToolBroker:
                 self.storage.save_expansion_request(req)
             raise PermissionError(f"Flow denied by policy: {reason}")
 
+    def _preflight_outside_call(
+        self,
+        task: Any,
+        caller_agent_id: str,
+        outside_rec: dict[str, Any],
+        message: dict[str, Any] | str,
+    ) -> str | None:
+        from .outside_agents import OutsideAgentError, validate_and_build_outgoing_parts
+
+        target = outside_rec["agent_id"]
+        depth = getattr(task, "depth", 0) or 0 if task else 0
+        if depth + 1 > 4:
+            return f"Maximum delegation depth 4 exceeded: requested depth {depth + 1}"
+        if outside_rec.get("disabled"):
+            return f"Outside agent '{target}' is disabled by administrator"
+        if outside_rec.get("status") != "verified" or not outside_rec.get("card_hash"):
+            return f"Outside agent '{target}' card not verified: {outside_rec.get('failure_reason') or outside_rec.get('status')}"
+        allowed_callers = list(outside_rec.get("allowed_callers") or [])
+        if caller_agent_id not in allowed_callers:
+            return f"Caller agent '{caller_agent_id}' is not allowed by attested ceiling for '{target}'"
+        try:
+            validate_and_build_outgoing_parts(message)
+        except OutsideAgentError as exc:
+            return str(exc)
+        return None
+
+    def _compute_outside_deadline_epoch(self, task: Any) -> float:
+        total = float(getattr(task, "timeout_s", None) or 900.0) if task else 900.0
+        dm = getattr(self, "delegation_manager", None)
+        launcher = getattr(dm, "parent_launcher", None) if dm is not None else None
+        if launcher is not None and hasattr(launcher, "spec"):
+            spec_timeout = getattr(launcher.spec, "timeout_s", None)
+            if spec_timeout is not None:
+                total = min(total, float(spec_timeout))
+        start_iso = (getattr(task, "started_at", None) or getattr(task, "created_at", None)) if task else None
+        if start_iso:
+            try:
+                st = datetime.datetime.fromisoformat(start_iso)
+                if st.tzinfo is None:
+                    st = st.replace(tzinfo=datetime.timezone.utc)
+                return st.timestamp() + total
+            except Exception:
+                pass
+        return time.time() + total
+
+    def _call_outside_agent(
+        self,
+        *,
+        token: str,
+        task_id: str,
+        agent_id: str,
+        boundary: TaskBoundary,
+        outside_rec: dict[str, Any],
+        message: dict[str, Any] | str,
+        fanout_group: str | None = None,
+        skip_flow_check: bool = False,
+    ) -> dict[str, Any]:
+        from .outside_agents import LABEL_ORDER, OutsideAgentError, execute_outside_a2a_call
+
+        target_agent = outside_rec["agent_id"]
+        task = self.storage.get_task(task_id)
+        root_id = (task.root_task_id or task_id) if task else task_id
+
+        def _refuse(reason: str) -> None:
+            msg_text = message.get("text", "") if isinstance(message, dict) else str(message)
+            _, caller_conf = self.storage.get_task_context_label(task_id)
+            self.storage.save_a2a_message({
+                "message_id": f"msg_{uuid.uuid4().hex[:16]}",
+                "root_task_id": root_id,
+                "parent_task_id": task_id,
+                "child_task_id": None,
+                "from_agent": agent_id,
+                "to_agent": target_agent,
+                "kind": "request",
+                "fanout_group": fanout_group,
+                "reply_to": None,
+                "sent_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "text": msg_text[:8192],
+                "verdict": "refused",
+                "reason": reason,
+                "integrity": "trusted",
+                "forwarded_from": [],
+                "contains_private": caller_conf == "secret",
+                "confidentiality": caller_conf,
+                "transport": "a2a_v1",
+                "card_hash": outside_rec.get("card_hash"),
+            })
+            self._record(
+                GovernanceEvent(
+                    event_id=self._generate_event_id(),
+                    timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    source=EventSource.TOOL_BROKER,
+                    task_id=task_id,
+                    agent_id=agent_id,
+                    pid=os.getpid(),
+                    kind="outside_a2a_request",
+                    target=target_agent,
+                    details={"transport": "a2a_v1", "card_hash": outside_rec.get("card_hash")},
+                    verdict=EventVerdict.OUTSIDE,
+                    risk_tier=RiskTier.HIGH,
+                    action_taken=TaskAction.BLOCK_ACTION,
+                    prevented=True,
+                    rule_matched=reason,
+                    boundary_version=boundary.version,
+                )
+            )
+            raise PermissionError(reason)
+
+        preflight_err = self._preflight_outside_call(task, agent_id, outside_rec, message)
+        if preflight_err:
+            _refuse(preflight_err)
+
+        deadline_epoch = self._compute_outside_deadline_epoch(task)
+        if deadline_epoch <= time.time():
+            _refuse(f"Inherited task deadline already exceeded calling '{target_agent}'")
+
+        if not skip_flow_check:
+            self._check_flow_approval(task_id, agent_id, boundary, "call_agent", target_agent)
+
+        _, task_conf = self.storage.get_task_context_label(task_id)
+        max_label = str(outside_rec.get("max_label") or "internal").lower()
+        if LABEL_ORDER.get(task_conf, 2) > LABEL_ORDER.get(max_label, 1):
+            _refuse(
+                f"Task data label '{task_conf}' exceeds outside agent '{target_agent}' highest allowed label '{max_label}'"
+            )
+
+        dm = getattr(self, "delegation_manager", None)
+        launcher = getattr(dm, "parent_launcher", None) if dm is not None else None
+        proxy = (
+            getattr(self, "egress_proxy", None)
+            or (getattr(dm, "proxy", None) if dm is not None else None)
+            or (launcher.live.get("proxy") if launcher is not None else None)
+        )
+        proxy_port = (
+            (getattr(proxy, "listening_port", None) or getattr(proxy, "port", None))
+            if proxy is not None
+            else getattr(self, "egress_proxy_port", None)
+        )
+        if not proxy_port:
+            proxy_port = getattr(self, "egress_proxy_port", None) or None
+
+        def _should_cancel() -> str | None:
+            if launcher is not None:
+                ce = getattr(launcher, "cancel_event", None)
+                if ce is not None and ce.is_set():
+                    return "parent task stopped"
+                fr = getattr(launcher, "_frozen", None)
+                if fr is not None and fr.is_set():
+                    return "parent task frozen"
+            return None
+
+        try:
+            return execute_outside_a2a_call(
+                storage=self.storage,
+                caller_task=task,
+                caller_agent_id=agent_id,
+                outside_record=outside_rec,
+                message=message,
+                deadline_epoch=deadline_epoch,
+                caller_token=token,
+                proxy=proxy,
+                proxy_port=proxy_port,
+                fanout_group=fanout_group,
+                should_cancel=_should_cancel,
+            )
+        except OutsideAgentError as exc:
+            raise PermissionError(str(exc)) from exc
+
     def call_agent(self, token: str, target_agent: str, message: dict[str, Any] | str) -> dict[str, Any]:
         """
         Tool: call_agent
@@ -1286,6 +1460,7 @@ class ToolBroker:
         if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
             task = self.storage.get_task(task_id)
             root_id = task.root_task_id or task_id if task else task_id
+            oa_ref = self.storage.get_outside_agent(target_agent) if hasattr(self.storage, "get_outside_agent") else None
             msg_text = message.get("text", "") if isinstance(message, dict) else str(message)
             refused_msg = {
                 "message_id": f"msg_{uuid.uuid4().hex[:16]}",
@@ -1304,9 +1479,34 @@ class ToolBroker:
                 "integrity": "trusted",
                 "forwarded_from": [],
                 "contains_private": False,
+                "transport": "a2a_v1" if oa_ref else "local",
+                "card_hash": oa_ref.get("card_hash") if oa_ref else None,
             }
             self.storage.save_a2a_message(refused_msg)
             raise PermissionError(f"Communication with agent '{target_agent}' denied by boundary: {eval_res.rule_matched}")
+
+        outside_rec = self.storage.get_outside_agent(target_agent) if hasattr(self.storage, "get_outside_agent") else None
+        if outside_rec is not None:
+            res = self._call_outside_agent(
+                token=token,
+                task_id=task_id,
+                agent_id=agent_id,
+                boundary=boundary,
+                outside_rec=outside_rec,
+                message=message,
+                fanout_group=None,
+            )
+            self._check_and_consume_single_use(boundary, "peer_agent", target_agent)
+            reply_content = res.get("reply", "") if isinstance(res, dict) else str(res)
+            self.storage.update_task_context_label(task_id, integrity="untrusted", confidentiality="public")
+            if self.expansion_service:
+                self.expansion_service.record_untrusted_read(
+                    task_id=task_id,
+                    source_type="peer_message",
+                    source_target=target_agent,
+                    content=reply_content,
+                )
+            return res
 
         # Delegation pre-checks: profile exists, cycle, depth before flow check
         if getattr(boundary, "enforcement_mode", None) != EnforcementMode.OBSERVE:
@@ -1439,8 +1639,13 @@ class ToolBroker:
             self._record(event)
 
             refused_reason = None
+            outside_rec = self.storage.get_outside_agent(tgt) if hasattr(self.storage, "get_outside_agent") else None
             if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
                 refused_reason = f"Communication with agent '{tgt}' denied by boundary: {eval_res.rule_matched}"
+            elif outside_rec is not None:
+                preflight_err = self._preflight_outside_call(task, agent_id, outside_rec, msg)
+                if preflight_err:
+                    refused_reason = preflight_err
             else:
                 try:
                     profile = load_agent_profile(tgt)
@@ -1472,6 +1677,8 @@ class ToolBroker:
                     "integrity": "trusted",
                     "forwarded_from": [],
                     "contains_private": False,
+                    "transport": "a2a_v1" if outside_rec is not None else "local",
+                    "card_hash": outside_rec.get("card_hash") if outside_rec is not None else None,
                 }
                 self.storage.save_a2a_message(refused_msg)
                 indexed_results[idx] = {
@@ -1498,7 +1705,20 @@ class ToolBroker:
                 t_agent = c.get("target") or c.get("target_agent", "")
                 m = c.get("message", {})
                 try:
-                    res = dm.delegate_single(token, t_agent, m, fanout_group=group_id)
+                    oa = self.storage.get_outside_agent(t_agent) if hasattr(self.storage, "get_outside_agent") else None
+                    if oa is not None:
+                        res = self._call_outside_agent(
+                            token=token,
+                            task_id=task_id,
+                            agent_id=agent_id,
+                            boundary=boundary,
+                            outside_rec=oa,
+                            message=m,
+                            fanout_group=group_id,
+                            skip_flow_check=True,
+                        )
+                    else:
+                        res = dm.delegate_single(token, t_agent, m, fanout_group=group_id)
                     res["target"] = t_agent
                     return i, res
                 except Exception as e:

@@ -354,6 +354,74 @@ class EgressProxyServer:
             except Exception:
                 pass
 
+    def _ensure_scoped_state(self) -> tuple[Any, dict[str, dict[str, Any]]]:
+        import threading
+        lock = getattr(self, "_scope_lock", None)
+        if lock is None:
+            lock = threading.Lock()
+            self._scope_lock = lock
+        tokens = getattr(self, "_scoped_tokens", None)
+        if tokens is None:
+            tokens = {}
+            self._scoped_tokens = tokens
+        return lock, tokens
+
+    def grant_scoped_egress(
+        self,
+        token: str,
+        *,
+        task_id: str | None,
+        agent_id: str,
+        allowed_host: str,
+        allowed_port: int,
+        require_connect: bool = True,
+    ) -> None:
+        """Opens temporary egress ONLY to (allowed_host, allowed_port) for this proxy token."""
+        lock, tokens = self._ensure_scoped_state()
+        with lock:
+            tokens[token] = {
+                "task_id": task_id,
+                "agent_id": agent_id,
+                "allowed_host": (allowed_host or "").strip().strip("[]").lower(),
+                "allowed_port": int(allowed_port),
+                "require_connect": bool(require_connect),
+            }
+
+    def revoke_scoped_egress(self, token: str) -> None:
+        lock, tokens = self._ensure_scoped_state()
+        with lock:
+            tokens.pop(token, None)
+        self.close_tunnels_for_token(token)
+
+    def close_tunnels_for_token(self, token: str) -> None:
+        for tid, tuns in list(self._active_tunnels.items()):
+            remaining = []
+            for t in tuns:
+                if t.get("token") == token:
+                    for w in t.get("writers", []):
+                        try:
+                            w.close()
+                        except Exception:
+                            pass
+                else:
+                    remaining.append(t)
+            if remaining:
+                self._active_tunnels[tid] = remaining
+            else:
+                self._active_tunnels.pop(tid, None)
+
+    def _get_scoped_egress(self, token: str) -> dict[str, Any] | None:
+        lock, tokens = self._ensure_scoped_state()
+        with lock:
+            item = tokens.get(token)
+            return dict(item) if item else None
+
+    def _is_proxy_token_active(self, token: str) -> bool:
+        scoped = self._get_scoped_egress(token)
+        if scoped is not None:
+            return True
+        return bool(self.storage.lookup_task_by_token(token))
+
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         curr_task = asyncio.current_task()
         if curr_task is not None:
@@ -494,12 +562,18 @@ class EgressProxyServer:
                 task_id = None
                 agent_id = "UNATTRIBUTED"
                 boundary = None
+                scoped_egress = None
 
                 if task_token:
-                    lookup = self.storage.lookup_task_by_token(task_token)
-                    if lookup:
-                        task_id, agent_id = lookup
-                        boundary = self.storage.get_boundary(task_id)
+                    scoped_egress = self._get_scoped_egress(task_token)
+                    if scoped_egress is not None:
+                        task_id = scoped_egress.get("task_id")
+                        agent_id = scoped_egress.get("agent_id") or "outside_a2a_fetch"
+                    else:
+                        lookup = self.storage.lookup_task_by_token(task_token)
+                        if lookup:
+                            task_id, agent_id = lookup
+                            boundary = self.storage.get_boundary(task_id)
 
                 # Parse destination host and port
                 if method.upper() == "CONNECT":
@@ -532,7 +606,7 @@ class EgressProxyServer:
                 target_formatted = f"[{dst_host}]:{dst_port}" if ":" in dst_host else f"{dst_host}:{dst_port}"
 
                 # 2. If unauthenticated, reject with 407 and log UNATTRIBUTED event
-                if not task_id or not boundary:
+                if scoped_egress is None and (not task_id or not boundary):
                     self._record_proxy_event(
                         task_id=None,
                         agent_id=agent_id,
@@ -548,30 +622,78 @@ class EgressProxyServer:
                     await self._drain_and_close(writer)
                     return
 
-                # 3. Evaluate destination host and port against task boundary
-                eval_res = self.evaluator.evaluate_network(boundary, target_formatted)
-                action, prevented = self.policy_engine.decide(boundary, eval_res)
-                if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
-                    self._record_proxy_event(
-                        task_id=task_id,
-                        agent_id=agent_id,
-                        target=target_formatted,
-                        verdict=eval_res.verdict,
-                        risk_tier=eval_res.risk_tier,
-                        prevented=prevented,
-                        rule_matched=eval_res.rule_matched,
-                        boundary_version=boundary.version if boundary else None,
-                        details={
-                            "method": method,
-                            "dst_host": dst_host,
-                            "dst_port": dst_port,
-                            "rule_matched": eval_res.rule_matched,
-                            "action_taken": action.value,
-                        },
+                # 3. Evaluate destination host and port against scoped A2A grant OR task boundary
+                if scoped_egress is not None:
+                    import ipaddress
+                    import os
+                    from .evaluator import EvaluationResult
+                    allowed_host = scoped_egress["allowed_host"]
+                    allowed_port = scoped_egress["allowed_port"]
+                    control_port = int(os.environ.get("GOVERNANCE_CONTROL_PORT", 8000))
+                    is_ctrl = (dst_host.lower() in ("localhost", "127.0.0.1", "::1") and dst_port == control_port)
+                    method_ok = (not scoped_egress.get("require_connect")) or (method.upper() == "CONNECT")
+                    host_port_ok = (dst_host.lower() == allowed_host and dst_port == allowed_port)
+                    if is_ctrl or not method_ok or not host_port_ok:
+                        rule = (
+                            "control-plane port is never reachable from a task"
+                            if is_ctrl
+                            else (
+                                "outside A2A scoped egress requires CONNECT"
+                                if not method_ok
+                                else f"unlisted outbound network destination (outside A2A scope allows only {allowed_host}:{allowed_port})"
+                            )
+                        )
+                        self._record_proxy_event(
+                            task_id=task_id,
+                            agent_id=agent_id,
+                            target=target_formatted,
+                            verdict=EventVerdict.OUTSIDE,
+                            risk_tier=RiskTier.HIGH,
+                            prevented=True,
+                            rule_matched=rule,
+                            boundary_version=None,
+                            details={
+                                "method": method,
+                                "dst_host": dst_host,
+                                "dst_port": dst_port,
+                                "rule_matched": rule,
+                                "action_taken": TaskAction.BLOCK_ACTION.value,
+                            },
+                        )
+                        writer.write(b"HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\n\r\nGovernance Proxy: Destination outside outside-A2A call scope\r\n")
+                        await self._drain_and_close(writer)
+                        return
+                    eval_res = EvaluationResult(
+                        verdict=EventVerdict.INSIDE,
+                        risk_tier=RiskTier.LOW,
+                        rule_matched=f"matched outside A2A scoped destination: {allowed_host}:{allowed_port}",
+                        resolved_path=target_formatted,
                     )
-                    writer.write(b"HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\n\r\nGovernance Proxy: Destination outside task boundary\r\n")
-                    await self._drain_and_close(writer)
-                    return
+                    action, prevented = TaskAction.ALLOW, False
+                else:
+                    eval_res = self.evaluator.evaluate_network(boundary, target_formatted)
+                    action, prevented = self.policy_engine.decide(boundary, eval_res)
+                    if prevented or action in (TaskAction.BLOCK_ACTION, TaskAction.PAUSE_TASK, TaskAction.KILL_TASK):
+                        self._record_proxy_event(
+                            task_id=task_id,
+                            agent_id=agent_id,
+                            target=target_formatted,
+                            verdict=eval_res.verdict,
+                            risk_tier=eval_res.risk_tier,
+                            prevented=prevented,
+                            rule_matched=eval_res.rule_matched,
+                            boundary_version=boundary.version if boundary else None,
+                            details={
+                                "method": method,
+                                "dst_host": dst_host,
+                                "dst_port": dst_port,
+                                "rule_matched": eval_res.rule_matched,
+                                "action_taken": action.value,
+                            },
+                        )
+                        writer.write(b"HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\n\r\nGovernance Proxy: Destination outside task boundary\r\n")
+                        await self._drain_and_close(writer)
+                        return
 
                 # 4. Resolve destination IP
                 resolved_ips = await self._resolve_host(dst_host, dst_port)
@@ -596,34 +718,72 @@ class EgressProxyServer:
 
                 # 5. Evaluate the exact resolved IPs against task boundary (DNS rebinding check)
                 is_ip_blocked = False
-                for r_ip in resolved_ips:
-                    r_formatted = f"[{r_ip}]:{dst_port}" if ":" in r_ip else f"{r_ip}:{dst_port}"
-                    ip_eval = self.evaluator.evaluate_network(boundary, r_formatted)
-                    if ip_eval.verdict == EventVerdict.OUTSIDE:
-                        eval_res = ip_eval
-                        action, prevented = self.policy_engine.decide(boundary, eval_res)
-                        self._record_proxy_event(
-                            task_id=task_id,
-                            agent_id=agent_id,
-                            target=target_formatted,
-                            verdict=eval_res.verdict,
-                            risk_tier=eval_res.risk_tier,
-                            prevented=prevented,
-                            rule_matched=eval_res.rule_matched,
-                            boundary_version=boundary.version if boundary else None,
-                            details={
-                                "method": method,
-                                "dst_host": dst_host,
-                                "dst_port": dst_port,
-                                "resolved_ip": r_ip,
-                                "rule_matched": eval_res.rule_matched,
-                                "action_taken": action.value,
-                            },
-                        )
-                        writer.write(b"HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\n\r\nGovernance Proxy: Destination outside task boundary\r\n")
-                        await self._drain_and_close(writer)
-                        is_ip_blocked = True
-                        break
+                if scoped_egress is not None:
+                    allowed_is_loopback = scoped_egress["allowed_host"] in ("127.0.0.1", "::1", "localhost")
+                    for r_ip in resolved_ips:
+                        try:
+                            ip_obj = ipaddress.ip_address(r_ip)
+                            disallowed = (
+                                (not allowed_is_loopback and (
+                                    ip_obj.is_loopback or ip_obj.is_private or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_reserved or ip_obj.is_unspecified
+                                ))
+                                or (allowed_is_loopback and not ip_obj.is_loopback)
+                            )
+                        except ValueError:
+                            disallowed = True
+                        if disallowed:
+                            rule = f"resolved IP {r_ip} blocked by outside A2A DNS-rebinding check for {dst_host}"
+                            self._record_proxy_event(
+                                task_id=task_id,
+                                agent_id=agent_id,
+                                target=target_formatted,
+                                verdict=EventVerdict.OUTSIDE,
+                                risk_tier=RiskTier.HIGH,
+                                prevented=True,
+                                rule_matched=rule,
+                                boundary_version=None,
+                                details={
+                                    "method": method,
+                                    "dst_host": dst_host,
+                                    "dst_port": dst_port,
+                                    "resolved_ip": r_ip,
+                                    "rule_matched": rule,
+                                    "action_taken": TaskAction.BLOCK_ACTION.value,
+                                },
+                            )
+                            writer.write(b"HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\n\r\nGovernance Proxy: Destination outside task boundary\r\n")
+                            await self._drain_and_close(writer)
+                            is_ip_blocked = True
+                            break
+                else:
+                    for r_ip in resolved_ips:
+                        r_formatted = f"[{r_ip}]:{dst_port}" if ":" in r_ip else f"{r_ip}:{dst_port}"
+                        ip_eval = self.evaluator.evaluate_network(boundary, r_formatted)
+                        if ip_eval.verdict == EventVerdict.OUTSIDE:
+                            eval_res = ip_eval
+                            action, prevented = self.policy_engine.decide(boundary, eval_res)
+                            self._record_proxy_event(
+                                task_id=task_id,
+                                agent_id=agent_id,
+                                target=target_formatted,
+                                verdict=eval_res.verdict,
+                                risk_tier=eval_res.risk_tier,
+                                prevented=prevented,
+                                rule_matched=eval_res.rule_matched,
+                                boundary_version=boundary.version if boundary else None,
+                                details={
+                                    "method": method,
+                                    "dst_host": dst_host,
+                                    "dst_port": dst_port,
+                                    "resolved_ip": r_ip,
+                                    "rule_matched": eval_res.rule_matched,
+                                    "action_taken": action.value,
+                                },
+                            )
+                            writer.write(b"HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\n\r\nGovernance Proxy: Destination outside task boundary\r\n")
+                            await self._drain_and_close(writer)
+                            is_ip_blocked = True
+                            break
 
                 if is_ip_blocked:
                     return
@@ -650,12 +810,13 @@ class EgressProxyServer:
                     action_taken=action,
                     prevented=prevented,
                     rule_matched=eval_res.rule_matched,
-                    boundary_version=boundary.version,
+                    boundary_version=boundary.version if boundary else None,
                 )
                 self.storage.record_event(evt)
 
                 # A single-use network grant is used up by this connection
-                consume_single_use(self.storage, boundary, "network", target_formatted)
+                if boundary is not None:
+                    consume_single_use(self.storage, boundary, "network", target_formatted)
 
                 if method.upper() == "CONNECT":
                     try:
@@ -678,7 +839,7 @@ class EgressProxyServer:
                                 data = await src.read(4096)
                                 if not data:
                                     break
-                                if not self.storage.lookup_task_by_token(task_token):
+                                if not self._is_proxy_token_active(task_token):
                                     break
                                 dst.write(data)
                                 await dst.drain()

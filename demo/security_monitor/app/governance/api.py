@@ -1427,6 +1427,109 @@ async def retire_discovered_agent(
     return retired.model_dump()
 
 
+class OutsideAgentRegisterRequest(BaseModel):
+    agent_id: str
+    card_url: str
+    jwk_anchor: dict[str, Any]
+    allowed_callers: list[str] = []
+    allowed_skills: list[str] = []
+    max_label: str = "internal"
+    auth_type: str = "none"
+    auth_token_path: str | None = None
+    name: str | None = None
+
+
+class OutsideAgentDisableRequest(BaseModel):
+    disabled: bool = True
+    reason: str | None = None
+
+
+def _require_admin(request: Request) -> UserSession:
+    user = get_current_user_session(request)
+    if user.role != Role.ADMIN:
+        raise HTTPException(status_code=403, detail="Forbidden: Admin role required for outside agent management.")
+    return user
+
+
+@governance_router.post("/outside-agents", status_code=201)
+async def register_outside_agent(
+    payload: OutsideAgentRegisterRequest,
+    request: Request,
+) -> dict[str, Any]:
+    _require_admin(request)
+    from .outside_agents import OutsideAgentError, OutsideAgentRegistry
+
+    registry = OutsideAgentRegistry(get_storage())
+    try:
+        rec = registry.register(
+            agent_id=payload.agent_id,
+            card_url=payload.card_url,
+            jwk_anchor=payload.jwk_anchor,
+            allowed_callers=payload.allowed_callers,
+            allowed_skills=payload.allowed_skills,
+            max_label=payload.max_label,
+            auth_type=payload.auth_type,
+            auth_token_path=payload.auth_token_path,
+            name=payload.name,
+        )
+    except OutsideAgentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    rec["kind"] = "outside_a2a"
+    return rec
+
+
+@governance_router.get("/outside-agents")
+async def list_outside_agents_route(
+    request: Request,
+    include_disabled: bool = Query(True),
+) -> list[dict[str, Any]]:
+    _require_admin(request)
+    from .outside_agents import OutsideAgentRegistry
+
+    rows = OutsideAgentRegistry(get_storage()).list(include_disabled=include_disabled)
+    for r in rows:
+        r["kind"] = "outside_a2a"
+    return rows
+
+
+@governance_router.post("/outside-agents/{agent_id}/reverify")
+async def reverify_outside_agent(
+    agent_id: str,
+    request: Request,
+) -> dict[str, Any]:
+    _require_admin(request)
+    from .outside_agents import OutsideAgentRegistry
+
+    rec = OutsideAgentRegistry(get_storage()).reverify(agent_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail=f"Outside agent '{agent_id}' not found.")
+    rec["kind"] = "outside_a2a"
+    return rec
+
+
+@governance_router.post("/outside-agents/{agent_id}/disable")
+async def disable_outside_agent(
+    agent_id: str,
+    request: Request,
+    payload: OutsideAgentDisableRequest | None = None,
+) -> dict[str, Any]:
+    _require_admin(request)
+    from .outside_agents import OutsideAgentRegistry
+
+    body = payload or OutsideAgentDisableRequest()
+    rec = OutsideAgentRegistry(get_storage()).disable(
+        agent_id,
+        disabled=body.disabled,
+        reason=body.reason,
+    )
+    if not rec:
+        raise HTTPException(status_code=404, detail=f"Outside agent '{agent_id}' not found.")
+    rec["kind"] = "outside_a2a"
+    return rec
+
+
 @governance_router.get("/alerts")
 async def get_alerts() -> list[dict[str, Any]]:
     return get_inventory_service().get_alerts()
@@ -2795,7 +2898,12 @@ async def get_a2a_job(root_task_id: str, request: Request = None) -> dict[str, A
                 })
 
     from .agent_profiles import load_all_agent_profiles
+    from .outside_agents import card_status_summary
     known_profiles = load_all_agent_profiles()
+    outside_map = {
+        oa["agent_id"]: oa
+        for oa in (storage.list_outside_agents(include_disabled=True) if hasattr(storage, "list_outside_agents") else [])
+    }
 
     agent_ids: set[str] = {root_task.agent_id}
     for m in messages:
@@ -2810,18 +2918,34 @@ async def get_a2a_job(root_task_id: str, request: Request = None) -> dict[str, A
     sorted_agents = sorted(agent_ids)
     agents: list[dict[str, Any]] = []
     for idx, aid in enumerate(sorted_agents):
+        oa = outside_map.get(aid)
         prof = known_profiles.get(aid)
-        if prof and isinstance(prof, dict):
+        if oa is not None:
+            display_name = oa.get("name") or aid.replace("_", " ").title()
+        elif prof and isinstance(prof, dict):
             display_name = prof.get("name") or aid.replace("_", " ").title()
         elif prof and hasattr(prof, "name"):
             display_name = prof.name
         else:
             display_name = aid.replace("_", " ").title()
-        agents.append({
+        entry: dict[str, Any] = {
             "id": aid,
             "name": display_name,
             "colour_index": idx % 6,
-        })
+        }
+        if oa is not None:
+            entry.update({
+                "kind": "outside_a2a",
+                "outside_a2a": True,
+                "card_url": oa.get("card_url"),
+                "card_status": "disabled" if oa.get("disabled") else oa.get("status"),
+                "card_status_label": card_status_summary(oa),
+                "card_kid": oa.get("card_kid"),
+                "card_hash": oa.get("card_hash"),
+                "failure_reason": oa.get("failure_reason"),
+                "max_label": oa.get("max_label"),
+            })
+        agents.append(entry)
 
     pairs: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for m in messages:

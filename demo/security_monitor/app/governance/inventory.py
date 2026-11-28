@@ -179,6 +179,7 @@ class AgentInventoryItem(BaseModel):
     description: str | None = None
     skills: list[str] = Field(default_factory=list)
     governance_state: str | None = None
+    kind: str | None = None
 
 
 class AgentInventoryService:
@@ -424,12 +425,18 @@ class AgentInventoryService:
                 )
 
         # 2. Inspect all recorded events to compute compliance and discover shadow agents
+        outside_agents_map = {
+            oa["agent_id"]: oa
+            for oa in (self.storage.list_outside_agents(include_disabled=True) if hasattr(self.storage, "list_outside_agents") else [])
+        }
         with self.storage.get_connection() as conn:
             rows = conn.execute("SELECT * FROM governance_events ORDER BY timestamp ASC").fetchall()
 
             for r in rows:
                 agent_id = r["agent_id"]
                 if not agent_id or agent_id == "UNATTRIBUTED":
+                    continue
+                if agent_id in outside_agents_map:
                     continue
 
                 ts = r["timestamp"]
@@ -503,6 +510,44 @@ class AgentInventoryService:
                         "version": card.get("version"),
                     },
                 )
+
+        # 4. Add admin-registered Outside A2A Agents
+        from .outside_agents import card_status_summary
+
+        for oa in outside_agents_map.values():
+            oid = oa["agent_id"]
+            oa_status = "DISABLED" if oa.get("disabled") else str(oa.get("status") or "UNVERIFIED").upper()
+            inventory[oid] = AgentInventoryItem(
+                agent_id=oid,
+                name=oa.get("name") or oid,
+                owner=oa.get("card_url") or "Outside A2A",
+                classification="OUTSIDE_A2A",
+                status=oa_status,
+                last_seen_utc=oa.get("verified_at") or oa.get("updated_at"),
+                description=oa.get("description") or None,
+                skills=list(oa.get("allowed_skills") or []),
+                governance_state="Disabled" if oa.get("disabled") else str(oa.get("status") or "unverified"),
+                kind="outside_a2a",
+                metadata={
+                    "kind": "outside_a2a",
+                    "outside_a2a": True,
+                    "card_url": oa.get("card_url"),
+                    "interface_url": oa.get("interface_url"),
+                    "card_status": oa.get("status"),
+                    "card_status_label": card_status_summary(oa),
+                    "failure_reason": oa.get("failure_reason"),
+                    "card_hash": oa.get("card_hash"),
+                    "card_kid": oa.get("card_kid"),
+                    "verified_at": oa.get("verified_at"),
+                    "disabled": bool(oa.get("disabled")),
+                    "allowed_callers": list(oa.get("allowed_callers") or []),
+                    "allowed_skills": list(oa.get("allowed_skills") or []),
+                    "card_skills": list(oa.get("card_skills") or []),
+                    "extra_skills": list(oa.get("extra_skills") or []),
+                    "max_label": oa.get("max_label") or "internal",
+                    "auth_type": oa.get("auth_type") or "none",
+                },
+            )
 
         return sorted(list(inventory.values()), key=lambda x: (x.classification != "SHADOW", x.agent_id))
 

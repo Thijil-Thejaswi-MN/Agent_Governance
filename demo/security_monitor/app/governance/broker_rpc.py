@@ -481,7 +481,8 @@ class BrokerRPCServer:
         msg = p.get("message", {})
         if not isinstance(msg, dict):
             msg = {"text": str(msg)}
-        target = _str_param(p, "target_agent", 256)
+        target_key = "target_agent" if "target_agent" in p else "target"
+        target = _str_param(p, target_key, 256)
         try:
             res = self.broker.call_agent(token, target, msg)
         except Exception as err:
