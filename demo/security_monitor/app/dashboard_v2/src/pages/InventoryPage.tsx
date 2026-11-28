@@ -239,6 +239,113 @@ export const DiscoveredAgentCard: React.FC<{ item: AgentInventoryItem }> = ({ it
   );
 };
 
+export const OutsideAgentCard: React.FC<{ item: AgentInventoryItem }> = ({ item }) => {
+  const meta = item.metadata || {};
+  const cardStatus = String(meta.card_status || item.status || 'unverified').toLowerCase();
+  const isDisabled = Boolean(meta.disabled) || cardStatus === 'disabled';
+  const isVerified = !isDisabled && cardStatus === 'verified';
+  const pillLabel = isDisabled ? 'disabled' : cardStatus;
+  const pillTone = isVerified ? 'ok' : isDisabled || cardStatus === 'refused' || cardStatus === 'changed' ? 'bad' : 'wait';
+  const statusLabel =
+    meta.card_status_label ||
+    meta.failure_reason ||
+    (meta.card_kid ? `signature verified (key ${meta.card_kid})` : pillLabel);
+  const allowedCallers: string[] = Array.isArray(meta.allowed_callers) ? meta.allowed_callers : [];
+  const allowedSkills: string[] = Array.isArray(meta.allowed_skills)
+    ? meta.allowed_skills
+    : Array.isArray(item.skills)
+    ? item.skills
+    : [];
+  const maxLabel: string = meta.max_label || 'internal';
+  const extraSkills: string[] = Array.isArray(meta.extra_skills) ? meta.extra_skills : [];
+
+  return (
+    <li
+      className="card p-5 rounded-xl border border-line bg-surface-1 flex flex-col gap-3 min-w-0"
+      data-outside-agent-card={item.agent_id}
+      data-outside-status={pillLabel}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[16px] font-semibold text-fg [overflow-wrap:anywhere] min-w-0">
+              {item.name || item.agent_id}
+            </span>
+            <span
+              className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold text-info border border-line bg-surface-2"
+              data-badge="outside-a2a"
+            >
+              outside agent (A2A)
+            </span>
+          </div>
+          <span className="font-mono text-[12px] text-fg-3 [overflow-wrap:anywhere]">
+            {item.agent_id}
+          </span>
+        </div>
+        <StatusPill tone={pillTone} label={pillLabel} />
+      </div>
+
+      {item.description && (
+        <p className="m-0 text-[13px] leading-relaxed text-fg-2">{item.description}</p>
+      )}
+
+      <div
+        className="rounded-lg border border-line bg-surface-2 px-3 py-2 text-[12px] flex flex-col gap-1"
+        data-outside-status-detail
+      >
+        <span className="text-fg-3">Card verification status</span>
+        <span className={`font-mono [overflow-wrap:anywhere] ${isVerified ? 'text-ok' : 'text-bad'}`}>
+          {statusLabel}
+        </span>
+      </div>
+
+      <div
+        className="rounded-lg border border-line bg-surface-2 px-3 py-2.5 text-[12px] flex flex-col gap-1.5"
+        data-outside-ceiling
+      >
+        <span className="text-fg-3 font-medium">Attested ceiling</span>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-fg-2">
+          <span>
+            <span className="text-fg-3">Allowed callers: </span>
+            <span className="font-mono text-fg">{allowedCallers.length ? allowedCallers.join(', ') : 'none'}</span>
+          </span>
+          <span>
+            <span className="text-fg-3">Max label: </span>
+            <span className="font-mono text-fg">{maxLabel}</span>
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-fg-3">Allowed skills:</span>
+          {allowedSkills.length > 0 ? (
+            allowedSkills.map((sk) => (
+              <span
+                key={sk}
+                className="px-2 py-0.5 rounded text-[11px] font-mono bg-surface-3 text-fg-2 border border-line"
+                data-skill={sk}
+              >
+                {sk}
+              </span>
+            ))
+          ) : (
+            <span className="font-mono text-fg-3">none</span>
+          )}
+        </div>
+        {extraSkills.length > 0 && (
+          <span className="text-[11px] text-wait">
+            Ignored unapproved skills on card: {extraSkills.join(', ')}
+          </span>
+        )}
+      </div>
+
+      {meta.card_url && (
+        <div className="pt-2 border-t border-line flex items-center justify-between text-[11px] text-fg-3">
+          <span className="truncate font-mono">{meta.card_url}</span>
+        </div>
+      )}
+    </li>
+  );
+};
+
 export const InventoryPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'inventory' | 'discovered'>('inventory');
 
@@ -370,12 +477,27 @@ export const InventoryPage: React.FC = () => {
   };
 
   const cards = tasks ? inventoryCards(tasks, requests, configured) : [];
+  const outsideAgents = inventory.filter(
+    item =>
+      item.kind === 'outside_a2a' ||
+      item.metadata?.kind === 'outside_a2a' ||
+      item.classification === 'OUTSIDE_A2A'
+  );
   const a2aAgents = inventory.filter(
-    item => item.classification === 'DISCOVERED_A2A' || item.metadata?.a2a_card
+    item =>
+      item.kind !== 'outside_a2a' &&
+      item.metadata?.kind !== 'outside_a2a' &&
+      item.classification !== 'OUTSIDE_A2A' &&
+      (item.classification === 'DISCOVERED_A2A' || item.metadata?.a2a_card)
   );
   const counts = { high: 0, medium: 0, low: 0 } as Record<Risk, number>;
   cards.forEach(c => (counts[c.risk] += 1));
-  const totalAgents = cards.length + a2aAgents.filter(d => !cards.some(c => c.agentId === d.agent_id)).length;
+  const extraIds = new Set([
+    ...a2aAgents.map(d => d.agent_id),
+    ...outsideAgents.map(d => d.agent_id),
+  ]);
+  const totalAgents =
+    cards.length + Array.from(extraIds).filter(id => !cards.some(c => c.agentId === id)).length;
 
   return (
     <div className="max-w-[1200px] pb-12 flex flex-col gap-6 font-sans">
@@ -472,7 +594,7 @@ export const InventoryPage: React.FC = () => {
         ) : (
           <>
             <section className="flex flex-col gap-3" id="governed-agents-section">
-              {a2aAgents.length > 0 && (
+            {(a2aAgents.length > 0 || outsideAgents.length > 0) && (
                 <h2 className="m-0 text-[18px] sm:text-[20px] font-semibold text-fg">
                   Our agents
                 </h2>
@@ -487,6 +609,24 @@ export const InventoryPage: React.FC = () => {
                 </ul>
               )}
             </section>
+
+              {outsideAgents.length > 0 && (
+              <section className="flex flex-col gap-3" id="outside-agents-section">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h2 className="m-0 text-[18px] sm:text-[20px] font-semibold text-fg">
+                    Outside agents (A2A)
+                  </h2>
+                  <span className="text-[13px] text-fg-3">
+                    Registered external agents with pinned keys and attested ceilings.
+                  </span>
+                </div>
+                <ul id="outside-agents-list" className="list-none m-0 p-0 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {outsideAgents.map(a => (
+                    <OutsideAgentCard key={a.agent_id} item={a} />
+                  ))}
+                </ul>
+              </section>
+            )}
 
             {a2aAgents.length > 0 && (
               <section className="flex flex-col gap-3" id="discovered-agents-section">

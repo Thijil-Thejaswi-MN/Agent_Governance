@@ -34,7 +34,19 @@ logger = logging.getLogger(__name__)
 
 RECEIPT_VERSION = "v2"
 GENESIS_HASH = "0" * 64
-_SAFE_BROKER_DETAIL_KEYS = ("execution", "check_only", "reason", "channel", "method", "dst_host", "dst_port")
+_SAFE_BROKER_DETAIL_KEYS = (
+    "execution",
+    "check_only",
+    "reason",
+    "channel",
+    "method",
+    "dst_host",
+    "dst_port",
+    "transport",
+    "remote_task_id",
+    "card_hash",
+    "card_kid",
+)
 
 
 def canonical(obj: Any) -> bytes:
@@ -240,13 +252,20 @@ def build_receipt(
     a2a_hashes = []
     for m in sent_messages:
         m_canon = json.loads(json.dumps(m, default=str))
-        a2a_hashes.append({
+        entry = {
             "message_id": m["message_id"],
             "hash": hashlib.sha256(canonical(m_canon)).hexdigest(),
             "to_agent": m["to_agent"],
             "kind": m["kind"],
             "verdict": m["verdict"],
-        })
+        }
+        if m.get("transport"):
+            entry["transport"] = m["transport"]
+        if m.get("remote_task_id"):
+            entry["remote_task_id"] = m["remote_task_id"]
+        if m.get("card_hash"):
+            entry["card_hash"] = m["card_hash"]
+        a2a_hashes.append(entry)
 
     extra_dict = dict(extra or {})
     extra_dict["a2a_messages"] = a2a_hashes

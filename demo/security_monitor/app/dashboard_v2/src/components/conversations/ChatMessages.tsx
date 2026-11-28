@@ -1,5 +1,5 @@
 import React from 'react';
-import { A2AMessage, A2APendingApproval } from '../../types';
+import { A2AAgent, A2AMessage, A2APendingApproval } from '../../types';
 import { AgentRingAvatar } from './AgentAvatar';
 import { InlineApprovalCard } from './InlineApprovalCard';
 import { localClock } from '../v3/TechnicalTimeline';
@@ -12,6 +12,7 @@ interface ChatMessagesProps {
   pendingApprovals: A2APendingApproval[];
   agentNames: Record<string, string>;
   agentColourIndexes: Record<string, number>;
+  outsideAgents?: Record<string, A2AAgent>;
   canDecide: boolean;
   onApprove: (requestId: string) => Promise<void>;
   onDeny: (requestId: string, reason: string) => Promise<void>;
@@ -44,6 +45,7 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
   pendingApprovals,
   agentNames,
   agentColourIndexes,
+  outsideAgents = {},
   canDecide,
   onApprove,
   onDeny,
@@ -94,6 +96,14 @@ export const ChatMessages: React.FC<ChatMessagesProps> = ({
                 </span>
               ) : (
                 <span className="font-medium text-fg">{senderName}</span>
+              )}
+              {(outsideAgents[m.from_agent] || outsideAgents[m.to_agent] || m.transport === 'a2a_v1') && (
+                <span
+                  className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-surface-2 border border-line text-info"
+                  data-badge="outside-a2a"
+                >
+                  outside agent (A2A)
+                </span>
               )}
               <span className="text-fg-3">{localClock(m.sent_at)}</span>
             </div>
