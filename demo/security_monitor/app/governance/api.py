@@ -1452,10 +1452,12 @@ def _require_admin(request: Request) -> UserSession:
 
 
 @governance_router.post("/outside-agents", status_code=201)
-async def register_outside_agent(
+def register_outside_agent(
     payload: OutsideAgentRegisterRequest,
     request: Request,
 ) -> dict[str, Any]:
+    # A plain def: FastAPI runs it in a worker thread, so fetching the card over the
+    # network does not block the server's event loop.
     _require_admin(request)
     from .outside_agents import OutsideAgentError, OutsideAgentRegistry
 
@@ -1495,7 +1497,7 @@ async def list_outside_agents_route(
 
 
 @governance_router.post("/outside-agents/{agent_id}/reverify")
-async def reverify_outside_agent(
+def reverify_outside_agent(
     agent_id: str,
     request: Request,
 ) -> dict[str, Any]:

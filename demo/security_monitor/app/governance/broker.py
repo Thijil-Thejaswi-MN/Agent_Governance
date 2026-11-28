@@ -1337,15 +1337,17 @@ class ToolBroker:
         if deadline_epoch <= time.time():
             _refuse(f"Inherited task deadline already exceeded calling '{target_agent}'")
 
-        if not skip_flow_check:
-            self._check_flow_approval(task_id, agent_id, boundary, "call_agent", target_agent)
-
+        # The label ceiling first: a task whose data may never go to this agent is refused
+        # outright, rather than asking a person for an OK that could not let it through.
         _, task_conf = self.storage.get_task_context_label(task_id)
         max_label = str(outside_rec.get("max_label") or "internal").lower()
         if LABEL_ORDER.get(task_conf, 2) > LABEL_ORDER.get(max_label, 1):
             _refuse(
                 f"Task data label '{task_conf}' exceeds outside agent '{target_agent}' highest allowed label '{max_label}'"
             )
+
+        if not skip_flow_check:
+            self._check_flow_approval(task_id, agent_id, boundary, "call_agent", target_agent)
 
         dm = getattr(self, "delegation_manager", None)
         launcher = getattr(dm, "parent_launcher", None) if dm is not None else None

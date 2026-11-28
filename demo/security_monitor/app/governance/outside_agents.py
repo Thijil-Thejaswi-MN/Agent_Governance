@@ -15,6 +15,7 @@ import datetime
 import hashlib
 import json
 import logging
+import re
 import ssl
 import threading
 import time
@@ -68,8 +69,22 @@ POLL_INTERVAL_SECONDS = 0.15
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
+# Largest single HTTP response we read from an outside agent (card, SendMessage, GetTask).
+# A hostile partner must not be able to make the control plane buffer an unbounded reply.
+MAX_RESPONSE_BYTES = 1_048_576
+
+_AGENT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_\-]{0,63}$")
+
+
 class OutsideAgentError(PermissionError):
     """Raised when an outside agent card or call violates security policy or fails."""
+
+
+class OutsideAgentNetworkError(OutsideAgentError):
+    """The outside agent could not be reached (down, slow, proxy refusal, HTTP error).
+
+    Unlike a verification failure, this says nothing about the card, so it must not change
+    the agent's stored approval status."""
 
 
 @dataclass
@@ -186,6 +201,18 @@ def card_status_summary(rec: dict[str, Any] | None) -> str:
     return rec.get("failure_reason") or str(status or "unverified")
 
 
+def _check_interface_on_card_host(interface_url: str, card_url: str) -> None:
+    """The partner's signed card picks the interface URL, and the partner is untrusted.
+    Keep it on the scheme and host the admin approved (the card URL's), so a card cannot send
+    our requests to another host, such as a service on 127.0.0.1 or an internal address."""
+    i_scheme, i_host, _ = _canonical_url_host_port(interface_url)
+    c_scheme, c_host, _ = _canonical_url_host_port(card_url)
+    if i_scheme != c_scheme or i_host != c_host:
+        raise OutsideAgentError(
+            f"Agent card interface {i_scheme}://{i_host} is not on the approved card host {c_scheme}://{c_host}"
+        )
+
+
 def _extract_jsonrpc_interface_url(card: AgentCard) -> str:
     if not card.supported_interfaces:
         raise OutsideAgentError("Agent card missing supportedInterfaces")
@@ -250,7 +277,8 @@ def _verify_single_signature(
     encoded_payload = base64url_encode(canonical_payload.encode("utf-8")).decode("utf-8")
     token = f"{protected_b64}.{encoded_payload}.{signature_b64}"
     try:
-        jwt.decode(jwt=token, key=anchor_key, algorithms=[alg])
+        # A card is not a JWT: verify the JWS only, with no claim checks (exp, aud, ...).
+        jwt.api_jws.PyJWS().decode(token, key=anchor_key.key, algorithms=[alg])
         return None
     except PyJWTError:
         return "bad signature"
@@ -277,6 +305,7 @@ def verify_card_payload(
         raise OutsideAgentError(f"Invalid A2A AgentCard structure: {exc}") from exc
 
     interface_url = _extract_jsonrpc_interface_url(card)
+    _check_interface_on_card_host(interface_url, card_url)
 
     if not card.signatures:
         raise OutsideAgentError("unsigned card")
@@ -350,18 +379,34 @@ def verify_card_payload(
 
 
 class _BufferedNetworkStream(httpcore.AsyncNetworkStream):
-    def __init__(self, inner: httpcore.AsyncNetworkStream, initial_buf: bytes) -> None:
+    """Replays bytes read past the CONNECT reply, and caps every response at MAX_RESPONSE_BYTES.
+
+    The count restarts on each request write, so it limits one response, not a kept-alive
+    connection's lifetime (GetTask polls reuse the connection)."""
+
+    def __init__(self, inner: httpcore.AsyncNetworkStream, initial_buf: bytes, limit: int = MAX_RESPONSE_BYTES) -> None:
         self._inner = inner
         self._buf = initial_buf
+        self._limit = int(limit)
+        self._read_since_write = 0
+
+    def _count(self, chunk: bytes) -> bytes:
+        self._read_since_write += len(chunk)
+        if self._read_since_write > self._limit:
+            raise OutsideAgentNetworkError(
+                f"Outside agent response exceeded {self._limit} bytes; the call was stopped"
+            )
+        return chunk
 
     async def read(self, max_bytes: int, timeout: float | None = None) -> bytes:
         if self._buf:
             chunk = self._buf[:max_bytes]
             self._buf = self._buf[max_bytes:]
-            return chunk
-        return await self._inner.read(max_bytes, timeout=timeout)
+            return self._count(chunk)
+        return self._count(await self._inner.read(max_bytes, timeout=timeout))
 
     async def write(self, buffer: bytes, timeout: float | None = None) -> None:
+        self._read_since_write = 0
         await self._inner.write(buffer, timeout=timeout)
 
     async def aclose(self) -> None:
@@ -378,7 +423,7 @@ class _BufferedNetworkStream(httpcore.AsyncNetworkStream):
             server_hostname=server_hostname,
             timeout=timeout,
         )
-        return _BufferedNetworkStream(tls_stream, self._buf) if self._buf else tls_stream
+        return _BufferedNetworkStream(tls_stream, self._buf, self._limit)
 
     def get_extra_info(self, info: str) -> Any:
         return self._inner.get_extra_info(info)
@@ -437,7 +482,7 @@ class _ConnectProxyBackend(httpcore.AsyncNetworkBackend):
             body = rest.decode("utf-8", errors="replace").strip()
             await stream.aclose()
             raise httpx.ProxyError(f"Egress proxy refused CONNECT {target} ({status_line}): {body}")
-        return _BufferedNetworkStream(stream, rest) if rest else stream
+        return _BufferedNetworkStream(stream, rest)
 
 
 def build_proxy_httpx_client(
@@ -469,13 +514,14 @@ def _format_network_error(exc: Exception, url: str) -> OutsideAgentError:
         return exc
     msg = str(exc) or type(exc).__name__
     low = msg.lower()
+    # A bad certificate is a trust failure, not a network hiccup: it stays OutsideAgentError.
     if "certificate" in low or "ssl" in low or "tls" in low or "verify failed" in low:
         return OutsideAgentError(f"TLS certificate verification failed for {url}: {msg}")
     if isinstance(exc, (httpx.TimeoutException, asyncio.TimeoutError, A2AClientTimeoutError, TimeoutError)):
-        return OutsideAgentError(f"Outside agent request timed out for {url}: {msg}")
+        return OutsideAgentNetworkError(f"Outside agent request timed out for {url}: {msg}")
     if isinstance(exc, httpx.ProxyError) or "proxy" in low:
-        return OutsideAgentError(f"Proxy egress refused for {url}: {msg}")
-    return OutsideAgentError(f"Failed contacting outside agent at {url}: {msg}")
+        return OutsideAgentNetworkError(f"Proxy egress refused for {url}: {msg}")
+    return OutsideAgentNetworkError(f"Failed contacting outside agent at {url}: {msg}")
 
 
 class _EphemeralProxyRunner:
@@ -554,7 +600,7 @@ def fetch_and_verify_card_via_proxy(
                 headers={VERSION_HEADER: PROTOCOL_VERSION_1_0, "Accept": "application/json"},
             )
             if resp.status_code != 200:
-                raise OutsideAgentError(f"Agent card fetch returned HTTP {resp.status_code} from {card_url}")
+                raise OutsideAgentNetworkError(f"Agent card fetch returned HTTP {resp.status_code} from {card_url}")
             return resp.json()
 
     try:
@@ -748,6 +794,17 @@ class OutsideAgentRegistry:
         aid = str(agent_id or "").strip()
         if not aid:
             raise ValueError("agent_id cannot be empty")
+        if not _AGENT_ID_RE.match(aid):
+            raise ValueError("agent_id must be 1-64 characters: lowercase letters, digits, '_' or '-'")
+        try:
+            from .agent_profiles import load_all_agent_profiles
+
+            local_ids = set(load_all_agent_profiles().keys())
+        except Exception:
+            local_ids = set()
+        if aid in local_ids:
+            # Otherwise calls meant for our own (governed) agent would go to the outside one.
+            raise ValueError(f"agent_id '{aid}' is already one of our own agents; choose another id")
         _canonical_url_host_port(card_url)
         validated_anchor = validate_jwk_anchor(jwk_anchor)
         validated_label = validate_max_label(max_label)
@@ -984,11 +1041,14 @@ def execute_outside_a2a_call(
             )
         except Exception as exc:
             reason = str(exc)
-            updated = dict(outside_record)
-            updated["status"] = "refused"
-            updated["failure_reason"] = reason
-            updated["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            storage.save_outside_agent(updated)
+            if not isinstance(exc, OutsideAgentNetworkError):
+                # Only a verification failure withdraws the approval. A network hiccup fails
+                # this call but leaves the agent approved.
+                updated = dict(outside_record)
+                updated["status"] = "refused"
+                updated["failure_reason"] = reason
+                updated["updated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                storage.save_outside_agent(updated)
             base_req_row["verdict"] = "refused"
             base_req_row["reason"] = reason
             storage.save_a2a_message(base_req_row)

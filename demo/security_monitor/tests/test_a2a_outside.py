@@ -418,7 +418,8 @@ def test_secret_task_needs_ok_and_label_ceiling_refused(env):
         with pytest.raises(PermissionError, match="highest allowed label 'public'"):
             broker1.call_agent(tok1, "echo_public_only", {"text": "internal summary"})
 
-        # Case B: secret task needs person's OK (Rule 1) before calling out
+        # Case B: a secret task is refused by the label ceiling before any person is asked:
+        # no outside agent may receive secret data, so an OK could never let it through.
         ws2 = tmp_path / "ws_sec"
         tok2 = _make_task(storage, ws2, "task_lbl_sec", peer_agents=["echo_internal"])
         storage.update_task_context_label("task_lbl_sec", confidentiality="secret")
@@ -431,10 +432,28 @@ def test_secret_task_needs_ok_and_label_ceiling_refused(env):
         )
         broker2.egress_proxy = proxy_runner.proxy  # type: ignore[attr-defined]
         broker2.egress_proxy_port = proxy_runner.port  # type: ignore[attr-defined]
-        with pytest.raises(PermissionError, match="Flow denied"):
+        with pytest.raises(PermissionError, match="highest allowed label 'internal'"):
             broker2.call_agent(tok2, "echo_internal", {"text": "hello"})
-        assert len(rule1_reqs) == 1
-        assert rule1_reqs[0].resource_type == "flow"
+        assert rule1_reqs == []
+
+        # Case B2: an internal task calling an internal agent still needs the data-rule OK
+        # when the task read untrusted content first (Rule 2); with the OK refused, nothing is sent.
+        ws2b = tmp_path / "ws_int_untrusted"
+        tok2b = _make_task(storage, ws2b, "task_lbl_int_untrusted", peer_agents=["echo_internal"])
+        storage.update_task_context_label("task_lbl_int_untrusted", integrity="untrusted", confidentiality="internal")
+        rule2_reqs = []
+        broker2b = ToolBroker(
+            storage,
+            expansion_service=ExpansionService(
+                storage, provenance_enabled=True, user_approval_hook=lambda r: rule2_reqs.append(r) or False
+            ),
+        )
+        broker2b.egress_proxy = proxy_runner.proxy  # type: ignore[attr-defined]
+        broker2b.egress_proxy_port = proxy_runner.port  # type: ignore[attr-defined]
+        with pytest.raises(PermissionError, match="Flow denied"):
+            broker2b.call_agent(tok2b, "echo_internal", {"text": "hello"})
+        assert len(rule2_reqs) == 1
+        assert rule2_reqs[0].resource_type == "flow"
 
         # Case C: even if Rule 1 hook returns True, secret still exceeds max_label='internal'
         ws3 = tmp_path / "ws_sec_ok"
@@ -1061,3 +1080,111 @@ def test_trip_planner_outside_preset_defined():
     assert "hostile_partner" in p["peer_agents"]
     tools = [s.get("tool") for s in p["scripted_steps"] if "tool" in s]
     assert tools == ["call_agent", "http_post"]
+
+
+
+# ---------------------------------------------------------------------------
+# Review fixes: interface host, response size, id clash, transient failures
+# ---------------------------------------------------------------------------
+
+def test_card_interface_must_stay_on_card_host(env):
+    """A signed card cannot point our requests at another host (for example an internal service)."""
+    tmp_path, storage, proxy_runner = env
+    partner = _RunningPartner(mode="echo", base_url="https://internal-service.example")
+    try:
+        reg = OutsideAgentRegistry(storage, proxy=proxy_runner.proxy, proxy_port=proxy_runner.port)
+        rec = reg.register(
+            agent_id="redirecting_partner",
+            card_url=partner.card_url,
+            jwk_anchor=partner.pub_jwk,
+            allowed_callers=["planner"],
+            allowed_skills=["echo"],
+        )
+        assert rec["status"] == "refused"
+        assert "not on the approved card host" in (rec["failure_reason"] or "")
+        assert partner.raw_requests == []
+    finally:
+        partner.stop()
+
+
+def test_oversized_card_response_is_refused(env):
+    """A partner cannot make us buffer an unbounded response."""
+    tmp_path, storage, proxy_runner = env
+    from demo.security_monitor.app.governance.outside_agents import MAX_RESPONSE_BYTES
+
+    big = b'{"name": "' + b"x" * (MAX_RESPONSE_BYTES + 4096) + b'"}'
+
+    class _Big(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(big)))
+            self.end_headers()
+            try:
+                self.wfile.write(big)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _Big)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        _, pub = generate_ephemeral_jwk_pair(kid="big-card")
+        reg = OutsideAgentRegistry(storage, proxy=proxy_runner.proxy, proxy_port=proxy_runner.port)
+        rec = reg.register(
+            agent_id="big_card_partner",
+            card_url=f"http://127.0.0.1:{srv.server_address[1]}/.well-known/agent-card.json",
+            jwk_anchor=pub,
+            allowed_callers=["planner"],
+            allowed_skills=[],
+        )
+        assert rec["status"] == "refused"
+        assert "exceeded" in (rec["failure_reason"] or "")
+    finally:
+        srv.shutdown()
+
+
+def test_outside_id_cannot_shadow_our_own_agent(env):
+    tmp_path, storage, proxy_runner = env
+    partner = _RunningPartner(mode="echo")
+    try:
+        reg = OutsideAgentRegistry(storage, proxy=proxy_runner.proxy, proxy_port=proxy_runner.port)
+        for bad_id in ("researcher", "planner", "Bad Id", "../x"):
+            with pytest.raises(ValueError):
+                reg.register(
+                    agent_id=bad_id,
+                    card_url=partner.card_url,
+                    jwk_anchor=partner.pub_jwk,
+                    allowed_callers=["planner"],
+                    allowed_skills=["echo"],
+                )
+        assert storage.get_outside_agent("researcher") is None
+    finally:
+        partner.stop()
+
+
+def test_unreachable_partner_fails_the_call_but_keeps_approval(env):
+    """A partner that is down fails this call; it does not withdraw the admin's approval."""
+    tmp_path, storage, proxy_runner = env
+    partner = _RunningPartner(mode="echo")
+    reg = OutsideAgentRegistry(storage, proxy=proxy_runner.proxy, proxy_port=proxy_runner.port)
+    rec = reg.register(
+        agent_id="flaky_partner",
+        card_url=partner.card_url,
+        jwk_anchor=partner.pub_jwk,
+        allowed_callers=["planner"],
+        allowed_skills=["echo"],
+    )
+    assert rec["status"] == "verified"
+    partner.stop()
+
+    tok = _make_task(storage, tmp_path / "ws_flaky", "task_flaky", peer_agents=["flaky_partner"], timeout_s=20.0)
+    broker = ToolBroker(storage, expansion_service=ExpansionService(storage, provenance_enabled=True))
+    broker.egress_proxy = proxy_runner.proxy  # type: ignore[attr-defined]
+    broker.egress_proxy_port = proxy_runner.port  # type: ignore[attr-defined]
+    with pytest.raises(PermissionError):
+        broker.call_agent(tok, "flaky_partner", {"text": "hello"})
+    after = storage.get_outside_agent("flaky_partner")
+    assert after["status"] == "verified", after.get("failure_reason")
